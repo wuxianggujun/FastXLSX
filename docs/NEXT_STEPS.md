@@ -30,6 +30,21 @@ outputs with ZIP/XML and `openpyxl`, and can optionally invoke the Excel COM
 sidecar for no-repair open checks. This is local compatibility evidence for the
 covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
 not a broad guarantee for unsupported Excel object models.
+The public Patch facade now also has a large-worksheet targeted existing-cell
+path: `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` writes
+caller `CellValue` payloads through the internal worksheet transformer and
+stages rewritten worksheet XML as file-backed package-entry chunks. It is the
+recommended public path when a bounded set of cells already exists in a large
+worksheet and whole-`<sheetData>` replacement or `WorksheetEditor`
+materialization is the wrong design. The boundary is intentionally strict:
+targets must already exist, duplicate inputs are later-wins, text is emitted as
+inline strings, caller `StyleId` values are written as-is without validation,
+formula payloads request recalculation, and the API does not insert cells/rows,
+migrate sharedStrings/styles, recalculate tables/filters/drawings/defined
+names, prune/repair relationships, or provide arbitrary random editing. The
+benchmark tool `fastxlsx_bench_package_editor_cell_replacement` now defaults to
+`--editor-api public-workbook-editor` for this public facade, while retaining
+`--editor-api internal-package-editor` for transformer diagnostics.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source

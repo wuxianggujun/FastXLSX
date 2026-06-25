@@ -224,16 +224,19 @@ CellStore batch preflight + direct commit，避免为失败原子性复制整张
 source worksheet materialization 和 `save_as()` package 输出支配，后续大文件编辑优化
 必须走 worksheet streaming patch / transformer，而不是扩大 In-memory sparse materialization。
 
-### PackageEditor Cell Replacement Benchmark Workflow
+### Public WorkbookEditor Targeted Cell Replacement Benchmark Workflow
 
-大 worksheet 的已有文件定向 cell replacement 使用独立 opt-in 手工工具验证内部
-Patch 路径，不进入默认 CTest/CI：
+大 worksheet 的已有文件定向 cell replacement 使用独立 opt-in 手工工具验证
+public `WorkbookEditor::replace_cells()` facade；工具也保留
+`--editor-api internal-package-editor` 用于排查 internal `PackageEditor` transformer
+边界。该 benchmark 不进入默认 CTest/CI：
 
 ```powershell
 cmake --preset windows-nmake-release-benchmark
 cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement
 .\build\windows-nmake-release-benchmark\benchmarks\fastxlsx_bench_package_editor_cell_replacement.exe `
   --rows 500000 --cols 10 --edits 5000 `
+  --editor-api public-workbook-editor `
   --source build\bench-package-editor\source-500k.xlsx `
   --source-body build\bench-package-editor\source-body-500k.xml `
   --output build\bench-package-editor\out-500k.xlsx `
@@ -249,19 +252,23 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_p
 
 `fastxlsx_bench_package_editor_cell_replacement` 会生成一个 stored source package，
 其中 `xl/worksheets/sheet1.xml` 由 worksheet prefix、file-backed row body 和
-worksheet suffix 组成；然后通过 internal `PackageEditor::replace_worksheet_cells_by_name()`
-替换已存在 cell，`save_as()` 写出结果，并用 `PackageReader::entry_chunk_source()`
-流式检查输出包含首个替换 cell 和尾部未修改 source cell。生成 JSON 使用
+worksheet suffix 组成；默认通过 public `WorkbookEditor::replace_cells()` 替换已存在
+cell，`save_as()` 写出结果，并用 `PackageReader::entry_chunk_source()` 流式检查输出
+包含首个替换 cell 和尾部未修改 source cell。生成 JSON 使用
 `package_editor_cell_replacement_benchmark_schema_version = "1"`，记录 source body /
 package 生成耗时、open、patch plan、save、verify、总编辑耗时、进程峰值工作集、输入 /
 输出 package 大小，以及以下关键路径证据：
 
 - `package_entry_source_mode = "source-zip-entry-chunk-source"`。
 - `output_entry_mode = "file-backed-stream-rewrite"`。
-- `plan_reports_source_entry_chunk_source = true`。
-- `plan_reports_file_backed_stream_rewrite = true`。
-- `output_plan_staged_replacement_chunks = true`。
-- `output_plan_materialized_replacement = false`。
+- `editor_api = "public-workbook-editor"` 默认 public facade 路径。
+- `public_facade_reports_targeted_cells = true`。
+- `public_facade_targeted_cell_count = edits`。
+- `public_facade_replacement_xml_bytes` 记录 caller single-cell replacement XML payload
+  字节，不是 source worksheet XML、PackageEditor 临时文件或进程 RSS。
+- 仅在 `--editor-api internal-package-editor` 下，`plan_reports_source_entry_chunk_source`、
+  `plan_reports_file_backed_stream_rewrite`、`output_plan_staged_replacement_chunks` 和
+  `output_plan_materialized_replacement` 作为 internal output-plan 证据有意义。
 
 2026-06-25 本地 MSVC release 手工快照，stored source package，`office_open=not_run`：
 
@@ -278,12 +285,15 @@ package 生成耗时、open、patch plan、save、verify、总编辑耗时、进
 `build/bench-package-editor/package-editor-cell-replacement-office-report.json`，且不回写
 benchmark JSON；原始 `office_open` 字段仍保持工具输出的 `not_run`。
 
-该快照说明内部 Patch cell replacement 已能在 5M cells 级别避免整张 source worksheet
-XML 物化，并把 rewritten worksheet 作为 file-backed staged chunks 输出。它仍不是
-public `WorkbookEditor` 大文件随机编辑 API，不覆盖 sharedStrings/styles 迁移、table /
-range metadata recalculation、relationship repair、Zip64、DEFLATE input/output 或更广泛的
-Office/WPS/LibreOffice 兼容性；本次 Excel 结果只证明这些本地 stored-package 输出可被
-Excel 只读打开并读到预期单元格。
+该快照来自 public facade 落地前的 internal `PackageEditor` 路径，说明底层 Patch cell
+replacement 已能在 5M cells 级别避免整张 source worksheet XML 物化，并把 rewritten
+worksheet 作为 file-backed staged chunks 输出。public `WorkbookEditor::replace_cells()`
+现在复用同一 transformer 路径并暴露 facade-level targeted-cell diagnostics；新的 public
+路径 benchmark 应优先使用 `--editor-api public-workbook-editor` 重新跑同规模矩阵。该能力仍不是
+任意大文件随机编辑：它只替换已存在 cells，不插入缺失 cells/rows，不覆盖 sharedStrings/styles
+迁移、table / range metadata recalculation、relationship repair、Zip64、DEFLATE
+input/output 或更广泛的 Office/WPS/LibreOffice 兼容性；本次 Excel 结果只证明这些本地
+stored-package 输出可被 Excel 只读打开并读到预期单元格。
 
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`，记录字符串分布和
 package 元数据：

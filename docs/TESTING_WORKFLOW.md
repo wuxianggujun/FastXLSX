@@ -418,6 +418,16 @@ That no-op recovery is not a bypass: a later same-sheet Patch operation against
 the same clean materialized worksheet must still fail, repopulate
 `last_edit_error()` with the latest guard diagnostic, and keep the output bytes
 unchanged.
+The public Patch targeted-cell shard
+`fastxlsx.workbook_editor_public_patch_cells` covers
+`WorkbookEditor::replace_cells()` as the large-worksheet facade over the
+internal worksheet transformer: successful existing-cell replacement,
+untouched worksheet preservation, workbook recalculation metadata, missing
+target no-state-pollution, mode-mixing guards with `replace_sheet_data()` and
+materialized `WorksheetEditor`, planned-catalog behavior after `rename_sheet()`,
+and duplicate-coordinate later-wins diagnostics. This test must stay public
+facade-only; internal output-plan details are validated separately by
+`PackageEditor` transformer tests and the opt-in benchmark smoke.
 Two-handle clean-session hygiene is covered as well: recovery on `Data`
 through no-op erase or a valid mutation must not make same-sheet Patch on a
 separate clean `Untouched` handle legal, must keep dirty materialized

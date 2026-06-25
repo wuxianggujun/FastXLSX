@@ -11,6 +11,7 @@
 #include <fastxlsx/workbook_editor.hpp>
 
 #include <cstddef>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -84,6 +85,8 @@ struct WorkbookEditor::Impl {
     detail::MaterializedWorksheetSessionRegistry materialized_sessions;
     std::size_t pending_public_edit_count = 0;
     detail::WorkbookEditorPendingSheetDataPayloads pending_sheet_data_payloads;
+    std::map<std::string, std::map<std::string, std::size_t, std::less<>>, std::less<>>
+        pending_targeted_cell_replacements;
     std::optional<std::string> last_public_edit_error;
 
     [[nodiscard]] std::vector<std::string> source_worksheet_names() const
@@ -131,9 +134,74 @@ struct WorkbookEditor::Impl {
         return pending_sheet_data_payloads.contains(sheet_name);
     }
 
+    [[nodiscard]] bool has_pending_targeted_cell_replacement(
+        std::string_view sheet_name) const noexcept
+    {
+        return pending_targeted_cell_replacements.find(sheet_name)
+            != pending_targeted_cell_replacements.end();
+    }
+
     [[nodiscard]] std::vector<std::string> pending_replacement_worksheet_names() const
     {
         return pending_sheet_data_payloads.worksheet_names(current_worksheet_names());
+    }
+
+    [[nodiscard]] std::vector<std::string> pending_targeted_cell_replacement_worksheet_names()
+        const
+    {
+        std::vector<std::string> names;
+        for (const std::string& sheet_name : current_worksheet_names()) {
+            if (has_pending_targeted_cell_replacement(sheet_name)) {
+                names.push_back(sheet_name);
+            }
+        }
+        return names;
+    }
+
+    [[nodiscard]] std::size_t pending_targeted_cell_replacement_count() const noexcept
+    {
+        std::size_t count = 0;
+        for (const auto& [_, replacements] : pending_targeted_cell_replacements) {
+            count += replacements.size();
+        }
+        return count;
+    }
+
+    [[nodiscard]] std::size_t estimated_pending_targeted_cell_replacement_xml_bytes()
+        const noexcept
+    {
+        std::size_t bytes = 0;
+        for (const auto& [_, replacements] : pending_targeted_cell_replacements) {
+            for (const auto& [__, payload_bytes] : replacements) {
+                bytes += payload_bytes;
+            }
+        }
+        return bytes;
+    }
+
+    void record_pending_targeted_cell_replacements(
+        std::string_view sheet_name,
+        const std::vector<std::pair<std::string, std::size_t>>& replacements)
+    {
+        auto& by_reference = pending_targeted_cell_replacements[std::string(sheet_name)];
+        for (const auto& [cell_reference, payload_bytes] : replacements) {
+            by_reference[cell_reference] = payload_bytes;
+        }
+    }
+
+    void move_pending_targeted_cell_replacements(
+        std::string_view old_name, std::string_view new_name)
+    {
+        auto source = pending_targeted_cell_replacements.find(old_name);
+        if (source == pending_targeted_cell_replacements.end()) {
+            return;
+        }
+        auto moved = std::move(source->second);
+        pending_targeted_cell_replacements.erase(source);
+        auto& destination = pending_targeted_cell_replacements[std::string(new_name)];
+        for (auto& [cell_reference, payload_bytes] : moved) {
+            destination[std::move(cell_reference)] = payload_bytes;
+        }
     }
 
     [[nodiscard]] std::vector<std::string> pending_materialized_worksheet_names() const
@@ -162,12 +230,17 @@ struct WorkbookEditor::Impl {
             const std::string& current_name = catalog_entry.planned_name;
             const detail::WorkbookEditorPendingSheetDataPayloadDiagnostic* pending_payload =
                 pending_sheet_data_payloads.find(current_name);
+            const auto pending_cell_replacements =
+                pending_targeted_cell_replacements.find(current_name);
             const detail::MaterializedWorksheetSession* materialized_session =
                 materialized_sessions.try_session(current_name);
             const bool sheet_data_replaced = pending_payload != nullptr;
+            const bool targeted_cells_replaced =
+                pending_cell_replacements != pending_targeted_cell_replacements.end();
             const bool materialized_dirty =
                 materialized_session != nullptr && materialized_session->dirty();
-            if (!catalog_entry.renamed && !sheet_data_replaced && !materialized_dirty) {
+            if (!catalog_entry.renamed && !sheet_data_replaced
+                && !targeted_cells_replaced && !materialized_dirty) {
                 continue;
             }
 
@@ -176,11 +249,21 @@ struct WorkbookEditor::Impl {
             summary.planned_name = current_name;
             summary.renamed = catalog_entry.renamed;
             summary.sheet_data_replaced = sheet_data_replaced;
+            summary.targeted_cells_replaced = targeted_cells_replaced;
             summary.materialized_dirty = materialized_dirty;
             if (sheet_data_replaced) {
                 summary.replacement_cell_count = pending_payload->cell_count;
                 summary.estimated_replacement_memory_usage =
                     pending_payload->estimated_memory_usage;
+            }
+            if (targeted_cells_replaced) {
+                summary.targeted_cell_replacement_count =
+                    pending_cell_replacements->second.size();
+                for (const auto& [_, payload_bytes] :
+                     pending_cell_replacements->second) {
+                    summary.estimated_targeted_cell_replacement_xml_bytes +=
+                        payload_bytes;
+                }
             }
             if (materialized_dirty) {
                 summary.materialized_cell_count = materialized_session->cell_count();

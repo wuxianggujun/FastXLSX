@@ -1342,10 +1342,11 @@ FastXLSX
 - `WorkbookWriter` / `WorksheetWriter` / `CellView`：大文件新建导出。
 - `Workbook` / `Worksheet` / `Cell`：小文件新建和简单生成。
 - `WorkbookEditor`：当前已有窄 public Patch facade，用于打开已有 workbook、按 sheet
-  name 替换 whole-`<sheetData>`、窄 sheet catalog 改名并 `save_as()` 到新路径。
-- 未来 `WorksheetEditor` / random cell editing：小文件随机编辑和更宽 in-memory/editor
-  扩展；当前 `CellValue`、internal `CellStore` 首个切片、guardrail 首片和 standalone
-  `<sheetData>` emission 首片已实现，但 random editor 尚未 ready。
+  name 替换 whole-`<sheetData>`、定点替换已存在 cells、替换已有 media part、窄 sheet
+  catalog 改名并 `save_as()` 到新路径。
+- `WorksheetEditor`：当前已有 small-file In-memory worksheet editor 首片，用于显式
+  materialize 一个已有 worksheet 后做随机 cell 编辑；它不代表 large-file low-memory
+  random editing。
 
 当前内部 `PackageReader`、`PackageEditor`、`EditPlan`、`PartIndex` 和
 `RelationshipGraph` 是 Patch 底座，不等于稳定 public API。只有当后续任务证明需要
@@ -1473,6 +1474,12 @@ P7.5 save-as / Patch handoff draft：
   public `WorkbookEditor::replace_sheet_data()` 复用这条窄 handoff，并通过
   `CellStore` row/cell chunk source 避免先构造完整 standalone `<sheetData>` 字符串，
   但它仍不是 random cell editing / in-memory materialization save-as。
+- 当前 public `WorkbookEditor::replace_cells()` 复用 internal worksheet event reader /
+  transformer 和 `PackageEditor::replace_worksheet_cells_by_name()`，面向大 worksheet 的
+  bounded existing-cell replacement：只替换已经存在的 `<c>` elements，rewritten worksheet
+  作为 file-backed chunks staged 到 output plan。它不是缺失 cell/row insertion、
+  metadata sync、sharedStrings/styles migration、relationship repair 或 arbitrary random
+  editing。
 - blank / erase / tombstone 在 save-as 阶段必须有明确 contract：删除 `<c>`、写 blank
   styled cell、保留 style/metadata 或 fail；P7.5 不宣称 existing-file cell clearing 已实现。
 - sharedStrings、styles 和 calc metadata 复用 P6 policy：默认 preserve / audit / fail，
@@ -1487,9 +1494,10 @@ P8.1 controlled large worksheet editing draft：
 - 初始能力边界是 sheet replacement、bounded range patch、template fill 和受控 row/cell
   streaming transformation；任意随机 cell editor 仍属于 P7 In-memory 小文件路径。
 - 当前 bounded `replace_worksheet_sheet_data()` 已使用 chunk-source worksheet input、
-  direct replacement sheetData chunk consumption 和 file-backed staged output，但仍是
-  bounded local rewrite，不是完整大文件低内存 transformer；P8/C5 仍需要继续推进真正
-  public stream-rewrite 边界。
+  direct replacement sheetData chunk consumption 和 file-backed staged output；当前
+  public `replace_cells()` 已把 existing-cell transformer 路径作为大 worksheet 定点编辑
+  facade 暴露出来。两者仍不是完整大文件低内存 worksheet editor；P8/C5 仍需要继续推进
+  broader stream-rewrite 边界、metadata sync 和 dependency policy。
 - P8 rewrite 仍必须通过 DependencyAnalyzer / EditPlan 暴露 sharedStrings、styles、
   worksheet `.rels`、tables、drawings、definedNames、calcChain 和 workbook calc metadata
   的 preserve / audit / fail / request-recalc 策略。

@@ -6,16 +6,104 @@
 #include "workbook_editor_image_edit.hpp"
 #include "workbook_editor_state.hpp"
 
+#include <fastxlsx/detail/cell_store.hpp>
+#include <fastxlsx/detail/worksheet_transformer.hpp>
+#include <fastxlsx/detail/xml.hpp>
 #include <fastxlsx/image.hpp>
 
 #include <cstddef>
+#include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 namespace fastxlsx {
+
+namespace {
+
+struct WorkbookEditorTargetedCellPatchMaterializedCell {
+    std::string cell_reference;
+    std::string replacement_xml;
+};
+
+struct WorkbookEditorTargetedCellPatchInput {
+    std::size_t input_cell_count = 0;
+    std::size_t unique_cell_count = 0;
+    std::size_t replacement_xml_bytes = 0;
+    std::vector<WorkbookEditorTargetedCellPatchMaterializedCell> materialized_cells;
+    std::vector<std::pair<std::string, std::size_t>> public_diagnostics;
+};
+
+void validate_workbook_editor_targeted_cell_patch_target(
+    const detail::WorkbookEditorSheetCatalogPlan& sheet_catalog,
+    const detail::MaterializedWorksheetSessionRegistry& materialized_sessions,
+    bool has_pending_sheet_data_payload,
+    std::string_view sheet_name)
+{
+    if (!sheet_catalog.has_current(sheet_name)) {
+        throw FastXlsxError(detail::workbook_editor_missing_planned_sheet_message(sheet_name));
+    }
+    if (has_pending_sheet_data_payload) {
+        throw FastXlsxError(
+            "cannot replace cells after replacing sheet data for the same worksheet");
+    }
+    materialized_sessions.preflight_no_materialized_session(sheet_name, "replace cells");
+}
+
+WorkbookEditorTargetedCellPatchInput materialize_workbook_editor_targeted_cell_patch_input(
+    std::span<const WorksheetCellUpdate> cells)
+{
+    std::map<detail::CellPosition, const CellValue*> final_updates;
+    for (const WorksheetCellUpdate& cell : cells) {
+        const std::string cell_reference =
+            detail::cell_reference(cell.reference.row, cell.reference.column);
+        (void)cell_reference;
+        final_updates[detail::CellPosition {cell.reference.row, cell.reference.column}] =
+            &cell.value;
+    }
+
+    WorkbookEditorTargetedCellPatchInput input;
+    input.input_cell_count = cells.size();
+    input.unique_cell_count = final_updates.size();
+    input.materialized_cells.reserve(final_updates.size());
+    input.public_diagnostics.reserve(final_updates.size());
+
+    for (const auto& [position, value] : final_updates) {
+        detail::CellRecord record = detail::CellRecord::from_value(*value);
+        std::string cell_reference = detail::cell_reference(position.row, position.column);
+        std::string replacement_xml = detail::cell_record_xml(position, record);
+        input.replacement_xml_bytes += replacement_xml.size();
+        input.public_diagnostics.push_back({cell_reference, replacement_xml.size()});
+        input.materialized_cells.push_back(
+            WorkbookEditorTargetedCellPatchMaterializedCell {
+                std::move(cell_reference),
+                std::move(replacement_xml),
+            });
+    }
+    return input;
+}
+
+std::vector<detail::WorksheetCellReplacement>
+workbook_editor_targeted_cell_replacements_from_materialized_cells(
+    const std::vector<WorkbookEditorTargetedCellPatchMaterializedCell>& materialized_cells)
+{
+    std::vector<detail::WorksheetCellReplacement> replacements;
+    replacements.reserve(materialized_cells.size());
+    for (const WorkbookEditorTargetedCellPatchMaterializedCell& cell :
+         materialized_cells) {
+        replacements.push_back(detail::WorksheetCellReplacement {
+            cell.cell_reference,
+            detail::WorksheetCellReplacementPayload::from_materialized_xml(
+                cell.replacement_xml),
+        });
+    }
+    return replacements;
+}
+
+} // namespace
 
 WorkbookEditor::WorkbookEditor() = default;
 
@@ -103,12 +191,26 @@ std::size_t WorkbookEditor::pending_replacement_cell_count() const noexcept
     return impl_ == nullptr ? 0 : impl_->pending_sheet_data_payloads.cell_count();
 }
 
+std::size_t WorkbookEditor::pending_targeted_cell_replacement_count() const noexcept
+{
+    return impl_ == nullptr ? 0 : impl_->pending_targeted_cell_replacement_count();
+}
+
 std::vector<std::string> WorkbookEditor::pending_replacement_worksheet_names() const
 {
     if (impl_ == nullptr) {
         return {};
     }
     return impl_->pending_replacement_worksheet_names();
+}
+
+std::vector<std::string> WorkbookEditor::pending_targeted_cell_replacement_worksheet_names()
+    const
+{
+    if (impl_ == nullptr) {
+        return {};
+    }
+    return impl_->pending_targeted_cell_replacement_worksheet_names();
 }
 
 std::vector<std::string> WorkbookEditor::pending_materialized_worksheet_names() const
@@ -134,9 +236,22 @@ bool WorkbookEditor::has_pending_replacement(std::string_view sheet_name) const 
     return impl_ != nullptr && impl_->has_pending_sheet_data_payload(sheet_name);
 }
 
+bool WorkbookEditor::has_pending_targeted_cell_replacement(
+    std::string_view sheet_name) const noexcept
+{
+    return impl_ != nullptr && impl_->has_pending_targeted_cell_replacement(sheet_name);
+}
+
 std::size_t WorkbookEditor::estimated_pending_replacement_memory_usage() const noexcept
 {
     return impl_ == nullptr ? 0 : impl_->pending_sheet_data_payloads.estimated_memory_usage();
+}
+
+std::size_t WorkbookEditor::estimated_pending_targeted_cell_replacement_xml_bytes()
+    const noexcept
+{
+    return impl_ == nullptr ? 0
+                            : impl_->estimated_pending_targeted_cell_replacement_xml_bytes();
 }
 
 std::optional<std::string> WorkbookEditor::last_edit_error() const
@@ -204,6 +319,10 @@ WorksheetEditor WorkbookEditor::worksheet(
         throw FastXlsxError(
             "cannot materialize planned worksheet session after replacing sheet data");
     }
+    if (impl_->has_pending_targeted_cell_replacement(sheet_name)) {
+        throw FastXlsxError(
+            "cannot materialize planned worksheet session after replacing cells");
+    }
 
     const std::optional<std::string> source_name =
         impl_->source_name_for_current_worksheet(sheet_name);
@@ -244,6 +363,10 @@ void WorkbookEditor::replace_sheet_data(
         detail::workbook_editor_sheet_data_replacement_input_diagnostic(rows);
 
     try {
+        if (impl_->has_pending_targeted_cell_replacement(sheet_name)) {
+            throw FastXlsxError(
+                "cannot replace sheet data after replacing cells for the same worksheet");
+        }
         const detail::WorkbookEditorSheetDataReplacementResult result =
             detail::replace_workbook_editor_sheet_data_from_rows(
                 impl_->editor,
@@ -264,6 +387,50 @@ void WorkbookEditor::replace_sheet_data(
         impl_->record_last_edit_error(public_error);
         throw public_error;
     }
+}
+
+void WorkbookEditor::replace_cells(
+    std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    WorkbookEditorTargetedCellPatchInput input;
+    try {
+        validate_workbook_editor_targeted_cell_patch_target(impl_->sheet_catalog,
+            impl_->materialized_sessions,
+            impl_->has_pending_sheet_data_payload(sheet_name),
+            sheet_name);
+        input = materialize_workbook_editor_targeted_cell_patch_input(cells);
+        if (input.materialized_cells.empty()) {
+            impl_->clear_last_edit_error();
+            return;
+        }
+
+        const std::vector<detail::WorksheetCellReplacement> replacements =
+            workbook_editor_targeted_cell_replacements_from_materialized_cells(
+                input.materialized_cells);
+        impl_->editor.replace_worksheet_cells_by_name(sheet_name, replacements);
+        impl_->record_pending_targeted_cell_replacements(
+            sheet_name, input.public_diagnostics);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error("WorkbookEditor::replace_cells() failed for '"
+            + sheet_name_key + "' with " + std::to_string(cells.size())
+            + " input cells and " + std::to_string(input.unique_cell_count)
+            + " unique targets: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::replace_cells(
+    std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells)
+{
+    replace_cells(sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
 void WorkbookEditor::replace_image(
@@ -376,6 +543,7 @@ void WorkbookEditor::rename_sheet(
                 std::move(new_name),
                 rename_options);
         (void)result;
+        impl_->move_pending_targeted_cell_replacements(old_name_key, new_name_key);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

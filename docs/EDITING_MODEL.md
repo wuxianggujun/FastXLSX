@@ -12,14 +12,17 @@ FastXLSX 需要同时满足三个场景：
 OpenXML / OPC 底座上的三条路径：Streaming、Patch、In-memory。
 
 执行层任务必须按 [任务拆分设计](TASK_BREAKDOWN.md) 选择最小子任务。`P4.0 API surface
-unification` 文档基线已完成，其设计的 existing-file editing facade 现在落地了首个 public
+unification` 文档基线已完成，其设计的 existing-file editing facade 现在落地了 public
 Patch 切片：`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp` 暴露
 `WorkbookEditor::open()` / `worksheet_names()` / `has_worksheet()` /
-`replace_sheet_data(sheet_name, rows)` / `rename_sheet(old_name, new_name)` /
-`save_as()`，由 `tests/test_workbook_editor.cpp`
-（CTest `fastxlsx.workbook_editor`）覆盖。它在内部复用
-`PackageEditor::replace_worksheet_sheet_data_by_name()`，只替换整张 `<sheetData>`，
-做 bounded local rewrite；`rename_sheet()` 复用
+`replace_sheet_data(sheet_name, rows)` / `replace_cells(sheet_name, cells)` /
+`rename_sheet(old_name, new_name)` / `save_as()`，由 CTest
+`fastxlsx.workbook_editor.*` 覆盖。`replace_sheet_data()` 在内部复用
+`PackageEditor::replace_worksheet_sheet_data_by_name()`，替换整张 `<sheetData>` 并做
+bounded local rewrite；`replace_cells()` 复用内部 worksheet transformer 和
+`PackageEditor::replace_worksheet_cells_by_name()`，只替换 source/planned worksheet
+stream 中已经存在的 `<c>` cells，rewritten worksheet 以 file-backed chunks 进入 Patch
+输出；`rename_sheet()` 复用
 `PackageEditor::rename_sheet_catalog_entry()`，只改写 `/xl/workbook.xml` 里
 `<sheets><sheet name="...">` 这个 catalog 名，保留 worksheet parts / relationships /
 content types / unknown entries，不动 defined names / formulas / tables / drawings /
@@ -37,9 +40,11 @@ strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
 WorksheetEditor session 的 formula cell 文本，并把这些 session 标脏；它不
 materialize 或扫描未载入 worksheet XML。链式 rename 下，显式 opt-in 策略会同时处理
 仍引用原始 source sheet name 和当前旧 planned name 的本地 sheet-qualified 公式引用，
-但不会处理 external workbook references 或 3D sheet ranges。它仍**不**表示完整 existing-file editing、public
-`PackageEditor`、semantic metadata sync、sharedStrings/style migration、relationship
-repair 或 large-file low-memory random editing。
+但不会处理 external workbook references 或 3D sheet ranges。`replace_cells()` 是大
+worksheet 的 bounded existing-cell Patch path，不插入缺失 cells/rows、不迁移
+sharedStrings/styles、不修复 range metadata 或 relationships。它仍**不**表示完整
+existing-file editing、public `PackageEditor`、semantic metadata sync、relationship
+repair 或 arbitrary large-file random editing。
 默认 `rename_sheet()` 之后，`formula_reference_audits()`、`source_formula_reference_audits()`
 和 `defined_name_formula_reference_audits()` 只暴露 stale source-name 风险，不改公式文本；
 `data!` / `DATA!` 这类本地大小写变体按 ASCII case-insensitive 匹配到 source/planned
@@ -897,12 +902,14 @@ writer.close();
 ```
 
 已落地的 Patch public 入口是 `WorkbookEditor`：打开已有 workbook，按 sheet name
-替换整个 `<sheetData>` 或改写 sheet catalog 名，再 `save_as()` 输出新 package。这是
-当前唯一可编译的 existing-file editing public API（`include/fastxlsx/workbook_editor.hpp`）。
+替换整个 `<sheetData>`、替换一批已存在 cells 或改写 sheet catalog 名，再 `save_as()`
+输出新 package。这是当前 existing-file editing public facade
+（`include/fastxlsx/workbook_editor.hpp`）。
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
 editor.replace_sheet_data("Data", rows);   // rows: std::vector<std::vector<CellValue>>
+editor.replace_cells("Data", updates);     // updates: span<WorksheetCellUpdate>
 editor.rename_sheet("Data", "Report");     // 只改 save_as 输出 catalog 的 sheet@name
 editor.save_as("output.xlsx");             // 不原地覆盖
 ```
@@ -916,10 +923,10 @@ workbook 视图。
 
 下面是规划中的更宽 Patch public API 形态伪代码，不是当前已暴露的
 `include/fastxlsx` API；当前 `PackageEditor` 仍是 internal test-only 基础，
-`WorkbookEditor` 只暴露 whole-`<sheetData>` 替换、窄 sheet catalog 改名和
-`save_as()`，并已有 small-file `WorksheetEditor` 随机 cell 编辑首片；尚未暴露
-document properties editing、row/column structural edits、semantic metadata sync
-等更宽能力。
+`WorkbookEditor` 只暴露 whole-`<sheetData>` 替换、targeted existing-cell 替换、窄
+sheet catalog 改名和 `save_as()`，并已有 small-file `WorksheetEditor` 随机 cell 编辑首片；
+尚未暴露 document properties editing、row/column structural edits、semantic metadata
+sync 等更宽能力。
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);

@@ -55,6 +55,18 @@ struct CellRecord {
     [[nodiscard]] CellValue to_value() const;
 };
 
+/// Serializes one sparse cell record as a standalone worksheet `<c>` element.
+///
+/// This is an internal projection helper shared by whole-`<sheetData>`
+/// projection, materialized save-as, and public Patch cell replacement
+/// facades. Passing a shared-string index provider writes text cells as
+/// `t="s"` indexes; otherwise text cells are emitted as inline strings.
+/// The helper validates the coordinate through the existing cell-reference
+/// encoder and does not create rows, sheetData, worksheet wrappers,
+/// sharedStrings parts, style records, relationships, or content types.
+[[nodiscard]] std::string cell_record_xml(CellPosition position, const CellRecord& record,
+    const CellStoreSharedStringIndexProvider* shared_string_index_provider = nullptr);
+
 /// Creates a pull-based chunk source for the internal sparse store's standalone
 /// `<sheetData>` payload.
 ///

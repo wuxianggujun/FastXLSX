@@ -49,10 +49,13 @@ small_sheet.append_row({Cell::text("A")});
 wb.save(path);
 
 // Existing-file editing (已落地 Patch 切片): 打开已有 workbook，整体替换某个
-// worksheet 的 <sheetData>，再输出到新路径。
+// worksheet 的 <sheetData>，或定点替换一批已存在 cells，再输出到新路径。
 auto editor = WorkbookEditor::open(input_path);
 editor.replace_sheet_data("Data", {
     {CellValue::text("A"), CellValue::number(1.0)},
+});
+editor.replace_cells("Data", {
+    {{1, 1}, CellValue::text("patched")},
 });
 editor.save_as(output_path);
 
@@ -81,8 +84,9 @@ editable_sheet.set_cell("A1", CellValue::text("A")); // future
   `ImageOptions`、`ImageAnchorOffset` 等应保持 workbook / worksheet 语义，不要泄漏底层 part 名。
 - `CellValue` 是当前已落地的 owning 单元格语义值：number、text、boolean、formula、
   blank 以及可选 style reference。它可以被 `Cell`、当前
-  `WorkbookEditor::replace_sheet_data()` rows 输入、future `WorksheetEditor::set_cell()`
-  / random-edit 扩展和 In-memory editor 共同使用。当前已有 internal `CellStore`
+  `WorkbookEditor::replace_sheet_data()` rows 输入、`WorkbookEditor::replace_cells()`
+  targeted-cell 输入、`WorksheetEditor::set_cell()` / random-edit 扩展和 In-memory
+  editor 共同使用。当前已有 internal `CellStore`
   首个稀疏存储切片、internal guardrail 首片和 standalone `<sheetData>` emission
   首片，但这仍不表示 `WorksheetEditor`、random cell editing 或完整 save-as handoff
   已经实现。
@@ -108,7 +112,7 @@ Public API 概念矩阵：
 sheet 入口      add_worksheet           add_worksheet / remove_worksheet / inspection helpers
                                                                worksheet_names / has_worksheet / worksheet / try_worksheet
 追加行          append_row(CellView)    append_row(Cell)         replace_sheet_data(rows)；future append_row
-随机写 cell     不支持                  不作为大文件路径承诺      WorksheetEditor::set_cell / erase_cell
+随机写 cell     不支持                  不作为大文件路径承诺      replace_cells(existing cells) / WorksheetEditor::set_cell
 读取 cell       不支持                  可作为小文件能力规划      WorksheetEditor::get_cell / try_cell
 保存            close                   save                     save_as
 范围值          CellRange               CellRange                CellRange
@@ -169,7 +173,7 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 | --- | --- | --- | --- |
 | New workbook streaming | 已公开，继续低风险打磨 | `WorkbookWriter`, `WorksheetWriter`, `CellView`, styles, validations, hyperlinks, tables, conditional formatting, images | 不支持随机回写历史行；不把 convenience API 放进 row hot path |
 | Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::add_worksheet()`, `Workbook::save()`, `worksheet_count()`, `worksheet_names()`, `has_worksheet()`, `worksheet()`, `try_worksheet()`, `rename_worksheet()`, `remove_worksheet()`, `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`, `Worksheet::cell_count()`, `Worksheet::estimated_memory_usage()` | 不承诺大文件低内存；不作为 existing-file editor；lookup / rename old-name / remove name 和 duplicate-name rule 均为 ASCII case-insensitive；`rename_worksheet()` / `remove_worksheet()` 只修改待生成 workbook 中的 buffered sheet，不是 existing-file sheet edit/delete；size diagnostics 是近似观测，不是 RSS、硬预算或 large-export progress |
-| Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `replace_sheet_data()`, `replace_image()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；不做 relationship repair、sharedStrings/style migration、drawing/image semantic editing |
+| Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `replace_sheet_data()`, `replace_cells()`, `replace_image()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；`replace_cells()` 只替换已存在 cells，不插入缺失 cells/rows；不做 relationship repair、sharedStrings/style migration、drawing/image semantic editing |
 | Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, source-load and mutation `max_cells` / `memory_budget_bytes` guardrails plus max-cells and memory-budget mutation failure/recovery hygiene, missing-erase diagnostic cleanup, explicit blank insertion guardrail coverage, mutation diagnostic replacement/clear ordering, and mixed public edit diagnostic replacement/clear ordering, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorkbookEditor::formula_reference_audits()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `set_cells()`, `append_row()`, `set_row()`, `set_column()`, `erase_row()`, `erase_rows()`, `erase_column()`, `erase_columns()`, `set_cell_value()`, `set_cell_values()`, `set_row_values()`, `set_column_values()`, `clear_cell_value()`, `clear_row()`, `clear_rows()`, `clear_column()`, `clear_columns()`, `clear_cell_values(CellRange)`, `clear_cell_values(span<WorksheetCellReference>)`, `erase_cell()`, `erase_cells(span<WorksheetCellReference>)`, strict row/column coordinate guardrails, strict uppercase A1 overloads, default `StyleId{0}` normalization to no style handle, row/column / A1 / sparse batch caller non-default `StyleId` rejection no-state-pollution, sparse batch full-cell replacement with preflighted duplicate-coordinate later-wins semantics, sparse append-row next-represented-row semantics with empty-input no-op and staged width / row-limit / guardrail failures, sparse set-row represented-row replacement/clear semantics with missing-row no-op and staged width / style / guardrail failures, sparse set-column represented-column replacement/clear semantics with missing-column no-op and staged height / style / guardrail failures, sparse row / column prefix value-only writes with source-style preservation and untouched prefix-outside sparse cells, sparse row / row-range / column / column-range value clear with source-style preservation, sparse row / row-range / column / column-range erase with missing-only no-op semantics, sparse batch value-only replacement with source-style preservation, explicit blank clears through single-cell / row / column / range / coordinate-batch clear APIs, sparse coordinate batch erase with missing-only no-op semantics, source explicit `s="0"` / `s='0'` normalization to no style handle, workbook-backed canonical non-zero source style id `cellXfs` validation and numeric passthrough, style-preserving value-only updates and explicit blank clears through `set_cell_value()` / `set_cell_values()` / `set_row_values()` / `set_column_values()` / `clear_cell_value()` / `clear_row()` / `clear_rows()` / `clear_column()` / `clear_columns()` / `clear_cell_values(CellRange)` / `clear_cell_values(span<WorksheetCellReference>)`, source `t="str"` scalar-string and formula-string materialization, source `t="e"` opaque error-token materialization, `WorksheetCellReference`, `WorksheetCellUpdate`, `WorksheetCellSnapshot`, `WorkbookEditorFormulaReferenceAudit`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, `row_cells()`, `column_cells()`, sparse row/column owning snapshots without missing-cell synthesis, pre-/post-save matching-option `worksheet()` / `try_worksheet()` session reacquire reuse, post-save materialized summary and aggregate diagnostic lifecycle, renamed-sheet planned-name materialized diagnostics, materialized formula sheet-reference audit for rename risk without formula rewrite, guarded source sharedStrings materialization plus narrow append projection/reuse and absent-table optional-dependency, lazy selected-sheet dependency, and non-critical metadata boundaries, relationship-target, XML/entity/attribute, custom source cell-type, and direct raw cell/worksheet/sheetData/row-text fail-fast hygiene, source inline/sharedStrings rich-text flattening, prefixed source worksheet/inlineStr local-name materialization, namespace-URI non-validation coverage for supported local-names, wrong-namespace unsupported local-name failure hygiene including sharedStrings item/rich-run local-names, malformed source sharedStrings and inline rich metadata failure hygiene, source wrapper metadata dirty-projection boundary, cell-external comment/PI dirty-projection boundary, clean read-only materialized no-op save copy-original boundary, failed-materialization no-op save copy-original boundary, missing `try_worksheet()` no-op save copy-original boundary, `cell_count()`, `estimated_memory_usage()` | 不支持 caller-supplied 非默认 style id 写入、style migration / merge、sharedStrings broad rebuild / migration、sharedStrings XML repair / schema count repair、sharedStrings relationship repair/pruning、external sharedStrings target materialization、date/custom cell materialization、Excel error-token validation、formula evaluation or formula rewrite、namespace URI validation/repair、unsupported local-name import/tolerance、rich-text preservation、malformed rich metadata repair、source wrapper metadata preservation / sync、comment import / XML trivia preservation、tombstone clear API、row/column delete/insert、row shifting、row metadata creation、coordinate inference / clamping、semantic metadata sync、clean-session commit semantics、transaction history、dense range writes beyond active sparse-record clear and sparse batch replacement/clear APIs, dense range reads、dense row/column reads、streaming sparse iterators 或 large-file low-memory random editing；`memory_budget_bytes` 是 sparse-store estimate guardrail，不是 process RSS 或 save-time package assembly peak |
 | Materialized worksheet foundation | internal + public handoff 底座 | `CellStore`, materialized-session registry, chunked projection, `WorkbookEditor::save_as()` dirty-session auto-flush | internal test hooks 仍不是 public API；不公开 source chunk lifetimes、EditPlan 或 PackageEditor |
 | Existing-file semantic objects | preserve/audit/fail 为主 | internal preservation and audit coverage for drawings, media, tables, comments, VBA, custom XML, pivot/external links, unknown entries | 不做语义编辑、range/table/chart sync、orphan cleanup、relationship pruning/repair |
@@ -331,9 +335,10 @@ existing-file facade，但 whole-`<sheetData>` replacement 属于 Patch，`Works
 
 P7.1 记录当前已落地的 `WorkbookEditor` existing-file facade；它仍不把 internal
 `PackageEditor` 变成 public API。当前 facade 下有两条明确路径：Patch 路径覆盖
-whole-`<sheetData>` 替换和窄 sheet-catalog 改名；In-memory 路径覆盖一个已存在
-worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC part、relationship owner
-和 content type override 隐藏在内部 Patch / In-memory 底座之后。
+whole-`<sheetData>` 替换、targeted existing-cell replacement、media part replacement
+和窄 sheet-catalog 改名；In-memory 路径覆盖一个已存在 worksheet 的小文件随机 cell
+编辑首片。两者都必须继续把 OPC part、relationship owner 和 content type override
+隐藏在内部 Patch / In-memory 底座之后。
 
 `WorkbookEditor` 的当前 public Patch subset：
 
@@ -365,6 +370,17 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   sheet 先改到临时 planned name，再改回 source name 时，replacement diagnostics
   会迁回 source name，`worksheet_catalog()` / `pending_worksheet_edits()` 不再标记
   renamed，输出也不会泄漏临时 planned name。
+- `pending_targeted_cell_replacement_count()` /
+  `pending_targeted_cell_replacement_worksheet_names()` /
+  `has_pending_targeted_cell_replacement()` /
+  `estimated_pending_targeted_cell_replacement_xml_bytes()`：只统计最终 queued
+  `replace_cells()` targeted existing-cell patches per planned sheet。Duplicate
+  coordinates collapse to the latest payload, later successful calls can replace
+  same-coordinate diagnostics, and successful `rename_sheet()` moves this
+  diagnostic set to the new planned sheet name. The byte estimate is only the
+  caller single-cell XML payload size; it is not source worksheet XML,
+  `PackageEditor` staged file size, ZIP buffers, process RSS, or save-time
+  package assembly peak.
 - `pending_materialized_worksheet_names()`：只统计 dirty materialized
   `WorksheetEditor` sessions，按 current planned catalog order 返回 planned sheet
   names；clean materialized sessions 不返回，successful `save_as()` auto-flush 后清空。
@@ -387,7 +403,7 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   这两个方法不触发 flush、不增加 `pending_change_count()`、不暴露 internal
   `EditPlan`，也不更新 `last_edit_error()`。
 - `last_edit_error()`：返回最近一次失败的 public edit（当前包括
-  `replace_sheet_data()`、`rename_sheet()` 和 `WorksheetEditor::set_cell()` /
+  `replace_sheet_data()`、`replace_cells()`、`rename_sheet()` 和 `WorksheetEditor::set_cell()` /
   `erase_cell()` mutation failure）的可读诊断；成功 public edit 会清空它，
   public inspection / pending diagnostic methods、`WorksheetEditor::try_cell()` /
   size inspection 和 `save_as()` 不更新它。Materialization / load failure 不更新它。它不是
@@ -402,8 +418,9 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
 - `pending_worksheet_edits()`：返回 `WorkbookEditorWorksheetEditSummary` 列表，按
   source workbook sheet-catalog order 汇总当前 queued public worksheet-level edits 和
   dirty materialized `WorksheetEditor` sessions：source name、planned name、是否
-  catalog rename、是否 whole-`<sheetData>` replacement、final queued replacement cell
-  count / memory estimate，以及 `materialized_dirty`、materialized sparse cell count
+  catalog rename、是否 whole-`<sheetData>` replacement、是否 targeted existing-cell
+  replacement、final queued replacement cell count / memory estimate、targeted-cell
+  count / XML payload byte estimate，以及 `materialized_dirty`、materialized sparse cell count
   和 materialized memory estimate。clean materialized sessions 不返回；successful
   `save_as()` auto-flush 后，dirty materialized summary 会消失，除非同一 worksheet
   仍有 rename / whole-`<sheetData>` replacement summary。它是粗粒度 public facade
@@ -476,6 +493,19 @@ worksheet 的小文件随机 cell 编辑首片。两者都必须继续把 OPC pa
   `CellValue` 携带的 non-default `StyleId` 会按 numeric value 原样写成 `s="N"`；
   explicit default `StyleId{}` 不写 `s="0"`；source `xl/styles.xml` 只 byte-preserve，
   不校验该 id 是否属于 source workbook，不迁移或合并 styles。
+- `replace_cells(name, span<WorksheetCellUpdate>)`：按 current planned sheet name
+  替换一批已存在 `<c>` cells，输入是 full `CellValue` payload。它复用 internal
+  worksheet transformer / `PackageEditor::replace_worksheet_cells_by_name()`，扫描
+  source 或 current planned worksheet XML，跳过被替换旧 cell payload，并把 rewritten
+  worksheet staged 为 file-backed package-entry chunks。所有目标 cell 必须已经存在；
+  missing target、invalid coordinate、same-sheet whole-`<sheetData>` replacement 或
+  materialized `WorksheetEditor` session 都必须 fail-before-public-diagnostic-update。
+  Duplicate coordinates are later-wins. Text emits inline strings; formula
+  payloads request full recalculation and stale calcChain cleanup; caller
+  non-default `StyleId` values are written as-is without style table validation.
+  该 API 不插入缺失 cells/rows、不 shift ranges、不保留 overwritten cell 的旧 metadata、
+  不迁移 sharedStrings/styles、不同步 tables/filters/drawings/defined names、也不修复或
+  pruning relationships。
 - `replace_image(image_part_name, path/span)`：只替换当前 package 中已有 PNG/JPEG
   `xl/media/*` part 的 bytes。file path overload 会在 `replace_image(path)` 阶段验证
   图片格式，并在每次 `save_as()` 写包时重新读取同一个 staged file；该 staged file
@@ -2347,9 +2377,9 @@ P8.310 implementation gate status:
 
 P8.311 materialization diagnostic decision:
 - `last_edit_error()` remains scoped to failed public edit operations that try
-  to queue workbook changes, currently `replace_sheet_data()` and
-  `rename_sheet()`. It must not be reused for future worksheet materialization
-  failures.
+  to queue workbook changes, currently `replace_sheet_data()`, `replace_cells()`,
+  `replace_image()`, `rename_sheet()`, and `WorksheetEditor` mutation failures.
+  It must not be reused for worksheet materialization failures.
 - The first public `worksheet(name, options)` design should report missing,
   unsupported, malformed, or over-limit materialization failures by throwing
   `FastXlsxError` with sheet name, phase, and source package context where
@@ -4420,14 +4450,17 @@ unknown/unmodified part preservation 路径。这个 helper 已有首个 public 
 caller 的 `CellValue` 行投影为 standalone `<sheetData>` 后委托上述 by-name helper，
 只暴露 `open()` / `worksheet_names()` / `has_worksheet()` /
 `source_worksheet_names()` / `has_source_worksheet()` / `replace_sheet_data()` /
-`rename_sheet()` / `save_as()`。
+`replace_cells()` / `rename_sheet()` / `save_as()`。`replace_cells()` 复用 internal
+worksheet transformer 的 existing-cell replacement 路径：只替换 source/planned
+worksheet stream 中已经存在的 `<c>` elements，并把 rewritten worksheet staged 为
+file-backed chunks。
 内部 `PackageEditor` current-worksheet-input diagnostics 会继续保留 concrete source
 entry / planned staged-chunk context；这只是 facade 失败诊断透传和状态卫生，不新增
 public diagnostics API。
-这只兑现 whole-`<sheetData>` 替换和窄 sheet catalog 改名；不要把它写成 public
-`PackageEditor`、随机 cell editing、sharedStrings/style id migration、style merge、
-relationship repair/pruning、table/drawing semantic sync、range 修复、dimension 重算或
-大文件 streaming worksheet transformer。
+这只兑现 whole-`<sheetData>` 替换、targeted existing-cell replacement 和窄 sheet
+catalog 改名；不要把它写成 public `PackageEditor`、缺失 cell/row insertion、任意
+random cell editing、sharedStrings/style id migration、style merge、relationship
+repair/pruning、table/drawing semantic sync、range 修复或完整大文件 worksheet 编辑器。
 no-op `PackageEditor::save_as()` roundtrip coverage 只能描述为 linked-object fixture
 中全部源 entries 的 entry order、stored entry method / CRC / uncompressed size 和
 bytes copy baseline，以及初始 copy-original plan 没有 metadata package-entry side

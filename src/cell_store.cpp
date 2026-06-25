@@ -2503,6 +2503,14 @@ bool replace_shared_strings_root_attribute(
 
 } // namespace
 
+std::string cell_record_xml(CellPosition position, const CellRecord& record,
+    const CellStoreSharedStringIndexProvider* shared_string_index_provider)
+{
+    std::string xml;
+    append_cell_xml(xml, position, record, shared_string_index_provider);
+    return xml;
+}
+
 std::optional<WorkbookSharedStringsSnapshot> load_workbook_shared_strings_snapshot(
     const PackageReader& reader)
 {

@@ -2,6 +2,8 @@
 #include "../src/package_reader.hpp"
 #include "../src/package_writer.hpp"
 
+#include <fastxlsx/workbook_editor.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -13,6 +15,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <limits>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -31,7 +34,13 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
+constexpr std::uint64_t kReplacementCellValueBase = 900999000ULL;
 constexpr std::string_view kBenchmarkSchemaVersion = "1";
+
+enum class EditorApi {
+    PublicWorkbookEditor,
+    InternalPackageEditor,
+};
 
 std::filesystem::path default_output_dir()
 {
@@ -47,6 +56,7 @@ struct Options {
     std::uint32_t cols = 10;
     std::uint32_t edits = 1000;
     bool verify_output = true;
+    EditorApi editor_api = EditorApi::PublicWorkbookEditor;
     std::filesystem::path source =
         default_output_dir() / "fastxlsx-package-editor-cell-replacement-source.xlsx";
     std::filesystem::path source_body =
@@ -83,6 +93,9 @@ struct RunStats {
     bool plan_reports_file_backed_stream_rewrite = false;
     bool output_plan_staged_replacement_chunks = false;
     bool output_plan_materialized_replacement = false;
+    bool public_facade_reports_targeted_cells = false;
+    std::uint64_t public_facade_targeted_cell_count = 0;
+    std::uint64_t public_facade_replacement_xml_bytes = 0;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -119,6 +132,28 @@ std::uint64_t checked_cell_count(const Options& options)
         fail("--rows * --cols overflows cell count");
     }
     return rows * cols;
+}
+
+EditorApi parse_editor_api(std::string_view value)
+{
+    if (value == "public-workbook-editor" || value == "public") {
+        return EditorApi::PublicWorkbookEditor;
+    }
+    if (value == "internal-package-editor" || value == "internal") {
+        return EditorApi::InternalPackageEditor;
+    }
+    fail("--editor-api must be public-workbook-editor or internal-package-editor");
+}
+
+std::string_view editor_api_name(EditorApi api)
+{
+    switch (api) {
+    case EditorApi::PublicWorkbookEditor:
+        return "public-workbook-editor";
+    case EditorApi::InternalPackageEditor:
+        return "internal-package-editor";
+    }
+    return "unknown";
 }
 
 void validate_options(const Options& options)
@@ -167,6 +202,8 @@ Options parse_args(int argc, char** argv)
             options.output = std::filesystem::path(std::string(next_value()));
         } else if (arg == "--result") {
             options.result = std::filesystem::path(std::string(next_value()));
+        } else if (arg == "--editor-api") {
+            options.editor_api = parse_editor_api(next_value());
         } else if (arg == "--no-verify-output") {
             options.verify_output = false;
         } else if (arg == "--help" || arg == "-h") {
@@ -174,11 +211,14 @@ Options parse_args(int argc, char** argv)
                 << "Usage: fastxlsx_bench_package_editor_cell_replacement "
                 << "--rows N --cols N --edits N "
                 << "--source source.xlsx --source-body body.xml "
-                << "--output edited.xlsx --result result.json [--no-verify-output]\n"
+                << "--output edited.xlsx --result result.json "
+                << "[--editor-api public-workbook-editor|internal-package-editor] "
+                << "[--no-verify-output]\n"
                 << "The tool builds a stored source package with a file-backed "
-                << "worksheet entry, patches existing cells through internal "
-                << "PackageEditor::replace_worksheet_cells_by_name(), and writes "
-                << "a schema-v1 JSON report.\n";
+                << "worksheet entry, patches existing cells through the public "
+                << "WorkbookEditor::replace_cells() facade by default or the "
+                << "internal PackageEditor transformer when requested, and "
+                << "writes a schema-v1 JSON report.\n";
             std::exit(0);
         } else {
             fail(std::string("unknown argument: ") + std::string(arg));
@@ -267,7 +307,7 @@ std::string source_cell_value(std::uint32_t row, std::uint32_t column)
 
 std::string replacement_cell_value(std::uint32_t index)
 {
-    return std::to_string(900000000ULL + index);
+    return std::to_string(kReplacementCellValueBase + index);
 }
 
 std::string dimension_reference(const Options& options)
@@ -419,6 +459,20 @@ std::vector<fastxlsx::detail::WorksheetCellReplacement> make_replacements(
     return replacements;
 }
 
+std::vector<fastxlsx::WorksheetCellUpdate> make_public_replacements(const Options& options)
+{
+    std::vector<fastxlsx::WorksheetCellUpdate> replacements;
+    replacements.reserve(options.edits);
+    for (std::uint32_t index = 0; index < options.edits; ++index) {
+        replacements.push_back(fastxlsx::WorksheetCellUpdate {
+            {replacement_row_for_index(index, options), replacement_col_for_index(index, options)},
+            fastxlsx::CellValue::number(
+                static_cast<double>(kReplacementCellValueBase + index)),
+        });
+    }
+    return replacements;
+}
+
 bool note_contains_all(std::string_view note, std::initializer_list<std::string_view> needles)
 {
     for (std::string_view needle : needles) {
@@ -559,6 +613,7 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"cols\": " << options.cols << ",\n";
     out << "  \"source_cells\": " << stats.source_cells << ",\n";
     out << "  \"replacement_count\": " << options.edits << ",\n";
+    out << "  \"editor_api\": \"" << editor_api_name(options.editor_api) << "\",\n";
     out << "  \"source_body_write_ms\": " << stats.timings.source_body_write_ms << ",\n";
     out << "  \"source_package_write_ms\": " << stats.timings.source_package_write_ms << ",\n";
     out << "  \"open_ms\": " << stats.timings.open_ms << ",\n";
@@ -580,6 +635,12 @@ void write_result_json(const Options& options, const RunStats& stats)
         << (stats.output_plan_staged_replacement_chunks ? "true" : "false") << ",\n";
     out << "  \"output_plan_materialized_replacement\": "
         << (stats.output_plan_materialized_replacement ? "true" : "false") << ",\n";
+    out << "  \"public_facade_reports_targeted_cells\": "
+        << (stats.public_facade_reports_targeted_cells ? "true" : "false") << ",\n";
+    out << "  \"public_facade_targeted_cell_count\": "
+        << stats.public_facade_targeted_cell_count << ",\n";
+    out << "  \"public_facade_replacement_xml_bytes\": "
+        << stats.public_facade_replacement_xml_bytes << ",\n";
     out << "  \"output_verified\": "
         << (stats.output_verified ? "true" : "false") << ",\n";
     out << "  \"output_contains_first_replacement\": "
@@ -587,7 +648,11 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"output_contains_tail_cell\": "
         << (stats.output_contains_tail_cell ? "true" : "false") << ",\n";
     out << "  \"source_package_mode\": \"stored-generated-source-file-backed-worksheet-entry\",\n";
-    out << "  \"editor_mode\": \"internal-package-editor-cell-replacement\",\n";
+    out << "  \"editor_mode\": \""
+        << (options.editor_api == EditorApi::PublicWorkbookEditor
+                ? "public-workbook-editor-replace-cells"
+                : "internal-package-editor-cell-replacement")
+        << "\",\n";
     out << "  \"package_entry_source_mode\": \"source-zip-entry-chunk-source\",\n";
     out << "  \"output_entry_mode\": \"file-backed-stream-rewrite\",\n";
     out << "  \"office_open\": \"not_run\",\n";
@@ -614,23 +679,45 @@ RunStats run_benchmark(const Options& options)
         static_cast<std::uint64_t>(std::filesystem::file_size(options.source));
 
     phase_started = std::chrono::steady_clock::now();
-    fastxlsx::detail::PackageEditor editor =
-        fastxlsx::detail::PackageEditor::open(options.source);
+    std::optional<fastxlsx::detail::PackageEditor> internal_editor;
+    std::optional<fastxlsx::WorkbookEditor> public_editor;
+    if (options.editor_api == EditorApi::PublicWorkbookEditor) {
+        public_editor = fastxlsx::WorkbookEditor::open(options.source);
+    } else {
+        internal_editor = fastxlsx::detail::PackageEditor::open(options.source);
+    }
     stats.timings.open_ms = milliseconds_since(phase_started);
 
-    std::vector<std::string> cell_references;
-    std::vector<std::string> replacement_xml;
-    std::vector<fastxlsx::detail::WorksheetCellReplacement> replacements =
-        make_replacements(options, cell_references, replacement_xml);
-
     phase_started = std::chrono::steady_clock::now();
-    editor.replace_worksheet_cells_by_name("Data", replacements);
+    if (options.editor_api == EditorApi::PublicWorkbookEditor) {
+        std::vector<fastxlsx::WorksheetCellUpdate> replacements =
+            make_public_replacements(options);
+        public_editor->replace_cells("Data", replacements);
+        stats.public_facade_reports_targeted_cells =
+            public_editor->has_pending_targeted_cell_replacement("Data");
+        stats.public_facade_targeted_cell_count =
+            public_editor->pending_targeted_cell_replacement_count();
+        stats.public_facade_replacement_xml_bytes =
+            public_editor->estimated_pending_targeted_cell_replacement_xml_bytes();
+    } else {
+        std::vector<std::string> cell_references;
+        std::vector<std::string> replacement_xml;
+        std::vector<fastxlsx::detail::WorksheetCellReplacement> replacements =
+            make_replacements(options, cell_references, replacement_xml);
+        internal_editor->replace_worksheet_cells_by_name("Data", replacements);
+    }
     stats.timings.patch_plan_ms = milliseconds_since(phase_started);
-    observe_output_plan(editor.planned_output(), stats);
+    if (internal_editor.has_value()) {
+        observe_output_plan(internal_editor->planned_output(), stats);
+    }
 
     ensure_parent_directory(options.output);
     phase_started = std::chrono::steady_clock::now();
-    editor.save_as(options.output);
+    if (public_editor.has_value()) {
+        public_editor->save_as(options.output);
+    } else {
+        internal_editor->save_as(options.output);
+    }
     stats.timings.save_ms = milliseconds_since(phase_started);
     stats.output_package_bytes =
         static_cast<std::uint64_t>(std::filesystem::file_size(options.output));

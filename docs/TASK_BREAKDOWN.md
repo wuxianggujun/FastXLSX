@@ -33925,6 +33925,73 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.741 - Public WorkbookEditor targeted existing-cell Patch facade
+
+Status: done.
+
+Type: public Patch API / large-worksheet targeted replacement facade.
+
+Depends on: P8.739, P8.740.
+
+Touch files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `include/fastxlsx/fastxlsx.hpp`
+- `include/fastxlsx/detail/cell_store.hpp`
+- `src/cell_store.cpp`
+- `src/workbook_editor.cpp`
+- `src/workbook_editor_state.hpp`
+- `tests/CMakeLists.txt`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: expose the already-proven internal worksheet transformer path through the
+public `WorkbookEditor` facade for large worksheets where callers need to
+replace a bounded set of existing cells without materializing the whole
+worksheet through `WorksheetEditor` or replacing the entire `<sheetData>`.
+
+Output:
+- Added `WorkbookEditor::replace_cells(sheet_name, span<WorksheetCellUpdate>)`
+  and initializer-list overload.
+- The public method validates the current planned sheet catalog, rejects
+  same-sheet `replace_sheet_data()` / materialized `WorksheetEditor` mode
+  mixing, collapses duplicate coordinates with later input winning, serializes
+  caller `CellValue` payloads as bounded single-cell XML, and delegates to
+  internal `PackageEditor::replace_worksheet_cells_by_name()`.
+- Added public diagnostics for targeted cell patches:
+  `pending_targeted_cell_replacement_count()`,
+  `pending_targeted_cell_replacement_worksheet_names()`,
+  `has_pending_targeted_cell_replacement()`,
+  `estimated_pending_targeted_cell_replacement_xml_bytes()`, plus
+  `WorkbookEditorWorksheetEditSummary` targeted-cell fields.
+- `rename_sheet()` moves targeted-cell diagnostics to the new planned sheet
+  name; follow-up `replace_cells()` uses the current planned catalog.
+- `fastxlsx_bench_package_editor_cell_replacement` now defaults to
+  `--editor-api public-workbook-editor`, retains
+  `--editor-api internal-package-editor`, and records public facade targeted
+  cell diagnostics in schema-v1 JSON.
+- Added public regression coverage for successful targeted replacements,
+  missing target no-state-pollution, mode mixing guards, planned-catalog rename
+  behavior, and duplicate-coordinate later-wins semantics.
+
+Non-goals / boundary:
+- No missing-cell insertion, no row/column shifting, no arbitrary random editing,
+  no source cell metadata preservation on overwritten cells, no sharedStrings
+  migration, no style id validation/merge, no table/filter/drawing/defined-name
+  recalculation, no relationship repair/pruning, no Zip64/DEFLATE proof, and no
+  default benchmark/Office sidecar CI registration.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor_public_patch_cells" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- A public benchmark smoke run writes schema-v1 JSON with
+  `editor_api="public-workbook-editor"` and verifies output.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

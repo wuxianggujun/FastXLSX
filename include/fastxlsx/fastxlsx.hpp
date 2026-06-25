@@ -15,7 +15,8 @@
 /// - `fastxlsx/streaming_writer.hpp` for WorkbookWriter, WorksheetWriter,
 ///   CellView, and StringStrategy.
 /// - `fastxlsx/workbook_editor.hpp` for WorkbookEditor, the Patch-mode facade
-///   that edits an existing workbook's sheet data and writes a new package.
+///   that edits existing workbook sheet data / targeted existing cells and
+///   writes a new package.
 /// - `fastxlsx/image.hpp` for stb-backed PNG/JPEG metadata probing.
 
 #include <fastxlsx/cell_value.hpp>

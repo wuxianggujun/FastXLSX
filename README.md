@@ -261,8 +261,16 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `last_edit_error()`、
   `WorkbookEditorWorksheetCatalogEntry`、`worksheet_catalog()`、
   `WorkbookEditorWorksheetEditSummary`、`pending_worksheet_edits()`、
-  `replace_sheet_data()`、`replace_image()`、`rename_sheet()` 和 `save_as()`。
-  Patch path 只做已有 workbook 的 whole-`<sheetData>` 替换和窄 sheet catalog 改名；
+  `pending_targeted_cell_replacement_count()`、
+  `pending_targeted_cell_replacement_worksheet_names()`、
+  `has_pending_targeted_cell_replacement()`、
+  `estimated_pending_targeted_cell_replacement_xml_bytes()`、
+  `replace_sheet_data()`、`replace_cells()`、`replace_image()`、`rename_sheet()` 和
+  `save_as()`。
+  Patch path 支持已有 workbook 的 whole-`<sheetData>` 替换、已有 cell 定向替换和窄
+  sheet catalog 改名；`replace_cells()` 是大 worksheet 的 targeted existing-cell
+  Patch facade，要求目标 cell 已存在，不插入缺失 cells/rows，不做 sharedStrings /
+  styles migration、range metadata recalculation 或 relationship repair；
   `replace_image()` 只替换已有 PNG/JPEG `xl/media/*` part bytes，不编辑 drawing /
   anchors / relationships / content types；这些都不是语义 rename、image insertion
   或 public `PackageEditor`。
@@ -375,10 +383,12 @@ pending diagnostics 仍可见，同一个 planned state 可以再次另存或继
 names；`pending_worksheet_edits()` / `worksheet_catalog()` 保持 source workbook
 sheet-catalog order。`pending_worksheet_edits()` 是 current planned-state
 summary：rename-only 链如果最终回到 source name，不会留下 summary；粗粒度
-`pending_change_count()` 仍会统计这些成功 public edit calls。public inspection 和 pending diagnostic methods 不会清空、替换或
-创建 `last_edit_error()`；后续失败 public edit 会替换旧诊断，后续成功 public
-edit 会清空它；这个规则跨 `replace_sheet_data()`、`rename_sheet()` 和
-`WorksheetEditor` mutation 共用同一个 latest-error 槽。没有 queued public edits 时，no-op `save_as()` 仍是 reader-backed
+`pending_change_count()` 仍会统计这些成功 public edit calls。`replace_cells()`
+的 targeted-cell diagnostics 同样跟随 planned catalog rename。public inspection 和
+pending diagnostic methods 不会清空、替换或创建 `last_edit_error()`；后续失败
+public edit 会替换旧诊断，后续成功 public edit 会清空它；这个规则跨
+`replace_sheet_data()`、`replace_cells()`、`rename_sheet()` 和 `WorksheetEditor`
+mutation 共用同一个 latest-error 槽。没有 queued public edits 时，no-op `save_as()` 仍是 reader-backed
 roundtrip copy；如果之前失败的是 `replace_sheet_data()` 或 `rename_sheet()`，
 该失败诊断也会保留，直到后续失败或成功 public edit 分别替换或清空它。
 `WorkbookEditor` move construction / move assignment 只是 ownership transfer：
@@ -415,14 +425,28 @@ editor.replace_sheet_data("Report", {
         fastxlsx::CellValue::blank()}, // Emits an explicit empty cell.
 });
 
+editor.replace_cells("Report", {
+    {{3, 1}, fastxlsx::CellValue::text("Carol")},
+    {{3, 2}, fastxlsx::CellValue::number(91.0)},
+    {{3, 3}, fastxlsx::CellValue::formula("B3*1.0")},
+});
+
+const auto pending_targeted_cells =
+    editor.pending_targeted_cell_replacement_count();
+const auto pending_targeted_sheets =
+    editor.pending_targeted_cell_replacement_worksheet_names();
+
 editor.save_as("patched.xlsx");
 ```
 
-这条路径只替换已有 worksheet 的 whole-`<sheetData>` 并保存到新文件；它不是
-small-file random cell editing、sheet rename/remove、sharedStrings/style migration 或 public
-`PackageEditor`。小文件随机 cell 编辑请显式使用 `WorkbookEditor::worksheet()` /
-`WorksheetEditor`。`CellValue::blank()` 是显式 replacement cell，会写 empty cell；
-空 row vector 只推进输入行号，不表示 tombstone / erase。
+`replace_sheet_data()` 替换已有 worksheet 的 whole-`<sheetData>`；`replace_cells()`
+只替换已经存在的 `<c>` cells，适合大 worksheet 中少量定点值更新。它不会插入缺失
+cells/rows，不保留被覆盖 cell 的旧 metadata，不迁移 sharedStrings/style ids，
+也不修复 tables / drawings / relationships。它不是任意 random editing、sheet
+remove/add 或 public `PackageEditor`。小文件随机 cell 编辑请显式使用
+`WorkbookEditor::worksheet()` / `WorksheetEditor`。`CellValue::blank()` 是显式
+replacement cell，会写 empty cell；空 row vector 只推进输入行号，不表示 tombstone /
+erase。
 如果没有 queued public edits，`WorkbookEditor::save_as()` 只是写一个 reader-backed
 roundtrip copy，用于另存为已有 workbook；它仍不是原地 atomic save、transaction
 commit 或 undo/redo history。

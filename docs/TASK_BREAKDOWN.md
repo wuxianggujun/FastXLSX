@@ -33880,6 +33880,51 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.740 - PackageEditor cell replacement Excel sidecar
+
+Status: done.
+
+Type: opt-in local Office compatibility sidecar for the internal PackageEditor
+cell-replacement benchmark; no default CTest/CI registration.
+
+Depends on: P8.739.
+
+Touch files:
+- `tools/verify_package_editor_cell_replacement_benchmark_excel.ps1`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: close the local Office-open verification gap for the current large
+worksheet PackageEditor cell-replacement benchmark outputs without changing the
+benchmark JSON schema or rewriting its `office_open="not_run"` field.
+
+Output:
+- Added `tools/verify_package_editor_cell_replacement_benchmark_excel.ps1`.
+- The helper reads one or more schema-v1 PackageEditor cell-replacement
+  benchmark JSON files, validates the recorded stream-rewrite path evidence,
+  opens each generated workbook read-only through Excel COM, checks the `Data`
+  UsedRange, verifies `A1=900000000`, and verifies the tail source cell when
+  replacements do not cover the full source sheet.
+- The helper writes
+  `package-editor-cell-replacement-office-report.json` as a UTF-8 sidecar and
+  does not mutate benchmark result JSON.
+- Local Excel 16.0 opened the 1M / 3M / 5M source-cell outputs and verified
+  `Data` UsedRanges `100000 x 10`, `300000 x 10`, and `500000 x 10`, plus the
+  first replacement and tail source-cell values.
+
+Non-goals / boundary:
+- No benchmark JSON schema change, no `office_open` write-back, no default
+  CTest/CI registration, no WPS/LibreOffice automation, no Zip64/DEFLATE proof,
+  no relationship repair, no sharedStrings/styles migration, and no public
+  large-file random editing API.
+
+Acceptance:
+- Excel sidecar passes for the existing local 1M / 3M / 5M benchmark result
+  JSON files.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

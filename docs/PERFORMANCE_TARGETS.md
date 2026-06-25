@@ -238,6 +238,13 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_p
   --source-body build\bench-package-editor\source-body-500k.xml `
   --output build\bench-package-editor\out-500k.xlsx `
   --result build\bench-package-editor\result-500k.json
+& .\tools\verify_package_editor_cell_replacement_benchmark_excel.ps1 `
+  -ResultPath @(
+    'build\bench-package-editor\result-100k.json',
+    'build\bench-package-editor\result-300k.json',
+    'build\bench-package-editor\result-500k.json'
+  ) `
+  -ReportPath build\bench-package-editor\package-editor-cell-replacement-office-report.json
 ```
 
 `fastxlsx_bench_package_editor_cell_replacement` 会生成一个 stored source package，
@@ -264,11 +271,19 @@ package 生成耗时、open、patch plan、save、verify、总编辑耗时、进
 | 3000000 / 3000 | 112.79 | 112.79 | 11196 | 1745 | 12943 | 17977 | 6.61 |
 | 5000000 / 5000 | 189.47 | 189.47 | 14609 | 3037 | 17647 | 25219 | 7.31 |
 
+同日本机 Excel COM sidecar 使用 Excel 16.0 只读打开了上述 1M / 3M / 5M cells 三个输出，
+并核对 `Data` sheet UsedRange 分别为 `100000 x 10`、`300000 x 10`、`500000 x 10`，
+`A1=900000000`，尾部未修改 source cell 分别为 `100000000010`、`300000000010`、
+`500000000010`。sidecar 报告写入
+`build/bench-package-editor/package-editor-cell-replacement-office-report.json`，且不回写
+benchmark JSON；原始 `office_open` 字段仍保持工具输出的 `not_run`。
+
 该快照说明内部 Patch cell replacement 已能在 5M cells 级别避免整张 source worksheet
 XML 物化，并把 rewritten worksheet 作为 file-backed staged chunks 输出。它仍不是
 public `WorkbookEditor` 大文件随机编辑 API，不覆盖 sharedStrings/styles 迁移、table /
-range metadata recalculation、relationship repair、Zip64、DEFLATE input/output 或 Office
-打开兼容性；`office_open` 仍为 `not_run`，只有实际办公软件打开后才能写成兼容性事实。
+range metadata recalculation、relationship repair、Zip64、DEFLATE input/output 或更广泛的
+Office/WPS/LibreOffice 兼容性；本次 Excel 结果只证明这些本地 stored-package 输出可被
+Excel 只读打开并读到预期单元格。
 
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`，记录字符串分布和
 package 元数据：

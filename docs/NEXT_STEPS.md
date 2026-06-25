@@ -180,7 +180,13 @@ case recorded `total_edit_ms=17647`, `patch_plan_ms=14609`,
 `save_ms=3037`, and `peak_memory_mb=7.31`. This is evidence for the internal
 PackageEditor cell-replacement Patch path only; it is still not a public
 large-file random editing API, not sharedStrings/styles migration, not
-relationship repair, not Zip64 proof, and not Office compatibility proof.
+relationship repair, not Zip64 proof, and not broad Office compatibility proof.
+The dedicated Excel sidecar
+`tools/verify_package_editor_cell_replacement_benchmark_excel.ps1` now opened
+the same three local outputs read-only with Excel 16.0 and verified the `Data`
+UsedRange, `A1` replacement value, and tail source cell; it writes
+`package-editor-cell-replacement-office-report.json` and intentionally leaves
+the benchmark JSON `office_open="not_run"`.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit

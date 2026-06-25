@@ -9,6 +9,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -148,6 +149,16 @@ struct CellStoreOptions {
     std::optional<std::size_t> memory_budget_bytes;
 };
 
+enum class CellStoreBatchStylePolicy {
+    Replace,
+    PreserveExistingStyles,
+};
+
+struct CellStoreUpdate {
+    CellPosition position;
+    const CellValue* value = nullptr;
+};
+
 /// Internal sparse worksheet cell store for future small-file editing.
 ///
 /// API mode: internal P7 foundation. The store records only cells explicitly
@@ -159,6 +170,9 @@ public:
     explicit CellStore(CellStoreOptions options = {});
 
     void set_cell(std::uint32_t row, std::uint32_t column, const CellValue& value);
+    void set_cells(
+        std::span<const CellStoreUpdate> updates,
+        CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace);
     void erase_cell(std::uint32_t row, std::uint32_t column);
 
     /// Returns the active sparse record for a cell, or nullptr when the cell is

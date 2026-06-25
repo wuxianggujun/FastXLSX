@@ -208,6 +208,22 @@ sharedStrings/styles broad migration、Zip64 支持或 Office 打开兼容性。
 初始仍为 `not_run`，只有实际用 Excel / WPS / LibreOffice 打开后，才能把兼容性写成
 已验证事实。
 
+2026-06-25 本地 MSVC release 手工快照，stored source workbook，`office_open=not_run`：
+
+| scenario | source cells / edits | total_editor_ms | materialize_ms | mutation_ms | save_ms | peak_memory_mb |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `batch-set` | 100000 / 10000 | 409 | 158 | 7 | 241 | 20.68 |
+| `point-set` | 100000 / 10000 | 438 | 165 | 4 | 268 | 18.55 |
+| `batch-set` | 500000 / 50000 | 2746 | 777 | 39 | 1929 | 79.86 |
+| `point-set` | 500000 / 50000 | 3295 | 1278 | 50 | 1958 | 69.12 |
+
+该快照用于定位阶段性瓶颈，不是跨机器基准排名。`batch-set` 已改为
+CellStore batch preflight + direct commit，避免为失败原子性复制整张 sparse map；
+因此相对上一轮本机快照，500000 / 50000 场景的 batch mutation 从约 118 ms 降到
+约 39 ms，峰值工作集从约 133.76 MB 降到约 79.86 MB。端到端时间仍主要由
+source worksheet materialization 和 `save_as()` package 输出支配，后续大文件编辑优化
+必须走 worksheet streaming patch / transformer，而不是扩大 In-memory sparse materialization。
+
 当前 `fastxlsx_bench_streaming_writer` JSON schema version 为 `4`，记录字符串分布和
 package 元数据：
 

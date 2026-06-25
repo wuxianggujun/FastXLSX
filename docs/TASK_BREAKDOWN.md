@@ -33776,6 +33776,55 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.738 - CellStore batch commit optimization for WorksheetEditor
+
+Status: done.
+
+Type: performance optimization for current public small-file In-memory
+WorkbookEditor / WorksheetEditor sparse editing.
+
+Depends on: P8.737.
+
+Touch files:
+- `include/fastxlsx/detail/cell_store.hpp`
+- `include/fastxlsx/detail/materialized_worksheet_session.hpp`
+- `src/cell_store.cpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_minimal_xlsx.cpp`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: remove full sparse-store cloning from `WorksheetEditor::set_cells()` and
+`set_cell_values()` while preserving their current failure atomicity,
+duplicate-coordinate later-wins semantics, max-cells / memory-budget guardrails,
+and value-edit source-style preservation.
+
+Output:
+- Added internal `CellStore::set_cells()` with batch preflight and direct commit.
+- Added `CellStoreBatchStylePolicy::Replace` for full cell replacement and
+  `PreserveExistingStyles` for value-only edits.
+- Routed public `WorksheetEditor::set_cells()` and `set_cell_values()` through
+  the internal batch commit path instead of cloning the full `CellStore`.
+- Added internal guardrail and style-preservation regression coverage.
+- Recorded a local benchmark snapshot showing lower batch mutation cost and
+  lower peak working set for the 500000 / 50000 `batch-set` case.
+
+Non-goals / boundary:
+- Does not change `set_row()` / `set_column()` / clear / erase range internals,
+  does not remove source worksheet materialization, does not make
+  WorkbookEditor a large-file low-memory random editor, and does not add
+  relationship repair, metadata recalculation, sharedStrings/styles broad
+  migration, or Office compatibility proof.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_tests fastxlsx_workbook_editor_source_failures_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(unit|workbook_editor_source_failures)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_workbook_editor` passes.
+- Local `fastxlsx_bench_workbook_editor` `batch-set` / `point-set` runs for
+  100000 / 10000 and 500000 / 50000 write schema-v1 JSON reports.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

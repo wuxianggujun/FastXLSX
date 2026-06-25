@@ -699,6 +699,82 @@ void test_internal_cell_store_guardrails()
     check(preserved->text_value == "a",
         "CellStore memory budget failure should preserve the existing payload");
 
+    fastxlsx::detail::CellStoreOptions batch_max_options;
+    batch_max_options.max_cells = 2;
+    fastxlsx::detail::CellStore batch_max_store(batch_max_options);
+    batch_max_store.set_cell(1, 1, fastxlsx::CellValue::text("kept"));
+    const fastxlsx::CellValue batch_valid_insert = fastxlsx::CellValue::text("valid");
+    const fastxlsx::CellValue batch_blocked_insert = fastxlsx::CellValue::text("blocked");
+    const std::vector<fastxlsx::detail::CellStoreUpdate> max_batch_updates = {
+        {fastxlsx::detail::CellPosition {1, 2}, &batch_valid_insert},
+        {fastxlsx::detail::CellPosition {1, 3}, &batch_blocked_insert},
+    };
+    check_fastxlsx_error(
+        [&batch_max_store, &max_batch_updates] {
+            batch_max_store.set_cells(max_batch_updates);
+        },
+        "CellStore batch set_cells should reject inserts beyond max_cells");
+    check(batch_max_store.cell_count() == 1,
+        "CellStore batch max_cells failure should preserve the sparse count");
+    check(batch_max_store.find_cell(1, 2) == nullptr,
+        "CellStore batch max_cells failure should not leave the first inserted record");
+    check(batch_max_store.find_cell(1, 3) == nullptr,
+        "CellStore batch max_cells failure should not leave the overflowing record");
+
+    const fastxlsx::CellValue batch_memory_insert = fastxlsx::CellValue::text("insert");
+    const fastxlsx::CellValue batch_memory_huge =
+        fastxlsx::CellValue::text(std::string(1024, 'x'));
+    const std::vector<fastxlsx::detail::CellStoreUpdate> memory_batch_updates = {
+        {fastxlsx::detail::CellPosition {1, 2}, &batch_memory_insert},
+        {fastxlsx::detail::CellPosition {1, 1}, &batch_memory_huge},
+    };
+    check_fastxlsx_error(
+        [&memory_store, &memory_batch_updates] {
+            memory_store.set_cells(memory_batch_updates);
+        },
+        "CellStore batch set_cells should reject memory_budget_bytes overflow");
+    const fastxlsx::detail::CellRecord* batch_memory_preserved =
+        memory_store.find_cell(1, 1);
+    check(batch_memory_preserved != nullptr
+            && batch_memory_preserved->text_value == "a",
+        "CellStore batch memory failure should preserve the overwritten record");
+    check(memory_store.find_cell(1, 2) == nullptr,
+        "CellStore batch memory failure should not leave inserted records");
+
+    fastxlsx::detail::CellStore style_batch_store;
+    const fastxlsx::StyleId source_style = fastxlsx::detail::make_source_style_id(7);
+    style_batch_store.set_cell(
+        1, 1, fastxlsx::CellValue::number(1.0).with_style(source_style));
+    const fastxlsx::CellValue preserve_first = fastxlsx::CellValue::text("first");
+    const fastxlsx::CellValue preserve_last = fastxlsx::CellValue::text("last");
+    const std::vector<fastxlsx::detail::CellStoreUpdate> preserve_batch_updates = {
+        {fastxlsx::detail::CellPosition {1, 1}, &preserve_first},
+        {fastxlsx::detail::CellPosition {1, 1}, &preserve_last},
+    };
+    style_batch_store.set_cells(preserve_batch_updates,
+        fastxlsx::detail::CellStoreBatchStylePolicy::PreserveExistingStyles);
+    const fastxlsx::detail::CellRecord* preserved_style_record =
+        style_batch_store.find_cell(1, 1);
+    check(preserved_style_record != nullptr
+            && preserved_style_record->kind == fastxlsx::CellValueKind::Text
+            && preserved_style_record->text_value == "last",
+        "CellStore preserve-style batch should keep later-wins duplicate semantics");
+    check(preserved_style_record->style_id.has_value()
+            && preserved_style_record->style_id->value() == source_style.value(),
+        "CellStore preserve-style batch should keep existing source style ids");
+    const fastxlsx::CellValue replace_value = fastxlsx::CellValue::text("replace");
+    const std::vector<fastxlsx::detail::CellStoreUpdate> replace_batch_updates = {
+        {fastxlsx::detail::CellPosition {1, 1}, &replace_value},
+    };
+    style_batch_store.set_cells(replace_batch_updates);
+    const fastxlsx::detail::CellRecord* replaced_style_record =
+        style_batch_store.find_cell(1, 1);
+    check(replaced_style_record != nullptr
+            && replaced_style_record->kind == fastxlsx::CellValueKind::Text
+            && replaced_style_record->text_value == "replace"
+            && !replaced_style_record->style_id.has_value(),
+        "CellStore replace batch should drop existing style ids");
+
     fastxlsx::detail::CellStoreOptions empty_budget_options;
     empty_budget_options.memory_budget_bytes = sizeof(fastxlsx::detail::CellStore);
     fastxlsx::detail::CellStore empty_budget_store(empty_budget_options);

@@ -2874,6 +2874,67 @@ void CellStore::set_cell(std::uint32_t row, std::uint32_t column, const CellValu
     cells_[position] = std::move(record);
 }
 
+void CellStore::set_cells(
+    std::span<const CellStoreUpdate> updates,
+    CellStoreBatchStylePolicy style_policy)
+{
+    if (updates.empty()) {
+        return;
+    }
+
+    std::map<CellPosition, CellRecord> final_updates;
+    for (const CellStoreUpdate& update : updates) {
+        if (update.value == nullptr) {
+            throw FastXlsxError("CellStore batch update is missing a value");
+        }
+        validate_position(update.position.row, update.position.column);
+
+        CellRecord record = CellRecord::from_value(*update.value);
+        if (style_policy == CellStoreBatchStylePolicy::PreserveExistingStyles
+            && !record.style_id.has_value()) {
+            const auto staged = final_updates.find(update.position);
+            const auto existing = cells_.find(update.position);
+            const CellRecord* style_source = staged != final_updates.end()
+                ? &staged->second
+                : (existing != cells_.end() ? &existing->second : nullptr);
+            if (style_source != nullptr && style_source->style_id.has_value()) {
+                record.style_id = style_source->style_id;
+            }
+        }
+
+        final_updates[update.position] = std::move(record);
+    }
+
+    std::size_t next_cell_count = cells_.size();
+    for (const auto& [position, record] : final_updates) {
+        (void)record;
+        if (cells_.find(position) == cells_.end()) {
+            ++next_cell_count;
+        }
+    }
+    if (options_.max_cells.has_value() && next_cell_count > *options_.max_cells) {
+        throw FastXlsxError("CellStore max_cells guardrail exceeded");
+    }
+
+    if (options_.memory_budget_bytes.has_value()) {
+        std::size_t next_memory_usage = estimated_memory_usage();
+        for (const auto& [position, record] : final_updates) {
+            const auto existing = cells_.find(position);
+            if (existing != cells_.end()) {
+                next_memory_usage -= entry_memory_usage(existing->first, existing->second);
+            }
+            next_memory_usage += entry_memory_usage(position, record);
+        }
+        if (next_memory_usage > *options_.memory_budget_bytes) {
+            throw FastXlsxError("CellStore memory_budget_bytes guardrail exceeded");
+        }
+    }
+
+    for (auto& [position, record] : final_updates) {
+        cells_[position] = std::move(record);
+    }
+}
+
 void CellStore::erase_cell(std::uint32_t row, std::uint32_t column)
 {
     validate_position(row, column);

@@ -145,6 +145,8 @@ void WorksheetEditor::set_cells(std::span<const WorksheetCellUpdate> cells)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(cells.size());
         for (const WorksheetCellUpdate& cell : cells) {
             detail::validate_worksheet_editor_cell_coordinate(
                 cell.reference.row, cell.reference.column);
@@ -152,6 +154,10 @@ void WorksheetEditor::set_cells(std::span<const WorksheetCellUpdate> cells)
                 throw FastXlsxError(
                     "WorksheetEditor::set_cells() does not support non-default StyleId values");
             }
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {cell.reference.row, cell.reference.column},
+                &cell.value,
+            });
         }
 
         detail::MaterializedWorksheetSession* session =
@@ -164,12 +170,7 @@ void WorksheetEditor::set_cells(std::span<const WorksheetCellUpdate> cells)
             return;
         }
 
-        detail::CellStore staged_store = session->store();
-        for (const WorksheetCellUpdate& cell : cells) {
-            staged_store.set_cell(cell.reference.row, cell.reference.column, cell.value);
-        }
-
-        session->replace_store(std::move(staged_store));
+        session->set_cells(updates);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);
@@ -476,6 +477,8 @@ void WorksheetEditor::set_cell_values(std::span<const WorksheetCellUpdate> cells
 {
     WorkbookEditor::Impl& state = *owner().impl_;
     try {
+        std::vector<detail::CellStoreUpdate> updates;
+        updates.reserve(cells.size());
         for (const WorksheetCellUpdate& cell : cells) {
             detail::validate_worksheet_editor_cell_coordinate(
                 cell.reference.row, cell.reference.column);
@@ -483,6 +486,10 @@ void WorksheetEditor::set_cell_values(std::span<const WorksheetCellUpdate> cells
                 throw FastXlsxError(
                     "WorksheetEditor::set_cell_values() does not support caller-supplied non-default StyleId values");
             }
+            updates.push_back(detail::CellStoreUpdate {
+                detail::CellPosition {cell.reference.row, cell.reference.column},
+                &cell.value,
+            });
         }
 
         detail::MaterializedWorksheetSession* session =
@@ -495,15 +502,8 @@ void WorksheetEditor::set_cell_values(std::span<const WorksheetCellUpdate> cells
             return;
         }
 
-        detail::CellStore staged_store = session->store();
-        for (const WorksheetCellUpdate& cell : cells) {
-            const detail::CellRecord* existing =
-                staged_store.try_cell(cell.reference.row, cell.reference.column);
-            staged_store.set_cell(cell.reference.row, cell.reference.column,
-                with_preserved_source_style(cell.value, existing));
-        }
-
-        session->replace_store(std::move(staged_store));
+        session->set_cells(
+            updates, detail::CellStoreBatchStylePolicy::PreserveExistingStyles);
         state.clear_last_edit_error();
     } catch (const FastXlsxError& error) {
         state.record_last_edit_error(error);

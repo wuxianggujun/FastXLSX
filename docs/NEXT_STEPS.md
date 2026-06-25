@@ -158,6 +158,14 @@ input/output package sizes. The tool is manual-only under
 `FASTXLSX_BUILD_BENCHMARKS`, not default CTest/CI, and does not prove
 large-file low-memory random editing or Office compatibility until a separate
 open check is actually run.
+`WorksheetEditor::set_cells()` and `set_cell_values()` now use internal
+`CellStore` batch preflight + direct commit instead of cloning the full sparse
+store for failure atomicity. This reduces batch mutation latency and peak
+working set for current small-file in-memory editing, but the end-to-end editor
+path is still dominated by source worksheet materialization and `save_as()`.
+Large-file editing should therefore continue through worksheet event
+reader/transformer streaming Patch work, not by raising in-memory materialized
+worksheet limits.
 `WorksheetEditor::clear_row()` / `clear_rows()` and `clear_column()` /
 `clear_columns()` now cover row/column value-only clear convenience for small
 files: they keep represented sparse records, convert their values to explicit

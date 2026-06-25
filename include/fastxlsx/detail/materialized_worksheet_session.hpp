@@ -65,6 +65,14 @@ public:
         dirty_ = true;
     }
 
+    void set_cells(
+        std::span<const CellStoreUpdate> updates,
+        CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace)
+    {
+        store_.set_cells(updates, style_policy);
+        dirty_ = dirty_ || !updates.empty();
+    }
+
     void replace_store(CellStore store)
     {
         store_ = std::move(store);

@@ -596,13 +596,73 @@ void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callbac
         self_closing });
 }
 
+bool all_replacements_matched(const WorksheetCellReplacementPlan& replacement_plan,
+    const std::set<std::string_view, std::less<>>& matched_replacements) noexcept
+{
+    return matched_replacements.size()
+        >= replacement_plan.replacement_payloads_by_reference.size();
+}
+
+bool coordinate_after(WorksheetCellReplacementCoordinate lhs,
+    WorksheetCellReplacementCoordinate rhs) noexcept
+{
+    return lhs.row > rhs.row || (lhs.row == rhs.row && lhs.column > rhs.column);
+}
+
+std::optional<WorksheetCellReplacementCoordinate> try_parse_source_cell_coordinate(
+    std::string_view reference) noexcept
+{
+    try {
+        return parse_cell_reference_coordinate(
+            reference, "worksheet transformer replacement source cell");
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+struct ReplacementScanState {
+    std::set<std::string_view, std::less<>> matched_replacements;
+    bool skip_completed_tail_lookup = false;
+};
+
+bool should_skip_completed_replacement_lookup(const WorksheetEvent& event,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    ReplacementScanState& state)
+{
+    if (state.skip_completed_tail_lookup) {
+        return true;
+    }
+    if (!all_replacements_matched(replacement_plan, state.matched_replacements)) {
+        return false;
+    }
+    if (replacement_plan.targets_by_position.empty()) {
+        state.skip_completed_tail_lookup = true;
+        return true;
+    }
+
+    const std::optional<WorksheetCellReplacementCoordinate> coordinate =
+        try_parse_source_cell_coordinate(event.cell_reference);
+    if (!coordinate.has_value()) {
+        return false;
+    }
+    const WorksheetCellReplacementCoordinate last_target_coordinate =
+        replacement_plan.targets_by_position.back().coordinate;
+    if (!coordinate_after(*coordinate, last_target_coordinate)) {
+        return false;
+    }
+
+    state.skip_completed_tail_lookup = true;
+    return true;
+}
+
 void consume_replacement_event(const WorksheetEvent& event,
     const WorksheetCellReplacementPlan& replacement_plan,
-    std::set<std::string_view, std::less<>>& matched_replacements,
+    ReplacementScanState& scan_state,
     bool& replacing_current_cell,
     const WorksheetTransformActionCallback& callback)
 {
-    if (event.kind == WorksheetEventKind::CellStart) {
+    if (event.kind == WorksheetEventKind::CellStart
+        && !should_skip_completed_replacement_lookup(event, replacement_plan, scan_state)) {
         const auto replacement =
             replacement_plan.replacement_payloads_by_reference.find(event.cell_reference);
         if (replacement != replacement_plan.replacement_payloads_by_reference.end()) {
@@ -614,7 +674,7 @@ void consume_replacement_event(const WorksheetEvent& event,
                 event.cell_reference,
                 replacement->second,
                 event.self_closing });
-            matched_replacements.insert(replacement->first);
+            scan_state.matched_replacements.insert(replacement->first);
             replacing_current_cell = true;
             return;
         }
@@ -692,6 +752,12 @@ private:
     {
         return matched_replacements_.contains(cell_reference)
             || inserted_replacements_.contains(cell_reference);
+    }
+
+    [[nodiscard]] bool has_unemitted_targets() const noexcept
+    {
+        return matched_replacements_.size() + inserted_replacements_.size()
+            < replacement_plan_.targets_by_position.size();
     }
 
     void advance_emitted_targets()
@@ -934,27 +1000,29 @@ private:
         }
         if (source_coordinate.has_value()) {
             const std::uint32_t row = current_row_.value_or(source_coordinate->row);
-            if (row == source_coordinate->row) {
+            if (row == source_coordinate->row && has_unemitted_targets()) {
                 emit_pending_cells_before_column(row, source_coordinate->column);
             }
         }
 
-        const auto replacement =
-            replacement_plan_.replacement_payloads_by_reference.find(event.cell_reference);
-        if (replacement != replacement_plan_.replacement_payloads_by_reference.end()
-            && !target_was_emitted(replacement->first)) {
-            callback_(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
-                event.kind,
-                event.raw_xml,
-                event.element_name,
-                event.row_number,
-                event.cell_reference,
-                replacement->second,
-                event.self_closing });
-            matched_replacements_.insert(replacement->first);
-            advance_emitted_targets();
-            replacing_current_cell_ = true;
-            return;
+        if (has_unemitted_targets()) {
+            const auto replacement =
+                replacement_plan_.replacement_payloads_by_reference.find(event.cell_reference);
+            if (replacement != replacement_plan_.replacement_payloads_by_reference.end()
+                && !target_was_emitted(replacement->first)) {
+                callback_(WorksheetTransformAction { WorksheetTransformActionKind::ReplaceCell,
+                    event.kind,
+                    event.raw_xml,
+                    event.element_name,
+                    event.row_number,
+                    event.cell_reference,
+                    replacement->second,
+                    event.self_closing });
+                matched_replacements_.insert(replacement->first);
+                advance_emitted_targets();
+                replacing_current_cell_ = true;
+                return;
+            }
         }
 
         emit_pass_through(callback_, event);
@@ -1131,7 +1199,7 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
         return emitter.summary();
     }
 
-    std::set<std::string_view, std::less<>> matched_replacements;
+    ReplacementScanState scan_state;
     std::set<std::string_view, std::less<>> inserted_replacements;
     bool replacing_current_cell = false;
 
@@ -1139,12 +1207,12 @@ WorksheetTransformSummary scan_cell_replacement_actions_from_chunk_source(
         read_next_chunk,
         [&](const WorksheetEvent& event) {
             consume_replacement_event(
-                event, replacement_plan, matched_replacements, replacing_current_cell, callback);
+                event, replacement_plan, scan_state, replacing_current_cell, callback);
         },
         reader_options);
 
     return build_summary(
-        replacement_plan, matched_replacements, inserted_replacements, mode);
+        replacement_plan, scan_state.matched_replacements, inserted_replacements, mode);
 }
 
 WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(

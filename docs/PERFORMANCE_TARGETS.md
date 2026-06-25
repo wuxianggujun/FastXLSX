@@ -252,6 +252,14 @@ smoke 中，优化前本机 `total_editor_ms` 约 4248 ms，优化后约 1639 ms
 真正随机访问索引；插入/替换也不会修复 tables、filters、drawings、defined names、
 formulas、sharedStrings 或 styles。
 
+同日又收紧 targeted-cell transformer 热路径：strict replace 在全部 target
+命中且 source stream 已越过最后一个 target 坐标后，不再对 tail source cells 做
+replacement map lookup；Insert/upsert 在保持 source cell reference 校验的前提下，
+全部 target 发射后也停止 pending-target / replacement lookup。该优化不改变 public
+API、不新增索引，也不跳过 source XML 扫描；它只减少“大 worksheet 前段少量点编辑、
+后段大量透传 cells”场景中的无效 target 查找。回归测试覆盖早段 target 完成后尾部
+cells 仍原样透传，并固定重复 source target 在进入 tail fast path 前仍按旧行为替换。
+
 ### Public WorkbookEditor Targeted Cell Replacement Benchmark Workflow
 
 大 worksheet 的已有文件定向 cell replacement 使用独立 opt-in 手工工具验证
@@ -306,7 +314,33 @@ package 生成耗时、open、patch plan、save、verify、总编辑耗时、进
 | 3000000 / 3000 | 112.79 | 112.79 | 11196 | 1745 | 12943 | 17977 | 6.61 |
 | 5000000 / 5000 | 189.47 | 189.47 | 14609 | 3037 | 17647 | 25219 | 7.31 |
 
-同日本机 Excel COM sidecar 使用 Excel 16.0 只读打开了上述 1M / 3M / 5M cells 三个输出，
+同日追加 target-lookup fast path 后，重新跑 public facade 1M / 3M / 5M 矩阵，并用
+internal API 补 1M / 5M output-plan 证据；stored source package，`office_open=not_run`，
+工具内置 output verifier 均为 `output_verified=true`：
+
+| editor_api | source cells / edits | source MiB | output MiB | patch_plan_ms | save_ms | total_edit_ms | total_ms | peak_memory_mb |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `public-workbook-editor` | 1000000 / 1000 | 36.11 | 36.12 | 4305 | 605 | 4912 | 6356 | 6.16 |
+| `public-workbook-editor` | 3000000 / 3000 | 112.79 | 112.79 | 9224 | 2097 | 11323 | 16102 | 7.46 |
+| `public-workbook-editor` | 5000000 / 5000 | 189.47 | 189.47 | 14952 | 3026 | 17979 | 26040 | 8.77 |
+| `internal-package-editor` | 1000000 / 1000 | 36.11 | 36.12 | 3533 | 650 | 4188 | 5921 | 6.00 |
+| `internal-package-editor` | 5000000 / 5000 | 189.47 | 189.47 | 15225 | 3256 | 18482 | 25119 | 7.81 |
+
+所有 public facade JSON 都记录
+`package_entry_source_mode="source-zip-entry-chunk-source"` 和
+`output_entry_mode="file-backed-stream-rewrite"`；public facade 的
+`public_facade_targeted_cell_count` 等于 edits。internal API 结果还记录
+`plan_reports_source_entry_chunk_source=true`、
+`plan_reports_file_backed_stream_rewrite=true`、
+`output_plan_staged_replacement_chunks=true` 和
+`output_plan_materialized_replacement=false`。这说明 public facade 已走同一
+file-backed Patch 路线。与上一组 internal 5M `total_edit_ms=17647` 相比，本次
+重跑为 `18482`，属于同量级手工 benchmark 波动；不要据此写成稳定加速比例。
+该数据仍是本机 opt-in 手工结果，不是默认 CI 性能门禁，也不是随机访问索引、
+Zip64、DEFLATE input/output 或 Office 兼容性证明。
+
+上一组 internal `PackageEditor` 1M / 3M / 5M 快照另有本机 Excel COM sidecar
+验证：使用 Excel 16.0 只读打开三个输出，
 并核对 `Data` sheet UsedRange 分别为 `100000 x 10`、`300000 x 10`、`500000 x 10`，
 `A1=900000000`，尾部未修改 source cell 分别为 `100000000010`、`300000000010`、
 `500000000010`。sidecar 报告写入

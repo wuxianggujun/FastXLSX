@@ -34219,6 +34219,62 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.746 - Targeted-cell Patch completed-target fast path
+
+Status: completed.
+
+Touched files:
+- `src/worksheet_transformer.cpp`
+- `tests/test_worksheet_transformer.cpp`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: reduce avoidable hot-path work in the existing targeted-cell Patch
+transformer on tail pass-through cells after requested cells have already been
+matched/emitted, without adding public API surface or changing Patch semantics.
+
+Output:
+- Strict `ReplaceExisting` now skips replacement-map lookup on tail source cell
+  starts once every requested target has matched and the source stream has
+  advanced past the final target coordinate.
+- `ReplaceOrInsert` / public Insert policy now skips pending-target /
+  replacement-map lookup once all targets have been emitted, while still
+  parsing later source cell references to preserve existing source-validation
+  behavior.
+- Added transformer regression coverage proving early completed target sets
+  still preserve trailing pass-through cells in both replace and upsert modes.
+- Added a compatibility regression for duplicate source target cells before the
+  tail fast path, preserving prior strict-replace behavior on that invalid
+  source shape.
+- Recorded opt-in benchmark results for public `WorkbookEditor::replace_cells()`
+  and internal `PackageEditor` cell replacement at 1M / 3M / 5M source cells.
+
+Non-goals / boundary:
+- No new public editor API, no random-access worksheet index, no row/column
+  shifting, no table/filter/drawing/defined-name recalculation, no
+  sharedStrings/styles migration, no relationship repair, no Zip64 / DEFLATE
+  claim, and no Office sidecar claim for the new public benchmark matrix.
+- Source worksheet XML is still scanned linearly; this only removes completed
+  target lookup work from the tail pass-through path.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_transformer_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_transformer|workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --preset windows-nmake-release-benchmark` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- Public benchmark matrix writes schema-v1 JSON for 1M / 3M / 5M cells with
+  `package_entry_source_mode="source-zip-entry-chunk-source"`,
+  `output_entry_mode="file-backed-stream-rewrite"`, and `output_verified=true`.
+- Internal benchmark spot checks write output-plan evidence for source-entry
+  chunk source, file-backed stream rewrite, staged replacement chunks, and no
+  materialized replacement.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

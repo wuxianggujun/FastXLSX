@@ -741,6 +741,67 @@ void test_transformer_output_preserves_self_closing_pass_through_once()
         "self-closing sheetData pass-through should preserve missing replacement diagnostics");
 }
 
+void test_transformer_preserves_tail_after_all_targets_are_done()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-a</v></c><c r="B1"><v>tail-b</v></c></row>)"
+        R"(<row r="2"><c r="A2"><v>tail-a2</v></c><c r="B2"><v>tail-b2</v></c></row>)"
+        R"(</sheetData></worksheet>)";
+    const std::string replacement_xml = R"(<c r="A1"><v>new-a</v></c>)";
+    const std::array replacements {
+        cell_replacement("A1", replacement_xml),
+    };
+
+    const EmittedWorksheet replace_existing = emit_source_worksheet(xml, replacements, 7);
+    check(contains_text(replace_existing.xml, replacement_xml),
+        "replace-existing should emit the early target replacement");
+    check(!contains_text(replace_existing.xml, R"(<c r="A1"><v>old-a</v></c>)"),
+        "replace-existing should consume the old early target payload");
+    check(contains_text(replace_existing.xml, R"(<c r="B2"><v>tail-b2</v></c>)"),
+        "replace-existing should preserve trailing cells after all targets are matched");
+    check(replace_existing.summary.matched_replacement_count == 1,
+        "replace-existing should count the early matched target");
+    check(replace_existing.summary.missing_cell_references.empty(),
+        "replace-existing should not report matched early targets as missing");
+
+    const EmittedWorksheet upsert = emit_upsert_worksheet(xml, replacements, 7);
+    check(contains_text(upsert.xml, replacement_xml),
+        "upsert should emit the early target replacement");
+    check(contains_text(upsert.xml, R"(<c r="B2"><v>tail-b2</v></c>)"),
+        "upsert should preserve trailing cells after all targets are emitted");
+    check(upsert.summary.matched_replacement_count == 1,
+        "upsert should count the early matched target");
+    check(upsert.summary.inserted_cell_count == 0,
+        "upsert should not synthesize cells when every target exists");
+    check(upsert.summary.missing_cell_references.empty(),
+        "upsert should not report matched early targets as missing");
+}
+
+void test_transformer_replace_preserves_duplicate_source_target_behavior()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>old-a1-first</v></c>)"
+        R"(<c r="A1"><v>old-a1-duplicate</v></c>)"
+        R"(<c r="B1"><v>tail-b1</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    const std::string replacement_xml = R"(<c r="A1"><v>new-a1</v></c>)";
+    const std::array replacements {
+        cell_replacement("A1", replacement_xml),
+    };
+
+    const EmittedWorksheet emitted = emit_source_worksheet(xml, replacements, 9);
+    check(emitted.summary.matched_replacement_count == 1,
+        "duplicate source target replacement should still count one unique target");
+    check(!contains_text(emitted.xml, "old-a1-first"),
+        "replace-existing should consume the first duplicate target payload");
+    check(!contains_text(emitted.xml, "old-a1-duplicate"),
+        "replace-existing should preserve prior duplicate-target replacement behavior");
+    check(contains_text(emitted.xml, R"(<c r="B1"><v>tail-b1</v></c>)"),
+        "replace-existing should still preserve tail cells after duplicate targets");
+}
+
 void test_transformer_upsert_replaces_existing_and_inserts_missing_cells_and_rows()
 {
     const std::string xml =
@@ -930,6 +991,8 @@ int main()
         test_transformer_chunked_emitter_matches_single_chunk_emitter_across_boundaries();
         test_transformer_chunk_source_emitter_matches_single_chunk_emitter_across_boundaries();
         test_transformer_output_preserves_self_closing_pass_through_once();
+        test_transformer_preserves_tail_after_all_targets_are_done();
+        test_transformer_replace_preserves_duplicate_source_target_behavior();
         test_transformer_upsert_replaces_existing_and_inserts_missing_cells_and_rows();
         test_transformer_upsert_expands_self_closing_sheet_data_and_rows();
         test_transformer_chunked_emitter_uses_bounded_window_not_full_document();

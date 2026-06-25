@@ -50,7 +50,13 @@ arbitrary indexed random editing. The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level
 `fastxlsx_bench_package_editor_cell_replacement` remains useful for transformer
-diagnostics.
+diagnostics. The transformer now also stops targeted replacement lookup on
+tail pass-through cells after requested targets have been matched/emitted and,
+for strict replace, the source stream has advanced past the last target
+coordinate. This lets large worksheets with an early sparse edit set spend less
+work on tail pass-through cells. This is a hot-path cleanup only: source XML is
+still scanned, and there is still no random-access worksheet index or metadata
+repair.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source
@@ -209,6 +215,18 @@ case recorded `total_edit_ms=17647`, `patch_plan_ms=14609`,
 PackageEditor cell-replacement Patch path only; it is still not a public
 large-file random editing API, not sharedStrings/styles migration, not
 relationship repair, not Zip64 proof, and not broad Office compatibility proof.
+After the targeted replacement lookup fast path, the same tool now has a
+public-facade matrix for 1M / 3M / 5M cells with 1000 / 3000 / 5000 edits:
+the 5M public run recorded `total_edit_ms=17979`, `patch_plan_ms=14952`,
+`save_ms=3026`, `peak_memory_mb=8.77`, `package_entry_source_mode` as
+`source-zip-entry-chunk-source`, `output_entry_mode` as
+`file-backed-stream-rewrite`, and `output_verified=true`. Internal 5M output-plan
+evidence in the same run recorded `total_edit_ms=18482`,
+`plan_reports_source_entry_chunk_source=true`,
+`plan_reports_file_backed_stream_rewrite=true`,
+`output_plan_staged_replacement_chunks=true`, and
+`output_plan_materialized_replacement=false`. These are opt-in local benchmark
+facts, not default CI gates or Office compatibility proof.
 The dedicated Excel sidecar
 `tools/verify_package_editor_cell_replacement_benchmark_excel.ps1` now opened
 the same three local outputs read-only with Excel 16.0 and verified the `Data`

@@ -568,6 +568,155 @@ void test_package_editor_rejects_invalid_staged_chunk_ranges()
     check(failed, "staged chunk range reader should reject unsupported chunk kinds");
 }
 
+void test_package_editor_indexed_staged_chunk_replacement_slices_source_chunks()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-indexed-staged-replace-body.xml");
+    const std::string prefix =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c>)";
+    const std::string body =
+        R"(<c r="B1"><v>2</v></c></row><row r="2"><c r="A2"><v>3</v></c>)";
+    const std::string suffix = R"(</row></sheetData></worksheet>)";
+    write_binary_file(body_path, body);
+
+    const std::string source_xml = prefix + body + suffix;
+    const std::vector<fastxlsx::detail::PackageEntryChunk> source_chunks {
+        fastxlsx::detail::PackageEntryChunk::memory(prefix),
+        fastxlsx::detail::PackageEntryChunk::file(body_path),
+        fastxlsx::detail::PackageEntryChunk::memory(suffix),
+    };
+
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_xml(source_xml);
+
+    const std::string a1_replacement_head = R"(<c r="A1"><v>)";
+    const std::string a1_replacement_tail = R"(101</v></c>)";
+    const std::array<std::string_view, 2> a1_replacement_chunks {
+        a1_replacement_head,
+        a1_replacement_tail,
+    };
+    const std::string a2_replacement_xml = R"(<c r="A2"><v>202</v></c>)";
+
+    std::vector<fastxlsx::detail::WorksheetCellReplacement> replacements;
+    replacements.push_back(fastxlsx::detail::WorksheetCellReplacement {
+        "A2",
+        fastxlsx::detail::WorksheetCellReplacementPayload::from_materialized_xml(
+            a2_replacement_xml),
+    });
+    replacements.push_back(fastxlsx::detail::WorksheetCellReplacement {
+        "A1",
+        fastxlsx::detail::WorksheetCellReplacementPayload::from_chunks(
+            a1_replacement_chunks),
+    });
+    const fastxlsx::detail::WorksheetCellReplacementPlan replacement_plan =
+        fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+
+    const fastxlsx::detail::IndexedChunkReplacementTestResult result =
+        fastxlsx::detail::
+            testing_emit_indexed_cell_replacement_package_entry_chunks_to_string(
+                source_chunks, index, replacement_plan);
+
+    const std::string expected =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>101</v></c>)"
+        R"(<c r="B1"><v>2</v></c></row><row r="2"><c r="A2"><v>202</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    check(result.xml == expected,
+        "indexed staged chunk replacement should splice source chunks and replay payload chunks");
+    check(result.summary.matched_replacement_count == 2,
+        "indexed staged chunk replacement should report matched replacements");
+    check(result.summary.inserted_cell_count == 0,
+        "indexed staged chunk replacement should not report inserts");
+    check(result.summary.missing_cell_references.empty(),
+        "indexed staged chunk replacement should not report missing cells");
+}
+
+void test_package_editor_indexed_staged_chunk_replacement_rejects_invalid_inputs()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-indexed-staged-replace-invalid-body.xml");
+    const std::string source_xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    write_binary_file(body_path, source_xml);
+
+    const std::vector<fastxlsx::detail::PackageEntryChunk> source_chunks {
+        fastxlsx::detail::PackageEntryChunk::file(body_path),
+    };
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_xml(source_xml);
+    const std::string replacement_xml = R"(<c r="A1"><v>11</v></c>)";
+    const std::vector<fastxlsx::detail::WorksheetCellReplacement> replacements {
+        fastxlsx::detail::WorksheetCellReplacement {
+            "A1",
+            fastxlsx::detail::WorksheetCellReplacementPayload::from_materialized_xml(
+                replacement_xml),
+        },
+    };
+    const fastxlsx::detail::WorksheetCellReplacementPlan replacement_plan =
+        fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+
+    bool failed = false;
+    try {
+        const std::string missing_replacement_xml = R"(<c r="C9"><v>99</v></c>)";
+        const std::vector<fastxlsx::detail::WorksheetCellReplacement>
+            missing_replacements {
+                fastxlsx::detail::WorksheetCellReplacement {
+                    "C9",
+                    fastxlsx::detail::WorksheetCellReplacementPayload::
+                        from_materialized_xml(missing_replacement_xml),
+                },
+            };
+        const fastxlsx::detail::WorksheetCellReplacementPlan missing_plan =
+            fastxlsx::detail::make_worksheet_cell_replacement_plan(
+                missing_replacements);
+        (void)fastxlsx::detail::
+            testing_emit_indexed_cell_replacement_package_entry_chunks_to_string(
+                source_chunks, index, missing_plan);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "target cell is missing from source index",
+            "indexed staged chunk replacement should reject missing source cells");
+    }
+    check(failed,
+        "indexed staged chunk replacement should reject a target absent from the index");
+
+    fastxlsx::detail::WorksheetCellIndex stale_index;
+    stale_index.add_cell("A1",
+        fastxlsx::detail::WorksheetCellIndexedRange {
+            0,
+            static_cast<std::uint64_t>(source_xml.size() + 1),
+        });
+    failed = false;
+    try {
+        (void)fastxlsx::detail::
+            testing_emit_indexed_cell_replacement_package_entry_chunks_to_string(
+                source_chunks, stale_index, replacement_plan);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "source range exceeds staged chunks",
+            "stale indexed range should report the staged chunk boundary");
+    }
+    check(failed,
+        "indexed staged chunk replacement should reject stale source ranges");
+
+    fastxlsx::detail::PackageEntryChunk changed_size_chunk =
+        fastxlsx::detail::PackageEntryChunk::file(body_path);
+    changed_size_chunk.has_expected_size = true;
+    changed_size_chunk.expected_size =
+        static_cast<std::uint64_t>(source_xml.size() + 1);
+    failed = false;
+    try {
+        (void)fastxlsx::detail::
+            testing_emit_indexed_cell_replacement_package_entry_chunks_to_string(
+                {changed_size_chunk}, index, replacement_plan);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "size changed after validation",
+            "indexed staged chunk replacement should preflight staged source sizes");
+    }
+    check(failed,
+        "indexed staged chunk replacement should reject changed staged source size");
+}
+
 void test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes()
 {
     struct ChunkMutationCase {
@@ -1052,6 +1201,8 @@ int main(int argc, char* argv[])
             test_package_editor_staged_chunk_part_replacement_writes_chunks();
             test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks();
             test_package_editor_rejects_invalid_staged_chunk_ranges();
+            test_package_editor_indexed_staged_chunk_replacement_slices_source_chunks();
+            test_package_editor_indexed_staged_chunk_replacement_rejects_invalid_inputs();
             test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes();
             test_package_editor_save_as_rejects_changed_staged_chunk_crc_without_state_changes();
             test_package_editor_rejects_invalid_generic_staged_chunks_without_state_changes();

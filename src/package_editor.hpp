@@ -152,6 +152,17 @@ RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_refer
     std::vector<PackageEntryChunk> chunks,
     std::uint64_t offset,
     std::uint64_t size);
+
+struct IndexedChunkReplacementTestResult {
+    std::string xml;
+    WorksheetTransformSummary summary;
+};
+
+[[nodiscard]] IndexedChunkReplacementTestResult
+testing_emit_indexed_cell_replacement_package_entry_chunks_to_string(
+    std::vector<PackageEntryChunk> source_chunks,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan);
 [[nodiscard]] std::string testing_read_first_package_entry_chunk_for_lifecycle(
     std::vector<PackageEntryChunk> chunks);
 #endif

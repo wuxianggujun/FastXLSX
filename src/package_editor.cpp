@@ -5096,14 +5096,13 @@ void emit_file_chunk_range(
     }
 }
 
-void emit_package_entry_chunk_range(
+void emit_package_entry_chunk_range_with_layout(
     const std::vector<PackageEntryChunk>& chunks,
+    const PackageEntryChunkRangeLayout& layout,
     std::uint64_t offset,
     std::uint64_t size,
     const PackageEntryChunkRangeCallback& callback)
 {
-    const PackageEntryChunkRangeLayout layout =
-        package_entry_chunk_range_layout(chunks);
     if (offset > layout.total_size
         || size > layout.total_size - offset) {
         throw FastXlsxError(
@@ -5149,6 +5148,112 @@ void emit_package_entry_chunk_range(
 
         chunk_start = chunk_end;
     }
+}
+
+void emit_package_entry_chunk_range(
+    const std::vector<PackageEntryChunk>& chunks,
+    std::uint64_t offset,
+    std::uint64_t size,
+    const PackageEntryChunkRangeCallback& callback)
+{
+    const PackageEntryChunkRangeLayout layout =
+        package_entry_chunk_range_layout(chunks);
+    emit_package_entry_chunk_range_with_layout(chunks, layout, offset, size, callback);
+}
+
+struct PackageEntryIndexedCellReplacementPlan {
+    PackageEntryChunkRangeLayout source_layout;
+    std::vector<WorksheetIndexedCellRewrite> rewrites;
+};
+
+PackageEntryIndexedCellReplacementPlan plan_indexed_cell_replacement_from_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan)
+{
+    std::vector<std::string_view> target_references;
+    target_references.reserve(replacement_plan.replacement_payloads_by_reference.size());
+    for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
+        target_references.push_back(replacement.first);
+    }
+
+    PackageEntryIndexedCellReplacementPlan plan;
+    plan.rewrites = plan_indexed_cell_rewrites(index, target_references);
+    plan.source_layout = package_entry_chunk_range_layout(source_chunks);
+
+    std::uint64_t cursor = 0;
+    for (const WorksheetIndexedCellRewrite& rewrite : plan.rewrites) {
+        if (rewrite.source_range.end_offset < rewrite.source_range.start_offset) {
+            throw FastXlsxError(
+                "indexed package-entry replacement source range is invalid");
+        }
+        if (rewrite.source_range.start_offset < cursor) {
+            throw FastXlsxError(
+                "indexed package-entry replacement source ranges are not ordered");
+        }
+        if (rewrite.source_range.end_offset > plan.source_layout.total_size) {
+            throw FastXlsxError(
+                "indexed package-entry replacement source range exceeds staged chunks: "
+                + package_entry_chunk_range_description(
+                    rewrite.source_range.start_offset,
+                    rewrite.source_range.end_offset
+                        - rewrite.source_range.start_offset,
+                    plan.source_layout.total_size));
+        }
+        const auto replacement =
+            replacement_plan.replacement_payloads_by_reference.find(
+                std::string_view(rewrite.cell_reference));
+        if (replacement == replacement_plan.replacement_payloads_by_reference.end()) {
+            throw FastXlsxError(
+                "indexed package-entry replacement plan lost target cell: "
+                + rewrite.cell_reference);
+        }
+        cursor = rewrite.source_range.end_offset;
+    }
+
+    return plan;
+}
+
+WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const WorksheetOutputChunkCallback& callback)
+{
+    if (!callback) {
+        throw FastXlsxError(
+            "indexed package-entry replacement output emitter requires a callback");
+    }
+
+    const PackageEntryIndexedCellReplacementPlan plan =
+        plan_indexed_cell_replacement_from_chunks(
+            source_chunks, index, replacement_plan);
+
+    std::uint64_t cursor = 0;
+    for (const WorksheetIndexedCellRewrite& rewrite : plan.rewrites) {
+        const std::uint64_t pass_through_size =
+            rewrite.source_range.start_offset - cursor;
+        emit_package_entry_chunk_range_with_layout(
+            source_chunks, plan.source_layout, cursor, pass_through_size, callback);
+
+        const auto replacement =
+            replacement_plan.replacement_payloads_by_reference.find(
+                std::string_view(rewrite.cell_reference));
+        replacement->second.for_each_chunk(
+            [&](std::string_view chunk) { callback(chunk); });
+        cursor = rewrite.source_range.end_offset;
+    }
+
+    emit_package_entry_chunk_range_with_layout(
+        source_chunks,
+        plan.source_layout,
+        cursor,
+        plan.source_layout.total_size - cursor,
+        callback);
+
+    WorksheetTransformSummary summary;
+    summary.matched_replacement_count = plan.rewrites.size();
+    return summary;
 }
 
 WorksheetInputChunkCallback package_entry_chunk_source(
@@ -5457,6 +5562,23 @@ std::string testing_read_package_entry_chunk_range_to_string(
     emit_package_entry_chunk_range(chunks, offset, size,
         [&](std::string_view chunk) {
             result += chunk;
+        });
+    return result;
+}
+
+IndexedChunkReplacementTestResult
+testing_emit_indexed_cell_replacement_package_entry_chunks_to_string(
+    std::vector<PackageEntryChunk> source_chunks,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan)
+{
+    IndexedChunkReplacementTestResult result;
+    result.summary = emit_indexed_cell_replacement_from_package_entry_chunks(
+        source_chunks,
+        index,
+        replacement_plan,
+        [&](std::string_view chunk) {
+            result.xml += chunk;
         });
     return result;
 }

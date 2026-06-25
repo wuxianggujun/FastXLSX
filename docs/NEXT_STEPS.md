@@ -66,7 +66,9 @@ internal materialized indexed slicer that can splice strict existing-cell
 replacement payloads by those ranges when the worksheet XML bytes already
 exactly match the index. `PackageEditor` now also has an internal
 `PackageEntryChunk` byte-range emitter that can slice validated memory/file
-staged chunks, including ranges crossing chunk boundaries. These are
+staged chunks, including ranges crossing chunk boundaries, and an internal
+chunk-backed indexed slicer prototype that replays strict existing-cell
+replacement payloads over those staged chunk ranges. These are
 indexed/random-access rewrite foundations, not public editor APIs, not a
 default large-sheet algorithm switch, not a PackageEditor source-entry ZIP seek
 path, and not a claim that source ZIP entries can be sought directly.

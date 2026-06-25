@@ -34468,6 +34468,58 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.751 - PackageEditor indexed staged-chunk replacement slicer handoff
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `tests/test_package_editor_core.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-streaming-worksheet/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: wire the P8.749 materialized indexed strict-replace slicer and P8.750
+`PackageEntryChunk` byte-range source into a package-editor-local handoff
+primitive, without changing the public `WorkbookEditor::replace_cells()`
+default transformer path.
+
+Output:
+- Added internal `emit_indexed_cell_replacement_from_package_entry_chunks()`.
+- The helper accepts staged `PackageEntryChunk` source chunks, a prebuilt
+  `WorksheetCellIndex`, and a prevalidated `WorksheetCellReplacementPlan`.
+- It preflights target existence, source-range ordering, staged source size /
+  range bounds, and staged chunk expected-size invariants before emitting output.
+- Source pass-through ranges are emitted from memory/file staged chunks with
+  the P8.750 range slicer; replacement payloads are replayed from caller
+  chunks in source order.
+- Added test-only
+  `testing_emit_indexed_cell_replacement_package_entry_chunks_to_string()` and
+  `fastxlsx.package_editor.core` coverage for memory/file staged source
+  splicing, chunked replacement payload replay, missing target rejection,
+  stale index range rejection, and changed staged-source size rejection.
+
+Non-goals / boundary:
+- No public API, no default targeted-cell Patch algorithm switch, no
+  source-entry ZIP seek, no `WorkbookEditor` behavior change, no upsert /
+  missing-row insert change, no dimension refresh, no relationship audit,
+  no metadata recalculation, no sharedStrings/styles migration, no relationship
+  repair, and no benchmark performance claim.
+- The helper trusts that the caller built the index from the exact staged
+  worksheet XML source; it validates ranges against staged chunk size, but it
+  does not compare source bytes to a materialized worksheet string.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.package_editor\\.core$" --output-on-failure` passes.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

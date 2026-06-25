@@ -41,16 +41,18 @@ void validate_workbook_editor_targeted_cell_patch_target(
     const detail::WorkbookEditorSheetCatalogPlan& sheet_catalog,
     const detail::MaterializedWorksheetSessionRegistry& materialized_sessions,
     bool has_pending_sheet_data_payload,
-    std::string_view sheet_name)
+    std::string_view sheet_name,
+    std::string_view operation_name)
 {
     if (!sheet_catalog.has_current(sheet_name)) {
         throw FastXlsxError(detail::workbook_editor_missing_planned_sheet_message(sheet_name));
     }
     if (has_pending_sheet_data_payload) {
         throw FastXlsxError(
-            "cannot replace cells after replacing sheet data for the same worksheet");
+            "cannot " + std::string(operation_name)
+            + " after replacing sheet data for the same worksheet");
     }
-    materialized_sessions.preflight_no_materialized_session(sheet_name, "replace cells");
+    materialized_sessions.preflight_no_materialized_session(sheet_name, operation_name);
 }
 
 WorkbookEditorTargetedCellPatchInput materialize_workbook_editor_targeted_cell_patch_input(
@@ -402,7 +404,7 @@ void WorkbookEditor::replace_cells(
         validate_workbook_editor_targeted_cell_patch_target(impl_->sheet_catalog,
             impl_->materialized_sessions,
             impl_->has_pending_sheet_data_payload(sheet_name),
-            sheet_name);
+            sheet_name, "replace cells");
         input = materialize_workbook_editor_targeted_cell_patch_input(cells);
         if (input.materialized_cells.empty()) {
             impl_->clear_last_edit_error();
@@ -431,6 +433,51 @@ void WorkbookEditor::replace_cells(
     std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells)
 {
     replace_cells(sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
+}
+
+void WorkbookEditor::replace_or_insert_cells(
+    std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    const std::string sheet_name_key(sheet_name);
+    WorkbookEditorTargetedCellPatchInput input;
+    try {
+        validate_workbook_editor_targeted_cell_patch_target(impl_->sheet_catalog,
+            impl_->materialized_sessions,
+            impl_->has_pending_sheet_data_payload(sheet_name),
+            sheet_name, "replace or insert cells");
+        input = materialize_workbook_editor_targeted_cell_patch_input(cells);
+        if (input.materialized_cells.empty()) {
+            impl_->clear_last_edit_error();
+            return;
+        }
+
+        const std::vector<detail::WorksheetCellReplacement> replacements =
+            workbook_editor_targeted_cell_replacements_from_materialized_cells(
+                input.materialized_cells);
+        impl_->editor.replace_or_insert_worksheet_cells_by_name(sheet_name, replacements);
+        impl_->record_pending_targeted_cell_replacements(
+            sheet_name, input.public_diagnostics);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error("WorkbookEditor::replace_or_insert_cells() failed for '"
+            + sheet_name_key + "' with " + std::to_string(cells.size())
+            + " input cells and " + std::to_string(input.unique_cell_count)
+            + " unique targets: " + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
+void WorkbookEditor::replace_or_insert_cells(
+    std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells)
+{
+    replace_or_insert_cells(
+        sheet_name, std::span<const WorksheetCellUpdate>(cells.begin(), cells.size()));
 }
 
 void WorkbookEditor::replace_image(

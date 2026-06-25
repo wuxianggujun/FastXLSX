@@ -1,8 +1,8 @@
 // Public Patch-mode WorkbookEditor targeted cell replacement tests.
 //
 // These tests stay on the public WorkbookEditor facade and verify that
-// replace_cells() uses the large-worksheet Patch transformer path without
-// materializing the worksheet through WorksheetEditor.
+// replace_cells() / replace_or_insert_cells() use the large-worksheet Patch
+// transformer path without materializing the worksheet through WorksheetEditor.
 
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/streaming_writer.hpp>
@@ -231,6 +231,78 @@ void test_replace_cells_rejects_missing_target_without_public_state_pollution()
         "failed replace_cells should leave saved worksheet unchanged");
 }
 
+void test_replace_or_insert_cells_patches_existing_and_inserts_missing_cells_and_rows()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source("workbook-editor-public-upsert-cells-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-upsert-cells-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_or_insert_cells("Data", {
+        {{1, 1}, fastxlsx::CellValue::number(88.0)},
+        {{1, 4}, fastxlsx::CellValue::text("inserted d1")},
+        {{4, 2}, fastxlsx::CellValue::formula("A1+B1")},
+    });
+
+    check(editor.has_pending_changes(),
+        "replace_or_insert_cells should mark WorkbookEditor as pending");
+    check(editor.pending_change_count() == 1,
+        "replace_or_insert_cells should increment public pending count");
+    check(editor.pending_targeted_cell_replacement_count() == 3,
+        "replace_or_insert_cells should expose targeted cell count");
+    check(editor.has_pending_targeted_cell_replacement("Data"),
+        "replace_or_insert_cells should reuse targeted diagnostics");
+
+    editor.save_as(output);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+
+    check_contains(data_sheet, "<dimension ref=\"A1:D4\"",
+        "replace_or_insert_cells should refresh dimension for inserted cells and rows");
+    check_contains(data_sheet, "<c r=\"A1\"><v>88</v></c>",
+        "replace_or_insert_cells should replace existing A1");
+    check_contains(data_sheet,
+        "<c r=\"D1\" t=\"inlineStr\"><is><t>inserted d1</t></is></c>",
+        "replace_or_insert_cells should insert missing D1 into an existing row");
+    check_contains(data_sheet, "<row r=\"4\"><c r=\"B4\"><f>A1+B1</f></c></row>",
+        "replace_or_insert_cells should synthesize missing row 4");
+    check_not_contains(data_sheet, "old-a1",
+        "replace_or_insert_cells should remove replaced old A1 payload");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "replace_or_insert_cells should preserve untouched worksheet bytes");
+    check_contains(output_entries.at("xl/workbook.xml"), "fullCalcOnLoad=\"1\"",
+        "replace_or_insert_cells formula should request workbook recalculation");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "replace_or_insert_cells should not create calcChain.xml");
+}
+
+void test_replace_cells_can_follow_up_on_upserted_planned_cells()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source("workbook-editor-public-upsert-followup-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-upsert-followup-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_or_insert_cells("Data",
+        {{{4, 2}, fastxlsx::CellValue::text("first inserted")}});
+    editor.replace_cells("Data",
+        {{{4, 2}, fastxlsx::CellValue::text("followup replacement")}});
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet,
+        "<row r=\"4\"><c r=\"B4\" t=\"inlineStr\"><is><t>followup replacement</t></is></c></row>",
+        "replace_cells should be able to rewrite a cell inserted by prior upsert");
+    check_not_contains(data_sheet, "first inserted",
+        "follow-up replace_cells should consume the earlier upsert payload");
+}
+
 void test_replace_cells_mode_mixing_guards_and_empty_noop()
 {
     const std::filesystem::path source =
@@ -372,6 +444,8 @@ int main()
     try {
         test_replace_cells_patches_existing_cells_and_preserves_unrelated_parts();
         test_replace_cells_rejects_missing_target_without_public_state_pollution();
+        test_replace_or_insert_cells_patches_existing_and_inserts_missing_cells_and_rows();
+        test_replace_cells_can_follow_up_on_upserted_planned_cells();
         test_replace_cells_mode_mixing_guards_and_empty_noop();
         test_replace_cells_follows_planned_catalog_after_rename();
         test_replace_cells_duplicate_targets_keep_latest_payload();

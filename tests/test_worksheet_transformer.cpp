@@ -159,6 +159,24 @@ EmittedWorksheet emit_source_worksheet(const std::string& xml,
     return emitted;
 }
 
+EmittedWorksheet emit_upsert_worksheet(const std::string& xml,
+    std::span<const WorksheetCellReplacement> replacements,
+    std::size_t chunk_width)
+{
+    EmittedWorksheet emitted;
+    const WorksheetCellReplacementPlan replacement_plan =
+        fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+    fastxlsx::detail::WorksheetInputChunkCallback source =
+        make_string_chunk_source(xml, chunk_width);
+    emitted.summary = fastxlsx::detail::emit_cell_replacement_worksheet_from_chunk_source(
+        source,
+        replacement_plan,
+        [&](std::string_view chunk) { emitted.xml += chunk; },
+        {},
+        fastxlsx::detail::WorksheetCellReplacementMode::ReplaceOrInsert);
+    return emitted;
+}
+
 CapturedTransform collect_actions_with_plan(
     const std::string& xml,
     const WorksheetCellReplacementPlan& replacement_plan,
@@ -723,6 +741,63 @@ void test_transformer_output_preserves_self_closing_pass_through_once()
         "self-closing sheetData pass-through should preserve missing replacement diagnostics");
 }
 
+void test_transformer_upsert_replaces_existing_and_inserts_missing_cells_and_rows()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>old-a</v></c><c r="C1"><v>old-c</v></c></row>)"
+        R"(<row r="3"><c r="B3"><v>old-b3</v></c></row>)"
+        R"(</sheetData></worksheet>)";
+    const std::array replacements {
+        cell_replacement("D4", R"(<c r="D4"><v>new-d4</v></c>)"),
+        cell_replacement("A2", R"(<c r="A2"><v>new-a2</v></c>)"),
+        cell_replacement("B1", R"(<c r="B1"><v>new-b1</v></c>)"),
+        cell_replacement("C3", R"(<c r="C3"><v>new-c3</v></c>)"),
+        cell_replacement("A1", R"(<c r="A1"><v>new-a1</v></c>)"),
+    };
+
+    const EmittedWorksheet emitted = emit_upsert_worksheet(xml, replacements, 9);
+
+    check(emitted.xml
+            == R"(<worksheet><sheetData><row r="1"><c r="A1"><v>new-a1</v></c><c r="B1"><v>new-b1</v></c><c r="C1"><v>old-c</v></c></row><row r="2"><c r="A2"><v>new-a2</v></c></row><row r="3"><c r="B3"><v>old-b3</v></c><c r="C3"><v>new-c3</v></c></row><row r="4"><c r="D4"><v>new-d4</v></c></row></sheetData></worksheet>)",
+        "upsert should replace existing targets and insert missing cells/rows in row-column order");
+    check(emitted.summary.matched_replacement_count == 1,
+        "upsert should count matched existing-cell replacements");
+    check(emitted.summary.inserted_cell_count == 4,
+        "upsert should count inserted cells separately from matched replacements");
+    check(emitted.summary.missing_cell_references.empty(),
+        "upsert should not report synthesized cells as missing");
+}
+
+void test_transformer_upsert_expands_self_closing_sheet_data_and_rows()
+{
+    const std::array sheet_data_replacements {
+        cell_replacement("B2", R"(<c r="B2"><v>new-b2</v></c>)"),
+    };
+    const EmittedWorksheet sheet_data =
+        emit_upsert_worksheet(R"(<worksheet><sheetData/></worksheet>)",
+            sheet_data_replacements, 3);
+
+    check(sheet_data.xml
+            == R"(<worksheet><sheetData><row r="2"><c r="B2"><v>new-b2</v></c></row></sheetData></worksheet>)",
+        "upsert should expand self-closing sheetData to host inserted rows");
+    check(sheet_data.summary.inserted_cell_count == 1,
+        "self-closing sheetData upsert should report one inserted cell");
+
+    const std::array row_replacements {
+        cell_replacement("C2", R"(<c r="C2"><v>new-c2</v></c>)"),
+    };
+    const EmittedWorksheet row =
+        emit_upsert_worksheet(R"(<worksheet><sheetData><row r="2"/></sheetData></worksheet>)",
+            row_replacements, 4);
+
+    check(row.xml
+            == R"(<worksheet><sheetData><row r="2"><c r="C2"><v>new-c2</v></c></row></sheetData></worksheet>)",
+        "upsert should expand self-closing rows to host inserted cells");
+    check(row.summary.inserted_cell_count == 1,
+        "self-closing row upsert should report one inserted cell");
+}
+
 void test_transformer_chunked_emitter_uses_bounded_window_not_full_document()
 {
     std::string xml = R"(<worksheet><sheetData>)";
@@ -855,6 +930,8 @@ int main()
         test_transformer_chunked_emitter_matches_single_chunk_emitter_across_boundaries();
         test_transformer_chunk_source_emitter_matches_single_chunk_emitter_across_boundaries();
         test_transformer_output_preserves_self_closing_pass_through_once();
+        test_transformer_upsert_replaces_existing_and_inserts_missing_cells_and_rows();
+        test_transformer_upsert_expands_self_closing_sheet_data_and_rows();
         test_transformer_chunked_emitter_uses_bounded_window_not_full_document();
         test_transformer_chunked_emitter_reports_missing_and_rejects_oversized_input();
         test_transformer_rejects_mismatched_source_cell_value_boundaries();

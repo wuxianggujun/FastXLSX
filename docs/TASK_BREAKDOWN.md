@@ -33992,6 +33992,83 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+## P8.742 - Public WorkbookEditor targeted cell upsert Patch facade
+
+Status: done.
+
+Type: public Patch API / large-worksheet targeted point-upsert facade + benchmark
+tooling.
+
+Depends on: P8.741.
+
+Touch files:
+- `include/fastxlsx/detail/worksheet_transformer.hpp`
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/worksheet_transformer.cpp`
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `src/workbook_editor.cpp`
+- `tests/test_worksheet_transformer.cpp`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `benchmarks/bench_workbook_editor.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: extend the public large-worksheet Patch facade from "replace existing
+cells only" to a bounded point upsert path that can insert missing cells and
+synthesize missing rows without materializing the worksheet through
+`WorksheetEditor`.
+
+Output:
+- Added internal `WorksheetCellReplacementMode::ReplaceOrInsert` and
+  `WorksheetTransformActionKind::InsertCell`.
+- Extended the worksheet transformer to emit replacement actions for existing
+  target cells, insert actions for missing cells in existing rows, and minimal
+  synthetic row records for missing rows.
+- Optimized upsert target scheduling to use a row/column-sorted single-pass
+  cursor instead of rescanning all replacement targets for every source event.
+- Added internal `PackageEditor::replace_or_insert_worksheet_cells()` and
+  by-name helper, reusing the same file-backed stream rewrite, dimension
+  refresh, payload audit, relationship-id audit, calcChain cleanup, and
+  fullCalcOnLoad path as targeted replacement.
+- Added public `WorkbookEditor::replace_or_insert_cells()` span and
+  initializer-list overloads.
+- Reused existing public targeted-cell diagnostics for upsert payloads:
+  pending counts, worksheet names, estimated single-cell XML bytes, and
+  worksheet-edit summaries.
+- Added transformer tests for source-order upsert, missing-cell insertion,
+  missing-row synthesis, and self-closing `sheetData` / `row` expansion.
+- Added public facade tests for successful upsert, dimension refresh,
+  untouched-sheet preservation, formula recalculation metadata, and follow-up
+  `replace_cells()` over a prior upserted planned chunk.
+- Extended `fastxlsx_bench_workbook_editor` with `patch-replace` and
+  `patch-upsert` scenarios plus schema-v2 fields for `editor_mode`,
+  `materialized_worksheet`, and `inserted_coordinates`.
+- Recorded a local 500000-cells / 1000-edits benchmark smoke showing Patch
+  replace/upsert avoids worksheet materialization and uses about 6.3 MB peak
+  working set in that run.
+
+Non-goals / boundary:
+- No arbitrary indexed random access, no row/column shifting, no table/filter/
+  drawing/defined-name resize or recalculation, no relationship pruning/repair,
+  no sharedStrings/style migration, no formula rewrite/evaluation, no Zip64 or
+  DEFLATE proof, and no default benchmark/Office sidecar CI registration.
+- `replace_cells()` remains strict existing-target replacement; callers must use
+  `replace_or_insert_cells()` for missing target insertion.
+- Upsert still linearly scans source/planned worksheet XML; it is a streaming
+  Patch rewrite, not a random-access worksheet index.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_transformer_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_transformer|workbook_editor_public_patch_cells)" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_workbook_editor` passes.
+- Local `fastxlsx_bench_workbook_editor` smoke runs for `batch-set`,
+  `patch-replace`, and `patch-upsert` produce schema-v2 JSON.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

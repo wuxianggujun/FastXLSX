@@ -352,10 +352,22 @@ public:
     void replace_worksheet_cells(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy = {});
+    // Internal Patch upsert variant for targeted cells. Existing cells are
+    // replaced; missing cells are inserted into source-order rows, and missing
+    // rows are synthesized as minimal `<row r="N">` records. It still streams
+    // source/planned worksheet XML through the transformer and does not repair
+    // range-bearing metadata, sharedStrings, styles, relationships, or formulas.
+    void replace_or_insert_worksheet_cells(PartName worksheet_part,
+        std::span<const WorksheetCellReplacement> replacements,
+        const ReferencePolicy& policy = {});
     // Internal by-name convenience for replace_worksheet_cells(); it reuses the
     // same source/planned workbook catalog resolver as the other by-name Patch
     // helpers and does not add, delete, rename, or repair sheets.
     void replace_worksheet_cells_by_name(std::string_view sheet_name,
+        std::span<const WorksheetCellReplacement> replacements,
+        const ReferencePolicy& policy = {});
+    // Internal by-name convenience for replace_or_insert_worksheet_cells().
+    void replace_or_insert_worksheet_cells_by_name(std::string_view sheet_name,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy = {});
     // Internal Patch helper for the workbook sheet catalog. Rewrites only the
@@ -381,6 +393,10 @@ public:
 
 private:
     explicit PackageEditor(PackageReader reader);
+    void replace_worksheet_cells_impl(PartName worksheet_part,
+        std::span<const WorksheetCellReplacement> replacements,
+        const ReferencePolicy& policy,
+        WorksheetCellReplacementMode mode);
     void replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
         std::vector<std::string> payload_notes,

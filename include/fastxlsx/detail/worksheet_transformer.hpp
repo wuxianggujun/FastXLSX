@@ -3,6 +3,7 @@
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <span>
@@ -82,9 +83,15 @@ struct WorksheetCellReplacement {
     WorksheetCellReplacementPayload replacement_payload;
 };
 
+enum class WorksheetCellReplacementMode {
+    ReplaceExisting,
+    ReplaceOrInsert,
+};
+
 enum class WorksheetTransformActionKind {
     PassThrough,
     ReplaceCell,
+    InsertCell,
 };
 
 /// Non-owning transform action view emitted in source worksheet order.
@@ -101,7 +108,19 @@ struct WorksheetTransformAction {
 
 struct WorksheetTransformSummary {
     std::size_t matched_replacement_count = 0;
+    std::size_t inserted_cell_count = 0;
     std::vector<std::string> missing_cell_references;
+};
+
+struct WorksheetCellReplacementCoordinate {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+};
+
+struct WorksheetCellReplacementTarget {
+    std::string_view cell_reference;
+    WorksheetCellReplacementCoordinate coordinate;
+    WorksheetCellReplacementPayload replacement_payload;
 };
 
 /// Non-owning lookup plan for repeated cell-replacement passes over the same
@@ -114,6 +133,7 @@ struct WorksheetTransformSummary {
 struct WorksheetCellReplacementPlan {
     std::map<std::string_view, WorksheetCellReplacementPayload, std::less<>>
         replacement_payloads_by_reference;
+    std::vector<WorksheetCellReplacementTarget> targets_by_position;
 };
 
 using WorksheetTransformActionCallback = std::function<void(const WorksheetTransformAction&)>;
@@ -144,7 +164,8 @@ inline constexpr std::size_t worksheet_replacement_cell_xml_materialization_byte
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetCellReplacementPlan& replacement_plan,
     const WorksheetTransformActionCallback& callback,
-    WorksheetEventReaderOptions reader_options = {});
+    WorksheetEventReaderOptions reader_options = {},
+    WorksheetCellReplacementMode mode = WorksheetCellReplacementMode::ReplaceExisting);
 
 /// Emits rewritten worksheet XML chunks while consuming a pull-based source.
 ///
@@ -155,6 +176,7 @@ inline constexpr std::size_t worksheet_replacement_cell_xml_materialization_byte
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetCellReplacementPlan& replacement_plan,
     const WorksheetOutputChunkCallback& callback,
-    WorksheetEventReaderOptions reader_options = {});
+    WorksheetEventReaderOptions reader_options = {},
+    WorksheetCellReplacementMode mode = WorksheetCellReplacementMode::ReplaceExisting);
 
 } // namespace fastxlsx::detail

@@ -3545,6 +3545,18 @@ std::string missing_cell_replacement_error(
     return message;
 }
 
+std::string cell_reference_list(const std::vector<std::string>& cell_references)
+{
+    std::string message;
+    for (std::size_t index = 0; index < cell_references.size(); ++index) {
+        if (index != 0) {
+            message += ", ";
+        }
+        message += cell_references[index];
+    }
+    return message;
+}
+
 struct CellReferenceCoordinate {
     std::uint32_t row = 0;
     std::uint32_t column = 0;
@@ -3717,7 +3729,8 @@ void consume_worksheet_cell_replacement_analysis_action(
     const PartName& worksheet_part,
     const WorksheetTransformAction& action)
 {
-    if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+    if (action.kind == WorksheetTransformActionKind::ReplaceCell
+        || action.kind == WorksheetTransformActionKind::InsertCell) {
         if (!action.cell_reference.empty()) {
             include_dimension_cell(analysis.dimension_scan,
                 parse_cell_reference_coordinate(action.cell_reference));
@@ -3797,7 +3810,8 @@ void finalize_worksheet_cell_replacement_stream_analysis(
 WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream_from_chunk_source(
     const PartName& worksheet_part,
     const WorksheetInputChunkCallback& read_next_chunk,
-    const WorksheetCellReplacementPlan& replacement_plan)
+    const WorksheetCellReplacementPlan& replacement_plan,
+    WorksheetCellReplacementMode mode)
 {
     WorksheetCellReplacementStreamAnalysis analysis;
     analysis.summary = scan_cell_replacement_actions_from_chunk_source(
@@ -3805,7 +3819,7 @@ WorksheetCellReplacementStreamAnalysis analyze_worksheet_cell_replacement_stream
             consume_worksheet_cell_replacement_analysis_action(
                 analysis, worksheet_part, action);
         },
-        package_editor_cell_replacement_reader_options());
+        package_editor_cell_replacement_reader_options(), mode);
 
     finalize_worksheet_cell_replacement_stream_analysis(analysis, worksheet_part);
     return analysis;
@@ -4037,7 +4051,8 @@ void write_worksheet_cell_replacement_action(std::ofstream& output,
         return;
     }
 
-    if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+    if (action.kind == WorksheetTransformActionKind::ReplaceCell
+        || action.kind == WorksheetTransformActionKind::InsertCell) {
         action.replacement_payload.for_each_chunk([&](std::string_view chunk) {
             write_file_chunk_and_scan_relationships(
                 output, relationship_scanner, relationship_scan_failed, chunk);
@@ -4078,7 +4093,8 @@ WorksheetRelationshipReferenceAuditResult write_worksheet_cell_replacement_strea
     const RelationshipSet* worksheet_relationships,
     const WorksheetInputChunkCallback& read_next_chunk,
     const WorksheetCellReplacementPlan& replacement_plan,
-    const WorksheetCellReplacementStreamAnalysis& analysis)
+    const WorksheetCellReplacementStreamAnalysis& analysis,
+    WorksheetCellReplacementMode mode)
 {
     std::ofstream output(path, std::ios::binary);
     if (!output) {
@@ -4097,7 +4113,7 @@ WorksheetRelationshipReferenceAuditResult write_worksheet_cell_replacement_strea
                 output, &relationship_scanner, action, analysis,
                 dimension_reference, skipping_dimension, relationship_scan_failed);
         },
-        package_editor_cell_replacement_reader_options());
+        package_editor_cell_replacement_reader_options(), mode);
     finish_xml_relationship_references(relationship_scanner, relationship_scan_failed);
 
     output.close();
@@ -5944,29 +5960,36 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_by_name(
         "entry point");
 }
 
-void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
-    std::span<const WorksheetCellReplacement> replacements, const ReferencePolicy& policy)
+void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
+    std::span<const WorksheetCellReplacement> replacements,
+    const ReferencePolicy& policy,
+    WorksheetCellReplacementMode mode)
 {
+    const bool replace_or_insert =
+        mode == WorksheetCellReplacementMode::ReplaceOrInsert;
+    const std::string operation_label =
+        replace_or_insert ? "worksheet cell upsert" : "worksheet cell replacement";
+
     if (replacements.empty()) {
-        throw FastXlsxError("worksheet cell replacement requires at least one replacement");
+        throw FastXlsxError(operation_label + " requires at least one replacement");
     }
 
     const PartName target_worksheet_part = worksheet_part;
     const auto* worksheet = manifest_.find_part(worksheet_part);
     if (worksheet == nullptr) {
         throw FastXlsxError(
-            "worksheet cell replacement target is not present in the source package for "
+            operation_label + " target is not present in the source package for "
             + worksheet_part_diagnostic_context(target_worksheet_part));
     }
     if (worksheet->content_type != content_type_worksheet) {
         throw FastXlsxError(
-            "worksheet cell replacement target is not a worksheet part for "
+            operation_label + " target is not a worksheet part for "
             + worksheet_part_diagnostic_context(target_worksheet_part));
     }
 
     const CurrentWorksheetInputSource input_source =
         require_current_worksheet_input_source(reader_, replacements_, entry_replacements_,
-            target_worksheet_part, "worksheet cell replacement");
+            target_worksheet_part, operation_label);
     const bool planned_chunk_source =
         input_source.kind == CurrentWorksheetInputSourceKind::PlannedChunks;
     const bool source_entry_chunk_source =
@@ -5982,19 +6005,24 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
     WorksheetCellReplacementStreamAnalysis stream_analysis;
     try {
         stream_analysis = analyze_worksheet_cell_replacement_stream_from_chunk_source(
-            target_worksheet_part, analysis_source, replacement_plan);
+            target_worksheet_part, analysis_source, replacement_plan, mode);
     } catch (const std::exception& error) {
         throw FastXlsxError(
             current_worksheet_input_failure_message("analyze",
                 worksheet_cell_replacement_analysis_input_context, error.what()));
     }
-    if (!stream_analysis.summary.missing_cell_references.empty()) {
+    if (!replace_or_insert && !stream_analysis.summary.missing_cell_references.empty()) {
         throw FastXlsxError(
             missing_cell_replacement_error(stream_analysis.summary.missing_cell_references));
     }
+    if (replace_or_insert && !stream_analysis.summary.missing_cell_references.empty()) {
+        throw FastXlsxError(
+            "worksheet cell upsert failed to emit requested cells: "
+            + cell_reference_list(stream_analysis.summary.missing_cell_references));
+    }
 
     std::string replacement_reason =
-        "target worksheet part file-backed stream rewrite from worksheet cell replacement";
+        "target worksheet part file-backed stream rewrite from " + operation_label;
 
     ScopedPackageEditorTempFile temp_file;
     CurrentWorksheetInputChunkReader output_reader(reader_, target_worksheet_part, input_source,
@@ -6007,7 +6035,7 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
             write_worksheet_cell_replacement_stream_from_chunk_source(
                 temp_file.path(), target_worksheet_part,
                 reader_.relationships_for(target_worksheet_part),
-                output_source, replacement_plan, stream_analysis);
+                output_source, replacement_plan, stream_analysis, mode);
     } catch (const std::exception& error) {
         throw FastXlsxError(
             current_worksheet_input_failure_message("write",
@@ -6028,19 +6056,19 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
     temp_file.release();
     if (source_entry_chunk_source) {
         edit_plan_.add_note(
-            "worksheet cell replacement streams dimension-refreshed output to a "
+            operation_label + " streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; source package "
             "worksheet entries are scanned through the PackageReader ZIP-entry chunk source "
             "without materializing the source worksheet XML");
     } else if (planned_chunk_source) {
         edit_plan_.add_note(
-            "worksheet cell replacement streams dimension-refreshed output to a "
+            operation_label + " streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
             "worksheet staged chunks are scanned through chunk-source readers without "
             "materializing the planned staged worksheet XML");
     } else {
         edit_plan_.add_note(
-            "worksheet cell replacement streams dimension-refreshed output to a "
+            operation_label + " streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk");
     }
     if (source_entry_chunk_source) {
@@ -6089,6 +6117,28 @@ void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
         "replacement payload chunks rather than raw string fields; payload preflight "
         "still materializes within the bounded single-cell XML limit, not streamed "
         "cell payload sources");
+    if (replace_or_insert) {
+        edit_plan_.add_note(
+            "worksheet cell upsert replaces existing cells, inserts missing cells into "
+            "source-order rows, and synthesizes missing rows as minimal row records; "
+            "it does not shift rows or repair range-bearing worksheet metadata");
+    }
+}
+
+void PackageEditor::replace_worksheet_cells(PartName worksheet_part,
+    std::span<const WorksheetCellReplacement> replacements, const ReferencePolicy& policy)
+{
+    replace_worksheet_cells_impl(
+        std::move(worksheet_part), replacements, policy,
+        WorksheetCellReplacementMode::ReplaceExisting);
+}
+
+void PackageEditor::replace_or_insert_worksheet_cells(PartName worksheet_part,
+    std::span<const WorksheetCellReplacement> replacements, const ReferencePolicy& policy)
+{
+    replace_worksheet_cells_impl(
+        std::move(worksheet_part), replacements, policy,
+        WorksheetCellReplacementMode::ReplaceOrInsert);
 }
 
 void PackageEditor::replace_worksheet_cells_by_name(std::string_view sheet_name,
@@ -6103,6 +6153,22 @@ void PackageEditor::replace_worksheet_cells_by_name(std::string_view sheet_name,
         throw FastXlsxError(
             by_name_worksheet_operation_context(
                 "by-name worksheet cell replacement", sheet_name, worksheet_part)
+            + ": " + error.what());
+    }
+}
+
+void PackageEditor::replace_or_insert_worksheet_cells_by_name(std::string_view sheet_name,
+    std::span<const WorksheetCellReplacement> replacements, const ReferencePolicy& policy)
+{
+    const PartName worksheet_part =
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, sheet_name);
+    try {
+        replace_or_insert_worksheet_cells(worksheet_part, replacements, policy);
+    } catch (const std::exception& error) {
+        throw FastXlsxError(
+            by_name_worksheet_operation_context(
+                "by-name worksheet cell upsert", sheet_name, worksheet_part)
             + ": " + error.what());
     }
 }

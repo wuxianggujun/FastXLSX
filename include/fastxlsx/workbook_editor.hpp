@@ -119,8 +119,8 @@ struct WorkbookEditorWorksheetEditSummary {
     /// replacement for this planned worksheet name.
     bool sheet_data_replaced = false;
 
-    /// True when replace_cells() has queued targeted existing-cell
-    /// replacements for this planned worksheet name.
+    /// True when replace_cells() or replace_or_insert_cells() has queued
+    /// targeted cell patches for this planned worksheet name.
     bool targeted_cells_replaced = false;
 
     /// True when the materialized WorksheetEditor session for this planned
@@ -138,12 +138,13 @@ struct WorkbookEditorWorksheetEditSummary {
     /// and save-time package assembly costs.
     std::size_t estimated_replacement_memory_usage = 0;
 
-    /// Unique target cells represented by the final queued replace_cells()
-    /// patches for this worksheet. Zero when targeted_cells_replaced is false.
+    /// Unique target cells represented by the final queued replace_cells() /
+    /// replace_or_insert_cells() patches for this worksheet. Zero when
+    /// targeted_cells_replaced is false.
     std::size_t targeted_cell_replacement_count = 0;
 
     /// Sum of currently staged single-cell replacement XML payload bytes for
-    /// final replace_cells() targets on this worksheet. This excludes source
+    /// final targeted-cell patch targets on this worksheet. This excludes source
     /// worksheet XML, PackageEditor temporary files, ZIP writer buffers, and
     /// save-time package assembly costs.
     std::size_t estimated_targeted_cell_replacement_xml_bytes = 0;
@@ -1396,7 +1397,7 @@ private:
 ///   stale `xl/calcChain.xml` when present; it never invents a calcChain when the
 ///   source workbook has none.
 ///
-/// What this facade does for targeted cell replacement:
+/// What this facade does for targeted cell replacement/upsert:
 ///
 /// - replace_cells() scans the source or current planned worksheet XML through
 ///   the worksheet event reader / transformer, replaces only matching existing
@@ -1411,6 +1412,11 @@ private:
 /// - Text replacement cells are written as inline strings. Formula replacement
 ///   cells write formula text and follow the same fullCalcOnLoad / stale
 ///   calcChain cleanup policy as worksheet replacement.
+/// - replace_or_insert_cells() uses the same Patch transformer path, but
+///   existing target cells are replaced while missing cells are inserted into
+///   existing rows or into synthesized minimal `<row r="N">` records. It is a
+///   point-edit upsert, not row shifting, table resize, sharedStrings/style
+///   migration, relationship repair, or range-metadata recalculation.
 ///
 /// Memory and scope: replace_sheet_data() rows are buffered in a sparse
 /// CellStore and emitted as a pull-based `<sheetData>` chunk source; the
@@ -1422,9 +1428,9 @@ private:
 /// transformer. Replacing a very large worksheet's data is rejected by the
 /// underlying bounded rewrite limit rather than silently materializing an
 /// unbounded worksheet. For large worksheets with a bounded set of existing
-/// cells to change, use replace_cells(), which streams the source/planned
-/// worksheet entry and only materializes the caller-provided single-cell
-/// replacement payloads.
+/// cells to change, use replace_cells() or replace_or_insert_cells(), which
+/// stream the source/planned worksheet entry and only materialize the
+/// caller-provided single-cell replacement payloads.
 ///
 /// What this facade does for a renamed sheet:
 ///
@@ -2122,6 +2128,53 @@ public:
     /// behavior, mode-mixing guards, diagnostics, and Patch side effects are
     /// identical.
     void replace_cells(
+        std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells);
+
+    /// Replaces existing cells or inserts missing cells/rows in one worksheet.
+    ///
+    /// API mode: Patch / existing-workbook targeted cell upsert. This uses the
+    /// same source/planned worksheet stream transformer as replace_cells(), but
+    /// missing targets are inserted instead of rejected. If a target row exists,
+    /// the missing `<c>` is emitted in column order within that row. If the row
+    /// is missing, a minimal `<row r="N">...</row>` record is synthesized in
+    /// row order. The top-level worksheet dimension is refreshed from emitted
+    /// cell references, and the rewritten worksheet is staged as a file-backed
+    /// PackageEditor chunk.
+    ///
+    /// This is a point upsert operation, not a semantic worksheet edit. It does
+    /// not shift existing rows or columns, resize tables, update filters,
+    /// merged ranges, data validations, conditional formatting, drawings,
+    /// defined names, formulas, sharedStrings indexes, style ids, relationships,
+    /// or linked parts. Text values are written as inline strings; formulas
+    /// request workbook recalculation and stale calcChain cleanup but are not
+    /// evaluated.
+    ///
+    /// Duplicate coordinates in one call are allowed after validation; later
+    /// updates win. Empty input is a successful no-op after validating the
+    /// planned worksheet name and mode-mixing guards. Diagnostics are reported
+    /// through the existing targeted-cell patch counters because this operation
+    /// shares the same staged replacement payload representation.
+    ///
+    /// Operation mixing: replace_or_insert_cells(), replace_cells(),
+    /// replace_sheet_data(), and materialized WorksheetEditor sessions are
+    /// mutually exclusive per worksheet in this public facade.
+    ///
+    /// @param sheet_name Existing worksheet name in the current planned catalog.
+    /// @param cells Targeted full-cell upsert batch.
+    /// @throws FastXlsxError if the editor is not open, the sheet is missing,
+    /// the worksheet has a conflicting edit mode, any coordinate is invalid, a
+    /// replacement cell payload is malformed, the source/planned worksheet XML
+    /// is malformed, or Patch policy rejects the resulting
+    /// dependency/relationship audit. On failure no public facade diagnostic for
+    /// this patch is updated and the editor remains usable.
+    void replace_or_insert_cells(
+        std::string_view sheet_name, std::span<const WorksheetCellUpdate> cells);
+
+    /// Replaces or inserts cells from a small literal batch.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload.
+    void replace_or_insert_cells(
         std::string_view sheet_name, std::initializer_list<WorksheetCellUpdate> cells);
 
     /// Replaces an existing workbook image part from a file on disk.

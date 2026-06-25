@@ -27,7 +27,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "1";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "2";
 
 std::filesystem::path default_output_dir()
 {
@@ -62,9 +62,11 @@ struct RunStats {
     Timings timings;
     std::uint64_t source_cells = 0;
     std::uint64_t touched_coordinates = 0;
+    std::uint64_t inserted_coordinates = 0;
     std::uint64_t source_bytes = 0;
     std::uint64_t output_bytes = 0;
     std::uint64_t peak_memory_bytes = 0;
+    bool materialized_worksheet = false;
     std::size_t materialized_cells_before = 0;
     std::size_t materialized_cells_after = 0;
     std::size_t estimated_memory_before = 0;
@@ -107,11 +109,43 @@ std::uint64_t checked_cell_count(const Options& options)
     return rows * cols;
 }
 
+bool is_in_memory_scenario(std::string_view scenario)
+{
+    return scenario == "point-set" || scenario == "batch-set"
+        || scenario == "a1-range-clear" || scenario == "a1-range-erase";
+}
+
+bool is_patch_replace_scenario(std::string_view scenario)
+{
+    return scenario == "patch-replace";
+}
+
+bool is_patch_upsert_scenario(std::string_view scenario)
+{
+    return scenario == "patch-upsert";
+}
+
+bool is_patch_scenario(std::string_view scenario)
+{
+    return is_patch_replace_scenario(scenario) || is_patch_upsert_scenario(scenario);
+}
+
+std::string_view editor_mode_for_scenario(std::string_view scenario)
+{
+    if (is_patch_replace_scenario(scenario)) {
+        return "existing-workbook-patch-targeted-cell-replace";
+    }
+    if (is_patch_upsert_scenario(scenario)) {
+        return "existing-workbook-patch-targeted-cell-upsert";
+    }
+    return "existing-workbook-in-memory-sparse";
+}
+
 void validate_options(const Options& options)
 {
-    if (options.scenario != "point-set" && options.scenario != "batch-set" &&
-        options.scenario != "a1-range-clear" && options.scenario != "a1-range-erase") {
-        fail("--scenario must be point-set, batch-set, a1-range-clear, or a1-range-erase");
+    if (!is_in_memory_scenario(options.scenario) && !is_patch_scenario(options.scenario)) {
+        fail("--scenario must be point-set, batch-set, a1-range-clear, "
+             "a1-range-erase, patch-replace, or patch-upsert");
     }
     if (options.rows > kExcelRowLimit) {
         fail("--rows exceeds Excel's row limit");
@@ -120,8 +154,19 @@ void validate_options(const Options& options)
         fail("--cols exceeds Excel's column limit");
     }
     const std::uint64_t cells = checked_cell_count(options);
-    if (options.edits > cells) {
+    if (!is_patch_upsert_scenario(options.scenario) && options.edits > cells) {
         fail("--edits cannot exceed rows * cols; this benchmark uses unique target coordinates");
+    }
+    if (is_patch_upsert_scenario(options.scenario)) {
+        const std::uint64_t existing_edits = options.edits / 2U;
+        const std::uint64_t inserted_edits =
+            static_cast<std::uint64_t>(options.edits) - existing_edits;
+        if (existing_edits > cells) {
+            fail("patch-upsert existing replacement half cannot exceed rows * cols");
+        }
+        if (inserted_edits > kExcelRowLimit - options.rows) {
+            fail("patch-upsert inserted row count would exceed Excel's row limit");
+        }
     }
     if (options.source == options.output) {
         fail("--source and --output must be different files");
@@ -158,12 +203,14 @@ Options parse_args(int argc, char** argv)
         } else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Usage: fastxlsx_bench_workbook_editor "
-                << "--scenario point-set|batch-set|a1-range-clear|a1-range-erase "
+                << "--scenario point-set|batch-set|a1-range-clear|a1-range-erase|"
+                   "patch-replace|patch-upsert "
                 << "--rows N --cols N --edits N "
                 << "--source source.xlsx --output edited.xlsx --result result.json\n"
                 << "The tool generates a stored source workbook, opens it through "
-                << "WorkbookEditor, materializes the Data sheet, mutates sparse cells, "
-                << "and saves a new workbook.\n";
+                << "WorkbookEditor, then either materializes the Data sheet for "
+                << "in-memory scenarios or uses targeted Patch replace/upsert for "
+                << "patch-* scenarios, and saves a new workbook.\n";
             std::exit(0);
         } else {
             fail(std::string("unknown argument: ") + std::string(arg));
@@ -341,6 +388,50 @@ void run_a1_range_erase(
     touched = a1_touched_coordinate_count(options);
 }
 
+std::vector<fastxlsx::WorksheetCellUpdate> make_existing_cell_updates(
+    const Options& options, std::uint32_t count)
+{
+    std::vector<fastxlsx::WorksheetCellUpdate> updates;
+    updates.reserve(count);
+    for (std::uint32_t index = 0; index < count; ++index) {
+        const fastxlsx::WorksheetCellReference ref =
+            coordinate_for_index(index, options.rows, options.cols);
+        updates.push_back(fastxlsx::WorksheetCellUpdate {
+            ref, fastxlsx::CellValue::number(make_edit_number(index))});
+    }
+    return updates;
+}
+
+void run_patch_replace(
+    fastxlsx::WorkbookEditor& editor, const Options& options, std::uint64_t& touched)
+{
+    std::vector<fastxlsx::WorksheetCellUpdate> updates =
+        make_existing_cell_updates(options, options.edits);
+    editor.replace_cells("Data", updates);
+    touched = updates.size();
+}
+
+void run_patch_upsert(fastxlsx::WorkbookEditor& editor,
+    const Options& options,
+    std::uint64_t& touched,
+    std::uint64_t& inserted)
+{
+    const std::uint32_t existing_count = options.edits / 2U;
+    const std::uint32_t inserted_count = options.edits - existing_count;
+    std::vector<fastxlsx::WorksheetCellUpdate> updates =
+        make_existing_cell_updates(options, existing_count);
+    updates.reserve(options.edits);
+    for (std::uint32_t index = 0; index < inserted_count; ++index) {
+        updates.push_back(fastxlsx::WorksheetCellUpdate {
+            fastxlsx::WorksheetCellReference {options.rows + index + 1U, 1U},
+            fastxlsx::CellValue::number(make_edit_number(existing_count + index)),
+        });
+    }
+    editor.replace_or_insert_cells("Data", updates);
+    touched = updates.size();
+    inserted = inserted_count;
+}
+
 void write_result_json(const Options& options, const RunStats& stats)
 {
     ensure_parent_directory(options.result);
@@ -358,6 +449,7 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"source_cells\": " << stats.source_cells << ",\n";
     out << "  \"requested_edits\": " << options.edits << ",\n";
     out << "  \"touched_coordinates\": " << stats.touched_coordinates << ",\n";
+    out << "  \"inserted_coordinates\": " << stats.inserted_coordinates << ",\n";
     out << "  \"source_write_ms\": " << stats.timings.source_write_ms << ",\n";
     out << "  \"open_ms\": " << stats.timings.open_ms << ",\n";
     out << "  \"materialize_ms\": " << stats.timings.materialize_ms << ",\n";
@@ -365,6 +457,8 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"save_ms\": " << stats.timings.save_ms << ",\n";
     out << "  \"total_editor_ms\": " << stats.timings.total_editor_ms << ",\n";
     out << "  \"total_ms\": " << stats.timings.total_ms << ",\n";
+    out << "  \"materialized_worksheet\": "
+        << (stats.materialized_worksheet ? "true" : "false") << ",\n";
     out << "  \"materialized_cells_before\": " << stats.materialized_cells_before << ",\n";
     out << "  \"materialized_cells_after\": " << stats.materialized_cells_after << ",\n";
     out << "  \"estimated_memory_before_bytes\": " << stats.estimated_memory_before << ",\n";
@@ -373,7 +467,8 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"source_bytes\": " << stats.source_bytes << ",\n";
     out << "  \"output_bytes\": " << stats.output_bytes << ",\n";
     out << "  \"source_package_mode\": \"stored-generated-source\",\n";
-    out << "  \"editor_mode\": \"existing-workbook-in-memory-sparse\",\n";
+    out << "  \"editor_mode\": \""
+        << editor_mode_for_scenario(options.scenario) << "\",\n";
     out << "  \"office_open\": \"not_run\",\n";
     out << "  \"source\": \"" << json_escape(options.source.generic_string()) << "\",\n";
     out << "  \"output\": \"" << json_escape(options.output.generic_string()) << "\"\n";
@@ -395,28 +490,40 @@ RunStats run_benchmark(const Options& options)
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(options.source);
     stats.timings.open_ms = milliseconds_since(phase_started);
 
-    fastxlsx::WorksheetEditorOptions editor_options;
-    editor_options.max_cells = static_cast<std::size_t>(stats.source_cells);
-
     phase_started = std::chrono::steady_clock::now();
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", editor_options);
-    stats.timings.materialize_ms = milliseconds_since(phase_started);
-    stats.materialized_cells_before = sheet.cell_count();
-    stats.estimated_memory_before = sheet.estimated_memory_usage();
+    if (is_patch_scenario(options.scenario)) {
+        stats.timings.materialize_ms = 0;
+        phase_started = std::chrono::steady_clock::now();
+        if (is_patch_replace_scenario(options.scenario)) {
+            run_patch_replace(editor, options, stats.touched_coordinates);
+        } else {
+            run_patch_upsert(
+                editor, options, stats.touched_coordinates, stats.inserted_coordinates);
+        }
+    } else {
+        fastxlsx::WorksheetEditorOptions editor_options;
+        editor_options.max_cells = static_cast<std::size_t>(stats.source_cells);
 
-    phase_started = std::chrono::steady_clock::now();
-    if (options.scenario == "point-set") {
-        run_point_set(sheet, options, stats.touched_coordinates);
-    } else if (options.scenario == "batch-set") {
-        run_batch_set(sheet, options, stats.touched_coordinates);
-    } else if (options.scenario == "a1-range-clear") {
-        run_a1_range_clear(sheet, options, stats.touched_coordinates);
-    } else if (options.scenario == "a1-range-erase") {
-        run_a1_range_erase(sheet, options, stats.touched_coordinates);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", editor_options);
+        stats.materialized_worksheet = true;
+        stats.timings.materialize_ms = milliseconds_since(phase_started);
+        stats.materialized_cells_before = sheet.cell_count();
+        stats.estimated_memory_before = sheet.estimated_memory_usage();
+
+        phase_started = std::chrono::steady_clock::now();
+        if (options.scenario == "point-set") {
+            run_point_set(sheet, options, stats.touched_coordinates);
+        } else if (options.scenario == "batch-set") {
+            run_batch_set(sheet, options, stats.touched_coordinates);
+        } else if (options.scenario == "a1-range-clear") {
+            run_a1_range_clear(sheet, options, stats.touched_coordinates);
+        } else if (options.scenario == "a1-range-erase") {
+            run_a1_range_erase(sheet, options, stats.touched_coordinates);
+        }
+        stats.materialized_cells_after = sheet.cell_count();
+        stats.estimated_memory_after = sheet.estimated_memory_usage();
     }
     stats.timings.mutation_ms = milliseconds_since(phase_started);
-    stats.materialized_cells_after = sheet.cell_count();
-    stats.estimated_memory_after = sheet.estimated_memory_usage();
 
     ensure_parent_directory(options.output);
     phase_started = std::chrono::steady_clock::now();

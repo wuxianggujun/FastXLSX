@@ -175,8 +175,9 @@ cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_w
 ```
 
 `fastxlsx_bench_workbook_editor` 会先生成一个 stored source workbook，再通过
-public `WorkbookEditor` 打开、materialize `Data` worksheet、执行 small-file
-In-memory sparse mutation，并 `save_as()` 到新 workbook。它支持：
+public `WorkbookEditor` 打开，并按 scenario 选择 small-file In-memory sparse
+mutation 或 large-worksheet targeted Patch mutation，最后 `save_as()` 到新
+workbook。它支持：
 
 - `point-set`：逐个调用 `set_cell_value(row, column, value)`。
 - `batch-set`：一次性调用 `set_cell_values(span<WorksheetCellUpdate>)`。
@@ -184,29 +185,38 @@ In-memory sparse mutation，并 `save_as()` 到新 workbook。它支持：
   sparse records。
 - `a1-range-erase`：调用 `erase_cells(std::string_view)`，只删除 represented
   sparse records。
+- `patch-replace`：调用 public `WorkbookEditor::replace_cells()`，只替换已存在
+  target cells，不 materialize worksheet。
+- `patch-upsert`：调用 public `WorkbookEditor::replace_or_insert_cells()`，一半编辑
+  替换已有 cells，另一半在 source 尾部之后合成新 rows，不 materialize worksheet。
 
 A1 range 场景会使用从 `A1` 开始的矩形范围；当 `--edits` 不是 `--cols` 的整数倍时，
 实际触达坐标数以 JSON 中的 `touched_coordinates` 为准。
 
-生成 JSON 使用 `workbook_editor_benchmark_schema_version = "1"`，记录：
+生成 JSON 使用 `workbook_editor_benchmark_schema_version = "2"`，记录：
 
 - `source_write_ms`：生成基准 source workbook 的耗时，不属于编辑路径。
 - `open_ms`：`WorkbookEditor::open()` metadata/package 读取耗时。
-- `materialize_ms`：`WorksheetEditor` source worksheet materialization 耗时。
-- `mutation_ms`：实际 sparse edit API 耗时。
+- `materialize_ms`：`WorksheetEditor` source worksheet materialization 耗时；Patch
+  scenarios 固定为 `0`。
+- `mutation_ms`：实际 edit API 耗时；Patch scenarios 包含 source/planned worksheet
+  transformer 分析和 staged rewrite 排队。
 - `save_ms`：`WorkbookEditor::save_as()` 输出耗时。
 - `total_editor_ms`：`open + materialize + mutation + save`，用于比较编辑路径。
+- `materialized_worksheet` / `editor_mode`：明确本轮是 In-memory sparse 还是 Patch
+  targeted cell path。
+- `inserted_coordinates`：仅 `patch-upsert` 使用，用于记录本轮合成缺失 cell/row 数。
 - `materialized_cells_before/after`、`estimated_memory_before/after_bytes`：
-  sparse store 诊断值，不是进程 RSS。
+  sparse store 诊断值；Patch scenarios 为 `0`，不是进程 RSS。
 - `peak_memory_mb`：当前进程 PeakWorkingSetSize；它包含 source 生成、打开、编辑、
   save 和运行时开销，不是单独的 sparse store 内存。
 - `source_bytes` / `output_bytes`：输入/输出 package 文件大小。
 
-该 benchmark 只覆盖当前 public small-file In-memory sparse 编辑路径，不代表
-large-file low-memory random editing、relationship repair、metadata recalculation、
-sharedStrings/styles broad migration、Zip64 支持或 Office 打开兼容性。`office_open`
-初始仍为 `not_run`，只有实际用 Excel / WPS / LibreOffice 打开后，才能把兼容性写成
-已验证事实。
+该 benchmark 覆盖当前 public small-file In-memory sparse 编辑路径，以及 public
+targeted Patch replace/upsert 路径；它仍不代表 arbitrary random editing、row/column
+shifting、relationship repair、metadata recalculation、sharedStrings/styles broad
+migration、Zip64 支持或 Office 打开兼容性。`office_open` 初始仍为 `not_run`，
+只有实际用 Excel / WPS / LibreOffice 打开后，才能把兼容性写成已验证事实。
 
 2026-06-25 本地 MSVC release 手工快照，stored source workbook，`office_open=not_run`：
 
@@ -223,6 +233,23 @@ CellStore batch preflight + direct commit，避免为失败原子性复制整张
 约 39 ms，峰值工作集从约 133.76 MB 降到约 79.86 MB。端到端时间仍主要由
 source worksheet materialization 和 `save_as()` package 输出支配，后续大文件编辑优化
 必须走 worksheet streaming patch / transformer，而不是扩大 In-memory sparse materialization。
+
+同日补充 public Patch editor benchmark smoke，规模为 `50000 x 10 = 500000`
+source cells、`1000` edits，stored source workbook，`office_open=not_run`：
+
+| scenario | editor_mode | materialized | inserted | total_editor_ms | materialize_ms | mutation_ms | save_ms | peak_memory_mb |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `batch-set` | `existing-workbook-in-memory-sparse` | true | 0 | 1926 | 802 | 19 | 1104 | 69.24 |
+| `patch-replace` | `existing-workbook-patch-targeted-cell-replace` | false | 0 | 1475 | 0 | 1231 | 243 | 6.26 |
+| `patch-upsert` | `existing-workbook-patch-targeted-cell-upsert` | false | 500 | 1639 | 0 | 1367 | 268 | 6.30 |
+
+本轮还修正了 `patch-upsert` transformer 的 target 调度：从每个 source event 反复扫描
+全部 targets，改为按 row/column 排序后的单向游标推进。相同 500000 / 1000 upsert
+smoke 中，优化前本机 `total_editor_ms` 约 4248 ms，优化后约 1639 ms。结论是：
+大文件少量点编辑应优先走 Patch replace/upsert；它避免 worksheet materialization，
+峰值工作集在该 smoke 下约 6.3 MB。当前耗时仍与 source worksheet 线性扫描相关，不是
+真正随机访问索引；插入/替换也不会修复 tables、filters、drawings、defined names、
+formulas、sharedStrings 或 styles。
 
 ### Public WorkbookEditor Targeted Cell Replacement Benchmark Workflow
 

@@ -8,6 +8,7 @@
 #include <fastxlsx/document_properties.hpp>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <span>
 #include <string>
@@ -147,6 +148,10 @@ RelationshipReferenceScannerTestResult testing_scan_worksheet_relationship_refer
 
 [[nodiscard]] std::string testing_read_package_entry_chunks_to_string(
     std::vector<PackageEntryChunk> chunks);
+[[nodiscard]] std::string testing_read_package_entry_chunk_range_to_string(
+    std::vector<PackageEntryChunk> chunks,
+    std::uint64_t offset,
+    std::uint64_t size);
 [[nodiscard]] std::string testing_read_first_package_entry_chunk_for_lifecycle(
     std::vector<PackageEntryChunk> chunks);
 #endif

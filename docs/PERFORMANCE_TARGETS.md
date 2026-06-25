@@ -264,9 +264,10 @@ API、不使用索引，也不跳过 source XML 扫描；它只减少“大 work
 后段大量透传 cells”场景中的无效 target 查找。后续 indexed rewrite 可以复用
 event-reader source offsets、transformer action offsets 和 `WorksheetCellIndex`
 rewrite plans；materialized indexed slicer 已证明按 range 拼接可行，但 package-level
-source-entry / staged-chunk slicer、算法切换和 benchmark 证明仍是单独任务。回归测试
-覆盖早段 target 完成后尾部 cells 仍原样透传，并固定重复 source target 在进入 tail
-fast path 前仍按旧行为替换。
+staged-chunk byte-range slicer 目前只作为 internal `PackageEntryChunk` memory/file
+range emitter foundation 存在；source-entry ZIP seek、默认算法切换和 benchmark 证明仍是
+单独任务。回归测试覆盖早段 target 完成后尾部 cells 仍原样透传，并固定重复 source
+target 在进入 tail fast path 前仍按旧行为替换。
 
 ### Public WorkbookEditor Targeted Cell Replacement Benchmark Workflow
 

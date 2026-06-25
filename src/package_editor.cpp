@@ -5002,6 +5002,155 @@ private:
     std::ifstream input_;
 };
 
+using PackageEntryChunkRangeCallback = std::function<void(std::string_view)>;
+
+struct PackageEntryChunkRangeLayout {
+    std::vector<std::uint64_t> sizes;
+    std::uint64_t total_size = 0;
+};
+
+PackageEntryChunkRangeLayout package_entry_chunk_range_layout(
+    const std::vector<PackageEntryChunk>& chunks)
+{
+    PackageEntryChunkRangeLayout layout;
+    layout.sizes.reserve(chunks.size());
+    for (std::size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index) {
+        const std::uint64_t size =
+            package_entry_chunk_size_with_context(chunks[chunk_index], chunk_index);
+        if (size > std::numeric_limits<std::uint64_t>::max() - layout.total_size) {
+            throw FastXlsxError("staged package-entry chunk range source is too large");
+        }
+        layout.sizes.push_back(size);
+        layout.total_size += size;
+    }
+    return layout;
+}
+
+std::string package_entry_chunk_range_description(
+    std::uint64_t offset, std::uint64_t size, std::uint64_t total_size)
+{
+    return "offset " + std::to_string(offset)
+        + ", length " + std::to_string(size)
+        + ", total " + std::to_string(total_size);
+}
+
+void emit_file_chunk_range(
+    const PackageEntryChunk& chunk,
+    std::size_t chunk_index,
+    std::uint64_t offset,
+    std::uint64_t size,
+    const PackageEntryChunkRangeCallback& callback)
+{
+    if (size == 0) {
+        return;
+    }
+    if (offset > static_cast<std::uint64_t>(
+            std::numeric_limits<std::streamoff>::max())) {
+        throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+            + ": staged package-entry chunk file range offset is too large");
+    }
+
+    std::ifstream input(chunk.path, std::ios::binary);
+    if (!input) {
+        throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+            + ": failed to open staged package-entry chunk file for range read");
+    }
+    input.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    if (!input) {
+        throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+            + ": failed to seek staged package-entry chunk file range to offset "
+            + std::to_string(offset));
+    }
+
+    std::array<char, package_entry_file_chunk_size> buffer {};
+    std::uint64_t remaining = size;
+    std::uint64_t emitted = 0;
+    while (remaining > 0) {
+        const std::size_t requested = static_cast<std::size_t>(
+            std::min<std::uint64_t>(
+                remaining, static_cast<std::uint64_t>(buffer.size())));
+        input.read(buffer.data(), static_cast<std::streamsize>(requested));
+        const std::streamsize read_size = input.gcount();
+        if (input.bad()) {
+            throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+                + ": failed to read staged package-entry chunk file range");
+        }
+        if (read_size <= 0
+            || static_cast<std::uint64_t>(read_size)
+                != static_cast<std::uint64_t>(requested)) {
+            throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+                + ": "
+                + expected_actual_size_message(
+                    "staged package-entry chunk file range ended before requested bytes",
+                    size,
+                    emitted + static_cast<std::uint64_t>(
+                                  std::max<std::streamsize>(read_size, 0)))
+                + " at local offset " + std::to_string(offset));
+        }
+
+        const std::string_view output(
+            buffer.data(), static_cast<std::size_t>(read_size));
+        callback(output);
+        emitted += static_cast<std::uint64_t>(read_size);
+        remaining -= static_cast<std::uint64_t>(read_size);
+    }
+}
+
+void emit_package_entry_chunk_range(
+    const std::vector<PackageEntryChunk>& chunks,
+    std::uint64_t offset,
+    std::uint64_t size,
+    const PackageEntryChunkRangeCallback& callback)
+{
+    const PackageEntryChunkRangeLayout layout =
+        package_entry_chunk_range_layout(chunks);
+    if (offset > layout.total_size
+        || size > layout.total_size - offset) {
+        throw FastXlsxError(
+            "staged package-entry chunk range exceeds staged payload size: "
+            + package_entry_chunk_range_description(offset, size, layout.total_size));
+    }
+    if (size == 0) {
+        return;
+    }
+
+    const std::uint64_t range_end = offset + size;
+    std::uint64_t chunk_start = 0;
+    for (std::size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index) {
+        const std::uint64_t chunk_size = layout.sizes[chunk_index];
+        const std::uint64_t chunk_end = chunk_start + chunk_size;
+        if (chunk_end <= offset) {
+            chunk_start = chunk_end;
+            continue;
+        }
+        if (chunk_start >= range_end) {
+            break;
+        }
+
+        const std::uint64_t overlap_start = std::max(offset, chunk_start);
+        const std::uint64_t overlap_end = std::min(range_end, chunk_end);
+        const std::uint64_t local_offset = overlap_start - chunk_start;
+        const std::uint64_t local_size = overlap_end - overlap_start;
+        const PackageEntryChunk& chunk = chunks[chunk_index];
+        switch (chunk.kind) {
+        case PackageEntryChunk::Kind::Memory: {
+            const auto begin = static_cast<std::size_t>(local_offset);
+            const auto length = static_cast<std::size_t>(local_size);
+            callback(std::string_view(chunk.data.data() + begin, length));
+            break;
+        }
+        case PackageEntryChunk::Kind::File:
+            emit_file_chunk_range(chunk, chunk_index, local_offset, local_size, callback);
+            break;
+        default:
+            throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+                + ": unsupported staged package-entry chunk kind");
+        }
+
+        chunk_start = chunk_end;
+    }
+}
+
 WorksheetInputChunkCallback package_entry_chunk_source(
     const PackageReader& reader, std::string_view entry_name)
 {
@@ -5296,6 +5445,19 @@ std::string testing_read_package_entry_chunks_to_string(
     while (reader(chunk)) {
         result += chunk;
     }
+    return result;
+}
+
+std::string testing_read_package_entry_chunk_range_to_string(
+    std::vector<PackageEntryChunk> chunks,
+    std::uint64_t offset,
+    std::uint64_t size)
+{
+    std::string result;
+    emit_package_entry_chunk_range(chunks, offset, size,
+        [&](std::string_view chunk) {
+            result += chunk;
+        });
     return result;
 }
 

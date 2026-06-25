@@ -34421,6 +34421,53 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.750 - PackageEntryChunk byte-range slicer foundation
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `tests/test_package_editor_core.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-streaming-worksheet/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: add the package-level staged-chunk range source primitive needed before
+the indexed worksheet slicer can be wired into `PackageEditor`, without
+changing public Patch APIs or the current transformer default path.
+
+Output:
+- Added internal `emit_package_entry_chunk_range()` over `PackageEntryChunk`
+  memory/file chunks.
+- The helper validates chunk kind, memory/file exclusivity, expected file size,
+  total payload bounds, and requested range bounds before emitting bytes.
+- File-backed ranges seek to the requested local offset and stream only the
+  requested byte range through a bounded buffer.
+- Added test-only `testing_read_package_entry_chunk_range_to_string()` and
+  `fastxlsx.package_editor.core` coverage for full-range, empty-range,
+  file-only, cross memory/file/memory slicing, out-of-range requests, expected
+  size mismatch, missing files, mixed-source chunks, and unsupported chunk
+  kinds.
+
+Non-goals / boundary:
+- No public API, no default targeted-cell Patch algorithm switch, no source ZIP
+  entry seek, no indexed PackageEditor worksheet rewrite handoff, no upsert /
+  missing-row insert change, no metadata recalculation, no sharedStrings/styles
+  migration, no relationship repair, and no benchmark performance claim.
+- This is a staged `PackageEntryChunk` byte-range primitive. It does not mean
+  arbitrary source package entries can be randomly sought directly.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.package_editor\\.core$" --output-on-failure` passes.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

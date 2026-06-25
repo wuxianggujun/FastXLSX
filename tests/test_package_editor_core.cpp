@@ -426,6 +426,148 @@ void test_package_editor_staged_chunk_part_replacement_writes_chunks()
         restore_output_reader, opaque_part.zip_path(), expected_chunked_opaque);
 }
 
+void test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-staged-range-body.bin");
+    const std::string prefix = "alpha:";
+    const std::string body = "FILE-RANGE-BODY";
+    const std::string suffix = ":omega";
+    const std::string expected = prefix + body + suffix;
+    write_binary_file(body_path, body);
+
+    const std::vector<fastxlsx::detail::PackageEntryChunk> chunks {
+        fastxlsx::detail::PackageEntryChunk::memory(prefix),
+        fastxlsx::detail::PackageEntryChunk::file(body_path),
+        fastxlsx::detail::PackageEntryChunk::memory(suffix),
+    };
+    const auto total_size = static_cast<std::uint64_t>(expected.size());
+
+    check(fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+              chunks, 0, total_size)
+            == expected,
+        "staged chunk range reader should emit the full memory/file composition");
+    check(fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+              chunks, 0, 0)
+            .empty(),
+        "staged chunk range reader should accept an empty range at the beginning");
+    check(fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+              chunks, total_size, 0)
+            .empty(),
+        "staged chunk range reader should accept an empty range at the end");
+
+    const auto file_only_offset =
+        static_cast<std::uint64_t>(prefix.size() + 5);
+    check(fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+              chunks, file_only_offset, 5)
+            == "RANGE",
+        "staged chunk range reader should slice inside a file-backed chunk");
+
+    const auto spanning_offset =
+        static_cast<std::uint64_t>(prefix.size() - 2);
+    const auto spanning_size =
+        static_cast<std::uint64_t>(body.size() + 6);
+    check(fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+              chunks, spanning_offset, spanning_size)
+            == expected.substr(static_cast<std::size_t>(spanning_offset),
+                static_cast<std::size_t>(spanning_size)),
+        "staged chunk range reader should slice across memory/file/memory chunks");
+}
+
+void test_package_editor_rejects_invalid_staged_chunk_ranges()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-invalid-staged-range-body.bin");
+    const std::filesystem::path missing_path =
+        output_path("fastxlsx-package-editor-invalid-staged-range-missing.bin");
+    const std::string body = "file";
+    write_binary_file(body_path, body);
+    std::error_code ignored;
+    std::filesystem::remove(missing_path, ignored);
+
+    const std::vector<fastxlsx::detail::PackageEntryChunk> chunks {
+        fastxlsx::detail::PackageEntryChunk::memory("pre"),
+        fastxlsx::detail::PackageEntryChunk::file(body_path),
+        fastxlsx::detail::PackageEntryChunk::memory("post"),
+    };
+    const auto total_size = static_cast<std::uint64_t>(
+        std::string("pre").size() + body.size() + std::string("post").size());
+
+    bool failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+            chunks, total_size - 1, 2);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "range exceeds staged payload size",
+            "out-of-range staged chunk slice should report range overflow");
+        check_contains(error.what(), "offset 10",
+            "out-of-range staged chunk slice should report requested offset");
+        check_contains(error.what(), "length 2",
+            "out-of-range staged chunk slice should report requested length");
+        check_contains(error.what(), "total 11",
+            "out-of-range staged chunk slice should report total staged size");
+    }
+    check(failed, "staged chunk range reader should reject ranges beyond total size");
+
+    fastxlsx::detail::PackageEntryChunk expected_size_mismatch =
+        fastxlsx::detail::PackageEntryChunk::file(body_path);
+    expected_size_mismatch.has_expected_size = true;
+    expected_size_mismatch.expected_size = static_cast<std::uint64_t>(body.size() + 1);
+    failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+            {expected_size_mismatch}, 0, 1);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "staged package-entry chunk 0",
+            "expected-size mismatch should identify the failing chunk");
+        check_contains(error.what(), "size changed after validation",
+            "expected-size mismatch should preserve validation detail");
+    }
+    check(failed,
+        "staged chunk range reader should reject a changed expected file size");
+
+    failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+            {fastxlsx::detail::PackageEntryChunk::file(missing_path)}, 0, 1);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "failed to measure staged package-entry chunk file",
+            "missing file chunk should fail during range layout validation");
+    }
+    check(failed, "staged chunk range reader should reject missing file chunks");
+
+    fastxlsx::detail::PackageEntryChunk mixed =
+        fastxlsx::detail::PackageEntryChunk::memory("mixed");
+    mixed.path = body_path;
+    failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+            {mixed}, 0, 1);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "cannot mix memory and file sources",
+            "mixed memory/file chunk should fail during range layout validation");
+    }
+    check(failed, "staged chunk range reader should reject mixed-source chunks");
+
+    fastxlsx::detail::PackageEntryChunk unsupported =
+        fastxlsx::detail::PackageEntryChunk::memory("unsupported");
+    unsupported.kind = static_cast<fastxlsx::detail::PackageEntryChunk::Kind>(99);
+    failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+            {unsupported}, 0, 1);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "unsupported staged package-entry chunk kind",
+            "unsupported chunk kind should fail during range layout validation");
+    }
+    check(failed, "staged chunk range reader should reject unsupported chunk kinds");
+}
+
 void test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes()
 {
     struct ChunkMutationCase {
@@ -908,6 +1050,8 @@ int main(int argc, char* argv[])
             test_package_editor_file_backs_copy_original_package_part_source_entries();
             test_package_editor_replaces_one_part_and_preserves_unknown_parts();
             test_package_editor_staged_chunk_part_replacement_writes_chunks();
+            test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks();
+            test_package_editor_rejects_invalid_staged_chunk_ranges();
             test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes();
             test_package_editor_save_as_rejects_changed_staged_chunk_crc_without_state_changes();
             test_package_editor_rejects_invalid_generic_staged_chunks_without_state_changes();

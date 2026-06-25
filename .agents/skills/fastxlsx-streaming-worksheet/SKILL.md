@@ -26,6 +26,9 @@ finalization 以 header + temporary body file + footer 写入内部 package writ
 file-backed entry 写入，但 shared string table 仍保留唯一字符串状态。只能写成
 worksheet/package-entry 缓冲优化，不要写成 true package streaming、Zip64、完整低内存
 package writer 或生产级大文件性能完成。
+当前还可见 internal `PackageEntryChunk` byte-range emitter，可从 memory/file staged
+chunks 中按 offset/size 输出片段，作为 PackageEditor indexed rewrite 的底层前置能力；
+它不是 source ZIP entry seek、不是默认 Patch 算法切换，也不是完整低内存随机编辑。
 
 ## 不可破坏的边界
 

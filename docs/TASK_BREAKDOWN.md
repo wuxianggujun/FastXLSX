@@ -34376,6 +34376,51 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.749 - Worksheet indexed materialized replacement slicer
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/worksheet_transformer.hpp`
+- `src/worksheet_transformer.cpp`
+- `tests/test_worksheet_transformer.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: use the P8.747/P8.748 source-offset index and rewrite plan to prove the
+actual XML slicing algorithm for strict existing-cell replacement, without
+changing the current PackageEditor source-entry / staged-chunk Patch path.
+
+Output:
+- Added internal `emit_indexed_cell_replacement_worksheet()`.
+- The helper accepts materialized worksheet XML, a matching `WorksheetCellIndex`,
+  and a prevalidated `WorksheetCellReplacementPlan`, validates all target ranges
+  before output, then emits pass-through XML slices and replacement payload
+  chunks in source order.
+- Focused tests cover multi-target source-order splicing, chunked replacement
+  payload replay, missing target prevalidation with no partial output, and
+  rejection when the worksheet XML bytes no longer match the index ranges.
+
+Non-goals / boundary:
+- No public API, no PackageEditor default algorithm switch, no source-entry or
+  staged-chunk range reader, no source ZIP seek, no upsert / missing row insert,
+  no dimension refresh, no relationship audit, no metadata recalculation, no
+  sharedStrings/styles migration, no relationship repair, and no benchmark
+  performance claim.
+- This helper intentionally requires materialized worksheet XML bytes that
+  exactly match the index. It is the slicer algorithm proof, not the final large
+  worksheet package-level indexed rewrite path.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_transformer_tests fastxlsx_worksheet_cell_index_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_transformer|worksheet_cell_index)$" --output-on-failure` passes.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

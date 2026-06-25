@@ -1253,4 +1253,61 @@ WorksheetTransformSummary emit_cell_replacement_worksheet_from_chunk_source(
         mode);
 }
 
+WorksheetTransformSummary emit_indexed_cell_replacement_worksheet(
+    std::string_view worksheet_xml,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const WorksheetOutputChunkCallback& callback)
+{
+    if (!callback) {
+        throw FastXlsxError("indexed worksheet replacement output emitter requires a callback");
+    }
+
+    std::vector<std::string_view> target_references;
+    target_references.reserve(replacement_plan.replacement_payloads_by_reference.size());
+    for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
+        target_references.push_back(replacement.first);
+    }
+
+    const std::vector<WorksheetIndexedCellRewrite> rewrites =
+        plan_indexed_cell_rewrites(index, target_references);
+
+    std::uint64_t cursor = 0;
+    for (const WorksheetIndexedCellRewrite& rewrite : rewrites) {
+        (void)worksheet_cell_range_xml(worksheet_xml, rewrite.source_range);
+        if (rewrite.source_range.start_offset < cursor) {
+            throw FastXlsxError("indexed worksheet replacement source ranges are not ordered");
+        }
+
+        const std::uint64_t pass_through_size = rewrite.source_range.start_offset - cursor;
+        if (pass_through_size > 0) {
+            emit_chunk(callback,
+                worksheet_xml.substr(static_cast<std::size_t>(cursor),
+                    static_cast<std::size_t>(pass_through_size)));
+        }
+
+        const auto replacement =
+            replacement_plan.replacement_payloads_by_reference.find(
+                std::string_view(rewrite.cell_reference));
+        if (replacement == replacement_plan.replacement_payloads_by_reference.end()) {
+            throw FastXlsxError(
+                "indexed worksheet replacement plan lost target cell: "
+                + rewrite.cell_reference);
+        }
+        replacement->second.for_each_chunk(
+            [&](std::string_view chunk) { emit_chunk(callback, chunk); });
+        cursor = rewrite.source_range.end_offset;
+    }
+
+    if (cursor > static_cast<std::uint64_t>(worksheet_xml.size())) {
+        throw FastXlsxError("indexed worksheet replacement source cursor overflow");
+    }
+    emit_chunk(callback,
+        worksheet_xml.substr(static_cast<std::size_t>(cursor)));
+
+    WorksheetTransformSummary summary;
+    summary.matched_replacement_count = rewrites.size();
+    return summary;
+}
+
 } // namespace fastxlsx::detail

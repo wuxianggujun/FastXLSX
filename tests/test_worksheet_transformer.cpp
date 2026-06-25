@@ -245,6 +245,19 @@ EmittedWorksheet emit_source_worksheet_with_plan(
     return emitted;
 }
 
+EmittedWorksheet emit_indexed_worksheet(
+    const std::string& xml, std::span<const WorksheetCellReplacement> replacements)
+{
+    EmittedWorksheet emitted;
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_xml(xml);
+    const WorksheetCellReplacementPlan replacement_plan =
+        fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+    emitted.summary = fastxlsx::detail::emit_indexed_cell_replacement_worksheet(
+        xml, index, replacement_plan, [&](std::string_view chunk) { emitted.xml += chunk; });
+    return emitted;
+}
+
 std::vector<std::string> replacement_order(const std::vector<CapturedTransform::Action>& actions)
 {
     std::vector<std::string> order;
@@ -297,6 +310,25 @@ bool collect_actions_fails(
     try {
         (void)collect_actions(xml, replacements);
     } catch (const std::exception&) {
+        return true;
+    }
+    return false;
+}
+
+bool emit_indexed_worksheet_fails_without_output(
+    const std::string& xml,
+    const fastxlsx::detail::WorksheetCellIndex& index,
+    std::span<const WorksheetCellReplacement> replacements)
+{
+    std::string output;
+    try {
+        const WorksheetCellReplacementPlan replacement_plan =
+            fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+        (void)fastxlsx::detail::emit_indexed_cell_replacement_worksheet(
+            xml, index, replacement_plan, [&](std::string_view chunk) { output += chunk; });
+    } catch (const std::exception&) {
+        check(output.empty(),
+            "indexed replacement should validate the whole target plan before output");
         return true;
     }
     return false;
@@ -670,6 +702,80 @@ void test_transformer_reuses_prevalidated_replacement_plan_for_scan_and_emit()
         "reused replacement plan output should include second replacement payload");
     check(!contains_text(emitted.xml, "old-a") && !contains_text(emitted.xml, "old-b"),
         "reused replacement plan output should consume original target payloads");
+}
+
+void test_indexed_transformer_replaces_existing_cells_by_source_ranges()
+{
+    const std::string xml =
+        "<?xml version=\"1.0\"?>\n"
+        "<worksheet><sheetData>"
+        "<row r=\"1\"><c r=\"A1\"><v>old-a</v></c><c r=\"C1\"><v>old-c</v></c></row>"
+        "<row r=\"3\"><c r=\"B3\"><v>old-b3</v></c></row>"
+        "</sheetData></worksheet>";
+    const std::array replacements {
+        cell_replacement("B3", R"(<c r="B3"><v>new-b3</v></c>)"),
+        cell_replacement("A1", R"(<c r="A1"><v>new-a</v></c>)"),
+    };
+
+    const EmittedWorksheet emitted = emit_indexed_worksheet(xml, replacements);
+
+    check(emitted.xml
+            == "<?xml version=\"1.0\"?>\n"
+               "<worksheet><sheetData>"
+               "<row r=\"1\"><c r=\"A1\"><v>new-a</v></c><c r=\"C1\"><v>old-c</v></c></row>"
+               "<row r=\"3\"><c r=\"B3\"><v>new-b3</v></c></row>"
+               "</sheetData></worksheet>",
+        "indexed replacement should splice replacement payloads by source byte ranges");
+    check(emitted.summary.matched_replacement_count == 2,
+        "indexed replacement should count source-indexed replacements");
+    check(emitted.summary.inserted_cell_count == 0,
+        "indexed replacement should not synthesize cells");
+    check(emitted.summary.missing_cell_references.empty(),
+        "indexed replacement should prevalidate missing targets instead of returning diagnostics");
+}
+
+void test_indexed_transformer_replays_chunked_payloads()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old</v></c></row></sheetData></worksheet>)";
+    const std::array<std::string_view, 3> replacement_chunks {
+        R"(<c r="A1">)",
+        R"(<v>chunked-new</v>)",
+        R"(</c>)",
+    };
+    const std::array replacements {
+        chunked_cell_replacement("A1", replacement_chunks),
+    };
+
+    const EmittedWorksheet emitted = emit_indexed_worksheet(xml, replacements);
+
+    check(emitted.xml
+            == R"(<worksheet><sheetData><row r="1"><c r="A1"><v>chunked-new</v></c></row></sheetData></worksheet>)",
+        "indexed replacement should replay replacement payload chunks");
+    check(emitted.summary.matched_replacement_count == 1,
+        "indexed chunked replacement should report the matched target");
+}
+
+void test_indexed_transformer_prevalidates_missing_targets_and_index_source_mismatch()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>old</v></c></row></sheetData></worksheet>)";
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_xml(xml);
+
+    const std::array missing_replacements {
+        cell_replacement("B2", R"(<c r="B2"><v>missing</v></c>)"),
+    };
+    check(emit_indexed_worksheet_fails_without_output(xml, index, missing_replacements),
+        "indexed replacement should reject targets that are absent from the source index");
+
+    const std::string shorter_xml =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"/>)";
+    const std::array replacements {
+        cell_replacement("A1", R"(<c r="A1"><v>new</v></c>)"),
+    };
+    check(emit_indexed_worksheet_fails_without_output(shorter_xml, index, replacements),
+        "indexed replacement should reject worksheet XML that does not match index ranges");
 }
 
 void test_transformer_rejects_oversized_materialized_replacement_cell_payload()
@@ -1058,6 +1164,9 @@ int main()
         test_transformer_validates_replacement_cell_payload_root_and_reference();
         test_transformer_requires_preflighted_replacement_plan();
         test_transformer_reuses_prevalidated_replacement_plan_for_scan_and_emit();
+        test_indexed_transformer_replaces_existing_cells_by_source_ranges();
+        test_indexed_transformer_replays_chunked_payloads();
+        test_indexed_transformer_prevalidates_missing_targets_and_index_source_mismatch();
         test_transformer_rejects_oversized_materialized_replacement_cell_payload();
         test_transformer_emits_rewritten_chunks_with_raw_text_preserved();
         test_transformer_chunked_emitter_matches_single_chunk_emitter_across_boundaries();

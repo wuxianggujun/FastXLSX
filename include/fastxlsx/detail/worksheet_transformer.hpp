@@ -1,5 +1,6 @@
 #pragma once
 
+#include <fastxlsx/detail/worksheet_cell_index.hpp>
 #include <fastxlsx/detail/worksheet_event_reader.hpp>
 
 #include <cstddef>
@@ -181,5 +182,19 @@ inline constexpr std::size_t worksheet_replacement_cell_xml_materialization_byte
     const WorksheetOutputChunkCallback& callback,
     WorksheetEventReaderOptions reader_options = {},
     WorksheetCellReplacementMode mode = WorksheetCellReplacementMode::ReplaceExisting);
+
+/// Emits a strict existing-cell replacement from a materialized worksheet XML
+/// buffer by slicing source byte ranges from a prebuilt `WorksheetCellIndex`.
+///
+/// This is an internal indexed rewrite primitive. It requires a materialized
+/// worksheet XML source whose bytes exactly match the index, and it only handles
+/// existing-cell replacement. It does not refresh dimensions, insert missing
+/// cells/rows, audit relationships, repair metadata, migrate sharedStrings /
+/// styles, or patch package entries.
+[[nodiscard]] WorksheetTransformSummary emit_indexed_cell_replacement_worksheet(
+    std::string_view worksheet_xml,
+    const WorksheetCellIndex& index,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const WorksheetOutputChunkCallback& callback);
 
 } // namespace fastxlsx::detail

@@ -216,8 +216,10 @@ stream 越过最后 target 坐标后进入该 tail fast path，仍线性扫描 s
 完整大文件随机编辑。当前已有 internal `WorksheetCellIndex` source-offset index
 foundation 和 indexed rewrite planning foundation，可把 source cells 映射到
 `<c>` byte ranges，并校验 / 排序有界 target set；transformer actions 也会暴露
-source XML offset。它不是 public API、不是当前 public Patch 默认路径，也不是
-source ZIP entry seek 能力。
+source XML offset。当前还有 internal materialized indexed slicer，可在 worksheet XML
+bytes 与 index 完全匹配时按 source ranges 拼接 strict existing-cell replacements。
+它不是 public API、不是当前 public Patch 默认路径、不是 PackageEditor source-entry
+range reader，也不是 source ZIP entry seek 能力。
 当前结构测试还验证 sheetData patch 输出后，worksheet `.rels` 中保留的
 legacyDrawing `rId7` target `../drawings/vmlDrawing1.vml#shape1` 可由
 `PackageReader` / `RelationshipGraph` 重读；这仍是 preservation 证据，不是

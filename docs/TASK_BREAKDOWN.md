@@ -34327,6 +34327,55 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.748 - Worksheet indexed cell rewrite planning foundation
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/worksheet_cell_index.hpp`
+- `src/worksheet_cell_index.cpp`
+- `include/fastxlsx/detail/worksheet_transformer.hpp`
+- `src/worksheet_transformer.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `tests/test_worksheet_transformer.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: move the P8.747 source-offset cell index from passive lookup evidence to
+an internal rewrite-planning primitive, while keeping the current public Patch
+facade and default transformer algorithm unchanged.
+
+Output:
+- Added internal `WorksheetIndexedCellRewrite` and
+  `plan_indexed_cell_rewrites()` to validate bounded target sets against a
+  `WorksheetCellIndex`, reject duplicate / missing target references, and
+  return source-order `<c>` byte ranges.
+- `WorksheetTransformAction` now carries `raw_xml_offset` for source-backed
+  pass-through and replacement actions; synthetic insert/pass-through actions
+  use zero and do not pretend to own source bytes.
+- Focused tests cover source-order plan sorting, exact range slicing, missing /
+  duplicate target rejection, replacement action source offsets, pass-through
+  action source offsets, and synthetic insert offset semantics.
+
+Non-goals / boundary:
+- No public API, no default targeted-cell Patch algorithm switch, no source ZIP
+  entry seeking, no package-level indexed slicer, no metadata recalculation, no
+  sharedStrings/styles migration, no relationship repair, and no benchmark
+  performance claim.
+- The plan stores one entry per requested target after an index already exists;
+  it does not require every large worksheet edit to build a full source-cell
+  index.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests fastxlsx_worksheet_transformer_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_cell_index|worksheet_transformer)$" --output-on-failure` passes.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

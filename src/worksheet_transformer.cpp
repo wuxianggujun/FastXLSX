@@ -575,7 +575,8 @@ void emit_pass_through(const WorksheetTransformActionCallback& callback, const W
         event.row_number,
         event.cell_reference,
         {},
-        event.self_closing });
+        event.self_closing,
+        event.raw_xml_offset });
 }
 
 void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callback,
@@ -593,7 +594,8 @@ void emit_synthetic_pass_through(const WorksheetTransformActionCallback& callbac
         row_number,
         cell_reference,
         {},
-        self_closing });
+        self_closing,
+        0 });
 }
 
 bool all_replacements_matched(const WorksheetCellReplacementPlan& replacement_plan,
@@ -673,7 +675,8 @@ void consume_replacement_event(const WorksheetEvent& event,
                 event.row_number,
                 event.cell_reference,
                 replacement->second,
-                event.self_closing });
+                event.self_closing,
+                event.raw_xml_offset });
             scan_state.matched_replacements.insert(replacement->first);
             replacing_current_cell = true;
             return;
@@ -821,7 +824,8 @@ private:
             row_number,
             target.cell_reference,
             target.replacement_payload,
-            false });
+            false,
+            0 });
         inserted_replacements_.insert(target.cell_reference);
         advance_emitted_targets();
     }
@@ -1017,7 +1021,8 @@ private:
                     event.row_number,
                     event.cell_reference,
                     replacement->second,
-                    event.self_closing });
+                    event.self_closing,
+                    event.raw_xml_offset });
                 matched_replacements_.insert(replacement->first);
                 advance_emitted_targets();
                 replacing_current_cell_ = true;

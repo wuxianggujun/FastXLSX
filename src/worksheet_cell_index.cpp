@@ -6,6 +6,7 @@
 #include <cctype>
 #include <limits>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 
@@ -220,6 +221,57 @@ void WorksheetCellIndex::add_cell(
             "worksheet cell index found duplicate source cell reference: "
             + std::string(cell_reference));
     }
+}
+
+std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(
+    const WorksheetCellIndex& index,
+    std::span<const std::string_view> cell_references)
+{
+    std::set<std::string, std::less<>> seen_targets;
+    std::vector<WorksheetIndexedCellRewrite> plan;
+    plan.reserve(cell_references.size());
+
+    for (std::string_view cell_reference : cell_references) {
+        if (cell_reference.empty()) {
+            throw FastXlsxError("worksheet indexed rewrite target cell reference is empty");
+        }
+
+        auto [_, inserted] = seen_targets.emplace(cell_reference);
+        if (!inserted) {
+            throw FastXlsxError(
+                "worksheet indexed rewrite target cell reference is duplicated: "
+                + std::string(cell_reference));
+        }
+
+        const WorksheetCellIndexedRange* range = index.find(cell_reference);
+        if (range == nullptr) {
+            throw FastXlsxError(
+                "worksheet indexed rewrite target cell is missing from source index: "
+                + std::string(cell_reference));
+        }
+
+        plan.push_back(WorksheetIndexedCellRewrite {
+            std::string(cell_reference),
+            *range,
+        });
+    }
+
+    std::sort(plan.begin(), plan.end(), [](const auto& left, const auto& right) {
+        if (left.source_range.start_offset != right.source_range.start_offset) {
+            return left.source_range.start_offset < right.source_range.start_offset;
+        }
+        return left.source_range.end_offset < right.source_range.end_offset;
+    });
+
+    for (std::size_t index_position = 1; index_position < plan.size(); ++index_position) {
+        if (plan[index_position - 1].source_range.end_offset
+            > plan[index_position].source_range.start_offset) {
+            throw FastXlsxError(
+                "worksheet indexed rewrite source cell ranges overlap");
+        }
+    }
+
+    return plan;
 }
 
 std::string_view worksheet_cell_range_xml(

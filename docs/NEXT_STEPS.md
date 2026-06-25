@@ -59,9 +59,12 @@ public Patch path still scans source XML, and metadata repair is still out of
 scope. The internal worksheet event reader now exposes absolute source byte
 offsets, and a new internal `WorksheetCellIndex` can build a sparse
 cell-reference to source-`<c>` byte-range map from materialized or chunked
-worksheet XML. That is an indexed/random-access rewrite foundation, not a
-public editor API, not a default large-sheet algorithm switch, and not a claim
-that source ZIP entries can be sought directly.
+worksheet XML. The index can now validate a bounded target set and return
+source-order rewrite ranges, while transformer actions expose source XML
+offsets for source-backed pass-through / replacement events. That is an
+indexed/random-access rewrite planning foundation, not a public editor API,
+not a default large-sheet algorithm switch, and not a claim that source ZIP
+entries can be sought directly.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source

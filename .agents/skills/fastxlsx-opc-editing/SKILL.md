@@ -214,8 +214,10 @@ staged-chunk handoff 细节，不是 public API。当前 transformer 在 target
 stream 越过最后 target 坐标后进入该 tail fast path，仍线性扫描 source XML。这只能
 写成 tail pass-through 热路径优化，不能写成默认索引算法、range metadata repair 或
 完整大文件随机编辑。当前已有 internal `WorksheetCellIndex` source-offset index
-foundation，可把 source cells 映射到 `<c>` byte ranges；它不是 public API、不是
-当前 public Patch 默认路径，也不是 source ZIP entry seek 能力。
+foundation 和 indexed rewrite planning foundation，可把 source cells 映射到
+`<c>` byte ranges，并校验 / 排序有界 target set；transformer actions 也会暴露
+source XML offset。它不是 public API、不是当前 public Patch 默认路径，也不是
+source ZIP entry seek 能力。
 当前结构测试还验证 sheetData patch 输出后，worksheet `.rels` 中保留的
 legacyDrawing `rId7` target `../drawings/vmlDrawing1.vml#shape1` 可由
 `PackageReader` / `RelationshipGraph` 重读；这仍是 preservation 证据，不是

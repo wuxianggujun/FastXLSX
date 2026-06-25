@@ -5,8 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace fastxlsx::detail {
 
@@ -70,6 +72,21 @@ public:
 private:
     CellRangeMap cells_by_reference_;
 };
+
+struct WorksheetIndexedCellRewrite {
+    std::string cell_reference;
+    WorksheetCellIndexedRange source_range;
+};
+
+/// Validates a target set against a source cell index and returns source-order
+/// rewrite ranges.
+///
+/// This is an internal planning primitive for future indexed worksheet
+/// rewrites. It does not rewrite XML, patch package entries, migrate
+/// sharedStrings/styles, repair metadata, or expose a public random-access API.
+[[nodiscard]] std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(
+    const WorksheetCellIndex& index,
+    std::span<const std::string_view> cell_references);
 
 [[nodiscard]] std::string_view worksheet_cell_range_xml(
     std::string_view worksheet_xml,

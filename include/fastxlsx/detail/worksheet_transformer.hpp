@@ -104,6 +104,9 @@ struct WorksheetTransformAction {
     std::string_view cell_reference;
     WorksheetCellReplacementPayload replacement_payload;
     bool self_closing = false;
+    /// Absolute decompressed worksheet XML byte offset for source-backed
+    /// actions. Synthetic insert/pass-through actions use zero.
+    std::uint64_t raw_xml_offset = 0;
 };
 
 struct WorksheetTransformSummary {

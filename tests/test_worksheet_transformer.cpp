@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <iostream>
 #include <span>
 #include <stdexcept>
@@ -38,6 +39,7 @@ struct CapturedTransform {
         std::string row_number;
         std::string cell_reference;
         std::string replacement_payload_xml;
+        std::uint64_t raw_xml_offset = 0;
     };
     std::vector<Action> actions;
 };
@@ -108,8 +110,35 @@ CapturedTransform collect_actions(
                 std::string(action.row_number),
                 std::string(action.cell_reference),
                 payload_xml(action.replacement_payload),
+                action.raw_xml_offset,
             });
         });
+    return captured;
+}
+
+CapturedTransform collect_upsert_actions(
+    const std::string& xml, std::span<const WorksheetCellReplacement> replacements)
+{
+    CapturedTransform captured;
+    const WorksheetCellReplacementPlan replacement_plan =
+        fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
+    fastxlsx::detail::WorksheetInputChunkCallback source =
+        make_string_chunk_source(xml, std::max<std::size_t>(xml.size(), 1U));
+    captured.summary = fastxlsx::detail::scan_cell_replacement_actions_from_chunk_source(
+        source,
+        replacement_plan,
+        [&](const WorksheetTransformAction& action) {
+            captured.actions.push_back(CapturedTransform::Action {
+                action.kind,
+                std::string(action.raw_xml),
+                std::string(action.row_number),
+                std::string(action.cell_reference),
+                payload_xml(action.replacement_payload),
+                action.raw_xml_offset,
+            });
+        },
+        {},
+        fastxlsx::detail::WorksheetCellReplacementMode::ReplaceOrInsert);
     return captured;
 }
 
@@ -195,6 +224,7 @@ CapturedTransform collect_actions_with_plan(
                 std::string(action.row_number),
                 std::string(action.cell_reference),
                 payload_xml(action.replacement_payload),
+                action.raw_xml_offset,
             });
         });
     return captured;
@@ -237,6 +267,19 @@ bool has_pass_through_raw(
     return false;
 }
 
+const CapturedTransform::Action& find_action(
+    const std::vector<CapturedTransform::Action>& actions,
+    WorksheetTransformActionKind kind,
+    std::string_view cell_reference)
+{
+    for (const CapturedTransform::Action& action : actions) {
+        if (action.kind == kind && action.cell_reference == cell_reference) {
+            return action;
+        }
+    }
+    throw TestFailure("expected transform action not found");
+}
+
 bool contains_text(std::string_view haystack, std::string_view needle)
 {
     return haystack.find(needle) != std::string_view::npos;
@@ -245,13 +288,7 @@ bool contains_text(std::string_view haystack, std::string_view needle)
 const CapturedTransform::Action& find_replace(
     const std::vector<CapturedTransform::Action>& actions, std::string_view cell_reference)
 {
-    for (const CapturedTransform::Action& action : actions) {
-        if (action.kind == WorksheetTransformActionKind::ReplaceCell
-            && action.cell_reference == cell_reference) {
-            return action;
-        }
-    }
-    throw TestFailure("expected replacement action not found");
+    return find_action(actions, WorksheetTransformActionKind::ReplaceCell, cell_reference);
 }
 
 bool collect_actions_fails(
@@ -372,6 +409,9 @@ void test_transformer_emits_replace_cell_action_and_skips_original_cell_payload(
 
     const CapturedTransform::Action& replacement = find_replace(captured.actions, "B1");
     check(replacement.row_number == "1", "replacement action should expose source row");
+    check(replacement.raw_xml_offset
+            == static_cast<std::uint64_t>(xml.find(R"(<c r="B1">)")),
+        "replacement action should expose the source cell byte offset");
     check(replacement.replacement_payload_xml == replacement_xml,
         "replacement action should carry caller payload XML");
 
@@ -379,6 +419,37 @@ void test_transformer_emits_replace_cell_action_and_skips_original_cell_payload(
         "non-target cell value should remain pass-through");
     check(!has_pass_through_raw(captured.actions, "old-b"),
         "target cell original value should be consumed by replacement action");
+}
+
+void test_transformer_actions_expose_source_offsets_and_synthetic_insert_offsets()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"/>)"
+        R"(<c r="C1"><v>tail</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    const std::array replacements {
+        cell_replacement("B1", R"(<c r="B1"><v>new-b</v></c>)"),
+    };
+
+    const CapturedTransform captured = collect_upsert_actions(xml, replacements);
+    const CapturedTransform::Action& a1 =
+        find_action(captured.actions, WorksheetTransformActionKind::PassThrough, "A1");
+    const CapturedTransform::Action& inserted =
+        find_action(captured.actions, WorksheetTransformActionKind::InsertCell, "B1");
+    const CapturedTransform::Action& c1 =
+        find_action(captured.actions, WorksheetTransformActionKind::PassThrough, "C1");
+
+    check(a1.raw_xml_offset == static_cast<std::uint64_t>(xml.find(R"(<c r="A1"/>)")),
+        "pass-through action should expose the source offset for A1");
+    check(c1.raw_xml_offset == static_cast<std::uint64_t>(xml.find(R"(<c r="C1">)")),
+        "pass-through action should expose the source offset for C1");
+    check(inserted.raw_xml.empty(),
+        "synthetic insert action should not pretend to own source raw XML");
+    check(inserted.raw_xml_offset == 0,
+        "synthetic insert action should use zero source offset");
+    check(captured.summary.inserted_cell_count == 1,
+        "upsert action scan should count the synthetic insert");
 }
 
 void test_transformer_orders_replacements_by_source_xml()
@@ -981,6 +1052,7 @@ int main()
         test_chunked_replacement_payload_preflights_and_replays_chunks();
         test_chunked_replacement_payload_rejects_total_size_over_limit();
         test_transformer_emits_replace_cell_action_and_skips_original_cell_payload();
+        test_transformer_actions_expose_source_offsets_and_synthetic_insert_offsets();
         test_transformer_orders_replacements_by_source_xml();
         test_transformer_reports_missing_and_rejects_invalid_replacements();
         test_transformer_validates_replacement_cell_payload_root_and_reference();

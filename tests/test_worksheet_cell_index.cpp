@@ -1,10 +1,13 @@
 #include <fastxlsx/detail/worksheet_cell_index.hpp>
 
 #include <algorithm>
+#include <array>
 #include <iostream>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -44,6 +47,17 @@ bool build_index_fails(std::string_view xml)
 {
     try {
         (void)fastxlsx::detail::WorksheetCellIndex::build_from_xml(xml);
+    } catch (const std::exception&) {
+        return true;
+    }
+    return false;
+}
+
+bool indexed_rewrite_plan_fails(const fastxlsx::detail::WorksheetCellIndex& index,
+    std::span<const std::string_view> cell_references)
+{
+    try {
+        (void)fastxlsx::detail::plan_indexed_cell_rewrites(index, cell_references);
     } catch (const std::exception&) {
         return true;
     }
@@ -95,6 +109,42 @@ void test_cell_index_maps_exact_source_cell_ranges()
     check(c3->end_offset
             == xml.find(R"(</x:c>)", xml.find(R"(<x:c r="C3")")) + std::string_view("</x:c>").size(),
         "C3 end offset should point after the closing cell tag");
+}
+
+void test_indexed_cell_rewrite_plan_validates_targets_and_sorts_by_source_range()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c><c r="C1"><v>3</v></c></row>)"
+        R"(<row r="3"><c r="B3"><v>tail</v></c></row>)"
+        R"(</sheetData></worksheet>)";
+    const fastxlsx::detail::WorksheetCellIndex index =
+        fastxlsx::detail::WorksheetCellIndex::build_from_xml(xml);
+
+    const std::array<std::string_view, 2> requested {"B3", "A1"};
+    const std::vector<fastxlsx::detail::WorksheetIndexedCellRewrite> plan =
+        fastxlsx::detail::plan_indexed_cell_rewrites(index, requested);
+
+    check(plan.size() == 2,
+        "indexed rewrite plan should include every requested target");
+    check(plan[0].cell_reference == "A1",
+        "indexed rewrite plan should be sorted by source byte range");
+    check(plan[1].cell_reference == "B3",
+        "indexed rewrite plan should keep later source cells after earlier ones");
+    check(fastxlsx::detail::worksheet_cell_range_xml(xml, plan[0].source_range)
+            == R"(<c r="A1"><v>1</v></c>)",
+        "indexed rewrite plan should carry the exact source range for A1");
+    check(fastxlsx::detail::worksheet_cell_range_xml(xml, plan[1].source_range)
+            == R"(<c r="B3"><v>tail</v></c>)",
+        "indexed rewrite plan should carry the exact source range for B3");
+
+    const std::array<std::string_view, 1> missing {"D4"};
+    check(indexed_rewrite_plan_fails(index, missing),
+        "indexed rewrite plan should reject targets missing from the source index");
+
+    const std::array<std::string_view, 2> duplicate {"A1", "A1"};
+    check(indexed_rewrite_plan_fails(index, duplicate),
+        "indexed rewrite plan should reject duplicate target selectors");
 }
 
 void test_cell_index_chunk_source_matches_materialized_offsets()
@@ -162,6 +212,7 @@ int main()
 {
     try {
         test_cell_index_maps_exact_source_cell_ranges();
+        test_indexed_cell_rewrite_plan_validates_targets_and_sorts_by_source_range();
         test_cell_index_chunk_source_matches_materialized_offsets();
         test_cell_index_rejects_ambiguous_or_invalid_source_cells();
         test_cell_index_propagates_event_reader_failures();

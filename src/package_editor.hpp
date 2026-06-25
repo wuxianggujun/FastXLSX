@@ -124,6 +124,12 @@ struct SheetCatalogRenameOptions {
     const WorksheetCellReplacementPlan& replacement_plan,
     const WorksheetOutputChunkCallback& callback);
 
+[[nodiscard]] WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    std::span<const WorksheetIndexedCellRewrite> rewrites,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const WorksheetOutputChunkCallback& callback);
+
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 using PackageEditorSourceCopyTempFilesHook =
     void (*)(std::span<const std::filesystem::path> temporary_source_files);

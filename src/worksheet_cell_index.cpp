@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -187,6 +188,44 @@ struct ActiveCellRange {
     std::uint64_t start_offset = 0;
 };
 
+using TargetCoordinateKey = std::pair<std::uint32_t, std::uint32_t>;
+
+TargetCoordinateKey target_coordinate_key(WorksheetCellCoordinate coordinate) noexcept
+{
+    return TargetCoordinateKey {coordinate.row, coordinate.column};
+}
+
+void sort_and_validate_rewrite_ranges(
+    std::vector<fastxlsx::detail::WorksheetIndexedCellRewrite>& plan)
+{
+    std::sort(plan.begin(), plan.end(), [](const auto& left, const auto& right) {
+        if (left.source_range.start_offset != right.source_range.start_offset) {
+            return left.source_range.start_offset < right.source_range.start_offset;
+        }
+        return left.source_range.end_offset < right.source_range.end_offset;
+    });
+
+    for (std::size_t index_position = 1; index_position < plan.size(); ++index_position) {
+        if (plan[index_position - 1].source_range.end_offset
+            > plan[index_position].source_range.start_offset) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet indexed rewrite source cell ranges overlap");
+        }
+    }
+}
+
+struct TargetedCellReference {
+    std::string requested_reference;
+    std::optional<WorksheetCellCoordinate> coordinate;
+    bool found = false;
+    fastxlsx::detail::WorksheetCellIndexedRange range;
+};
+
+struct ActiveTargetedCellRange {
+    WorksheetCellCoordinate coordinate;
+    std::uint64_t start_offset = 0;
+};
+
 class WorksheetCellIndexBuilder {
 public:
     void consume(const fastxlsx::detail::WorksheetEvent& event)
@@ -251,6 +290,156 @@ private:
 
     fastxlsx::detail::WorksheetCellIndex index_;
     std::optional<ActiveCellRange> active_cell_;
+};
+
+class TargetedWorksheetCellRewritePlanner {
+public:
+    explicit TargetedWorksheetCellRewritePlanner(
+        std::span<const std::string_view> cell_references)
+    {
+        add_targets(cell_references);
+    }
+
+    void consume(const fastxlsx::detail::WorksheetEvent& event)
+    {
+        using fastxlsx::detail::WorksheetEventKind;
+
+        if (event.kind == WorksheetEventKind::CellStart) {
+            consume_cell_start(event);
+            return;
+        }
+        if (event.kind == WorksheetEventKind::CellEnd) {
+            consume_cell_end(event);
+        }
+    }
+
+    [[nodiscard]] fastxlsx::detail::WorksheetTargetedCellRewritePlan finish() &&
+    {
+        if (active_cell_.has_value()) {
+            throw fastxlsx::FastXlsxError("worksheet cell index ended inside a source cell");
+        }
+
+        fastxlsx::detail::WorksheetTargetedCellRewritePlan plan;
+        plan.scanned_source_cell_count = scanned_source_cell_count_;
+        plan.rewrites.reserve(targets_.size());
+        for (const TargetedCellReference& target : targets_) {
+            if (!target.found) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet indexed rewrite target cell is missing from source index: "
+                    + target.requested_reference);
+            }
+            plan.rewrites.push_back(fastxlsx::detail::WorksheetIndexedCellRewrite {
+                target.requested_reference,
+                target.range,
+            });
+        }
+        sort_and_validate_rewrite_ranges(plan.rewrites);
+        return plan;
+    }
+
+private:
+    void add_targets(std::span<const std::string_view> cell_references)
+    {
+        std::set<std::string, std::less<>> seen_targets;
+        targets_.reserve(cell_references.size());
+
+        for (std::string_view cell_reference : cell_references) {
+            if (cell_reference.empty()) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet indexed rewrite target cell reference is empty");
+            }
+
+            auto [_, inserted] = seen_targets.emplace(cell_reference);
+            if (!inserted) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet indexed rewrite target cell reference is duplicated: "
+                    + std::string(cell_reference));
+            }
+
+            TargetedCellReference target;
+            target.requested_reference = std::string(cell_reference);
+            target.coordinate = parse_cell_reference_for_lookup(cell_reference);
+
+            const std::size_t target_index = targets_.size();
+            targets_.push_back(std::move(target));
+            if (targets_.back().coordinate.has_value()) {
+                targets_by_coordinate_[target_coordinate_key(*targets_.back().coordinate)]
+                    .push_back(target_index);
+            }
+        }
+    }
+
+    void consume_cell_start(const fastxlsx::detail::WorksheetEvent& event)
+    {
+        const WorksheetCellCoordinate coordinate =
+            parse_source_cell_reference(event.cell_reference);
+        ++scanned_source_cell_count_;
+
+        if (event.self_closing) {
+            record_source_range(coordinate,
+                fastxlsx::detail::WorksheetCellIndexedRange {
+                    event.raw_xml_offset,
+                    event_end_offset(event),
+                });
+            return;
+        }
+        if (active_cell_.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found a nested source cell");
+        }
+        active_cell_ = ActiveTargetedCellRange {
+            coordinate,
+            event.raw_xml_offset,
+        };
+    }
+
+    void consume_cell_end(const fastxlsx::detail::WorksheetEvent& event)
+    {
+        if (event.self_closing) {
+            return;
+        }
+        if (!active_cell_.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found a closing source cell without a start");
+        }
+        record_source_range(active_cell_->coordinate,
+            fastxlsx::detail::WorksheetCellIndexedRange {
+                active_cell_->start_offset,
+                event_end_offset(event),
+            });
+        active_cell_.reset();
+    }
+
+    void record_source_range(
+        WorksheetCellCoordinate coordinate,
+        fastxlsx::detail::WorksheetCellIndexedRange range)
+    {
+        if (range.end_offset < range.start_offset) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found an invalid source cell range");
+        }
+
+        const auto targets = targets_by_coordinate_.find(target_coordinate_key(coordinate));
+        if (targets == targets_by_coordinate_.end()) {
+            return;
+        }
+
+        for (const std::size_t target_index : targets->second) {
+            TargetedCellReference& target = targets_[target_index];
+            if (target.found) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found duplicate source cell reference: "
+                    + cell_reference_from_coordinate(coordinate));
+            }
+            target.found = true;
+            target.range = range;
+        }
+    }
+
+    std::vector<TargetedCellReference> targets_;
+    std::map<TargetCoordinateKey, std::vector<std::size_t>> targets_by_coordinate_;
+    std::optional<ActiveTargetedCellRange> active_cell_;
+    std::uint64_t scanned_source_cell_count_ = 0;
 };
 
 std::size_t materialized_index_chunk_size(
@@ -442,22 +631,28 @@ std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(
         });
     }
 
-    std::sort(plan.begin(), plan.end(), [](const auto& left, const auto& right) {
-        if (left.source_range.start_offset != right.source_range.start_offset) {
-            return left.source_range.start_offset < right.source_range.start_offset;
-        }
-        return left.source_range.end_offset < right.source_range.end_offset;
-    });
-
-    for (std::size_t index_position = 1; index_position < plan.size(); ++index_position) {
-        if (plan[index_position - 1].source_range.end_offset
-            > plan[index_position].source_range.start_offset) {
-            throw FastXlsxError(
-                "worksheet indexed rewrite source cell ranges overlap");
-        }
-    }
+    sort_and_validate_rewrite_ranges(plan);
 
     return plan;
+}
+
+WorksheetTargetedCellRewritePlan plan_targeted_cell_rewrites_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const std::string_view> cell_references,
+    WorksheetEventReaderOptions options)
+{
+    if (cell_references.empty()) {
+        return {};
+    }
+
+    TargetedWorksheetCellRewritePlanner planner(cell_references);
+    scan_worksheet_events_from_chunk_source(
+        read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            planner.consume(event);
+        },
+        options);
+    return std::move(planner).finish();
 }
 
 std::string_view worksheet_cell_range_xml(

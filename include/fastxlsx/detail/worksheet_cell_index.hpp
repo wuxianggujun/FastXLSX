@@ -92,6 +92,11 @@ struct WorksheetIndexedCellRewrite {
     WorksheetCellIndexedRange source_range;
 };
 
+struct WorksheetTargetedCellRewritePlan {
+    std::vector<WorksheetIndexedCellRewrite> rewrites;
+    std::uint64_t scanned_source_cell_count = 0;
+};
+
 /// Validates a target set against a source cell index and returns source-order
 /// rewrite ranges.
 ///
@@ -101,6 +106,18 @@ struct WorksheetIndexedCellRewrite {
 [[nodiscard]] std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(
     const WorksheetCellIndex& index,
     std::span<const std::string_view> cell_references);
+
+/// Streams source worksheet XML and records byte ranges only for requested
+/// target cells.
+///
+/// This target-only planner keeps memory proportional to requested targets
+/// instead of source cell count. It parses source cell references while scanning
+/// but intentionally does not build a global source-cell duplicate index; use
+/// `WorksheetCellIndex` when the caller needs full source validation.
+[[nodiscard]] WorksheetTargetedCellRewritePlan plan_targeted_cell_rewrites_from_chunk_source(
+    const WorksheetInputChunkCallback& read_next_chunk,
+    std::span<const std::string_view> cell_references,
+    WorksheetEventReaderOptions options = {});
 
 [[nodiscard]] std::string_view worksheet_cell_range_xml(
     std::string_view worksheet_xml,

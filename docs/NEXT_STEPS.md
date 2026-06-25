@@ -74,10 +74,15 @@ replacement payloads over those staged chunk ranges. The lower-level
 `fastxlsx_bench_package_editor_cell_replacement` tool now exposes this as an
 opt-in internal `--rewrite-strategy indexed-staged` benchmark path with
 schema-v2 timing fields for index build, indexed emit, and staged worksheet
-commit. These are indexed/random-access rewrite foundations, not public editor
-APIs, not a default large-sheet algorithm switch, not a PackageEditor
-source-entry ZIP seek path, and not a claim that source ZIP entries can be
-sought directly.
+commit. That indexed-staged benchmark now uses a target-only range planner: it
+streams the benchmark staged worksheet source, records `<c>` byte ranges only
+for requested target cells, and reports `indexed_source_cell_count` as scanned
+source cells rather than stored index entries. This removes the previous
+O(source cells) indexed memory cost for one-shot sparse edits while still doing
+a linear source scan. These are indexed/random-access rewrite foundations, not
+public editor APIs, not a default large-sheet algorithm switch, not a
+PackageEditor source-entry ZIP seek path, and not a claim that source ZIP
+entries can be sought directly.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source

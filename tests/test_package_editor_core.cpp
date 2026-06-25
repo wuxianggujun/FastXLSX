@@ -628,6 +628,23 @@ void test_package_editor_indexed_staged_chunk_replacement_slices_source_chunks()
         "indexed staged chunk replacement should not report inserts");
     check(result.summary.missing_cell_references.empty(),
         "indexed staged chunk replacement should not report missing cells");
+
+    const std::array<std::string_view, 2> requested_rewrites {"A2", "A1"};
+    const std::vector<fastxlsx::detail::WorksheetIndexedCellRewrite> preplanned_rewrites =
+        fastxlsx::detail::plan_indexed_cell_rewrites(index, requested_rewrites);
+    std::string preplanned_output;
+    const fastxlsx::detail::WorksheetTransformSummary preplanned_summary =
+        fastxlsx::detail::emit_indexed_cell_replacement_from_package_entry_chunks(
+            source_chunks,
+            preplanned_rewrites,
+            replacement_plan,
+            [&](std::string_view chunk) {
+                preplanned_output += chunk;
+            });
+    check(preplanned_output == expected,
+        "preplanned indexed staged chunk replacement should splice source chunks");
+    check(preplanned_summary.matched_replacement_count == 2,
+        "preplanned indexed staged chunk replacement should report matched replacements");
 }
 
 void test_package_editor_indexed_staged_chunk_replacement_rejects_invalid_inputs()

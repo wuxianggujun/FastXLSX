@@ -34636,6 +34636,79 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.754 - Target-only indexed staged rewrite planning
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/worksheet_cell_index.hpp`
+- `src/worksheet_cell_index.cpp`
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `tests/test_package_editor_core.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+- `.agents/skills/fastxlsx-project-navigation/SKILL.md`
+- `.agents/skills/fastxlsx-opc-editing/SKILL.md`
+- `.agents/skills/fastxlsx-streaming-worksheet/SKILL.md`
+- `.agents/skills/fastxlsx-test-quality/SKILL.md`
+
+Goal: remove the remaining O(source cells) memory cost from the indexed-staged
+benchmark/prototype for one-shot sparse edits by planning source ranges only for
+requested target cells.
+
+Output:
+- Added internal `WorksheetTargetedCellRewritePlan` and
+  `plan_targeted_cell_rewrites_from_chunk_source()`.
+- The target-only planner streams worksheet XML through the existing event
+  reader, parses source cell coordinates, records byte ranges only for requested
+  target cells, reports scanned source cell count, and sorts/validates returned
+  rewrite ranges with the same overlap guard as full-index planning.
+- Kept full `WorksheetCellIndex` unchanged for callers that need a complete
+  source-cell range index or full duplicate-source validation.
+- Added an internal `PackageEditor` chunk emitter overload that accepts
+  preplanned `WorksheetIndexedCellRewrite` ranges.
+- Changed `fastxlsx_bench_package_editor_cell_replacement --rewrite-strategy
+  indexed-staged` to use target-only planning instead of building a full
+  `WorksheetCellIndex`.
+- Added `fastxlsx.worksheet_cell_index` coverage for target-only range planning,
+  scanned source count, missing/duplicate targets, and duplicate source cells
+  for requested targets.
+- Added `fastxlsx.package_editor.core` coverage for the preplanned-ranges
+  staged chunk emitter overload.
+- Re-ran opt-in benchmarks:
+  - 1M cells / 1000 edits: transformer `total_edit_ms=3079`,
+    `peak_memory_mb=5.63`; target-only indexed-staged `total_edit_ms=2712`,
+    `peak_memory_mb=5.71`.
+  - 10M cells / 1000 edits: target-only indexed-staged
+    `total_edit_ms=36123`, `peak_memory_mb=5.70`.
+
+Non-goals / boundary:
+- No public API change, no public default Patch algorithm switch, no source ZIP
+  entry seek, no upsert / missing-row behavior change, no metadata/range
+  recalculation, no sharedStrings/styles migration, no relationship repair, and
+  no Office compatibility claim beyond the benchmark tool's built-in verifier.
+- Target-only planning still linearly scans the source worksheet XML. It lowers
+  memory from O(source cells) to O(targets) for the indexed-staged prototype, but
+  it is not arbitrary low-latency random access.
+- Duplicate source cells outside the requested target coordinates are not a goal
+  for the target-only planner; callers that need full source duplicate
+  validation should build `WorksheetCellIndex`.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests fastxlsx_package_editor_core_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_cell_index|package_editor\\.core)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 1M-cell / 1000-edit `transformer` and target-only `indexed-staged`
+  benchmark smokes write schema-v2 JSON with `output_verified=true`.
+- 10M-cell / 1000-edit target-only `indexed-staged` benchmark writes schema-v2
+  JSON with `output_verified=true`.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

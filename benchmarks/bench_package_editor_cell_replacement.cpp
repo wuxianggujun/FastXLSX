@@ -635,17 +635,24 @@ std::filesystem::path apply_indexed_staged_replacement(
     std::vector<fastxlsx::detail::PackageEntryChunk> source_chunks =
         source_worksheet_chunks(options);
 
-    auto phase_started = std::chrono::steady_clock::now();
-    const fastxlsx::detail::WorksheetCellIndex index =
-        fastxlsx::detail::WorksheetCellIndex::build_from_chunk_source(
-            make_benchmark_chunk_source(source_chunks));
-    stats.timings.index_build_ms = milliseconds_since(phase_started);
-    stats.indexed_source_cell_count = static_cast<std::uint64_t>(index.cell_count());
-
-    phase_started = std::chrono::steady_clock::now();
     const fastxlsx::detail::WorksheetCellReplacementPlan replacement_plan =
         fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
 
+    std::vector<std::string_view> target_references;
+    target_references.reserve(replacement_plan.replacement_payloads_by_reference.size());
+    for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
+        target_references.push_back(replacement.first);
+    }
+
+    auto phase_started = std::chrono::steady_clock::now();
+    const fastxlsx::detail::WorksheetTargetedCellRewritePlan targeted_plan =
+        fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
+            make_benchmark_chunk_source(source_chunks),
+            target_references);
+    stats.timings.index_build_ms = milliseconds_since(phase_started);
+    stats.indexed_source_cell_count = targeted_plan.scanned_source_cell_count;
+
+    phase_started = std::chrono::steady_clock::now();
     const std::filesystem::path staged_worksheet_path =
         indexed_staged_worksheet_temp_path(options);
     ensure_parent_directory(staged_worksheet_path);
@@ -659,7 +666,7 @@ std::filesystem::path apply_indexed_staged_replacement(
     const fastxlsx::detail::WorksheetTransformSummary summary =
         fastxlsx::detail::emit_indexed_cell_replacement_from_package_entry_chunks(
             source_chunks,
-            index,
+            targeted_plan.rewrites,
             replacement_plan,
             [&](std::string_view chunk) {
                 staged_worksheet.write(

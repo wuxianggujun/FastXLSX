@@ -208,6 +208,8 @@ void test_targeted_cell_rewrite_plan_streams_only_requested_ranges()
 
     check(plan.scanned_source_cell_count == 3,
         "targeted rewrite plan should report every scanned source cell");
+    check(!plan.source_has_top_level_dimension,
+        "targeted rewrite plan should report absence of top-level dimension metadata");
     check(plan.rewrites.size() == 2,
         "targeted rewrite plan should include every requested target");
     check(plan.rewrites[0].cell_reference == "A1",
@@ -221,6 +223,68 @@ void test_targeted_cell_rewrite_plan_streams_only_requested_ranges()
             == R"(<c r="B3"><v>tail</v></c>)",
         "targeted rewrite plan should carry the exact source range for B3");
 
+    const std::string xml_with_dimension =
+        R"(<worksheet><dimension ref="A1:B3"/><sheetData>)"
+        R"(<row r="1"><c r="A1"><v>1</v></c></row>)"
+        R"(<row r="3"><c r="B3"><v>tail</v></c></row>)"
+        R"(</sheetData></worksheet>)";
+    auto dimension_source = make_string_chunk_source(xml_with_dimension, 5);
+    const fastxlsx::detail::WorksheetTargetedCellRewritePlan dimension_plan =
+        fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
+            dimension_source, requested);
+    check(dimension_plan.source_has_top_level_dimension,
+        "targeted rewrite plan should report top-level dimension metadata");
+
+    const std::string prefixed_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<?fastxlsx smoke?>)"
+        R"(<!--targeted scanner prolog-->)"
+        R"(<x:worksheet xmlns:x="urn:worksheet">)"
+        R"(<x:dimension ref="B2:B2"/>)"
+        R"(<x:sheetData><x:row r="2">)"
+        R"(<x:c r="B2"><x:v>prefixed</x:v></x:c>)"
+        R"(</x:row></x:sheetData></x:worksheet>)";
+    auto prefixed_source = make_string_chunk_source(prefixed_xml, 4);
+    const std::array<std::string_view, 1> prefixed_requested {"B2"};
+    const fastxlsx::detail::WorksheetTargetedCellRewritePlan prefixed_plan =
+        fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
+            prefixed_source, prefixed_requested);
+    check(prefixed_plan.source_has_top_level_dimension,
+        "targeted rewrite plan should detect prefixed top-level dimension metadata");
+    check(prefixed_plan.scanned_source_cell_count == 1,
+        "targeted rewrite plan should scan prefixed source cells across tiny chunks");
+    check(prefixed_plan.rewrites.size() == 1
+            && fastxlsx::detail::worksheet_cell_range_xml(
+                   prefixed_xml, prefixed_plan.rewrites[0].source_range)
+                == R"(<x:c r="B2"><x:v>prefixed</x:v></x:c>)",
+        "targeted rewrite plan should preserve prefixed cell source ranges");
+
+    const std::string quoted_gt_xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1" cm="quoted > marker"><v>1</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    auto quoted_gt_source = make_string_chunk_source(quoted_gt_xml, 7);
+    const std::array<std::string_view, 1> quoted_gt_requested {"A1"};
+    const fastxlsx::detail::WorksheetTargetedCellRewritePlan quoted_gt_plan =
+        fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
+            quoted_gt_source, quoted_gt_requested);
+    check(quoted_gt_plan.rewrites.size() == 1
+            && fastxlsx::detail::worksheet_cell_range_xml(
+                   quoted_gt_xml, quoted_gt_plan.rewrites[0].source_range)
+                == R"(<c r="A1" cm="quoted > marker"><v>1</v></c>)",
+        "targeted rewrite scanner should not split tags at quoted > attributes");
+
+    auto early_stop_source = make_string_chunk_source(xml, 6);
+    const std::array<std::string_view, 1> early_stop_requested {"A1"};
+    const fastxlsx::detail::WorksheetTargetedCellRewritePlan early_stop_plan =
+        fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
+            early_stop_source, early_stop_requested, {}, true);
+    check(early_stop_plan.scanned_source_cell_count == 1,
+        "targeted rewrite plan should support opt-in early stop after all targets are found");
+    check(early_stop_plan.rewrites.size() == 1
+            && early_stop_plan.rewrites[0].cell_reference == "A1",
+        "early-stop targeted rewrite plan should keep the requested target range");
+
     const std::array<std::string_view, 1> missing {"D4"};
     check(targeted_rewrite_plan_fails(xml, missing),
         "targeted rewrite plan should reject targets missing from the source");
@@ -229,11 +293,47 @@ void test_targeted_cell_rewrite_plan_streams_only_requested_ranges()
     check(targeted_rewrite_plan_fails(xml, duplicate),
         "targeted rewrite plan should reject duplicate target selectors");
 
+    const std::array<std::string_view, 2> duplicate_coordinate {"A1", "a1"};
+    check(targeted_rewrite_plan_fails(xml, duplicate_coordinate),
+        "targeted rewrite plan should reject duplicate normalized target coordinates");
+
     const std::string duplicate_source =
         R"(<worksheet><sheetData><row r="1"><c r="A1"/><c r="A1"/></row></sheetData></worksheet>)";
     const std::array<std::string_view, 1> a1 {"A1"};
     check(targeted_rewrite_plan_fails(duplicate_source, a1),
         "targeted rewrite plan should reject duplicate source cells for requested targets");
+
+    const std::string malformed_value =
+        R"(<worksheet><sheetData><row r="1"><c r="A1"><v>1</f></c></row></sheetData></worksheet>)";
+    check(targeted_rewrite_plan_fails(malformed_value, a1),
+        "targeted rewrite plan should preserve value-wrapper validation");
+
+    const std::string non_monotonic_source =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="C1"><v>3</v></c>)"
+        R"(<c r="A1"><v>1</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    auto non_monotonic_chunk_source = make_string_chunk_source(non_monotonic_source, 5);
+    const std::array<std::string_view, 2> non_monotonic_requested {"A1", "C1"};
+    const fastxlsx::detail::WorksheetTargetedCellRewritePlan non_monotonic_plan =
+        fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
+            non_monotonic_chunk_source, non_monotonic_requested);
+    check(non_monotonic_plan.scanned_source_cell_count == 2,
+        "targeted rewrite plan should scan non-monotonic source cells");
+    check(non_monotonic_plan.rewrites.size() == 2
+            && non_monotonic_plan.rewrites[0].cell_reference == "C1"
+            && non_monotonic_plan.rewrites[1].cell_reference == "A1",
+        "targeted rewrite plan should fallback from cursor lookup for non-monotonic sources");
+
+    const std::string non_adjacent_duplicate_source =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="C1"><v>3</v></c>)"
+        R"(<c r="A1"><v>1</v></c>)"
+        R"(<c r="C1"><v>again</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    const std::array<std::string_view, 1> c1 {"C1"};
+    check(targeted_rewrite_plan_fails(non_adjacent_duplicate_source, c1),
+        "targeted rewrite plan should reject duplicate requested source cells after cursor fallback");
 }
 
 void test_cell_index_chunk_source_matches_materialized_offsets()

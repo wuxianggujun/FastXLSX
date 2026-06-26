@@ -37,9 +37,11 @@ existing cells by default, while
 a bounded point upsert that can insert missing cells into existing rows or
 synthesize minimal missing rows. Both strategies write caller `CellValue`
 payloads through the internal worksheet transformer and stage rewritten
-worksheet XML as file-backed package-entry chunks. They are the recommended
-public path when a bounded set of cells must be edited in a large worksheet and
-whole-`<sheetData>`
+worksheet XML as file-backed package-entry chunks. `WorkbookEditor` also has a
+public `request_full_calculation()` helper that queues workbook
+`fullCalcOnLoad="1"` / stale `calcChain.xml` cleanup without exposing the
+internal calc-chain policy surface. These are the recommended public paths when
+a bounded set of cells must be edited in a large worksheet and whole-`<sheetData>`
 replacement or `WorksheetEditor` materialization is the wrong design. The
 boundary remains intentionally strict: duplicate inputs are later-wins, text is
 emitted as inline strings, caller `StyleId` values are written as-is without
@@ -73,16 +75,214 @@ chunk-backed indexed slicer prototype that replays strict existing-cell
 replacement payloads over those staged chunk ranges. The lower-level
 `fastxlsx_bench_package_editor_cell_replacement` tool now exposes this as an
 opt-in internal `--rewrite-strategy indexed-staged` benchmark path with
-schema-v2 timing fields for index build, indexed emit, and staged worksheet
-commit. That indexed-staged benchmark now uses a target-only range planner: it
-streams the benchmark staged worksheet source, records `<c>` byte ranges only
-for requested target cells, and reports `indexed_source_cell_count` as scanned
-source cells rather than stored index entries. This removes the previous
-O(source cells) indexed memory cost for one-shot sparse edits while still doing
-a linear source scan. These are indexed/random-access rewrite foundations, not
-public editor APIs, not a default large-sheet algorithm switch, not a
-PackageEditor source-entry ZIP seek path, and not a claim that source ZIP
-entries can be sought directly.
+schema-v2 timing fields for index build, indexed emit, and prevalidated staged
+worksheet commit. That indexed-staged benchmark now uses a target-only range
+planner: it streams the benchmark staged worksheet source, records `<c>` byte
+ranges only for requested target cells, and reports `indexed_source_cell_count`
+as scanned source cells rather than stored index entries. This removes the
+previous O(source cells) indexed memory cost for one-shot sparse edits while
+still doing a linear source scan. These are indexed/random-access rewrite
+foundations, not public editor APIs, not a default large-sheet algorithm
+switch, and not a generalized PackageEditor source-entry ZIP seek layer.
+Current reruns on the same 10M-source-cell / 1000-edit benchmark show that
+this internal path is already much faster than the transformer baseline. The
+prevalidated by-name commit path now avoids a redundant staged worksheet CRC32
+scan, dropping `indexed_stage_commit_ms` on the 10M / 1000 indexed-staged run
+to about 1 ms. The target-only planner also has an opt-in early-stop mode for
+trusted benchmark/prototype source shapes; on the same front-loaded 10M / 1000
+indexed-staged run this drops `index_build_ms` to about 2 ms. The ZIP stored
+writer can now reuse trusted size/CRC metadata for a single staged chunk header,
+while still validating the chunk during data write; the same 10M / 1000 run
+recorded `save_ms=3553` and `total_edit_ms=6069`. The next optimization slice
+then removed the intermediate full rewritten worksheet file from the benchmark
+path: `PackageEntryChunk` now has an internal file-range descriptor, the
+indexed-staged benchmark emits source file ranges plus replacement memory chunks
+directly, and the stored ZIP writer can combine per-chunk CRC contracts for the
+entry local header instead of pre-reading the full entry. The same 10M / 1000
+run now records `patch_plan_ms=2090`, `indexed_emit_ms=2082`,
+`indexed_stage_commit_ms=4`, `save_ms=3005`, `total_edit_ms=5097`, and
+`peak_memory_mb=6.21`, with `output_verified=true`. The latest follow-up moves
+the stored ZIP writer to a seekable local-header patch model: it writes a
+placeholder local header, streams entry data once while calculating final entry
+CRC/size, then patches the local header before writing the central directory.
+That lets source file-range descriptors skip descriptor-time CRC prepasses; the
+same entry also reuses one input stream and cached file size for repeated ranges
+from the same path. The same 10M / 1000 run now records `patch_plan_ms=8`,
+`index_build_ms=1`, `indexed_emit_ms=0`, `indexed_stage_commit_ms=4`,
+`save_ms=2454`, `verify_ms=2081`, `total_edit_ms=2463`, `total_ms=13120`,
+and `peak_memory_mb=6.22`, with `output_verified=true`. The next concrete
+follow-up moves the same indexed-staged benchmark source chunks from the
+benchmark `source_body` sidecar to the real stored source package worksheet
+entry payload range by using `PackageReaderEntry::data_offset` and
+`PackageEntryChunk::file_range(source.xlsx, data_offset, uncompressed_size)`.
+That run records `patch_plan_ms=18`, `index_build_ms=6`, `indexed_emit_ms=1`,
+`indexed_stage_commit_ms=4`, `save_ms=2958`, `verify_ms=2077`,
+`total_edit_ms=2983`, `total_ms=12954`, and `peak_memory_mb=6.19`, with
+`package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`
+and `output_verified=true`. This is slightly slower than the body-sidecar
+direct-range snapshot but is the more relevant boundary because the edit path
+now reads source worksheet bytes from the `.xlsx` payload range itself. The
+latest follow-up moves that source-entry range lookup behind internal
+`PackageEditor` helpers instead of benchmark-local package-entry parsing:
+`source_part_stored_entry_chunks()` and
+`source_worksheet_part_stored_entry_chunks_by_name()` expose stored source parts
+as file-range chunks over the original `.xlsx` bytes. The benchmark also now has
+`--reuse-source` and records `source_fixture_mode`, so edit-path runs can skip
+the 400 MB source/body fixture rewrite. Current 10M / 1000 reused-source runs
+show `index_build_ms` around `1-2 ms`, `indexed_emit_ms=0`, and
+`indexed_stage_commit_ms` in single-digit milliseconds, while `save_ms` varied
+between about `4960` and `6769` ms and verifier time varied similarly. This
+confirms the remaining hotspot is full-package stored ZIP output, entry CRC,
+benchmark verification, and local disk state rather than target planning or
+staged commit. `PackageWriter` validation now caches file sizes for repeated
+same-path file-range chunks, but this is only fixed-overhead cleanup; it is not
+evidence of arbitrary large-file random editing. The latest implementation now
+wires a conservative subset of this direct-range path into
+`PackageEditor::replace_worksheet_cells()`, so public
+`WorkbookEditor::replace_cells()` can automatically use source-entry staged file
+ranges for simple stored/no-rels strict replacement. The current 10M / 1000
+public facade rerun with output-plan telemetry records `patch_plan_ms=6419`,
+`save_ms=2492`, `verify_ms=1908`, `total_edit_ms=8912`, `total_ms=10822`,
+and `peak_memory_mb=6.02`, with `output_verified=true`. The JSON now records
+`output_plan_observed=true`,
+`output_plan_indexed_source_entry_fast_path=true`,
+`output_plan_transformer_fallback=false`,
+`output_plan_staged_replacement_chunks=true`,
+`output_plan_materialized_replacement=false`, `101` source file-range chunks,
+`1000` replacement memory chunks, `indexed_source_cell_count=10000000`, and
+`indexed_matched_replacement_count=1000`. This proves the public facade is
+actually using source-entry direct-range staged chunks under the conservative
+conditions, not just reporting `rewrite_strategy="transformer"` from the CLI.
+The follow-up now makes those direct-range counters structured output-plan
+fields instead of benchmark note parsing: `PackageEditorOutputEntryPlan`
+exposes the selected direct-range flag, scanned source cell count, matched
+replacement count, and staged output bytes. The no-parser 10M / 1000 rerun
+records `patch_plan_ms=9230`, `save_ms=2622`, `verify_ms=2012`,
+`total_edit_ms=11857`, `total_ms=13871`, `peak_memory_mb=6.00`, and
+`output_verified=true`, with `indexed_source_cell_count=10000000` and
+`indexed_matched_replacement_count=1000` coming from structured telemetry.
+The next cleanup keeps public early-stop disabled for correctness: once all
+requested targets are matched, the later source XML may still contain duplicate
+target cells that strict replace must detect before committing. The target-only
+planner therefore now uses sorted vector coordinate buckets instead of map/hash
+lookup experiments, and the worksheet-cell-index tests pin duplicate normalized
+coordinates such as `A1` / `a1`. A verified 10M / 1000 public facade rerun
+records `patch_plan_ms=10573`, `save_ms=3821`, `verify_ms=3937`,
+`total_edit_ms=14399`, `total_ms=18339`, `peak_memory_mb=6.27`, and
+`output_verified=true`; this is safe structural cleanup, not a stable speed
+claim, because full source scanning and stored-package IO still dominate.
+The latest follow-up adds direct-range phase telemetry to that public path.
+The 10M / 1000 rerun
+(`build/qa/continue-phase-telemetry-result.json`) records
+`patch_plan_ms=4180`, with
+`output_plan_indexed_source_entry_target_plan_ms=4175` and the source-range
+chunk setup, payload audit, relationship audit, descriptor generation, and
+commit phases all in the 0ms bucket for this run. That pins the next real
+optimization target: reduce or reuse the target-only source scan without
+weakening strict duplicate/missing-target validation. Do not enable unconditional
+early-stop in the public facade just to improve the benchmark; valid row-major
+fast validation or a reusable source index must preserve the current fallback
+and no-state-pollution behavior.
+PackageEditor file-backed chunk CRC/copy buffers now use a 1MiB heap buffer
+instead of a 64KiB stack buffer. The follow-up 10M / 1000 verified rerun
+(`build/qa/continue-package-editor-fileio-1m-result.json`) records
+`patch_plan_ms=4340`, `save_ms=2026`, `verify_ms=1953`,
+`total_edit_ms=6370`, `total_ms=8326`, `peak_memory_mb=7.39`, and
+`output_verified=true`. This is a safe file-IO granularity cleanup; it does not
+change the remaining target-only scan bottleneck.
+The next hot-path cleanup keeps the shared event-reader validator but lets the
+target-only planner disable context-attribute copies. The default event reader
+still copies row/cell context for transformer and diagnostic callers; only the
+target-only range planner reads row/cell attributes from start events and tracks
+active cell state itself. The matching 10M / 1000 public facade rerun records
+`patch_plan_ms=8743`, `save_ms=2813`, `verify_ms=2725`,
+`total_edit_ms=11557`, `total_ms=14284`, `peak_memory_mb=6.29`, and
+`output_verified=true`. Treat this as safe allocation cleanup, not a new SLA:
+local package IO and full source scan variance still dominate.
+The next source-scan step replaces the target-only planner's generic event
+object path with an internal lightweight scanner plus direct tag-name /
+attribute parsing for the hot path. It keeps strict missing/duplicate target
+validation, top-level dimension detection, and value-wrapper boundary checks,
+while leaving the shared worksheet event reader as the default transformer /
+diagnostic path. The verified 10M / 1000 public facade rerun records
+`patch_plan_ms=7852`, `save_ms=2272`, `verify_ms=2183`,
+`total_edit_ms=10128`, `total_ms=12324`, `peak_memory_mb=6.26`, and
+`output_verified=true`, with `indexed_source_cell_count=10000000`,
+`indexed_matched_replacement_count=1000`, and
+`indexed_staged_output_bytes=367269975`.
+The follow-up save-path cleanup keeps the same public boundary but reduces
+stored ZIP output overhead: source file-range chunks now reuse the active input
+stream across small forward gaps instead of always seeking, and stored/minizip
+file-copy buffers use 1 MiB heap buffers instead of 64 KiB stack buffers. A
+reused-source 10M / 1000 public facade rerun records `patch_plan_ms=6416`,
+`save_ms=2152`, `verify_ms=1905`, `total_edit_ms=8572`, `total_ms=10479`,
+`peak_memory_mb=8.03`, and `output_verified=true`, with `11` source
+file-range chunks and `1000` replacement memory chunks. Treat the extra memory
+as deliberate IO buffering, not worksheet materialization.
+The next save-path step removes another avoidable copy for stored source
+packages: copy-original source entries can now flow into `PackageWriter` as a
+direct source-package file-range chunk with the source entry CRC as the expected
+CRC. Compressed source entries and test-hook failure coverage still use the old
+temp-file fallback. The matching reused-source 10M / 1000 public facade rerun
+records `patch_plan_ms=4774`, `save_ms=1951`, `verify_ms=1905`,
+`total_edit_ms=6727`, `total_ms=8639`, `peak_memory_mb=7.99`, and
+`output_verified=true`, with `package_entry_source_mode` reported as
+`source-package-worksheet-entry-direct-range-chunks`. Treat this as stored
+source-copy cleanup only; it does not add compressed-source direct range,
+Zip64, arbitrary random access, metadata repair, or relationship repair.
+The follow-up removes a duplicate source-entry CRC pre-read in that same path:
+stored source-entry chunks now carry expected size and CRC directly from
+`PackageReaderEntry`, so `PackageEntryChunkReader` no longer has to scan the
+entire source worksheet payload just to derive descriptor metadata before the
+real target scan. Scan/replay still validates the source bytes against that
+CRC. The matching reused-source 10M / 1000 public facade rerun records
+`patch_plan_ms=3932`, `save_ms=1818`, `verify_ms=1757`,
+`total_edit_ms=5753`, `total_ms=7512`, `peak_memory_mb=7.92`, and
+`output_verified=true`, still with
+`package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`
+and `output_entry_mode="indexed-source-entry-direct-range-staged-chunks"`.
+This is duplicate IO removal, not a relaxation of source validation.
+The next scanner-throughput cleanup increases the internal
+`PackageEntryChunkReader` file replay chunk from 64 KiB to 1 MiB. The retained
+XML window guard remains `package_editor_cell_replacement_event_window_byte_limit`
+and chunk CRC validation is unchanged; this only reduces read callback and
+scanner handoff overhead during the required full-source scan. The matching
+reused-source 10M / 1000 public facade rerun records `patch_plan_ms=3449`,
+`save_ms=1827`, `verify_ms=1725`, `total_edit_ms=5279`, `total_ms=7007`,
+`peak_memory_mb=7.94`, and `output_verified=true`.
+The next IO cleanup increases `PackageReader` stored/DEFLATE chunk-source reads
+from 64 KiB to 1 MiB. This keeps ZIP metadata, entry size, and CRC validation
+unchanged, but reduces callback overhead for entry streaming and benchmark
+verification. A same-environment A/B records `total_edit_ms=7226` with the
+1 MiB reader buffer versus `9099` after a temporary 64 KiB rollback; treat this
+as IO/callback cleanup, not a new public editing semantic.
+The latest target-only planner cleanup avoids copying every complete source
+chunk into the bounded scanner window: the scanner now processes chunk
+`string_view`s directly when there is no cross-chunk XML tail, and only retains
+the unconsumed tail. Source cell reference parsing also uses ASCII uppercase
+folding instead of `std::toupper`. A verified reused-source 10M / 1000 rerun
+records `patch_plan_ms=5537`, `save_ms=2681`, `verify_ms=2758`,
+`total_edit_ms=8219`, `total_ms=10980`, `peak_memory_mb=7.38`, and
+`output_verified=true`; a no-verifier run records `patch_plan_ms=4563` and
+`total_edit_ms=6675`. Treat this as scanner/copy hygiene, not a stable SLA.
+The next descriptor-level cleanup merges adjacent replacement memory chunks in
+the direct-range staged output while keeping source file ranges separate and
+retaining expected size / CRC32 validation on the merged chunk. The matching
+reused-source 10M / 1000 public facade verified rerun records
+`patch_plan_ms=3990`, `save_ms=2037`, `verify_ms=2005`,
+`total_edit_ms=6030`, `total_ms=8038`, `peak_memory_mb=7.49`, and
+`output_verified=true`; the output plan now reports `21` staged chunks:
+`10` replacement memory chunks plus `11` source file-range chunks, with
+replacement memory bytes still matching the public facade payload bytes. Treat
+this as fixed-overhead reduction only, not a change in editing semantics.
+This is still deliberately narrow: planned worksheet inputs, compressed source
+entries, upsert mode, `ReferencePolicyAction::Fail`, worksheets without
+top-level `<dimension>`, and worksheets with relationships stay on the
+transformer fallback; the public path still scans source XML for correctness
+and does not provide O(1) random access, sharedStrings/styles migration,
+metadata repair, or relationship repair. Next performance work should reduce
+full-source scan cost safely and continue attacking stored ZIP save/verification
+time without broadening the public API surface.
 The current `WorksheetEditor` source loader can now read source `t="s"` cells
 through the existing workbook `xl/sharedStrings.xml` and materialize them as
 `CellValue::text(...)`; dirty `save_as()` can reuse that same source
@@ -102,22 +302,24 @@ materialized source style handles on overwritten coordinates. They still reject
 caller-supplied non-default `StyleId` values, do not create or merge
 `xl/styles.xml` entries, and do not synthesize styles for newly inserted cells.
 Full cell replacement through `set_cell()` continues to drop prior source style
-handles by design. `clear_cell_value()`,
+handles by design. `clear_cell_value()`, no-argument `clear_cell_values()`,
 `clear_row()`, `clear_rows()`, `clear_column()`, `clear_columns()`,
 `clear_cell_values(CellRange)`, and
 `clear_cell_values(span<WorksheetCellReference>)` now cover the matching
 "clear contents" case: existing materialized cells become explicit blank cells
 while preserving the current source style handle, row / column / range /
-coordinate-batch clears affect only already represented sparse records, missing
-targets / missing-only rows / missing-only columns / missing-only ranges /
-missing-only coordinate batches are successful no-ops, and the output remains
-non-tombstone sparse projection.
-`erase_cells(CellRange)` and `erase_cells(span<WorksheetCellReference>)` now
-cover the matching sparse delete cases: the range overload validates one
-1-based inclusive rectangle, the coordinate overload validates every coordinate
-before mutation, both delete only represented active sparse records, treat
-empty / missing-only inputs as successful no-ops, and write no tombstones or
-explicit blank cells for erased coordinates.
+coordinate-batch clears affect only already represented sparse records, the
+no-argument form clears all currently represented records, missing targets /
+missing-only rows / missing-only columns / missing-only ranges /
+missing-only coordinate batches and empty stores are successful no-ops, and the
+output remains non-tombstone sparse projection.
+No-argument `erase_cells()`, `erase_cells(CellRange)`, and
+`erase_cells(span<WorksheetCellReference>)` now cover the matching sparse delete
+cases: the no-argument form removes all represented records, the range overload
+validates one 1-based inclusive rectangle, the coordinate overload validates
+every coordinate before mutation, all variants delete only represented active
+sparse records, treat empty / missing-only inputs as successful no-ops, and
+write no tombstones or explicit blank cells for erased coordinates.
 The range erase save/reacquire state path is also pinned: after
 `erase_cells(CellRange)` removes all represented cells and `save_as()` flushes
 the materialized session, matching `worksheet()` reacquire reuses the clean
@@ -191,6 +393,28 @@ sheet-qualified, absolute, whole-row / whole-column, multi-area, reversed,
 leading-zero, and out-of-limit references are rejected without changing
 `last_edit_error()`. This is not a dense range read, iterator, metadata
 recalculation, or large-file low-memory random access.
+
+`WorksheetEditor::sparse_cells(std::span<const WorksheetCellReference>)` and
+its initializer-list overload now add the matching explicit sparse coordinate
+batch convenience over the same sparse snapshot path: input order is preserved,
+duplicate coordinates are allowed, missing coordinates are skipped, and the
+operation does not change `last_edit_error()`. This is not a dense batch read,
+iterator, metadata recalculation, or large-file low-memory random access.
+`WorksheetEditor::contains_cell()` now adds the matching read-only represented
+cell probe for row/column and strict uppercase A1 cell references: source-backed
+records, edited records, and explicit blank records return true; missing or
+erased cells return false; invalid references throw without changing
+`last_edit_error()`. It does not copy `CellValue`, read or repair worksheet
+`<dimension>` metadata, expose iterators, or add large-file low-memory random
+access.
+No-argument `WorksheetEditor::clear_cell_values()` and
+`WorksheetEditor::erase_cells()` now complete the whole materialized sparse-store
+clear/delete boundary: clear converts all represented records to explicit blanks
+with current source style handles preserved, erase removes all represented
+records, and empty stores are clean no-ops that clear public edit diagnostics.
+They are not worksheet deletion, sheetData part removal, dense range mutation,
+metadata recalculation, relationship repair, or large-file low-memory random
+editing.
 `WorksheetEditor::clear_cell_values(std::string_view)` and
 `erase_cells(std::string_view)` now add the matching strict uppercase A1 range
 mutation convenience over the existing `CellRange` sparse clear/erase paths:
@@ -2915,6 +3139,7 @@ schema validation.
   - `WorksheetEditor::set_cell_values()`
   - `WorksheetEditor::set_cell_values(initializer_list<WorksheetCellUpdate>)`
   - `WorksheetEditor::clear_cell_value()`
+  - `WorksheetEditor::clear_cell_values()`
   - `WorksheetEditor::clear_row()`
   - `WorksheetEditor::clear_rows()`
   - `WorksheetEditor::clear_column()`
@@ -2924,6 +3149,7 @@ schema validation.
   - `WorksheetEditor::clear_cell_values(span<WorksheetCellReference>)`
   - `WorksheetEditor::clear_cell_values(initializer_list<WorksheetCellReference>)`
   - `WorksheetEditor::erase_cell()`
+  - `WorksheetEditor::erase_cells()`
   - `WorksheetEditor::erase_cells(CellRange)`
   - `WorksheetEditor::erase_cells(std::string_view)`
   - `WorksheetEditor::erase_cells(span<WorksheetCellReference>)`

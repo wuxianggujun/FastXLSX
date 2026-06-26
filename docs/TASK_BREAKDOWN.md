@@ -1868,7 +1868,7 @@ graph 或 calcChain rebuild。
   workbook calc metadata、calcChain policy 和 range/reference metadata 的 audit。
 - 当前 `rename_sheet_catalog_entry()` 对 direct workbook `definedNames`、
   `ReferencePolicyAction::Fail` 和 planned workbook catalog 的状态不污染回归。
-- 当前 `request_full_calculation()`、`CalcChainAction::Remove` /
+- 当前 `WorkbookEditor::request_full_calculation()`、`CalcChainAction::Remove` /
   `CalcChainAction::Preserve` / `CalcChainAction::Rebuild` rejection、direct-child
   `calcPr` rewrite、stale calcChain metadata cleanup 和 planned output audit。
 - 当前 `WorksheetPayloadDependencyAudit`、`ReferencePolicy`、`EditPlan`、
@@ -34219,6 +34219,82 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.769 - WorksheetEditor represented-cell probe
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: add a small-file In-memory `WorksheetEditor` read-only represented-state
+probe so callers can distinguish missing cells from represented source, edited,
+or explicit blank records without copying a `CellValue`.
+
+Output:
+- Added public `WorksheetEditor::contains_cell(row, column)` and strict
+  uppercase A1 overload.
+- Implemented the probe directly against the materialized sparse session.
+- Added public-state regression coverage for source-backed records, edited
+  records, explicit blanks, erased/missing cells, invalid references preserving
+  `last_edit_error()`, and no sparse-store mutation.
+
+Non-goals / boundary:
+- No dense matrix read, row/column/range membership API, iterator exposure,
+  worksheet `<dimension>` metadata read/repair, source reload, metadata
+  recalculation, relationship repair, sharedStrings/styles migration, or
+  large-file low-memory random access.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
+### P8.770 - WorksheetEditor whole-store clear and erase
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/materialized_worksheet_session.hpp`
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `README.md`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: complete the small-file In-memory whole materialized sparse-store
+mutation boundary without adding dense range semantics.
+
+Output:
+- Added public no-argument `WorksheetEditor::clear_cell_values()` to convert
+  every represented sparse record into an explicit blank while preserving
+  current source style handles.
+- Added public no-argument `WorksheetEditor::erase_cells()` to remove every
+  represented sparse record.
+- Added public-state coverage for style-preserving whole-store clear,
+  whole-store erase, empty-store no-op diagnostic clearing, dirty-state
+  behavior, save_as projection, post-save handle / reacquire reuse, follow-up
+  edits after a save, dirty materialized aggregate / summary lifecycle before
+  and after save_as, and untouched worksheet preservation.
+
+Non-goals / boundary:
+- No worksheet deletion, sheetData part removal, row/column shifting, dense
+  range mutation, tombstone output, table/range metadata recalculation,
+  relationship repair, sharedStrings/styles migration, or large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_state_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.
@@ -34706,6 +34782,732 @@ Acceptance:
   benchmark smokes write schema-v2 JSON with `output_verified=true`.
 - 10M-cell / 1000-edit target-only `indexed-staged` benchmark writes schema-v2
   JSON with `output_verified=true`.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+### P8.755 - Public WorkbookEditor direct-range output-plan telemetry
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_package_diagnostics.hpp`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: make the public `WorkbookEditor::replace_cells()` benchmark prove whether
+the conservative source-entry direct-range fast path was actually selected,
+without adding another user-facing public API or exposing a strategy switch.
+
+Output:
+- Added an internal `WorkbookEditorPackagePlanAccessor` friend/diagnostic bridge
+  under `src/` so benchmarks and focused tests can read the underlying
+  `PackageEditor::planned_output()` selected by the public facade.
+- The benchmark now observes the public facade output plan and writes
+  `output_plan_observed`, `output_plan_indexed_source_entry_fast_path`,
+  `output_plan_transformer_fallback`, staged chunk counts/bytes, and parsed
+  indexed scan/match/staged-byte counters into the existing schema-v2 JSON.
+- `package_entry_source_mode` and `output_entry_mode` are now derived from the
+  observed output plan when the public facade uses direct-range staged chunks,
+  instead of blindly mirroring the CLI `rewrite_strategy` label.
+- Added public facade regression coverage proving strict `replace_cells()` uses
+  indexed source-entry direct-range chunks under the conservative stored/no-rels
+  source conditions and does not materialize the rewritten worksheet.
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture: `patch_plan_ms=6419`, `save_ms=2492`, `verify_ms=1908`,
+  `total_edit_ms=8912`, `total_ms=10822`, `peak_memory_mb=6.02`,
+  `output_plan_indexed_source_entry_fast_path=true`,
+  `indexed_source_cell_count=10000000`,
+  `indexed_matched_replacement_count=1000`, and `output_verified=true`.
+
+Non-goals / boundary:
+- No user-facing public API, no public strategy selector, no upsert fast path,
+  no compressed-source support, no planned-input direct-range support, no
+  worksheet-relationship direct-range support, no metadata repair, no
+  sharedStrings/styles migration, and no O(1) arbitrary random access.
+- The public direct-range path still linearly scans source XML to validate
+  requested targets and preserve the current no-state-pollution behavior.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_public_patch_cells_tests fastxlsx_package_editor_core_tests` passes.
+- `ctest --test-dir build\\windows-nmake-release -R "fastxlsx\\.(workbook_editor_public_patch_cells|package_editor\\.core|worksheet_cell_index)$" --output-on-failure --timeout 60` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-public-telemetry-result.json` with
+  `output_verified=true` and direct-range output-plan telemetry.
+- `git diff --check` passes.
+- `ctest --test-dir build\\windows-nmake-release --output-on-failure --timeout 60` passes.
+
+### P8.756 - Structured direct-range output-plan telemetry
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `tests/test_package_editor_core.cpp`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: remove the benchmark dependency on parsing human-readable EditPlan notes
+for public direct-range fast-path counters, while keeping the fast path internal
+and preserving the current public `WorkbookEditor::replace_cells()` API shape.
+
+Output:
+- Added structured internal fields to `PackagePartReplacement` and
+  `PackageEditorOutputEntryPlan` for direct-range source-entry telemetry:
+  selected flag, scanned source cell count, matched replacement count, and
+  staged output bytes.
+- Ordinary materialized/chunked part replacements clear those telemetry fields,
+  preventing stale direct-range stats if a later replacement takes over the same
+  part.
+- The conservative source-entry direct-range path writes the structured stats
+  after successful staged chunk handoff.
+- The benchmark now reads these counters from `planned_output()` and no longer
+  parses note text for numeric values.
+- PackageEditor core and public WorkbookEditor facade tests assert the
+  structured telemetry alongside staged chunk counts.
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture after removing the parser:
+  `patch_plan_ms=9230`, `save_ms=2622`, `verify_ms=2012`,
+  `total_edit_ms=11857`, `total_ms=13871`, `peak_memory_mb=6.00`,
+  `indexed_source_cell_count=10000000`,
+  `indexed_matched_replacement_count=1000`,
+  `indexed_staged_output_bytes=367269975`, and `output_verified=true`.
+
+Non-goals / boundary:
+- No user-facing public API, no public strategy selector, no early-stop default,
+  no compressed-source support, no planned-input direct-range support, no
+  worksheet-relationship direct-range support, no metadata repair, no
+  sharedStrings/styles migration, and no O(1) arbitrary random access.
+- This is observability hardening, not a new performance optimization. The
+  public fast path still scans source worksheet XML linearly for correctness.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(package_editor\\.core|workbook_editor_public_patch_cells)$"` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-public-structured-noparse-result.json` with
+  `output_verified=true` and structured direct-range output-plan counters.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+### P8.757 - Targeted planner sorted target bucket cleanup
+
+Status: completed.
+
+Touched files:
+- `src/worksheet_cell_index.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: simplify the target-only rewrite planner lookup structure without
+changing public `WorkbookEditor::replace_cells()` semantics or weakening strict
+source validation.
+
+Output:
+- Kept public/default early-stop disabled: after all requested targets are
+  matched, later source XML can still contain duplicate requested source cells,
+  and strict replace must continue scanning to reject that input before commit.
+- Replaced target-coordinate lookup experiments with sorted vector coordinate
+  buckets keyed by normalized row/column, preserving duplicate requested-target
+  diagnostics and source-scan semantics.
+- Added worksheet-cell-index regression coverage for duplicate normalized input
+  coordinates such as `A1` / `a1`.
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=10573`, `save_ms=3821`, `verify_ms=3937`,
+  `total_edit_ms=14399`, `total_ms=18339`, `peak_memory_mb=6.27`, and
+  `output_verified=true`.
+
+Non-goals / boundary:
+- No user-facing public API, no public strategy selector, no public early-stop
+  default, no specialized XML scanner, no source ZIP random-access layer, no
+  metadata repair, no sharedStrings/styles migration, and no O(1) arbitrary
+  random access.
+- This is safe structural cleanup. It is not a stable performance win claim;
+  current timings are still dominated by full source worksheet scanning,
+  stored-package output, verification reads, and local disk state.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_cell_index|package_editor\\.core|workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-public-vector-target-verified-result.json` with
+  `output_verified=true`.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+### P8.758 - Targeted planner no-copy event context scan
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/worksheet_event_reader.hpp`
+- `src/worksheet_event_reader.cpp`
+- `src/worksheet_cell_index.cpp`
+- `tests/test_worksheet_event_reader.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: reduce target-only source scan allocation cost while preserving the shared
+worksheet event-reader validation path and public `WorkbookEditor::replace_cells()`
+semantics.
+
+Output:
+- Added internal `WorksheetEventReaderOptions::copy_context_attributes`, default
+  `true`, so existing transformer/diagnostic callers continue to receive copied
+  row/cell context on nested and closing events.
+- Target-only rewrite planning now disables context copies because it only needs
+  row/cell attributes on start-tag events and keeps its own active cell state.
+- Added event-reader regression coverage proving no-copy mode still exposes
+  start-tag attributes and intentionally does not retain row/cell context for
+  later nested/end events.
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=8743`, `save_ms=2813`, `verify_ms=2725`,
+  `total_edit_ms=11557`, `total_ms=14284`, `peak_memory_mb=6.29`, and
+  `output_verified=true`.
+
+Non-goals / boundary:
+- No new XML parser, no public API, no public early-stop default, no
+  source ZIP random-access layer, no metadata repair, no sharedStrings/styles
+  migration, and no arbitrary O(1) random access.
+- This removes avoidable context string copies during target-only scans. It is
+  not a stable performance SLA because full source scanning, stored-package
+  output, verification reads, and local disk state still dominate.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_event_reader_tests fastxlsx_worksheet_cell_index_tests fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_event_reader|worksheet_cell_index|package_editor\\.core|workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-public-nocopy-context-result.json` with
+  `output_verified=true`.
+- `git diff --check` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+
+### P8.768 - Direct-range staged memory chunk merge
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.cpp`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- Added an internal descriptor-level helper that appends replacement memory
+  data to the previous memory `PackageEntryChunk` when two memory chunks are
+  adjacent in the direct-range staged output.
+- Kept source file-range chunks separate; only adjacent memory chunks merge.
+- Updated merged chunk `expected_size` and `expected_crc32` metadata so
+  PackageEntryChunkReader / PackageWriter replay validation remains strict.
+- Updated the public patch-cells regression to assert replacement memory bytes
+  remain complete while adjacent replacement payload chunks are merged.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=3990`, `save_ms=2037`, `verify_ms=2005`,
+  `total_edit_ms=6030`, `total_ms=8038`, `peak_memory_mb=7.49`, and
+  `output_verified=true`.
+- Output plan records `21` staged chunks total: `10` replacement memory chunks
+  and `11` source file-range chunks. Replacement memory bytes stay at `30840`,
+  matching the public facade replacement XML byte count.
+
+Non-goals / boundary:
+- No public API change, no public strategy selector, no file-range coalescing,
+  no weakened CRC/size validation, no unconditional early-stop, no compressed
+  source direct-range support, no Zip64, no metadata repair, no relationship
+  repair, and no arbitrary O(1) random access.
+- This reduces per-chunk replay/validation fixed overhead only; the public
+  path still scans source XML to preserve strict duplicate/missing-target
+  validation.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-memory-chunk-merge-result.json` with
+  `output_verified=true`.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+- `git diff --check` passes.
+
+### P8.767 - PackageEditor file-backed IO buffer cleanup
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- Raised PackageEditor internal file-backed chunk CRC/copy buffer size from
+  64KiB to 1MiB so file-backed staged chunks and source-copy helpers use the
+  same coarse IO granularity as the current package-entry chunk replay path.
+- Moved that buffer from `std::array` stack storage to `std::vector` heap
+  storage after Windows targeted tests exposed stack pressure with a 1MiB local
+  array.
+- Added a worksheet-cell-index regression proving the targeted scanner still
+  handles `>` inside quoted attributes without splitting the XML tag.
+- A attempted generic tag-end fast path was benchmarked and removed because it
+  regressed the 10M-cell target planning path; it is not part of the final code.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=4340`,
+  `output_plan_indexed_source_entry_target_plan_ms=4336`,
+  `save_ms=2026`, `verify_ms=1953`,
+  `total_edit_ms=6370`, `total_ms=8326`, `peak_memory_mb=7.39`, and
+  `output_verified=true`.
+
+Non-goals / boundary:
+- No public API change, no public strategy selector, no unconditional
+  early-stop, no weakened duplicate/missing-target validation, no source ZIP
+  random-access layer, no metadata repair, no relationship repair, and no
+  arbitrary O(1) random access.
+- This mostly targets save/copy/CRC fixed IO cost; target-only source scanning
+  remains the main `patch_plan_ms` cost center.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests fastxlsx_package_editor_core_tests fastxlsx_package_editor_policy_save_as_guards_tests fastxlsx_package_reader_tests fastxlsx_package_reader_zip_failures_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.worksheet_cell_index|fastxlsx\\.package_editor\\.core|fastxlsx\\.package_editor\\.policy-save-as-guards|fastxlsx\\.package_reader|fastxlsx\\.package_reader\\.zip-failures|fastxlsx\\.workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-package-editor-fileio-1m-result.json` with
+  `output_verified=true`.
+
+### P8.766 - Direct-range phase timing telemetry
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.hpp`
+- `src/package_editor.cpp`
+- `benchmarks/bench_package_editor_cell_replacement.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- `PackagePartReplacement` and `PackageEditorOutputEntryPlan` now carry
+  internal phase timing counters for the public direct-range source-entry fast
+  path: source range chunk setup, target-only source planning, payload audit,
+  relationship audit, chunk descriptor generation, and staged replacement
+  commit.
+- `PackageEditor::try_replace_worksheet_cells_with_indexed_source_entry()`
+  records those phase counters after successful direct-range replacement.
+- `fastxlsx_bench_package_editor_cell_replacement` writes the counters into
+  schema-v2 JSON when the public facade selects
+  `indexed_source_entry_direct_range`.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=4180`, `save_ms=2198`, `verify_ms=2525`,
+  `total_edit_ms=6382`, `total_ms=8910`, `peak_memory_mb=7.36`, and
+  `output_verified=true`.
+- The same JSON records
+  `output_plan_indexed_source_entry_target_plan_ms=4175`; source range chunk
+  setup, payload audit, relationship audit, descriptor generation, and commit
+  were all 0ms at millisecond precision for this run.
+
+Non-goals / boundary:
+- No public API change, no public strategy selector, no unconditional
+  early-stop, no source ZIP random-access layer, no compressed-source expansion,
+  no relationship/metadata repair, no sharedStrings/styles migration, and no
+  arbitrary O(1) random access.
+- This is diagnostic telemetry only. It proves the current bottleneck is
+  target-only source scanning; it does not justify weakening duplicate/missing
+  target validation or no-state-pollution semantics.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-phase-telemetry-result.json` with
+  `output_verified=true` and direct-range phase counters.
+
+### P8.765 - Targeted planner direct chunk scan hygiene
+
+Status: completed.
+
+Touched files:
+- `src/worksheet_cell_index.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- Target-only worksheet rewrite planning no longer copies every complete source
+  chunk into the bounded scanner window. When no cross-chunk XML tail is
+  pending, it scans the current chunk `string_view` directly and retains only
+  the unconsumed tail.
+- Consumed whole-window cleanup now uses `clear()` instead of `erase(0, size)`.
+- Source cell reference parsing now performs ASCII uppercase folding directly
+  instead of calling `std::toupper` for every column character.
+- Strict missing/duplicate validation, top-level `<dimension>` detection,
+  bounded-window behavior, value-wrapper boundary checks, staged chunk output,
+  CRC validation, and public API behavior are unchanged.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=5537`, `save_ms=2681`, `verify_ms=2758`,
+  `total_edit_ms=8219`, `total_ms=10980`, `peak_memory_mb=7.38`, and
+  `output_verified=true`.
+- A no-verifier run of the same fixture wrote
+  `build\\qa\\continue-ascii-ref-noverify-result.json` with
+  `patch_plan_ms=4563`, `save_ms=2111`, and `total_edit_ms=6675`.
+
+Non-goals / boundary:
+- No public API change, no early-stop default, no source ZIP random-access
+  layer, no compressed-source direct-range expansion, no metadata repair, no
+  relationship repair, no sharedStrings/styles migration, and no arbitrary O(1)
+  random access.
+- This is scanner/copy hygiene only. The public fast path still scans the full
+  source worksheet XML for strict correctness and still falls back outside the
+  conservative stored/no-rels strict replace boundary.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.worksheet_cell_index|fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-direct-window-ascii-verified-result.json` with
+  `output_verified=true`.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+- `git diff --check` passes.
+
+### P8.764 - PackageReader uses larger entry chunk-source IO buffer
+
+Status: completed.
+
+Touched files:
+- `src/package_reader.cpp`
+- `tests/test_package_reader.cpp`
+- `tests/test_package_reader_zip_failures.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- `PackageReader` stored/DEFLATE entry chunk sources now use a 1 MiB IO buffer
+  instead of 64 KiB.
+- This reduces chunk callback overhead when replaying package entries through
+  `PackageReader::entry_chunk_source()`, including benchmark verification and
+  source-entry streaming paths.
+- ZIP metadata validation, expected entry size checks, local-header validation,
+  and CRC validation are unchanged.
+- The stored chunk-source regression fixture now exceeds the 1 MiB reader buffer
+  so it still verifies multi-chunk delivery without pinning the old 64 KiB
+  implementation detail.
+- The stored CRC-failure and DEFLATE chunk-source fixtures were updated the same
+  way, so failure-progress coverage still proves multi-chunk replay before CRC
+  validation failure.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=4656`, `save_ms=2567`, `verify_ms=2289`,
+  `total_edit_ms=7226`, `total_ms=9521`, `peak_memory_mb=7.41`, and
+  `output_verified=true`.
+- A same-worktree A/B rollback to the old 64 KiB PackageReader buffer wrote
+  `build\\qa\\continue-reader-io-64k-result.json` with
+  `total_edit_ms=9099`; the retained 1 MiB run wrote
+  `build\\qa\\continue-reader-io-1m-result.json`.
+
+Non-goals / boundary:
+- No public API change, no ZIP semantic change, no source ZIP random-access
+  layer, no metadata repair, no relationship repair, no sharedStrings/styles
+  migration, and no arbitrary O(1) random access.
+- This is PackageReader chunk-source IO cleanup only. It does not relax
+  corruption detection, entry-size contracts, CRC checks, or the conservative
+  public large-file edit boundary.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_reader_tests fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests fastxlsx_package_editor_policy_save_as_guards_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.package_reader|fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells|fastxlsx\\.package_editor\\.policy-save-as-guards)$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-minizip --target fastxlsx_package_reader_tests fastxlsx_package_editor_core_tests` passes.
+- `ctest --preset windows-nmake-release-minizip -R "^(fastxlsx\\.package_reader|fastxlsx\\.package_editor\\.core)$" --output-on-failure` passes.
+- `git diff --check` passes.
+
+### P8.763 - PackageEntryChunkReader uses larger file replay chunks
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- `PackageEntryChunkReader` now reads file-backed staged/source chunks in
+  1 MiB replay chunks instead of 64 KiB chunks.
+- This reduces read callback and scanner handoff overhead for the required
+  source worksheet scan in the public conservative direct-range fast path.
+- The retained XML window guard remains
+  `package_editor_cell_replacement_event_window_byte_limit`, and per-chunk
+  CRC validation is unchanged.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=3449`, `save_ms=1827`, `verify_ms=1725`,
+  `total_edit_ms=5279`, `total_ms=7007`, `peak_memory_mb=7.94`, and
+  `output_verified=true`.
+- The output still reports
+  `package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`
+  and `output_entry_mode="indexed-source-entry-direct-range-staged-chunks"`.
+
+Non-goals / boundary:
+- No public API change, no XML retained-window increase, no compressed-source
+  direct-range expansion, no Zip64, no relationship repair, no metadata repair,
+  no sharedStrings/styles migration, and no arbitrary O(1) random access.
+- This is scanner-throughput cleanup only. The public fast path still scans the
+  full worksheet XML for strict missing/duplicate validation and still falls
+  back outside the conservative stored/no-rels strict replace boundary.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests fastxlsx_package_editor_policy_save_as_guards_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells|fastxlsx\\.package_editor\\.policy-save-as-guards)$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+- `ctest --preset windows-nmake-release-minizip -R "^fastxlsx\\.package_editor\\.core$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-reader-1m-result.json` with `output_verified=true`.
+- `git diff --check` passes.
+
+### P8.762 - Stored source-entry chunks reuse source CRC metadata
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.cpp`
+- `tests/test_package_editor_core.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- `source_stored_entry_range_chunks()` now records expected size and CRC32 on
+  the source package file-range chunk directly from `PackageReaderEntry`.
+- `PackageEntryChunkReader` therefore no longer has to pre-read the whole
+  stored source worksheet payload just to synthesize descriptor CRC metadata
+  before the real target scan.
+- The source bytes are still validated during scan/replay against the expected
+  CRC; this removes duplicate IO only and does not relax correctness checks.
+- Core regression coverage now expects source-part and by-name source-entry
+  chunks to carry the source entry CRC.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=3932`, `save_ms=1818`, `verify_ms=1757`,
+  `total_edit_ms=5753`, `total_ms=7512`, `peak_memory_mb=7.92`, and
+  `output_verified=true`.
+- The output still reports
+  `package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`
+  and `output_entry_mode="indexed-source-entry-direct-range-staged-chunks"`.
+
+Non-goals / boundary:
+- No public API change, no compressed-source direct-range expansion, no Zip64,
+  no relationship repair, no metadata repair, no sharedStrings/styles
+  migration, and no arbitrary O(1) random access.
+- This is stored source-entry duplicate-IO removal. The public fast path remains
+  conservative and still falls back for compressed source entries, upsert mode,
+  worksheets with relationships, missing top-level dimensions, planned worksheet
+  input, and strict policy failures.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests fastxlsx_package_editor_policy_save_as_guards_tests` passes.
+- `ctest --preset windows-nmake-release -R "^(fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells|fastxlsx\\.package_editor\\.policy-save-as-guards)$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-minizip --target fastxlsx_package_editor_core_tests` passes.
+- `ctest --preset windows-nmake-release-minizip -R "^fastxlsx\\.package_editor\\.core$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-source-crc-skip-result.json` with
+  `output_verified=true`.
+- `git diff --check` passes.
+
+### P8.761 - Stored source-copy direct file-range save_as
+
+Status: completed.
+
+Touched files:
+- `src/package_editor.cpp`
+- `tests/test_package_editor_cellstore_chunks.cpp`
+- `tests/test_package_editor_policy_save_as_guards.cpp`
+- `tests/test_workbook_editor_public_patch_cells.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- `PackageEditor::save_as()` no longer extracts stored copy-original source
+  entries into `PackageEditor` temp files before handing them to
+  `PackageWriter`; it now uses a direct source-package `PackageEntryChunk`
+  file range with the source entry CRC recorded as expected CRC.
+- Compressed source entries and `PackageEditorSourceCopyTempFilesHook` still
+  use the previous temp-file fallback so DEFLATE correctness and save-time
+  failure-injection tests remain covered.
+- Public patch-cell tests now force stored fixtures only for direct-range
+  telemetry assertions, and minizip builds also cover compressed-source
+  correctness through the transformer fallback.
+- Policy guard tests now expect copy-original source read failures to surface
+  from the output package writer chunk path rather than pre-materialization.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=4774`, `save_ms=1951`, `verify_ms=1905`,
+  `total_edit_ms=6727`, `total_ms=8639`, `peak_memory_mb=7.99`, and
+  `output_verified=true`.
+- The output plan reports `11` source file-range chunks and `1000`
+  replacement memory chunks, with
+  `package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`
+  and `output_entry_mode="indexed-source-entry-direct-range-staged-chunks"`.
+
+Non-goals / boundary:
+- No public API change, no compressed-source direct-range expansion, no Zip64,
+  no relationship repair, no metadata repair, no sharedStrings/styles
+  migration, and no arbitrary O(1) random access.
+- This is `save_as()` copy-original throughput cleanup for stored source
+  packages. The public fast path remains conservative and still falls back for
+  compressed source entries, upsert mode, worksheets with relationships,
+  missing top-level dimensions, planned worksheet input, and strict policy
+  failures.
+
+Acceptance:
+- `ctest --preset windows-nmake-release --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-minizip` passes.
+- `ctest --preset windows-nmake-release-minizip --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-direct-source-copy-rerun-result.json` with
+  `output_verified=true`.
+- `git diff --check` passes.
+
+### P8.760 - Stored ZIP staged range output buffering
+
+Status: completed.
+
+Touched files:
+- `src/zip_store_writer.cpp`
+- `src/package_writer.cpp`
+- `tests/test_package_editor_core.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+What changed:
+- `ZipStoreWriter` now keeps the active input stream position for repeated
+  file-range chunks from the same path. For small forward gaps it reads and
+  discards skipped bytes instead of issuing another seek; larger or backward
+  gaps still seek.
+- Stored ZIP and minizip file-copy buffers now use 1 MiB heap buffers instead
+  of 64 KiB stack buffers. Stored writer also installs a 1 MiB output stream
+  buffer before opening the package output.
+- `fastxlsx.package_editor.core` now covers gapped file-range staged chunks so
+  skipped source bytes are not copied into output.
+
+Benchmark:
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=6416`, `save_ms=2152`, `verify_ms=1905`,
+  `total_edit_ms=8572`, `total_ms=10479`, `peak_memory_mb=8.03`, and
+  `output_verified=true`.
+- The output plan still reports `11` source file-range chunks and `1000`
+  replacement memory chunks. The memory increase is deliberate IO buffering,
+  not worksheet materialization.
+
+Non-goals / boundary:
+- No public API change, no source ZIP random-access layer, no compressed-source
+  support expansion, no Zip64 support, no metadata repair, no relationship
+  repair, and no arbitrary O(1) random access.
+- This is save-path throughput cleanup for staged chunks. Correctness still
+  relies on the existing strict source scan and staged chunk validation.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests fastxlsx_worksheet_cell_index_tests` passes.
+- `ctest --test-dir build\\windows-nmake-release -R "^(fastxlsx\\.package_editor\\.core|fastxlsx\\.workbook_editor_public_patch_cells|fastxlsx\\.worksheet_cell_index)$" --output-on-failure --timeout 60` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-save-buffered-rerun-result.json` with
+  `output_verified=true`.
+
+### P8.759 - Targeted planner lightweight scanner and parser cleanup
+
+Status: completed.
+
+Touched files:
+- `src/worksheet_cell_index.cpp`
+- `tests/test_worksheet_cell_index.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/PERFORMANCE_TARGETS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: reduce the public strict targeted-cell Patch source-scan overhead without
+expanding public API surface or weakening strict source validation.
+
+Output:
+- Added an internal lightweight scanner used only by
+  `plan_targeted_cell_rewrites_from_chunk_source()`.
+- The scanner recognizes the narrow worksheet / sheetData / row / cell /
+  value-wrapper structure needed for target range planning and keeps top-level
+  dimension detection.
+- Replaced the scanner's generic tag-body parsing with direct tag-name and
+  attribute scanning on raw tag views.
+- Kept the shared worksheet event reader as the default transformer and
+  diagnostic reader path.
+- Added worksheet-cell-index regression coverage for tiny chunks, prolog XML
+  declaration / processing instruction / comment, prefixed worksheet/cell tags,
+  top-level dimension detection, malformed value-wrapper validation, non
+  row-major source fallback, and non-adjacent duplicate requested source cells.
+- Re-ran the 10M-source-cell / 1000-edit public facade benchmark with reused
+  source fixture:
+  `patch_plan_ms=7852`, `save_ms=2272`, `verify_ms=2183`,
+  `total_edit_ms=10128`, `total_ms=12324`, `peak_memory_mb=6.26`, and
+  `output_verified=true`.
+
+Non-goals / boundary:
+- No user-facing public API, no public strategy selector, no public early-stop
+  default, no source ZIP random-access layer, no compressed-source support, no
+  planned-input direct-range support, no metadata repair, no
+  sharedStrings/styles migration, and no arbitrary O(1) random access.
+- This is a narrow source-scan hot-path cleanup for bounded targeted
+  replacement. It still linearly scans source XML for correctness.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_worksheet_cell_index_tests fastxlsx_package_editor_core_tests fastxlsx_workbook_editor_public_patch_cells_tests` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(worksheet_event_reader|worksheet_cell_index|package_editor\\.core|workbook_editor_public_patch_cells)$" --output-on-failure` passes.
+- `cmake --build --preset windows-nmake-release-benchmark --target fastxlsx_bench_package_editor_cell_replacement` passes.
+- 10M-source-cell / 1000-edit public facade benchmark writes
+  `build\\qa\\continue-public-fast-target-scanner-parser-result.json` with
+  `output_verified=true`.
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 

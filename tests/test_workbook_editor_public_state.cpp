@@ -91,6 +91,20 @@ void check_not_contains(
     check(haystack.find(needle) == std::string::npos, message);
 }
 
+void check_cell_range_equals(
+    const std::optional<fastxlsx::CellRange>& range,
+    std::uint32_t first_row,
+    std::uint32_t first_column,
+    std::uint32_t last_row,
+    std::uint32_t last_column,
+    std::string_view message)
+{
+    check(range.has_value() && range->first_row == first_row &&
+            range->first_column == first_column && range->last_row == last_row &&
+            range->last_column == last_column,
+        message);
+}
+
 bool threw_fastxlsx_error(const std::function<void()>& action)
 {
     try {
@@ -3098,6 +3112,237 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
         "A1 range sparse_cells should not revive erased source cells");
 }
 
+void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-batch-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-sparse-batch-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("batch-new"));
+    sheet.set_cell(3, 2, fastxlsx::CellValue::blank());
+    sheet.erase_cell(2, 1);
+
+    const std::array<fastxlsx::WorksheetCellReference, 6> batch {
+        fastxlsx::WorksheetCellReference {4, 4},
+        fastxlsx::WorksheetCellReference {1, 2},
+        fastxlsx::WorksheetCellReference {3, 2},
+        fastxlsx::WorksheetCellReference {2, 1},
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {1, 1},
+    };
+    const std::vector<fastxlsx::WorksheetCellSnapshot> batch_snapshots = sheet.sparse_cells(batch);
+    check(batch_snapshots.size() == 5,
+        "sparse_cells(span<WorksheetCellReference>) should skip missing cells and keep duplicates");
+    check(batch_snapshots[0].reference.row == 4 && batch_snapshots[0].reference.column == 4 &&
+            batch_snapshots[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            batch_snapshots[0].value.text_value() == "batch-new",
+        "sparse_cells(span<WorksheetCellReference>) should keep the input order");
+    check(batch_snapshots[1].reference.row == 1 && batch_snapshots[1].reference.column == 2 &&
+            batch_snapshots[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            batch_snapshots[1].value.number_value() == 1.0,
+        "sparse_cells(span<WorksheetCellReference>) should include source-backed cells");
+    check(batch_snapshots[2].reference.row == 3 && batch_snapshots[2].reference.column == 2 &&
+            batch_snapshots[2].value.kind() == fastxlsx::CellValueKind::Blank,
+        "sparse_cells(span<WorksheetCellReference>) should include explicit blank records");
+    check(batch_snapshots[3].reference.row == 1 && batch_snapshots[3].reference.column == 1 &&
+            batch_snapshots[3].value.kind() == fastxlsx::CellValueKind::Text &&
+            batch_snapshots[3].value.text_value() == "placeholder-a1",
+        "sparse_cells(span<WorksheetCellReference>) should include active records after skipping missing coordinates");
+    check(batch_snapshots[4].reference.row == 1 && batch_snapshots[4].reference.column == 1 &&
+            batch_snapshots[4].value.kind() == fastxlsx::CellValueKind::Text &&
+            batch_snapshots[4].value.text_value() == "placeholder-a1",
+        "sparse_cells(span<WorksheetCellReference>) should preserve duplicate coordinates");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> initializer_batch = sheet.sparse_cells({
+        {4, 4},
+        {1, 1},
+    });
+    check(initializer_batch.size() == 2,
+        "sparse_cells(initializer_list<WorksheetCellReference>) should return the requested records");
+    check(initializer_batch[0].reference.row == 4 && initializer_batch[0].reference.column == 4 &&
+            initializer_batch[0].value.text_value() == "batch-new",
+        "sparse_cells(initializer_list<WorksheetCellReference>) should preserve input order");
+    check(initializer_batch[1].reference.row == 1 && initializer_batch[1].reference.column == 1 &&
+            initializer_batch[1].value.text_value() == "placeholder-a1",
+        "sparse_cells(initializer_list<WorksheetCellReference>) should return owning snapshots");
+
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("changed-after-batch-snapshot"));
+    check(batch_snapshots[3].value.text_value() == "placeholder-a1",
+        "sparse_cells(span<WorksheetCellReference>) should return owning snapshots");
+    check(initializer_batch[1].value.text_value() == "placeholder-a1",
+        "sparse_cells(initializer_list<WorksheetCellReference>) should also return owning snapshots");
+    check(!editor.last_edit_error().has_value(),
+        "sparse_cells(batch) reads should not update last_edit_error");
+
+    const std::size_t cell_count_before_invalid_reads = sheet.cell_count();
+    const std::size_t memory_before_invalid_reads = sheet.estimated_memory_usage();
+    const std::array<fastxlsx::WorksheetCellReference, 4> invalid_batch {
+        fastxlsx::WorksheetCellReference {0, 1},
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {1, 16385},
+        fastxlsx::WorksheetCellReference {1048577, 1},
+    };
+    check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid_batch); }),
+        "sparse_cells(span<WorksheetCellReference>) should reject invalid coordinates");
+    check(!editor.last_edit_error().has_value(),
+        "invalid sparse_cells(batch) calls should not update last_edit_error");
+    check(sheet.cell_count() == cell_count_before_invalid_reads,
+        "invalid sparse_cells(batch) calls should not mutate sparse store state");
+    check(sheet.estimated_memory_usage() == memory_before_invalid_reads,
+        "invalid sparse_cells(batch) calls should not change sparse-store memory usage");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "changed-after-batch-snapshot",
+        "sparse_cells(batch) reads should not interfere with later edits");
+    check_contains(worksheet_xml, "batch-new",
+        "sparse_cells(batch) reads should not interfere with dirty save_as output");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "sparse_cells(batch) reads should not revive erased source cells");
+}
+
+void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-used-range-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-used-range-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 2,
+        "used_range should cover source-backed sparse records");
+    check(!sheet.has_pending_changes(),
+        "used_range should not dirty a freshly materialized worksheet");
+    check(!editor.last_edit_error().has_value(),
+        "used_range should not update last_edit_error");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("used-range-new"));
+    sheet.set_cell(3, 2, fastxlsx::CellValue::blank());
+    sheet.erase_cell(2, 1);
+    check_cell_range_equals(sheet.used_range(), 1, 1, 4, 4,
+        "used_range should expand to include edited cells and explicit blanks");
+
+    sheet.erase_cell(4, 4);
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 2,
+        "used_range should shrink when edge sparse records are erased");
+    sheet.erase_cell(3, 2);
+    check_cell_range_equals(sheet.used_range(), 1, 1, 1, 2,
+        "used_range should shrink back to remaining source-backed records");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-used-range-sentinel"));
+    }), "invalid mutation should seed last_edit_error before used_range inspection");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid mutation should populate last_edit_error before used_range inspection");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 1, 2,
+        "used_range should remain available after a failed mutation");
+    check(editor.last_edit_error() == prior_error,
+        "used_range should preserve prior last_edit_error diagnostics");
+
+    sheet.erase_cells(fastxlsx::CellRange {1, 1, 1, 2});
+    check(!editor.last_edit_error().has_value(),
+        "successful erase_cells should clear prior public edit diagnostics");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-empty-used-range"));
+    }), "invalid mutation should seed last_edit_error before empty used_range inspection");
+    const std::optional<std::string> empty_prior_error = editor.last_edit_error();
+    check(empty_prior_error.has_value(),
+        "invalid mutation should populate last_edit_error before empty used_range inspection");
+    check(!sheet.used_range().has_value(),
+        "used_range should return nullopt for an empty materialized sparse store");
+    check(editor.last_edit_error() == empty_prior_error,
+        "used_range empty-store inspection should preserve prior diagnostics");
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == empty_prior_error,
+        "save_as after used_range inspection should preserve prior diagnostics");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1"/>)",
+        "used_range should not interfere with dirty-session save_as projection");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "used_range should not revive erased A1 text");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "used_range should not revive erased B1 numeric cell");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "used_range should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_contains_cell_tracks_represented_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-contains-cell-source.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(sheet.contains_cell(1, 1),
+        "contains_cell(row, column) should report source-backed sparse records");
+    check(sheet.contains_cell("B1"),
+        "contains_cell(A1) should report source-backed sparse records");
+    check(!sheet.contains_cell(5, 5),
+        "contains_cell should return false for missing sparse records");
+    check(!sheet.contains_cell("XFD1048576"),
+        "contains_cell(A1) should accept the last legal coordinate as a miss");
+    check(!sheet.has_pending_changes(),
+        "contains_cell should not dirty a freshly materialized worksheet");
+    check(!editor.last_edit_error().has_value(),
+        "contains_cell should not update last_edit_error");
+
+    sheet.set_cell(4, 4, fastxlsx::CellValue::text("contains-new"));
+    sheet.set_cell(3, 2, fastxlsx::CellValue::blank());
+    sheet.erase_cell(2, 1);
+    check(sheet.contains_cell(4, 4),
+        "contains_cell should see newly inserted sparse records");
+    check(sheet.contains_cell("B3"),
+        "contains_cell should treat explicit blanks as represented cells");
+    check(!sheet.contains_cell(2, 1),
+        "contains_cell should return false after erase_cell removes a sparse record");
+
+    const std::optional<fastxlsx::CellValue> copied_blank = sheet.try_cell("B3");
+    check(copied_blank.has_value() &&
+            copied_blank->kind() == fastxlsx::CellValueKind::Blank,
+        "contains_cell should agree with try_cell for represented explicit blanks");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-contains-cell-sentinel"));
+    }), "invalid mutation should seed last_edit_error before contains_cell inspection");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid mutation should populate last_edit_error before contains_cell inspection");
+    check(sheet.contains_cell("D4"),
+        "contains_cell should remain available after a failed mutation");
+    check(!sheet.contains_cell(2, 1),
+        "contains_cell should keep erased cells missing after a failed mutation");
+    check(editor.last_edit_error() == prior_error,
+        "contains_cell should preserve prior last_edit_error diagnostics");
+
+    const std::size_t cell_count_before_invalid_reads = sheet.cell_count();
+    const std::size_t memory_before_invalid_reads = sheet.estimated_memory_usage();
+    check(threw_fastxlsx_error([&] { (void)sheet.contains_cell(0, 1); }),
+        "contains_cell(row, column) should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)sheet.contains_cell(1, 16385); }),
+        "contains_cell(row, column) should reject columns past XFD");
+    check(threw_fastxlsx_error([&] { (void)sheet.contains_cell("a1"); }),
+        "contains_cell(A1) should reject lowercase references");
+    check(threw_fastxlsx_error([&] { (void)sheet.contains_cell("A1:B2"); }),
+        "contains_cell(A1) should reject ranges");
+    check(editor.last_edit_error() == prior_error,
+        "invalid contains_cell reads should not replace last_edit_error diagnostics");
+    check(sheet.cell_count() == cell_count_before_invalid_reads,
+        "invalid contains_cell reads should not mutate sparse store state");
+    check(sheet.estimated_memory_usage() == memory_before_invalid_reads,
+        "invalid contains_cell reads should not change sparse-store memory usage");
+}
+
 void test_public_worksheet_editor_row_and_column_cells_snapshot()
 {
     const std::filesystem::path source =
@@ -4636,6 +4881,295 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "in-budget set_column_values should persist column tail cells");
         check_not_contains(worksheet_xml, "max-cells-rejected",
             "rejected set_column_values payload should not leak into saved output");
+    }
+}
+
+void test_public_worksheet_editor_clear_and_erase_all_cells()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-clear-erase-all-source.xlsx");
+
+    {
+        const std::filesystem::path style_source =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-style-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-style-output.xlsx");
+        const std::filesystem::path output_after_reacquire =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-reacquire-output.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
+            {
+                fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+                non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+                styled_sheet.append_row({
+                    fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                    fastxlsx::CellView::text("unstyled-clear-all"),
+                });
+            }
+            writer.close();
+        }
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+        sheet.clear_cell_values();
+        check(sheet.cell_count() == 2,
+            "clear_cell_values() should keep every represented record as an explicit blank");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("B1"),
+            "clear_cell_values() should keep represented coordinates present");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 1, 2,
+            "clear_cell_values() should keep represented bounds over blank records");
+        const fastxlsx::CellValue cleared_a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue cleared_b1 = sheet.get_cell("B1");
+        check(cleared_a1.kind() == fastxlsx::CellValueKind::Blank && cleared_a1.has_style()
+                && cleared_a1.style_id().value() == non_default_style.value(),
+            "clear_cell_values() should preserve source styles on styled blanks");
+        check(cleared_b1.kind() == fastxlsx::CellValueKind::Blank && !cleared_b1.has_style(),
+            "clear_cell_values() should keep unstyled source cells unstyled");
+        check(sheet.has_pending_changes(),
+            "clear_cell_values() should dirty a non-empty materialized worksheet");
+        check(editor.pending_materialized_cell_count() == 2,
+            "clear_cell_values() should keep explicit blanks in aggregate diagnostics");
+        check(editor.pending_materialized_worksheet_names() ==
+                std::vector<std::string> {"Styled"},
+            "clear_cell_values() should expose the dirty materialized worksheet name");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1 && summaries[0].planned_name == "Styled",
+                "clear_cell_values() should expose one dirty materialized summary");
+            if (summaries.size() == 1) {
+                check(summaries[0].materialized_dirty,
+                    "clear_cell_values() summary should report materialized dirty state");
+                check(summaries[0].materialized_cell_count == 2,
+                    "clear_cell_values() summary should keep explicit blank records counted");
+                check(summaries[0].estimated_materialized_memory_usage > 0,
+                    "clear_cell_values() summary should expose materialized memory");
+            }
+        }
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_cell_values() should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_blank =
+            R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B1"/>)",
+            "clear_cell_values() should keep the projected dimension over explicit blanks");
+        check_contains(worksheet_xml, styled_blank,
+            "clear_cell_values() should persist styled blanks with the source style id");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_cell_values() should persist unstyled cells as blank records");
+        check_not_contains(worksheet_xml, "unstyled-clear-all",
+            "clear_cell_values() should omit old text payloads");
+        check_not_contains(worksheet_xml, R"(<v>1</v>)",
+            "clear_cell_values() should omit old numeric payloads");
+        check(!sheet.has_pending_changes(),
+            "save_as should clear dirty state after whole-store clear projection");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "save_as should clear dirty materialized names after whole-store clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "save_as should clear dirty materialized cell count after whole-store clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "save_as should clear dirty materialized memory after whole-store clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "save_as should clear dirty materialized summaries after whole-store clear");
+
+        fastxlsx::WorksheetEditor reacquired = editor.worksheet("Styled");
+        check(!reacquired.has_pending_changes(),
+            "reacquired worksheet after whole-store clear save should remain clean");
+        check_cell_range_equals(reacquired.used_range(), 1, 1, 1, 2,
+            "reacquired worksheet should keep explicit blank bounds after whole-store clear");
+        reacquired.set_cell_value("A1", fastxlsx::CellValue::number(2.5));
+        reacquired.set_cell_value("B1", fastxlsx::CellValue::text("after-clear-reacquire"));
+        const fastxlsx::CellValue reacquired_a1 = reacquired.get_cell("A1");
+        check(reacquired_a1.kind() == fastxlsx::CellValueKind::Number &&
+                reacquired_a1.has_style() &&
+                reacquired_a1.style_id().value() == non_default_style.value(),
+            "reacquired value-only edit after whole-store clear should preserve source style");
+        check(editor.pending_materialized_worksheet_names() ==
+                std::vector<std::string> {"Styled"},
+            "post-save whole-store clear handle reuse should dirty the same worksheet name");
+        check(editor.pending_materialized_cell_count() == 2,
+            "post-save whole-store clear handle reuse should report edited sparse cells");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1 && summaries[0].planned_name == "Styled",
+                "post-save whole-store clear handle reuse should restore one dirty summary");
+            if (summaries.size() == 1) {
+                check(summaries[0].materialized_dirty &&
+                        summaries[0].materialized_cell_count == 2,
+                    "post-save whole-store clear dirty summary should match edited blanks");
+            }
+        }
+
+        editor.save_as(output_after_reacquire);
+        const auto reacquired_entries = fastxlsx::test::read_zip_entries(output_after_reacquire);
+        const std::string reacquired_xml = reacquired_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(reacquired_xml, R"(<dimension ref="A1:B1"/>)",
+            "reacquired whole-store clear session should keep edited bounds on second save_as");
+        check_contains(reacquired_xml, R"(<c r="A1" s=")" +
+                std::to_string(non_default_style.value()) + R"("><v>2.5</v></c>)",
+            "reacquired whole-store clear session should persist styled value-only edit");
+        check_contains(reacquired_xml, "after-clear-reacquire",
+            "reacquired whole-store clear session should persist later text edits");
+        check_not_contains(reacquired_xml, "unstyled-clear-all",
+            "reacquired whole-store clear session should not revive cleared source text");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "second save_as should clear dirty names after whole-store clear handle reuse");
+        check(editor.pending_materialized_cell_count() == 0,
+            "second save_as should clear dirty cell count after whole-store clear handle reuse");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "second save_as should clear dirty memory after whole-store clear handle reuse");
+        check(editor.pending_worksheet_edits().empty(),
+            "second save_as should clear summaries after whole-store clear handle reuse");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-output.xlsx");
+        const std::filesystem::path output_after_reacquire =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        sheet.set_cell("D4", fastxlsx::CellValue::text("erase-all-extra"));
+
+        sheet.erase_cells();
+        check(sheet.cell_count() == 0,
+            "erase_cells() should remove every represented sparse record");
+        check(!sheet.contains_cell("A1") && !sheet.contains_cell("D4"),
+            "erase_cells() should make all prior coordinates missing");
+        check(!sheet.used_range().has_value(),
+            "erase_cells() should leave an empty represented range");
+        check(sheet.has_pending_changes(),
+            "erase_cells() should dirty a non-empty materialized worksheet");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_cells() should report zero dirty materialized cells after full erase");
+        check(editor.pending_materialized_worksheet_names() ==
+                std::vector<std::string> {"Data"},
+            "erase_cells() should still expose the dirty materialized worksheet name");
+        check(editor.estimated_pending_materialized_memory_usage() > 0,
+            "erase_cells() should keep dirty empty-store memory visible before save_as");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1 && summaries[0].planned_name == "Data",
+                "erase_cells() should expose one dirty empty materialized summary");
+            if (summaries.size() == 1) {
+                check(summaries[0].materialized_dirty,
+                    "erase_cells() summary should report materialized dirty state");
+                check(summaries[0].materialized_cell_count == 0,
+                    "erase_cells() summary should report zero sparse records after full erase");
+                check(summaries[0].estimated_materialized_memory_usage > 0,
+                    "erase_cells() summary should keep empty-store memory visible before save");
+            }
+        }
+        check(!editor.last_edit_error().has_value(),
+            "successful erase_cells() should keep diagnostics clear");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1"/>)",
+            "erase_cells() should project an empty sparse worksheet dimension");
+        check_not_contains(worksheet_xml, "placeholder-a1",
+            "erase_cells() should omit erased source A1 text");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "erase_cells() should omit erased source A2 text");
+        check_not_contains(worksheet_xml, "erase-all-extra",
+            "erase_cells() should omit erased newly inserted cells");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "erase_cells() should preserve untouched worksheets");
+        check(!sheet.has_pending_changes(),
+            "save_as should clear dirty state after whole-store erase projection");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "save_as should clear dirty materialized names after whole-store erase");
+        check(editor.pending_materialized_cell_count() == 0,
+            "save_as should clear dirty materialized cell count after whole-store erase");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "save_as should clear dirty materialized memory after whole-store erase");
+        check(editor.pending_worksheet_edits().empty(),
+            "save_as should clear dirty materialized summaries after whole-store erase");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-clear-all-noop"));
+        }), "invalid mutation should seed last_edit_error before empty clear_cell_values()");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before empty clear_cell_values()");
+        sheet.clear_cell_values();
+        check(!editor.last_edit_error().has_value(),
+            "empty clear_cell_values() should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "empty clear_cell_values() should not dirty a clean empty materialized worksheet");
+        check(sheet.cell_count() == 0,
+            "empty clear_cell_values() should keep the sparse store empty");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-erase-all-noop"));
+        }), "invalid mutation should seed last_edit_error before empty erase_cells()");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before empty erase_cells()");
+        sheet.erase_cells();
+        check(!editor.last_edit_error().has_value(),
+            "empty erase_cells() should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "empty erase_cells() should not dirty a clean empty materialized worksheet");
+        check(sheet.cell_count() == 0,
+            "empty erase_cells() should keep the sparse store empty");
+
+        fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+        check(!reacquired.has_pending_changes(),
+            "reacquired worksheet after whole-store erase save should remain clean");
+        check(!reacquired.used_range().has_value(),
+            "reacquired worksheet should remain empty after whole-store erase save");
+        reacquired.append_row({
+            fastxlsx::CellValue::text("after-erase-reacquire"),
+            fastxlsx::CellValue::number(9.0),
+        });
+        check_cell_range_equals(reacquired.used_range(), 1, 1, 1, 2,
+            "reacquired empty worksheet should append from row one");
+        check(editor.pending_materialized_worksheet_names() ==
+                std::vector<std::string> {"Data"},
+            "post-save whole-store erase handle reuse should dirty the same worksheet name");
+        check(editor.pending_materialized_cell_count() == 2,
+            "post-save whole-store erase handle reuse should report appended sparse cells");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1 && summaries[0].planned_name == "Data",
+                "post-save whole-store erase handle reuse should restore one dirty summary");
+            if (summaries.size() == 1) {
+                check(summaries[0].materialized_dirty &&
+                        summaries[0].materialized_cell_count == 2,
+                    "post-save whole-store erase dirty summary should match appended cells");
+            }
+        }
+
+        editor.save_as(output_after_reacquire);
+        const auto reacquired_entries = fastxlsx::test::read_zip_entries(output_after_reacquire);
+        const std::string reacquired_xml = reacquired_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(reacquired_xml, R"(<dimension ref="A1:B1"/>)",
+            "reacquired whole-store erase session should persist appended bounds");
+        check_contains(reacquired_xml, "after-erase-reacquire",
+            "reacquired whole-store erase session should persist later append text");
+        check_contains(reacquired_xml, R"(<c r="B1"><v>9</v></c>)",
+            "reacquired whole-store erase session should persist later append number");
+        check_not_contains(reacquired_xml, "placeholder-a1",
+            "reacquired whole-store erase session should not revive erased source text");
+        check_not_contains(reacquired_xml, "erase-all-extra",
+            "reacquired whole-store erase session should not revive erased dirty text");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "second save_as should clear dirty names after whole-store erase handle reuse");
+        check(editor.pending_materialized_cell_count() == 0,
+            "second save_as should clear dirty cell count after whole-store erase handle reuse");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "second save_as should clear dirty memory after whole-store erase handle reuse");
+        check(editor.pending_worksheet_edits().empty(),
+            "second save_as should clear summaries after whole-store erase handle reuse");
     }
 }
 
@@ -6233,6 +6767,9 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_sparse_cells_snapshot();
             test_public_worksheet_editor_sparse_cells_range_snapshot();
             test_public_worksheet_editor_sparse_cells_a1_range_snapshot();
+            test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot();
+            test_public_worksheet_editor_used_range_tracks_sparse_bounds();
+            test_public_worksheet_editor_contains_cell_tracks_represented_state();
             test_public_worksheet_editor_row_and_column_cells_snapshot();
             test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics();
             test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();
@@ -6247,6 +6784,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_set_column_empty_and_guardrails();
             test_public_worksheet_editor_set_row_values_preserves_styles_and_tail();
             test_public_worksheet_editor_set_column_values_noop_invalid_and_budget();
+            test_public_worksheet_editor_clear_and_erase_all_cells();
             test_public_worksheet_editor_clear_row_preserves_sparse_records();
             test_public_worksheet_editor_clear_columns_noop_invalid_and_range();
             test_public_worksheet_editor_erase_row_removes_sparse_row();

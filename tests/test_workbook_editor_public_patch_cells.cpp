@@ -2,8 +2,9 @@
 //
 // These tests stay on the public WorkbookEditor facade and verify that
 // replace_cells() and its explicit missing-cell policy use the large-worksheet
-// Patch transformer path without materializing the worksheet through
-// WorksheetEditor.
+// Patch path without materializing the worksheet through WorksheetEditor.
+
+#include "../src/workbook_editor_package_diagnostics.hpp"
 
 #include <fastxlsx/workbook_editor.hpp>
 #include <fastxlsx/streaming_writer.hpp>
@@ -69,12 +70,44 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+bool has_note_containing(
+    const std::vector<std::string>& notes,
+    std::initializer_list<std::string_view> needles)
+{
+    for (const std::string& note : notes) {
+        bool found = true;
+        for (const std::string_view needle : needles) {
+            if (note.find(needle) == std::string::npos) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return true;
+        }
+    }
+    return false;
+}
+
+const fastxlsx::detail::PackageEditorOutputEntryPlan* find_output_entry_plan(
+    const fastxlsx::detail::PackageEditorOutputPlan& plan,
+    std::string_view entry_name)
+{
+    for (const fastxlsx::detail::PackageEditorOutputEntryPlan& entry : plan.entries) {
+        if (entry.entry_name == entry_name) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
 std::filesystem::path artifact(std::string_view name)
 {
     return fastxlsx::test::artifact_path(name);
 }
 
-std::filesystem::path write_patch_cells_source(std::string_view name)
+std::filesystem::path write_patch_cells_source_impl(
+    std::string_view name, bool force_stored_archive)
 {
     const std::filesystem::path path = artifact(name);
 
@@ -97,8 +130,59 @@ std::filesystem::path write_patch_cells_source(std::string_view name)
             fastxlsx::CellView::number(99.0)});
     }
     writer.close();
+    if (force_stored_archive) {
+        const std::map<std::string, std::string> entries =
+            fastxlsx::test::read_zip_entries(path);
+        fastxlsx::test::write_stored_zip_entries(path, entries);
+    }
     return path;
 }
+
+std::filesystem::path write_patch_cells_source(std::string_view name)
+{
+    // Direct-range assertions require stored source entries. Keep this fixture
+    // backend-neutral; compressed-source fallback has separate minizip coverage.
+    return write_patch_cells_source_impl(name, true);
+}
+
+std::filesystem::path write_patch_cells_source_with_external_hyperlink(
+    std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("old-a1"),
+            fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::boolean(true)});
+        data.append_row({fastxlsx::CellView::text("old-a2"),
+            fastxlsx::CellView::number(2.0),
+            fastxlsx::CellView::boolean(false)});
+        data.append_row({fastxlsx::CellView::text("old-a3"),
+            fastxlsx::CellView::number(3.0),
+            fastxlsx::CellView::formula("A1+B1")});
+        data.add_external_hyperlink(1, 3, "https://example.invalid/data");
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    const std::map<std::string, std::string> entries =
+        fastxlsx::test::read_zip_entries(path);
+    fastxlsx::test::write_stored_zip_entries(path, entries);
+    return path;
+}
+
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+std::filesystem::path write_patch_cells_default_backend_source(std::string_view name)
+{
+    return write_patch_cells_source_impl(name, false);
+}
+#endif
 
 void check_patch_cells_clean_diagnostics(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
@@ -145,6 +229,44 @@ void test_replace_cells_patches_existing_cells_and_preserves_unrelated_parts()
         "replace_cells should expose targeted worksheet predicate");
     check(editor.estimated_pending_targeted_cell_replacement_xml_bytes() > 0,
         "replace_cells should expose staged replacement cell XML bytes");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+    check(has_note_containing(output_plan.notes,
+              {"indexed source-entry direct-range", "matched 5 replacement targets"}),
+        "replace_cells should expose the indexed source-entry direct-range fast path");
+    check(has_note_containing(output_plan.notes,
+              {"indexed source-entry fast path", "source package file ranges"}),
+        "replace_cells should report source package file-range preservation");
+    const auto* data_sheet_plan =
+        find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
+    check(data_sheet_plan != nullptr,
+        "replace_cells output plan should include the edited worksheet");
+    if (data_sheet_plan != nullptr) {
+        check(data_sheet_plan->staged_replacement_chunks,
+            "replace_cells should stage direct-range worksheet chunks");
+        check(!data_sheet_plan->materialized_replacement,
+            "replace_cells should not materialize the rewritten worksheet");
+        check(data_sheet_plan->staged_replacement_file_range_chunk_count > 0,
+            "replace_cells should preserve untouched worksheet XML as file ranges");
+        check(data_sheet_plan->staged_replacement_memory_chunk_count > 0
+                && data_sheet_plan->staged_replacement_memory_chunk_count < 5,
+            "replace_cells should merge adjacent replacement payload memory chunks");
+        check(data_sheet_plan->staged_replacement_memory_bytes
+                == editor.estimated_pending_targeted_cell_replacement_xml_bytes(),
+            "replace_cells should keep all staged replacement payload bytes after merging chunks");
+        check(data_sheet_plan->indexed_source_entry_direct_range,
+            "replace_cells output plan should expose structured direct-range telemetry");
+        check(data_sheet_plan->indexed_source_entry_scanned_source_cell_count == 9,
+            "replace_cells output plan should report the scanned source cell count");
+        check(data_sheet_plan->indexed_source_entry_matched_replacement_count == 5,
+            "replace_cells output plan should report the matched target count");
+        check(data_sheet_plan->indexed_source_entry_staged_output_bytes
+                == data_sheet_plan->staged_replacement_expected_bytes,
+            "replace_cells output plan should report staged worksheet output bytes");
+        check_contains(data_sheet_plan->reason, "indexed direct-range",
+            "replace_cells worksheet plan reason should name the fast path");
+    }
 
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
         editor.pending_worksheet_edits();
@@ -195,6 +317,172 @@ void test_replace_cells_patches_existing_cells_and_preserves_unrelated_parts()
     check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
         "replace_cells should not create calcChain.xml");
 }
+
+void test_replace_cells_insert_policy_uses_direct_range_when_all_targets_exist()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source("workbook-editor-public-upsert-existing-direct-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-upsert-existing-direct-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_cells("Data",
+        {
+            {{1, 1}, fastxlsx::CellValue::text("existing insert policy")},
+            {{2, 2}, fastxlsx::CellValue::number(77.0)},
+            {{3, 3}, fastxlsx::CellValue::formula("A1+B1")},
+        },
+        fastxlsx::CellPatchMissingCellPolicy::Insert);
+
+    check(editor.pending_targeted_cell_replacement_count() == 3,
+        "replace_cells Insert existing-only policy should expose targeted cell count");
+    check(editor.estimated_pending_targeted_cell_replacement_xml_bytes() > 0,
+        "replace_cells Insert existing-only policy should expose staged payload bytes");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+    check(has_note_containing(output_plan.notes,
+              {"indexed source-entry direct-range", "matched 3 replacement targets"}),
+        "replace_cells Insert existing-only policy should use direct-range fast path");
+    const auto* data_sheet_plan =
+        find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
+    check(data_sheet_plan != nullptr,
+        "replace_cells Insert existing-only output plan should include the edited worksheet");
+    if (data_sheet_plan != nullptr) {
+        check(data_sheet_plan->staged_replacement_chunks,
+            "replace_cells Insert existing-only should stage direct-range worksheet chunks");
+        check(!data_sheet_plan->materialized_replacement,
+            "replace_cells Insert existing-only should not materialize the rewritten worksheet");
+        check(data_sheet_plan->indexed_source_entry_direct_range,
+            "replace_cells Insert existing-only should expose structured direct-range telemetry");
+        check(data_sheet_plan->indexed_source_entry_matched_replacement_count == 3,
+            "replace_cells Insert existing-only should report every matched target");
+        check(data_sheet_plan->staged_replacement_file_range_chunk_count > 0,
+            "replace_cells Insert existing-only should preserve untouched XML as file ranges");
+        check(data_sheet_plan->staged_replacement_memory_bytes
+                == editor.estimated_pending_targeted_cell_replacement_xml_bytes(),
+            "replace_cells Insert existing-only should account for all replacement payload bytes");
+    }
+
+    editor.save_as(output);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet, "<dimension ref=\"A1:C3\"",
+        "replace_cells Insert existing-only should preserve worksheet dimension");
+    check_contains(data_sheet,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>existing insert policy</t></is></c>",
+        "replace_cells Insert existing-only should replace A1 text");
+    check_contains(data_sheet, "<c r=\"B2\"><v>77</v></c>",
+        "replace_cells Insert existing-only should replace B2 number");
+    check_contains(data_sheet, "<c r=\"C3\"><f>A1+B1</f></c>",
+        "replace_cells Insert existing-only should replace C3 formula");
+    check_not_contains(data_sheet, "old-a1",
+        "replace_cells Insert existing-only should remove old A1 payload");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "replace_cells Insert existing-only should preserve untouched worksheet bytes");
+}
+
+void test_replace_cells_keeps_transformer_for_worksheet_relationships()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source_with_external_hyperlink(
+            "workbook-editor-public-patch-cells-hyperlink-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-patch-cells-hyperlink-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_cells("Data",
+        {
+            {{1, 1}, fastxlsx::CellValue::text("relationship-safe patch")},
+            {{3, 3}, fastxlsx::CellValue::formula("A1+B1")},
+        },
+        fastxlsx::CellPatchMissingCellPolicy::Insert);
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+    check(!has_note_containing(output_plan.notes, {"indexed source-entry direct-range"}),
+        "replace_cells should not use direct-range fast path for sheets with relationships");
+    const auto* data_sheet_plan =
+        find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
+    check(data_sheet_plan != nullptr,
+        "relationship-bearing replace_cells output plan should include the edited worksheet");
+    if (data_sheet_plan != nullptr) {
+        check(!data_sheet_plan->indexed_source_entry_direct_range,
+            "relationship-bearing replace_cells should leave direct-range telemetry off");
+        check(data_sheet_plan->staged_replacement_chunks,
+            "relationship-bearing replace_cells should still use staged rewrite output");
+        check(!data_sheet_plan->materialized_replacement,
+            "relationship-bearing replace_cells should not materialize the rewritten worksheet");
+    }
+
+    editor.save_as(output);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>relationship-safe patch</t></is></c>",
+        "relationship-bearing replace_cells should patch A1 text");
+    check_contains(data_sheet, "<c r=\"C3\"><f>A1+B1</f></c>",
+        "relationship-bearing replace_cells should patch C3 formula");
+    check_contains(data_sheet, "<hyperlink ref=\"C1\" r:id=\"rId1\"/>",
+        "relationship-bearing replace_cells should preserve worksheet hyperlink XML");
+    check(output_entries.at("xl/worksheets/_rels/sheet1.xml.rels")
+            == source_entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
+        "relationship-bearing replace_cells should preserve worksheet relationships bytes");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "relationship-bearing replace_cells should preserve untouched worksheet bytes");
+}
+
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+void test_replace_cells_on_compressed_source_preserves_correctness_without_direct_range()
+{
+    const std::filesystem::path source =
+        write_patch_cells_default_backend_source(
+            "workbook-editor-public-patch-cells-compressed-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-patch-cells-compressed-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_cells("Data", {
+        {{1, 1}, fastxlsx::CellValue::text("compressed fallback patch")},
+        {{3, 3}, fastxlsx::CellValue::formula("A1+B1")},
+    });
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+    check(!has_note_containing(output_plan.notes, {"indexed source-entry direct-range"}),
+        "compressed-source replace_cells should not claim direct-range fast-path telemetry");
+    const auto* data_sheet_plan =
+        find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
+    check(data_sheet_plan != nullptr,
+        "compressed-source replace_cells output plan should include the edited worksheet");
+    if (data_sheet_plan != nullptr) {
+        check(!data_sheet_plan->indexed_source_entry_direct_range,
+            "compressed-source replace_cells should leave structured direct-range telemetry off");
+    }
+
+    editor.save_as(output);
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>compressed fallback patch</t></is></c>",
+        "compressed-source replace_cells should still patch text cells correctly");
+    check_contains(data_sheet, "<c r=\"C3\"><f>A1+B1</f></c>",
+        "compressed-source replace_cells should still patch formula cells correctly");
+    check_not_contains(data_sheet, "old-a1",
+        "compressed-source replace_cells should remove replaced source payload");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "compressed-source replace_cells should preserve untouched worksheet bytes");
+}
+#endif
 
 void test_replace_cells_rejects_missing_target_without_public_state_pollution()
 {
@@ -286,6 +574,19 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
     check(editor.has_pending_targeted_cell_replacement("Data"),
         "replace_cells Insert policy should reuse targeted diagnostics");
 
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+    check(!has_note_containing(output_plan.notes, {"indexed source-entry direct-range"}),
+        "replace_cells Insert policy with missing targets should use transformer fallback");
+    const auto* data_sheet_plan =
+        find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
+    check(data_sheet_plan != nullptr,
+        "replace_cells Insert policy output plan should include the edited worksheet");
+    if (data_sheet_plan != nullptr) {
+        check(!data_sheet_plan->indexed_source_entry_direct_range,
+            "replace_cells Insert policy with missing targets should not expose direct-range telemetry");
+    }
+
     editor.save_as(output);
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
@@ -325,6 +626,7 @@ void test_replace_cells_can_follow_up_on_upserted_planned_cells()
         fastxlsx::CellPatchMissingCellPolicy::Insert);
     editor.replace_cells("Data",
         {{{4, 2}, fastxlsx::CellValue::text("followup replacement")}});
+
     editor.save_as(output);
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -476,6 +778,11 @@ int main()
 {
     try {
         test_replace_cells_patches_existing_cells_and_preserves_unrelated_parts();
+        test_replace_cells_insert_policy_uses_direct_range_when_all_targets_exist();
+        test_replace_cells_keeps_transformer_for_worksheet_relationships();
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+        test_replace_cells_on_compressed_source_preserves_correctness_without_direct_range();
+#endif
         test_replace_cells_rejects_missing_target_without_public_state_pollution();
         test_replace_cells_rejects_unknown_missing_cell_policy_without_public_state_pollution();
         test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells_and_rows();

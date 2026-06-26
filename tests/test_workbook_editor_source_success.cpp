@@ -351,8 +351,8 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
 
     const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
     const std::string dirty_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(dirty_worksheet_xml, R"(<dimension ref="A1:D2"/>)",
-        "dirty prefixed inline projection should refresh the sparse-store dimension");
+    check_contains(dirty_worksheet_xml, R"(<x:dimension ref="A1:D2"/>)",
+        "dirty prefixed inline sheetData flush should refresh the sparse-store dimension while preserving the source prefix");
     check_contains(dirty_worksheet_xml,
         R"(<c r="A1" t="inlineStr"><is><t>prefixed-inline</t></is></c>)",
         "dirty projection should write prefixed source inline text as plain inlineStr");
@@ -371,8 +371,13 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
     check_contains(dirty_worksheet_xml,
         R"(<c r="D2" t="inlineStr"><is><t>prefixed-inline-dirty</t></is></c>)",
         "dirty projection should include edits beside prefixed source cells");
-    check_not_contains(dirty_worksheet_xml, "<x:",
-        "dirty full-worksheet projection should not preserve source element prefixes");
+    check_contains(dirty_worksheet_xml,
+        R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test">)",
+        "dirty sheetData flush should preserve the source worksheet wrapper prefix");
+    check_not_contains(dirty_worksheet_xml, "<x:c",
+        "dirty sheetData flush should not preserve source cell element prefixes inside replaced sheetData");
+    check_not_contains(dirty_worksheet_xml, "<x:v",
+        "dirty sheetData flush should not preserve source value element prefixes inside replaced sheetData");
     check_not_contains(dirty_worksheet_xml, "ignored-phonetic",
         "dirty projection should not keep ignored prefixed phonetic text");
     check_not_contains(dirty_worksheet_xml, "ignored-nested-phonetic",
@@ -556,7 +561,7 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
         worksheet_xml(R"(<dimension ref="A1"/><sheetData/>)"));
 }
 
-void test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_projection()
+void test_public_worksheet_editor_preserves_source_wrapper_metadata_on_dirty_sheet_data_flush()
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-wrapper-metadata-source.xlsx");
@@ -607,32 +612,29 @@ void test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_project
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
-        "dirty source wrapper metadata projection should generate sparse-store dimension");
+        "dirty source wrapper metadata flush should refresh sparse-store dimension");
     check_contains(worksheet_xml,
         R"(<c r="A1" t="inlineStr"><is><t>source-wrapper</t></is></c>)",
-        "dirty source wrapper metadata projection should keep materialized source cells");
+        "dirty source wrapper metadata flush should keep materialized source cells");
     check_contains(worksheet_xml,
         R"(<c r="B2" t="inlineStr"><is><t>wrapper-new-inline</t></is></c>)",
-        "dirty source wrapper metadata projection should write new inline text");
-    check_not_contains(worksheet_xml, "<sheetPr",
-        "dirty materialized projection should not preserve source sheetPr metadata");
-    check_not_contains(worksheet_xml, "tabColor",
-        "dirty materialized projection should not preserve source tabColor metadata");
-    check_not_contains(worksheet_xml, "ignored-wrapper-text",
-        "dirty materialized projection should not preserve source wrapper metadata text");
-    check_not_contains(worksheet_xml, "<sheetViews",
-        "dirty materialized projection should not preserve source sheetViews metadata");
-    check_not_contains(worksheet_xml, "<sheetFormatPr",
-        "dirty materialized projection should not preserve source sheetFormatPr metadata");
-    check_not_contains(worksheet_xml, "<cols>",
-        "dirty materialized projection should not preserve source cols metadata");
-    check_not_contains(worksheet_xml, "<autoFilter",
-        "dirty materialized projection should not preserve source autoFilter metadata");
+        "dirty source wrapper metadata flush should write new inline text");
+    check_contains(worksheet_xml, R"(<sheetPr>ignored-wrapper-text<tabColor rgb="FFFF0000"/></sheetPr>)",
+        "dirty materialized sheetData flush should preserve source sheetPr metadata");
+    check_contains(worksheet_xml, R"(<sheetViews><sheetView workbookViewId="0"/></sheetViews>)",
+        "dirty materialized sheetData flush should preserve source sheetViews metadata");
+    check_contains(worksheet_xml, R"(<sheetFormatPr defaultRowHeight="15"/>)",
+        "dirty materialized sheetData flush should preserve source sheetFormatPr metadata");
+    check_contains(worksheet_xml,
+        R"(<cols><col min="1" max="1" width="20" customWidth="1"/></cols>)",
+        "dirty materialized sheetData flush should preserve source cols metadata");
+    check_contains(worksheet_xml, R"(<autoFilter ref="A1:A1"/>)",
+        "dirty materialized sheetData flush should preserve source autoFilter metadata");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-wrapper-metadata",
-        "dirty source wrapper metadata projection should preserve untouched sheets");
+        "dirty source wrapper metadata flush should preserve untouched sheets");
 }
 
-void test_public_worksheet_editor_drops_relationship_wrapper_metadata_without_pruning()
+void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_without_pruning()
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-source.xlsx");
@@ -688,36 +690,38 @@ void test_public_worksheet_editor_drops_relationship_wrapper_metadata_without_pr
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "dirty relationship wrapper flush should refresh sparse-store dimension");
     check_contains(worksheet_xml,
         R"(<c r="A2" t="inlineStr"><is><t>source-link-row</t></is></c>)",
-        "dirty relationship wrapper projection should keep materialized source text");
+        "dirty relationship wrapper flush should keep materialized source text");
     check_contains(worksheet_xml, R"(<c r="B2"><v>7</v></c>)",
-        "dirty relationship wrapper projection should keep materialized source number");
+        "dirty relationship wrapper flush should keep materialized source number");
     check_contains(worksheet_xml,
         R"(<c r="C3" t="inlineStr"><is><t>relationship-wrapper-new</t></is></c>)",
-        "dirty relationship wrapper projection should include the new edit");
-    check_not_contains(worksheet_xml, "<hyperlinks>",
-        "dirty relationship wrapper projection should drop source hyperlinks XML");
-    check_not_contains(worksheet_xml, "<tableParts",
-        "dirty relationship wrapper projection should drop source tableParts XML");
-    check_not_contains(worksheet_xml, "r:id",
-        "dirty relationship wrapper projection should not keep source relationship references");
+        "dirty relationship wrapper flush should include the new edit");
+    check_contains(worksheet_xml, "<hyperlinks>",
+        "dirty relationship wrapper flush should preserve source hyperlinks XML");
+    check_contains(worksheet_xml, "<tableParts",
+        "dirty relationship wrapper flush should preserve source tableParts XML");
+    check_contains(worksheet_xml, "r:id",
+        "dirty relationship wrapper flush should preserve source relationship references");
     check(output_entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
-        "dirty projection should not prune the source worksheet relationships part");
+        "dirty sheetData flush should not prune the source worksheet relationships part");
     check(output_entries.at("xl/worksheets/_rels/sheet1.xml.rels")
             == source_entries.at("xl/worksheets/_rels/sheet1.xml.rels"),
-        "dirty projection should preserve source worksheet relationship bytes");
+        "dirty sheetData flush should preserve source worksheet relationship bytes");
     check(output_entries.contains("xl/tables/table1.xml"),
-        "dirty projection should not prune the source table part");
+        "dirty sheetData flush should not prune the source table part");
     check(output_entries.at("xl/tables/table1.xml")
             == source_entries.at("xl/tables/table1.xml"),
-        "dirty projection should preserve source table bytes");
+        "dirty sheetData flush should preserve source table bytes");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
         "keep-relationship-wrapper",
-        "dirty relationship wrapper projection should preserve untouched sheets");
+        "dirty relationship wrapper flush should preserve untouched sheets");
 }
 
-void test_public_worksheet_editor_drops_range_wrapper_metadata_on_dirty_projection()
+void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_sheet_data_flush()
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-range-wrapper-source.xlsx");
@@ -789,34 +793,36 @@ void test_public_worksheet_editor_drops_range_wrapper_metadata_on_dirty_projecti
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
-        "dirty range wrapper projection should keep the sparse-store dimension");
+        "dirty range wrapper flush should refresh the sparse-store dimension");
     check_contains(worksheet_xml,
         R"(<c r="A1" t="inlineStr"><is><t>range-wrapper-source</t></is></c>)",
-        "dirty range wrapper projection should keep materialized source text");
+        "dirty range wrapper flush should keep materialized source text");
     check_contains(worksheet_xml, R"(<c r="B1"><v>3</v></c>)",
-        "dirty range wrapper projection should keep materialized source number");
+        "dirty range wrapper flush should keep materialized source number");
     check_contains(worksheet_xml, R"(<c r="A2" t="b"><v>1</v></c>)",
-        "dirty range wrapper projection should keep materialized source boolean");
+        "dirty range wrapper flush should keep materialized source boolean");
     check_contains(worksheet_xml,
         R"(<c r="C3" t="inlineStr"><is><t>range-wrapper-new</t></is></c>)",
-        "dirty range wrapper projection should include the new edit");
-    check_not_contains(worksheet_xml, "<mergeCells",
-        "dirty range wrapper projection should drop source mergeCells metadata");
-    check_not_contains(worksheet_xml, "<dataValidations",
-        "dirty range wrapper projection should drop source dataValidations metadata");
-    check_not_contains(worksheet_xml, "<conditionalFormatting",
-        "dirty range wrapper projection should drop source conditionalFormatting metadata");
-    check_not_contains(worksheet_xml, "<ignoredErrors",
-        "dirty range wrapper projection should drop source ignoredErrors metadata");
-    check_not_contains(worksheet_xml, "<pageMargins",
-        "dirty range wrapper projection should drop source pageMargins metadata");
-    check_not_contains(worksheet_xml, "<pageSetup",
-        "dirty range wrapper projection should drop source pageSetup metadata");
+        "dirty range wrapper flush should include the new edit");
+    check_contains(worksheet_xml, R"(<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>)",
+        "dirty range wrapper flush should preserve source mergeCells metadata");
+    check_contains(worksheet_xml, R"(<dataValidations count="1">)",
+        "dirty range wrapper flush should preserve source dataValidations metadata");
+    check_contains(worksheet_xml, R"(<conditionalFormatting sqref="B2:B3">)",
+        "dirty range wrapper flush should preserve source conditionalFormatting metadata");
+    check_contains(worksheet_xml,
+        R"(<ignoredErrors><ignoredError sqref="A1:C3" numberStoredAsText="1"/></ignoredErrors>)",
+        "dirty range wrapper flush should preserve source ignoredErrors metadata");
+    check_contains(worksheet_xml,
+        R"(<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>)",
+        "dirty range wrapper flush should preserve source pageMargins metadata");
+    check_contains(worksheet_xml, R"(<pageSetup orientation="landscape"/>)",
+        "dirty range wrapper flush should preserve source pageSetup metadata");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-range-wrapper",
-        "dirty range wrapper projection should preserve untouched sheets");
+        "dirty range wrapper flush should preserve untouched sheets");
 }
 
-void test_public_worksheet_editor_drops_source_comments_and_processing_instructions_on_dirty_projection()
+void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processing_instructions_on_dirty_sheet_data_flush()
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-comments-pi-source.xlsx");
@@ -871,19 +877,31 @@ void test_public_worksheet_editor_drops_source_comments_and_processing_instructi
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
-        "dirty source comment/PI projection should generate sparse-store dimension");
+        "dirty source comment/PI flush should insert sparse-store dimension");
     check_contains(worksheet_xml,
         R"(<c r="A1" t="inlineStr"><is><t>source-comments-pi</t></is></c>)",
-        "dirty source comment/PI projection should keep materialized source cells");
+        "dirty source comment/PI flush should keep materialized source cells");
     check_contains(worksheet_xml,
         R"(<c r="B2" t="inlineStr"><is><t>comments-pi-new-inline</t></is></c>)",
-        "dirty source comment/PI projection should write new inline text");
-    check_not_contains(worksheet_xml, "source-comment-",
-        "dirty materialized projection should not preserve source comments");
-    check_not_contains(worksheet_xml, "source-pi-",
-        "dirty materialized projection should not preserve source processing instructions");
+        "dirty source comment/PI flush should write new inline text");
+    check_contains(worksheet_xml, "source-comment-before-root",
+        "dirty materialized sheetData flush should preserve comments before the worksheet root");
+    check_contains(worksheet_xml, "source-pi-before-root",
+        "dirty materialized sheetData flush should preserve processing instructions before the worksheet root");
+    check_contains(worksheet_xml, "source-comment-inside-root",
+        "dirty materialized sheetData flush should preserve wrapper comments before sheetData");
+    check_contains(worksheet_xml, "source-pi-inside-root",
+        "dirty materialized sheetData flush should preserve wrapper processing instructions before sheetData");
+    check_contains(worksheet_xml, "source-pi-after-sheetData",
+        "dirty materialized sheetData flush should preserve wrapper processing instructions after sheetData");
+    check_not_contains(worksheet_xml, "source-comment-inside-sheetData",
+        "dirty materialized sheetData flush should replace source sheetData comments");
+    check_not_contains(worksheet_xml, "source-pi-inside-sheetData",
+        "dirty materialized sheetData flush should replace source sheetData processing instructions");
+    check_not_contains(worksheet_xml, "source-comment-after-row",
+        "dirty materialized sheetData flush should replace trailing source sheetData comments");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-comments-pi",
-        "dirty source comment/PI projection should preserve untouched sheets");
+        "dirty source comment/PI flush should preserve untouched sheets");
 }
 
 void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_copy_original()
@@ -981,10 +999,10 @@ int main()
         test_public_worksheet_editor_materializes_prefixed_source_inline_strings();
         test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled();
         test_public_worksheet_editor_materializes_empty_source_worksheets();
-        test_public_worksheet_editor_drops_source_wrapper_metadata_on_dirty_projection();
-        test_public_worksheet_editor_drops_relationship_wrapper_metadata_without_pruning();
-        test_public_worksheet_editor_drops_range_wrapper_metadata_on_dirty_projection();
-        test_public_worksheet_editor_drops_source_comments_and_processing_instructions_on_dirty_projection();
+        test_public_worksheet_editor_preserves_source_wrapper_metadata_on_dirty_sheet_data_flush();
+        test_public_worksheet_editor_preserves_relationship_wrapper_metadata_without_pruning();
+        test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_sheet_data_flush();
+        test_public_worksheet_editor_preserves_source_wrapper_comments_and_processing_instructions_on_dirty_sheet_data_flush();
         test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_copy_original();
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

@@ -412,16 +412,359 @@ scan/planning 耗时；`indexed_source_cell_count` 仍表示扫描过的 source 
 | `indexed-staged` target-only | 1000000 / 1000 | 2218 | 450 | 146 | 1620 | 489 | 2712 | 3941 | 5.71 |
 | `indexed-staged` target-only | 10000000 / 1000 | 28927 | 4869 | 1987 | 22068 | 7194 | 36123 | 49541 | 5.70 |
 
-这一组说明 target-only planner 已把 indexed-staged 的峰值内存从 compact full-index
-1M 快照的 37.64 MB 降到与 transformer 同量级的约 5.7 MB，并且 10M cells / 1000
-edits 样本仍保持约 5.70 MB 峰值工作集。当前主要耗时不在 range planning，而在
-`indexed_stage_commit_ms` 和后续 `save_ms`：benchmark prototype 先把 rewritten
-worksheet 写成临时 file-backed XML，再通过
+这一组历史快照说明 target-only planner 已把 indexed-staged 的峰值内存从 compact
+full-index 1M 快照的 37.64 MB 降到与 transformer 同量级的约 5.7 MB，并且 10M
+cells / 1000 edits 样本仍保持约 5.70 MB 峰值工作集。在这组 target-only 快照里，
+主要耗时不在 range planning，而在 `indexed_stage_commit_ms` 和后续 `save_ms`：
+benchmark prototype 当时先把 rewritten worksheet 写成临时 file-backed XML，再通过
 `PackageEditor::replace_worksheet_part_chunks_by_name()` 走完整 staged worksheet
-validation / audit / package save 路径。因此它证明了大 worksheet 稀疏替换的内存边界
-可以做到 O(targets)，但还没有证明最终生产默认算法或任意 source ZIP entry seek；
-下一步若继续优化耗时，应减少 staged worksheet 二次提交/二次扫描，而不是恢复全量
-source-cell index。
+validation / audit / package save 路径。因此这组数据证明了大 worksheet 稀疏替换的
+内存边界可以做到 O(targets)，但还没有证明最终生产默认算法或任意 source ZIP entry
+seek；当时若继续优化耗时，应减少 staged worksheet 二次提交/二次扫描，而不是恢复
+全量 source-cell index。
+
+当前代码里的 `indexed-staged` benchmark 已切到
+`PackageEditor::replace_worksheet_part_prevalidated_chunks_by_name()` 这一条 by-name
+prevalidated commit fast path；因此上表中的 `indexed_stage_commit_ms` 仍是旧
+target-only 采集值，不代表新入口的最新耗时。新入口会直接复用已完成验证的 staged
+chunks，不再重新读取/审计 staged worksheet。后续如果要比较新旧路径，必须重新跑
+benchmark 并替换这张表，不能把旧快照直接当成当前 fast path 基线。
+
+同日随后重编 benchmark 并复跑 prevalidated commit fast path，stored source package、
+工具内置 verifier 为 `output_verified=true`、`office_open=not_run`：
+
+| rewrite_strategy | source cells / edits | patch_plan_ms | index_build_ms | indexed_emit_ms | indexed_stage_commit_ms | save_ms | total_edit_ms | total_ms | peak_memory_mb |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `indexed-staged` target-only + prevalidated commit | 1000000 / 1000 | 1408 | 804 | 314 | 287 | 937 | 2349 | 4273 | 5.53 |
+| `indexed-staged` target-only + prevalidated commit | 10000000 / 1000 | 10407 | 5663 | 2067 | 2673 | 6254 | 16668 | 34198 | 5.53 |
+
+这一组说明 prevalidated commit 已把 1M cells / 1000 edits 的
+`indexed_stage_commit_ms` 从旧 target-only 快照的 1620 ms 降到 287 ms，把
+10M cells / 1000 edits 从 22068 ms 降到 2673 ms；峰值工作集仍在约 5.5 MB
+量级。端到端仍由线性 target range scan、indexed emit、package save 和输出验证
+共同支配，并且仍不是 public Patch 默认算法、source ZIP-entry seek、Zip64 或 Office
+兼容性证明。
+
+2026-06-25 复跑当前 binary 的同规模 10M / 1000 edits 对照，再次确认
+`indexed-staged` 仍明显快于 `transformer`：`transformer` 这次录得
+`total_edit_ms=97444`、`total_ms=119032`、`peak_memory_mb=6.04`，
+`indexed-staged` 录得 `total_edit_ms=17370`、`total_ms=34200`、`peak_memory_mb=6.14`，
+两者均为 `output_verified=true`。当前剩余热点主要仍在 `index_build_ms`
+和 `save_ms`，而不是 public `WorkbookEditor::replace_cells()` facade 本身。
+
+同日继续优化 prevalidated staged commit：benchmark-only by-name fast path 已避免
+`require_staged_package_entry_chunks_valid()` 对刚写出的 400 MB staged worksheet 再做
+CRC32 全量读取，只保留 chunk 结构和 size guardrail；实际 package writer 仍会在写 ZIP
+时读取 staged chunk 并计算 entry CRC。相同 `10000000 / 1000` indexed-staged 复跑录得
+`patch_plan_ms=6744`、`index_build_ms=4989`、`indexed_emit_ms=1751`、
+`indexed_stage_commit_ms=1`、`save_ms=6273`、`total_edit_ms=13019`、
+`total_ms=27904`、`peak_memory_mb=5.83`，且 `output_verified=true`。这把上一轮
+`indexed_stage_commit_ms=3174` 的重复验证成本基本清零；当前真实热点已经转移到
+线性 target range scan 和 `save_as()` package 输出。
+
+同日继续把 target-only planner 增加 benchmark/prototype opt-in early-stop：当所有请求
+targets 已命中后停止 worksheet event scan，后续 worksheet tail 仍由 byte-range emitter
+原样复制。相同 `10000000 / 1000` indexed-staged 复跑录得
+`patch_plan_ms=2250`、`index_build_ms=2`、`indexed_emit_ms=2244`、
+`indexed_stage_commit_ms=0`、`save_ms=7786`、`total_edit_ms=10038`、
+`total_ms=29834`、`peak_memory_mb=5.88`，且 `indexed_source_cell_count=1000`、
+`output_verified=true`。这说明“前段稀疏 edits + 大尾部透传”的 benchmark 上，
+计划阶段已经接近 O(targets)，剩余主耗时是生成 staged worksheet 和 `save_as()` 写出
+完整 package；该 early-stop 不是默认 source validation，也不是 public random-access
+editing 语义。
+
+同日继续优化 stored ZIP writer 的 staged single-chunk 输出：当单个 staged chunk 已携带
+trusted `expected_size` 和 `expected_crc32` 时，local header stats 可直接复用该元数据，
+避免 `save_as()` 写 local header 前对 400 MB staged worksheet 做第二次全量读取；真正写
+entry data 时仍会读取文件、计算 chunk CRC 并校验 expected CRC。相同
+`10000000 / 1000` indexed-staged 复跑录得 `patch_plan_ms=2515`、
+`index_build_ms=1`、`indexed_emit_ms=2512`、`indexed_stage_commit_ms=0`、
+`save_ms=3553`、`verify_ms=2836`、`total_edit_ms=6069`、`total_ms=24240`、
+`peak_memory_mb=5.68`，且 `indexed_source_cell_count=1000`、`output_verified=true`。
+这把上一轮 `save_ms=7786` 的写出前预读成本明显压下去；当前剩余主耗时是
+staged worksheet emission、完整 package 写出和 benchmark verifier，而不是 worksheet
+target planning 或 staged commit。
+
+2026-06-26 继续推进 direct source-range chunks：`PackageEntryChunk` 增加内部
+file-range 描述，indexed-staged benchmark 不再先落盘整份 rewritten worksheet，而是把
+source prefix / body file ranges / suffix 与 replacement memory chunks 直接交给
+`PackageEditor` staged replacement。直接 descriptor 如果不携带 CRC 会让 stored ZIP
+writer 为 local header 预读整份 worksheet，实际会拖慢 `save_as()`；因此本轮同时让
+direct descriptors 给每个 chunk 记录 expected size / CRC，并让 stored ZIP writer 用
+chunk CRC combine 得出 entry CRC，写 entry data 时仍逐 chunk 校验。相同
+`10000000 / 1000` indexed-staged 复跑录得 `patch_plan_ms=2090`、
+`index_build_ms=1`、`indexed_emit_ms=2082`、`indexed_stage_commit_ms=4`、
+`save_ms=3005`、`verify_ms=2264`、`total_edit_ms=5097`、`total_ms=21210`、
+`peak_memory_mb=6.21`，且 `indexed_source_cell_count=1000`、
+`output_verified=true`。当前 `package_entry_source_mode` 为
+`benchmark-prefix-body-file-suffix-direct-range-chunks`，`output_entry_mode` 为
+`indexed-staged-source-range-chunk-replacement`。这仍是 internal benchmark/prototype
+路径，不是 public Patch 默认算法、source ZIP-entry seek、Zip64、DEFLATE 输出或
+Office 兼容性证明。
+
+同日继续把 stored ZIP writer 改为 seekable local-header patch 模式：先写占位
+local header，entry data 写出时计算最终 entry CRC / size，再回填 local header，
+central directory 继续使用最终 stats。direct-range descriptors 因此不再需要为
+source file ranges 预先计算 CRC，只保留 size/range contract；memory replacement
+chunks 仍可携带 expected CRC。随后又给同一个 entry 内相同 path 的 file-range chunks
+增加输入流和文件大小缓存，避免 1000 个 source ranges 反复 open/stat。相同
+`10000000 / 1000` indexed-staged 复跑录得 `patch_plan_ms=8`、
+`index_build_ms=1`、`indexed_emit_ms=0`、`indexed_stage_commit_ms=4`、
+`save_ms=2454`、`verify_ms=2081`、`total_edit_ms=2463`、`total_ms=13120`、
+`peak_memory_mb=6.22`，且 `indexed_source_cell_count=1000`、`output_verified=true`。
+这把上一组 direct-range `total_edit_ms=5097` 继续降到约 2.46s；当前剩余主耗时
+基本是 400 MB package 顺序写出、entry CRC 计算和 benchmark verifier，而不是
+range planning、staged worksheet emission 或 commit。该路径仍是 internal
+benchmark/prototype，不是 public 默认算法、通用 source ZIP-entry seek 层、Zip64、
+DEFLATE 输出或 Office 兼容性证明。
+
+同日继续把 indexed-staged benchmark 的 source chunks 从 benchmark sidecar
+`source_body` 切到真实 stored source package 的 worksheet entry payload range：
+通过 `PackageReaderEntry::data_offset` 把 `xl/worksheets/sheet1.xml` 映射为
+`PackageEntryChunk::file_range(source.xlsx, data_offset, uncompressed_size)`，后续 indexed
+range planning 和 replacement descriptor 都直接引用 source `.xlsx` 内的 worksheet
+payload bytes。`source_body` 仍用于构造 benchmark source package，但不再作为编辑输入。
+相同 `10000000 / 1000` indexed-staged 复跑录得 `patch_plan_ms=18`、
+`index_build_ms=6`、`indexed_emit_ms=1`、`indexed_stage_commit_ms=4`、
+`save_ms=2958`、`verify_ms=2077`、`total_edit_ms=2983`、`total_ms=12954`、
+`peak_memory_mb=6.19`，且 `package_entry_source_mode` 为
+`source-package-worksheet-entry-direct-range-chunks`、`output_verified=true`。这比
+body-sidecar direct range 的 `total_edit_ms=2463` 略慢，但边界更接近真实 existing
+package 输入：无需先把整份 worksheet entry 抽到外部 rewritten/body sidecar 文件再编辑。
+当前仍只覆盖 stored generated source package 的 internal benchmark/prototype 路径；
+它不是 public 默认算法、DEFLATE / Zip64 source-entry seek、任意 source package
+range mutator 或 Office 兼容性证明。
+
+2026-06-26 继续把 source-package direct-range 获取路径下沉到 internal
+`PackageEditor` helper：benchmark 不再自己解析 `PackageReaderEntry::data_offset`，
+而是调用 `PackageEditor::source_worksheet_part_stored_entry_chunks_by_name()` 取得
+stored source worksheet entry 的 file-range chunks。该 helper 仍是内部能力，只接受
+stored/no-compression source entry；DEFLATE / Zip64 仍不属于该 fast path。benchmark
+同时新增 `--reuse-source` 和 `source_fixture_mode`，用于跳过 400 MB source/body
+fixture 生成，避免把 source 写盘噪声混进 edit-path 对比。相同
+`10000000 / 1000`、`--rewrite-strategy indexed-staged`、复用既有 source package
+的两次本地 release 复跑分别录得：`save_ms=6769`、`verify_ms=6628`、
+`total_edit_ms=6778`、`total_ms=13409`、`peak_memory_mb=5.53`；以及
+`save_ms=4960`、`verify_ms=3965`、`total_edit_ms=4977`、`total_ms=8944`、
+`peak_memory_mb=5.55`。两次 `index_build_ms` 均约 `1-2 ms`，`indexed_emit_ms=0`，
+`indexed_stage_commit_ms` 为个位数毫秒，且 `output_verified=true`。这说明当前
+算法段已接近 O(targets) 毫秒级，剩余波动主要来自 400 MB stored ZIP 顺序写出、
+entry CRC 计算、benchmark verifier 和本机磁盘状态；不要把单次 `save_ms` 当成稳定
+SLA。代码侧还给 `PackageWriter` ZIP32 validation 加了同路径 file-range stat cache，
+减少 staged chunks 对同一 source `.xlsx` 的重复 `file_size()`，但本轮数据没有证明它
+是主瓶颈。
+
+同日继续把保守 direct-range fast path 接到 `PackageEditor::replace_worksheet_cells()`
+内部路径，因此 public `WorkbookEditor::replace_cells()` 在简单 strict replace 场景下也能
+自动受益：当前只覆盖 source worksheet 是 stored/no-compression package entry、没有已排队
+planned worksheet replacement、没有 worksheet `.rels`、不是 upsert、且
+`ReferencePolicyAction::Fail` 未启用，并且 source worksheet 已有顶层 `<dimension>`
+metadata 可被安全原样保留的场景；compressed source、planned input、upsert、
+policy Fail、缺失顶层 `<dimension>` 或带 worksheet relationships 的 worksheet 仍回退到 transformer。
+内部回归会断言该路径输出 staged file-range chunks + replacement memory chunks，且不
+materialize 整份 worksheet XML。相同 `10000000 / 1000`、复用既有 source package、
+`--editor-api public-workbook-editor` 的本地 release benchmark 初次录得
+`patch_plan_ms=7540`、`save_ms=2120`、`verify_ms=1982`、
+`total_edit_ms=9663`、`total_ms=11659`、`peak_memory_mb=5.96`；加入 dimension
+guard 后复跑同一 source package 录得 `patch_plan_ms=6264`、`save_ms=2013`、
+`verify_ms=1875`、`total_edit_ms=8278`、`total_ms=10156`、`peak_memory_mb=6.02`，且
+`output_verified=true`。
+
+2026-06-26 继续给 public benchmark 增加只读 internal output-plan telemetry。相同
+`10000000 / 1000`、复用既有 source package、
+`--editor-api public-workbook-editor` 的本地 release rerun 录得
+`patch_plan_ms=6419`、`save_ms=2492`、`verify_ms=1908`、
+`total_edit_ms=8912`、`total_ms=10822`、`peak_memory_mb=6.02`，且
+`output_verified=true`。JSON 现在明确记录
+`output_plan_observed=true`、
+`output_plan_indexed_source_entry_fast_path=true`、
+`output_plan_transformer_fallback=false`、
+`output_plan_staged_replacement_chunks=true`、
+`output_plan_materialized_replacement=false`、
+`output_plan_staged_replacement_chunk_count=1101`、
+`output_plan_staged_replacement_file_range_chunk_count=101`、
+`output_plan_staged_replacement_memory_chunk_count=1000`、
+`indexed_source_cell_count=10000000`、
+`indexed_matched_replacement_count=1000` 和
+`package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`。这证明
+public facade 实际走的是 source-entry direct-range staged chunks，而不是旧
+transformer file-backed full-output 路径；`rewrite_strategy="transformer"` 仍只是 CLI
+默认策略名，因为 public facade 没有暴露 strategy 选择。当前 public fast path 仍保留完整
+source scan 以检测 missing / duplicate source targets，所以不是 benchmark early-stop，不是
+O(1) 任意随机编辑，也不修复 sharedStrings/styles、tables、filters、drawings、
+defined names、formulas、relationships 或缺失/stale dimension。
+
+同日继续把 public direct-range 输出计划 telemetry 从可读 note 文本解析升级为
+结构化 `PackageEditorOutputEntryPlan` 字段：`planned_output()` 现在直接暴露
+`indexed_source_entry_direct_range`、scanned source cell count、matched replacement
+count 和 staged output bytes，benchmark 不再从 note 文案中解析数字。相同
+`10000000 / 1000`、复用既有 source package、`--editor-api public-workbook-editor`
+的本地 release rerun（`build/qa/continue-public-structured-noparse-result.json`）
+录得 `patch_plan_ms=9230`、`save_ms=2622`、`verify_ms=2012`、
+`total_edit_ms=11857`、`total_ms=13871`、`peak_memory_mb=6.00`，且
+`output_verified=true`。JSON 仍明确记录
+`output_plan_indexed_source_entry_fast_path=true`、
+`output_plan_transformer_fallback=false`、
+`output_plan_materialized_replacement=false`、
+`output_plan_staged_replacement_file_range_chunk_count=11`、
+`output_plan_staged_replacement_memory_chunk_count=1000`、
+`indexed_source_cell_count=10000000`、
+`indexed_matched_replacement_count=1000` 和
+`indexed_staged_output_bytes=367269975`。本轮目的不是降低耗时，而是让性能报告对
+fast path 选择和计数具有结构化证据；`patch_plan_ms` 仍包含完整 source worksheet
+扫描，且本机 400 MB stored package 写盘/读取会产生明显波动。
+
+同日继续收敛 target-only planner 的内部查找结构：public 默认路径不启用
+early-stop，因为那会在 source XML 后段存在重复 target cell 时跳过重复检测，削弱当前
+strict/no-state-pollution 语义。实现上把 target coordinate 查找整理为排序后的
+vector bucket，并补充大小写归一化重复坐标拒绝回归；这减少树节点/哈希桶类状态，但不是
+稳定性能声明。相同 `10000000 / 1000` public facade verified rerun
+（`build/qa/continue-public-vector-target-verified-result.json`）录得
+`patch_plan_ms=10573`、`save_ms=3821`、`verify_ms=3937`、
+`total_edit_ms=14399`、`total_ms=18339`、`peak_memory_mb=6.27`，
+且 `output_verified=true`。该结果说明当前剩余成本仍由 source scan、stored ZIP
+写出/读取和本机磁盘状态共同支配；不能把本轮 cleanup 写成大文件随机访问完成。
+
+同日继续把 public direct-range fast path 的 `patch_plan_ms` 拆成内部阶段计时，
+并写入 schema-v2 benchmark JSON。相同 `10000000 / 1000`、复用既有 source
+package、`--editor-api public-workbook-editor` 的本地 release rerun
+（`build/qa/continue-phase-telemetry-result.json`）录得
+`patch_plan_ms=4180`、`save_ms=2198`、`verify_ms=2525`、
+`total_edit_ms=6382`、`total_ms=8910`、`peak_memory_mb=7.36`，且
+`output_verified=true`。新增字段显示
+`output_plan_indexed_source_entry_target_plan_ms=4175`，而
+`source_range_chunk_ms`、`payload_audit_ms`、`relationship_audit_ms`、
+`descriptor_ms` 和 `commit_ms` 均为 0ms 量级。这证明当前 patch planning
+瓶颈几乎全部在 target-only source scan，而不是 replacement payload audit、
+relationship audit、chunk descriptor 生成或 commit。public 默认路径仍不启用
+`stop_after_all_targets_found`，因为该开关会跳过尾部 duplicate target source
+cell 检测；后续优化应围绕可证明的 valid row-major source fast validation、
+持久/复用 source index，或 PackageReader/source-entry 层更低成本扫描，而不是牺牲
+strict replace 校验换取表面耗时。
+
+同日继续把 PackageEditor 内部 file-backed chunk CRC/copy buffer 从 64KiB 提升到
+1MiB，并改用 heap buffer，避免 Windows 默认栈承载 1MiB `std::array`。相同
+`10000000 / 1000` public facade verified rerun
+（`build/qa/continue-package-editor-fileio-1m-result.json`）录得
+`patch_plan_ms=4340`、`output_plan_indexed_source_entry_target_plan_ms=4336`、
+`save_ms=2026`、`verify_ms=1953`、`total_edit_ms=6370`、
+`total_ms=8326`、`peak_memory_mb=7.39`，且 `output_verified=true`。这属于
+PackageEditor file IO 粒度 cleanup，主要降低 save/copy/CRC 固定成本；它不改变
+strict source scan、CRC/size 校验、staged chunk 语义、public API 或随机访问边界。
+
+同日继续优化同一 source scan 热路径，但不引入新 XML parser：`WorksheetEventReaderOptions`
+增加内部 `copy_context_attributes` 开关，target-only planner 默认关闭它，只在
+row/cell start 事件读取属性并自行维护 active cell state，避免扫描 10M source cells
+时为后续 nested/end events 复制当前 row/cell context 字符串。默认 event reader 行为保持
+copy-on，现有 transformer / diagnostic caller 不受影响。相同 `10000000 / 1000`
+public facade verified rerun（`build/qa/continue-public-nocopy-context-result.json`）录得
+`patch_plan_ms=8743`、`save_ms=2813`、`verify_ms=2725`、
+`total_edit_ms=11557`、`total_ms=14284`、`peak_memory_mb=6.29`，
+且 `output_verified=true`。这比上一轮 sorted-bucket verified run 的
+`patch_plan_ms=10573` 更低，但本机 IO/缓存波动仍明显；可作为安全 hot-path cleanup
+证据，不能写成稳定性能 SLA。
+
+同日进一步把 target-only planner 切到 internal lightweight scanner，并对该 scanner
+的 hot-path tag-name / attribute parsing 做直接扫描优化。它只服务当前 bounded
+target range planning：识别 worksheet / sheetData / row / cell / value-wrapper
+边界，保留 strict missing/duplicate validation 和 top-level dimension detection，
+不扩大 public API，也不替代通用 worksheet event reader。相同 `10000000 / 1000`
+public facade verified rerun（`build/qa/continue-public-fast-target-scanner-parser-result.json`）
+录得 `patch_plan_ms=7852`、`save_ms=2272`、`verify_ms=2183`、
+`total_edit_ms=10128`、`total_ms=12324`、`peak_memory_mb=6.26`，且
+`output_verified=true`、`indexed_source_cell_count=10000000`、
+`indexed_matched_replacement_count=1000`、`indexed_staged_output_bytes=367269975`。
+该结果说明 scanner/parser cleanup 能降低当前 public strict replace 的 source-scan
+overhead，但它仍是线性 source XML scan；不能写成 arbitrary random access、
+metadata repair、sharedStrings/styles migration 或 relationship repair 已完成。
+
+随后继续优化 save path：stored ZIP writer 对同一输入文件的 source file-range chunks
+保留 active input stream，并在小的前向 gap 上顺序丢弃而不是反复 seek；stored/minizip
+文件复制缓冲从 64 KiB stack buffer 调整为 1 MiB heap buffer，stored writer 也给
+output stream 设置同级别 buffer。相同 `10000000 / 1000` public facade reused-source
+rerun（`build/qa/continue-save-buffered-rerun-result.json`）录得
+`patch_plan_ms=6416`、`save_ms=2152`、`verify_ms=1905`、`total_edit_ms=8572`、
+`total_ms=10479`、`peak_memory_mb=8.03`，且 `output_verified=true`。该结果说明
+当前 stored output path 已把 367 MB package 写出压到约 2.15s；峰值内存上升约
+1.7-2 MB 是显式 IO buffer 成本，不是 worksheet DOM 或完整 cell matrix。
+
+随后继续收窄 `save_as()` copy-original 路径：stored source package entries 不再先
+extract 到 `PackageEditor` 临时文件，而是直接作为 source package file-range chunk
+交给 `PackageWriter`，并携带 source entry CRC 作为 expected CRC；DEFLATE source
+entry 和测试 hook 仍走原先的 temp-file fallback，以保留压缩源 correctness 和故障注入覆盖。
+相同 `10000000 / 1000` public facade reused-source rerun
+（`build/qa/continue-direct-source-copy-rerun-result.json`）录得
+`patch_plan_ms=4774`、`save_ms=1951`、`verify_ms=1905`、`total_edit_ms=6727`、
+`total_ms=8639`、`peak_memory_mb=7.99`，且 `output_verified=true`。
+输出计划记录 `11` 个 source file-range chunks、`1000` 个 replacement memory chunks、
+`package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"` 和
+`output_entry_mode="indexed-source-entry-direct-range-staged-chunks"`。这说明当前 sparse
+strict replace 的 public facade 在本机 10M/1000 场景下已能把编辑+保存压到约
+6.7s，但仍依赖 stored source、顶层 dimension、无 worksheet relationships 和 strict
+existing-cell replacement；它不是 compressed-source fast path、Zip64、arbitrary O(1)
+random access、metadata repair 或 relationship repair。
+
+随后继续去掉 source-entry direct-range path 的重复 CRC 预读：source stored-entry
+chunks 现在直接携带 `PackageReaderEntry` 已知的 expected size / CRC32，避免
+`PackageEntryChunkReader` 构造阶段为了补 descriptor metadata 预先读取整段
+worksheet payload。实际 target scan/replay 仍会读取 source entry bytes 并校验 CRC，
+所以这是重复 IO 消除，不是关闭校验。相同 `10000000 / 1000` public facade
+reused-source rerun（`build/qa/continue-source-crc-skip-result.json`）录得
+`patch_plan_ms=3932`、`save_ms=1818`、`verify_ms=1757`、`total_edit_ms=5753`、
+`total_ms=7512`、`peak_memory_mb=7.92`，且 `output_verified=true`。输出仍记录
+`package_entry_source_mode="source-package-worksheet-entry-direct-range-chunks"`、
+`output_entry_mode="indexed-source-entry-direct-range-staged-chunks"`、`11` 个 source
+file-range chunks 和 `1000` 个 replacement memory chunks。对比上一轮
+`total_edit_ms=6727`，这次主要收益来自少读一次 stored source worksheet payload；
+边界仍不变：不支持 compressed-source direct range、Zip64、arbitrary O(1) random
+access、metadata repair、relationship repair 或 sharedStrings/styles migration。
+
+再下一步把内部 `PackageEntryChunkReader` 的 file replay chunk 从 64 KiB 放大到
+1 MiB，用来减少 source worksheet 线性扫描时的 read callback / scanner window
+handoff 次数；既有 `package_editor_cell_replacement_event_window_byte_limit` 仍是
+4 MiB，没有放宽 retained-window guard，也不改变 chunk CRC 校验。相同
+`10000000 / 1000` public facade reused-source rerun
+（`build/qa/continue-reader-1m-result.json`）录得 `patch_plan_ms=3449`、
+`save_ms=1827`、`verify_ms=1725`、`total_edit_ms=5279`、`total_ms=7007`、
+`peak_memory_mb=7.94`，且 `output_verified=true`。这说明当前计划阶段还在受
+full-source scan 支配，但 callback/window 固定开销已经继续下降；它仍不是 O(1)
+random access，也不改变 fallback 或 metadata/relationship 边界。
+
+随后调整 `PackageReader` stored/DEFLATE chunk-source IO buffer，从 64 KiB 提升到
+1 MiB，用于减少 package entry streaming / benchmark verifier 的 reader callback
+次数；ZIP metadata、CRC 校验和 entry size 校验不变。由于本机磁盘状态波动较大，
+这里记录同一环境下的 A/B 结果：`build/qa/continue-reader-io-1m-result.json`
+录得 `patch_plan_ms=4656`、`save_ms=2567`、`verify_ms=2289`、
+`total_edit_ms=7226`、`total_ms=9521`、`peak_memory_mb=7.41`，
+`output_verified=true`；临时退回 64 KiB 的
+`build/qa/continue-reader-io-64k-result.json` 录得 `total_edit_ms=9099`。
+这说明 larger reader IO buffer 在当前验证路径下减少了固定 IO/callback 开销；它不改变
+worksheet fast path 选择、strict replace 校验、ZIP 格式支持或 public API。
+
+再下一步继续收窄 target-only planner 的 hot-path 固定开销：当 scanner 没有跨 chunk
+残留 XML token 时，直接扫描当前 chunk 的 `string_view`，只把未完成的 tail 复制进
+bounded window；同时 source cell reference 解析改用 ASCII 大小写折叠，避免每个列字母
+走 `std::toupper` locale 路径。相同 `10000000 / 1000` public facade reused-source
+verified rerun（`build/qa/continue-direct-window-ascii-verified-result.json`）录得
+`patch_plan_ms=5537`、`save_ms=2681`、`verify_ms=2758`、
+`total_edit_ms=8219`、`total_ms=10980`、`peak_memory_mb=7.38`，且
+`output_verified=true`；隔离 verifier 的
+`build/qa/continue-ascii-ref-noverify-result.json` 录得 `patch_plan_ms=4563`、
+`save_ms=2111`、`total_edit_ms=6675`。这应记录为 scanner/copy hygiene，而不是新的
+性能 SLA：真实 wall-clock 仍明显受本机磁盘状态、stored ZIP save 和 verifier replay 影响。
+
+再下一步减少 staged output descriptor 的固定开销：相邻 replacement memory chunks
+现在会在 direct-range descriptor 层合并，并同步 merged chunk 的 expected size / CRC32
+校验元数据；source file-range chunks 不合并，以保持保守边界。相同
+`10000000 / 1000` public facade reused-source verified rerun
+（`build/qa/continue-memory-chunk-merge-result.json`）录得
+`patch_plan_ms=3990`、`save_ms=2037`、`verify_ms=2005`、
+`total_edit_ms=6030`、`total_ms=8038`、`peak_memory_mb=7.49`，且
+`output_verified=true`。输出计划记录 `21` 个 staged chunks，其中 `10` 个 replacement
+memory chunks 和 `11` 个 source file-range chunks；`staged_replacement_memory_bytes=30840`
+与 public facade replacement XML bytes 一致。该优化减少 per-chunk replay/validation
+固定成本，但不改变 source scan、strict duplicate/missing-target validation、ZIP 校验、
+public API、metadata repair 或随机访问边界。
 
 上一组 internal `PackageEditor` 1M / 3M / 5M 快照另有本机 Excel COM sidecar
 验证：使用 Excel 16.0 只读打开三个输出，
@@ -431,11 +774,13 @@ source-cell index。
 `build/bench-package-editor/package-editor-cell-replacement-office-report.json`，且不回写
 benchmark JSON；原始 `office_open` 字段仍保持工具输出的 `not_run`。
 
-该快照来自 public facade 落地前的 internal `PackageEditor` 路径，说明底层 Patch cell
-replacement 已能在 5M cells 级别避免整张 source worksheet XML 物化，并把 rewritten
-worksheet 作为 file-backed staged chunks 输出。public `WorkbookEditor::replace_cells()`
-现在复用同一 transformer 路径并暴露 facade-level targeted-cell diagnostics；新的 public
-路径 benchmark 应优先使用 `--editor-api public-workbook-editor` 重新跑同规模矩阵。该能力仍不是
+该快照来自 public direct-range fast path 落地前的 internal `PackageEditor` 路径，
+说明底层 Patch cell replacement 已能在 5M cells 级别避免整张 source worksheet XML
+物化，并把 rewritten worksheet 作为 file-backed staged chunks 输出。当前 public
+`WorkbookEditor::replace_cells()` 已在保守 stored/no-rels strict replace 场景复用
+source-entry direct-range staged chunks；该复用还要求 source worksheet 已有顶层
+`<dimension>`，否则保持 transformer dimension-refresh 路径。更广泛 public 路径 benchmark 应继续使用
+`--editor-api public-workbook-editor` 重新跑同规模矩阵。该能力仍不是
 任意大文件随机编辑：它只替换已存在 cells，不插入缺失 cells/rows，不覆盖 sharedStrings/styles
 迁移、table / range metadata recalculation、relationship repair、Zip64、DEFLATE
 input/output 或更广泛的 Office/WPS/LibreOffice 兼容性；本次 Excel 结果只证明这些本地

@@ -611,6 +611,25 @@ void WorkbookEditor::rename_sheet(
     }
 }
 
+void WorkbookEditor::request_full_calculation()
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    try {
+        impl_->editor.request_full_calculation();
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            std::string("WorkbookEditor::request_full_calculation() failed: ")
+            + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::save_as(const std::filesystem::path& path)
 {
     if (impl_ == nullptr) {

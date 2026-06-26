@@ -71,7 +71,18 @@ constexpr std::string_view worksheet_cell_replacement_output_input_context =
     "current worksheet input for worksheet cell replacement output";
 constexpr std::string_view worksheet_sheet_data_replacement_output_input_context =
     "current worksheet input for worksheet sheetData replacement output";
-constexpr std::size_t package_entry_file_chunk_size = 64U * 1024U;
+constexpr std::uint16_t stored_compression_method = 0;
+constexpr std::size_t package_entry_file_chunk_size = 1024U * 1024U;
+constexpr std::size_t package_entry_reader_chunk_size = 1024U * 1024U;
+
+std::uint64_t steady_clock_elapsed_milliseconds(
+    std::chrono::steady_clock::time_point start)
+{
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - start)
+            .count());
+}
 
 struct XmlTagRange {
     std::size_t open = 0;
@@ -2281,6 +2292,48 @@ WorksheetPayloadDependencyAuditResult worksheet_replacement_cell_payload_audit(
     return result;
 }
 
+WorksheetPayloadDependencyAuditResult worksheet_replacement_cell_payloads_audit(
+    const PartName& worksheet_part,
+    const WorksheetCellReplacementPlan& replacement_plan)
+{
+    WorksheetPayloadDependencyAuditResult result;
+    for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
+        append_payload_audit_result(result,
+            worksheet_replacement_cell_payload_audit(
+                worksheet_part, replacement.second));
+    }
+    append_worksheet_replacement_range_metadata_audit(result, worksheet_part,
+        "dimension", "worksheet dimension metadata");
+    return result;
+}
+
+WorksheetRelationshipReferenceAuditResult
+worksheet_replacement_cell_payloads_relationship_reference_audit(
+    const PartName& worksheet_part,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const RelationshipSet* worksheet_relationships)
+{
+    WorksheetRelationshipReferenceScanner scanner;
+    bool relationship_scan_failed = false;
+    for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
+        replacement.second.for_each_chunk([&](std::string_view chunk) {
+            if (relationship_scan_failed) {
+                return;
+            }
+            try {
+                scan_xml_relationship_references(scanner, chunk);
+            } catch (const std::exception&) {
+                relationship_scan_failed = true;
+            }
+        });
+    }
+    finish_xml_relationship_references(scanner, relationship_scan_failed);
+    return relationship_scan_failed
+        ? worksheet_relationship_reference_parse_failure_audit()
+        : worksheet_relationship_reference_audit_from_references(
+            worksheet_part, scanner.references(), worksheet_relationships);
+}
+
 class WorksheetReplacementPayloadAuditCollector {
 public:
     explicit WorksheetReplacementPayloadAuditCollector(const PartName& worksheet_part)
@@ -2839,6 +2892,20 @@ void remove_part_replacement(
         replacements.end());
 }
 
+void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& replacement) noexcept
+{
+    replacement.indexed_source_entry_direct_range = false;
+    replacement.indexed_source_entry_scanned_source_cell_count = 0;
+    replacement.indexed_source_entry_matched_replacement_count = 0;
+    replacement.indexed_source_entry_staged_output_bytes = 0;
+    replacement.indexed_source_entry_source_range_chunk_ms = 0;
+    replacement.indexed_source_entry_target_plan_ms = 0;
+    replacement.indexed_source_entry_payload_audit_ms = 0;
+    replacement.indexed_source_entry_relationship_audit_ms = 0;
+    replacement.indexed_source_entry_descriptor_ms = 0;
+    replacement.indexed_source_entry_commit_ms = 0;
+}
+
 void upsert_part_replacement(std::vector<PackagePartReplacement>& replacements,
     PartName part_name, std::string materialized_small_xml, PartWriteMode write_mode,
     std::string reason, const PartName* workbook_part = nullptr)
@@ -2851,6 +2918,7 @@ void upsert_part_replacement(std::vector<PackagePartReplacement>& replacements,
         replacement->chunks.clear();
         replacement->write_mode = write_mode;
         replacement->reason = std::move(reason);
+        clear_indexed_source_entry_direct_range_stats(*replacement);
         return;
     }
 
@@ -2872,6 +2940,7 @@ void upsert_part_replacement_chunks(std::vector<PackagePartReplacement>& replace
         replacement->chunks = std::move(chunks);
         replacement->write_mode = write_mode;
         replacement->reason = std::move(reason);
+        clear_indexed_source_entry_direct_range_stats(*replacement);
         return;
     }
 
@@ -3162,6 +3231,33 @@ std::string current_planned_materialized_workbook_xml(const PackageReader& reade
     return read_materialized_source_workbook_xml(reader, purpose);
 }
 
+std::vector<PackageEntryChunk> source_stored_entry_range_chunks(
+    const PackageReader& reader, std::string_view entry_name, std::string_view purpose)
+{
+    const PackageReaderEntry* entry = reader.find_entry(entry_name);
+    if (entry == nullptr) {
+        throw FastXlsxError("source package entry is missing for " + std::string(purpose)
+            + ": " + std::string(entry_name));
+    }
+    if (entry->compression_method != stored_compression_method) {
+        throw FastXlsxError("source package entry must be stored for " + std::string(purpose)
+            + ": " + std::string(entry_name));
+    }
+    if (entry->compressed_size != entry->uncompressed_size) {
+        throw FastXlsxError(
+            "stored source package entry has mismatched compressed/uncompressed sizes for "
+            + std::string(purpose) + ": " + std::string(entry_name));
+    }
+
+    PackageEntryChunk chunk = PackageEntryChunk::file_range(
+        reader.path(), entry->data_offset, entry->uncompressed_size);
+    chunk.has_expected_size = true;
+    chunk.expected_size = entry->uncompressed_size;
+    chunk.has_expected_crc32 = true;
+    chunk.expected_crc32 = entry->crc32;
+    return {std::move(chunk)};
+}
+
 std::string expected_actual_size_message(
     std::string_view prefix, std::uint64_t expected_size, std::uint64_t actual_size)
 {
@@ -3235,6 +3331,65 @@ std::uint32_t package_editor_crc32(std::string_view data)
     return crc.value();
 }
 
+std::string staged_chunk_file_range_suffix(const PackageEntryChunk& chunk)
+{
+    if (!chunk.has_file_range) {
+        return {};
+    }
+    return "; range offset " + std::to_string(chunk.file_offset)
+        + ", length " + std::to_string(chunk.file_size) + " bytes";
+}
+
+std::uint64_t package_entry_file_chunk_payload_size(const PackageEntryChunk& chunk)
+{
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(chunk.path, error);
+    if (error) {
+        throw FastXlsxError(
+            "failed to measure staged package-entry chunk file"
+            + staged_chunk_file_range_suffix(chunk));
+    }
+    if (size > static_cast<std::uintmax_t>(std::numeric_limits<std::uint64_t>::max())) {
+        throw FastXlsxError("staged package-entry chunk file is too large");
+    }
+    const std::uint64_t measured_size = static_cast<std::uint64_t>(size);
+    if (!chunk.has_file_range) {
+        return measured_size;
+    }
+    if (chunk.file_offset > measured_size
+        || chunk.file_size > measured_size - chunk.file_offset) {
+        throw FastXlsxError(
+            "staged package-entry chunk file range exceeds file size"
+            + staged_chunk_file_range_suffix(chunk));
+    }
+    return chunk.file_size;
+}
+
+std::uint64_t package_entry_file_chunk_payload_offset(const PackageEntryChunk& chunk)
+{
+    return chunk.has_file_range ? chunk.file_offset : 0;
+}
+
+void seek_package_entry_file_chunk_start(
+    std::ifstream& stream, const PackageEntryChunk& chunk)
+{
+    if (!chunk.has_file_range) {
+        return;
+    }
+    if (chunk.file_offset
+        > static_cast<std::uint64_t>(std::numeric_limits<std::streamoff>::max())) {
+        throw FastXlsxError(
+            "staged package-entry chunk file range offset is too large"
+            + staged_chunk_file_range_suffix(chunk));
+    }
+    stream.seekg(static_cast<std::streamoff>(chunk.file_offset), std::ios::beg);
+    if (!stream) {
+        throw FastXlsxError(
+            "failed to seek staged package-entry chunk file range"
+            + staged_chunk_file_range_suffix(chunk));
+    }
+}
+
 void require_expected_staged_chunk_crc32(
     const PackageEntryChunk& chunk, std::uint32_t actual_crc32)
 {
@@ -3282,6 +3437,9 @@ std::uint64_t package_entry_chunk_size(const PackageEntryChunk& chunk)
         if (!chunk.path.empty()) {
             throw FastXlsxError("staged package-entry chunk cannot mix memory and file sources");
         }
+        if (chunk.has_file_range) {
+            throw FastXlsxError("staged package-entry memory chunk cannot carry a file range");
+        }
         {
             const std::uint64_t size = static_cast<std::uint64_t>(chunk.data.size());
             require_expected_size(chunk, size);
@@ -3291,15 +3449,7 @@ std::uint64_t package_entry_chunk_size(const PackageEntryChunk& chunk)
         if (!chunk.data.empty()) {
             throw FastXlsxError("staged package-entry chunk cannot mix memory and file sources");
         }
-        std::error_code error;
-        const std::uintmax_t size = std::filesystem::file_size(chunk.path, error);
-        if (error) {
-            throw FastXlsxError("failed to measure staged package-entry chunk file");
-        }
-        if (size > static_cast<std::uintmax_t>(std::numeric_limits<std::uint64_t>::max())) {
-            throw FastXlsxError("staged package-entry chunk file is too large");
-        }
-        const std::uint64_t measured_size = static_cast<std::uint64_t>(size);
+        const std::uint64_t measured_size = package_entry_file_chunk_payload_size(chunk);
         require_expected_size(chunk, measured_size);
         return measured_size;
     }
@@ -3324,22 +3474,35 @@ std::uint32_t package_entry_chunk_crc32(const PackageEntryChunk& chunk)
         if (!chunk.data.empty()) {
             throw FastXlsxError("staged package-entry chunk cannot mix memory and file sources");
         }
+        const std::uint64_t payload_size = package_entry_file_chunk_payload_size(chunk);
         std::ifstream stream(chunk.path, std::ios::binary);
         if (!stream) {
             throw FastXlsxError("failed to open staged package-entry chunk file");
         }
+        seek_package_entry_file_chunk_start(stream, chunk);
         PackageEditorCrc32Accumulator crc;
-        std::array<char, package_entry_file_chunk_size> buffer {};
-        while (true) {
-            stream.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
+        std::vector<char> buffer(package_entry_file_chunk_size);
+        std::uint64_t remaining = payload_size;
+        while (remaining > 0) {
+            const std::size_t requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(
+                    remaining, static_cast<std::uint64_t>(buffer.size())));
+            stream.read(buffer.data(), static_cast<std::streamsize>(requested));
             const std::streamsize read_size = stream.gcount();
             if (stream.bad()) {
                 throw FastXlsxError("failed to read staged package-entry chunk file");
             }
-            if (read_size <= 0) {
-                break;
+            if (read_size <= 0
+                || static_cast<std::uint64_t>(read_size)
+                    != static_cast<std::uint64_t>(requested)) {
+                throw FastXlsxError(expected_actual_size_message(
+                    "staged package-entry chunk file ended before expected bytes",
+                    payload_size, payload_size - remaining
+                        + static_cast<std::uint64_t>(
+                            std::max<std::streamsize>(read_size, 0))));
             }
             crc.update(std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
+            remaining -= static_cast<std::uint64_t>(read_size);
         }
         const std::uint32_t actual_crc32 = crc.value();
         require_expected_staged_chunk_crc32(chunk, actual_crc32);
@@ -3362,7 +3525,15 @@ std::string staged_package_entry_chunk_context(
     case PackageEntryChunk::Kind::File:
         context += " (file '";
         context += chunk.path.generic_string();
-        context += "')";
+        if (chunk.has_file_range) {
+            context += "' range ";
+            context += std::to_string(chunk.file_offset);
+            context += "+";
+            context += std::to_string(chunk.file_size);
+        } else {
+            context += "'";
+        }
+        context += ")";
         break;
     default:
         context += " (unknown)";
@@ -3412,11 +3583,33 @@ std::uint64_t package_entry_chunks_size(std::vector<PackageEntryChunk>& chunks)
     return total_size;
 }
 
+std::uint64_t package_entry_chunks_size_without_crc32(std::vector<PackageEntryChunk>& chunks)
+{
+    std::uint64_t total_size = 0;
+    for (std::size_t chunk_index = 0; chunk_index < chunks.size(); ++chunk_index) {
+        PackageEntryChunk& chunk = chunks[chunk_index];
+        const std::uint64_t chunk_size =
+            package_entry_chunk_size_with_context(chunk, chunk_index);
+        if (chunk_size > std::numeric_limits<std::uint64_t>::max() - total_size) {
+            throw FastXlsxError("staged package-entry chunks are too large");
+        }
+        total_size += chunk_size;
+        chunk.expected_size = chunk_size;
+        chunk.has_expected_size = true;
+    }
+    return total_size;
+}
+
 void require_staged_package_entry_chunks_valid(
-    std::vector<PackageEntryChunk>& chunks, std::string_view purpose)
+    std::vector<PackageEntryChunk>& chunks, std::string_view purpose,
+    bool validate_crc32 = true)
 {
     try {
-        (void)package_entry_chunks_size(chunks);
+        if (validate_crc32) {
+            (void)package_entry_chunks_size(chunks);
+        } else {
+            (void)package_entry_chunks_size_without_crc32(chunks);
+        }
     } catch (const std::exception& error) {
         throw FastXlsxError(std::string(purpose)
             + " has invalid staged chunks: " + error.what());
@@ -3965,36 +4158,55 @@ WorksheetPayloadDependencyAuditResult write_worksheet_sheet_data_replacement_str
     bool& relationship_scan_failed,
     WorksheetSheetDataPreservationAuditCollector* preservation_collector,
     const WorksheetInputChunkCallback& read_next_chunk,
-    const WorksheetInputChunkCallback& read_replacement_sheet_data_chunk)
+    const WorksheetInputChunkCallback& read_replacement_sheet_data_chunk,
+    std::optional<std::string_view> dimension_reference,
+    bool source_has_dimension)
 {
     std::ofstream output(path, std::ios::binary);
     if (!output) {
         throw FastXlsxError("failed to create temporary rewritten worksheet XML");
     }
 
+    const bool refresh_dimension = dimension_reference.has_value();
     WorksheetPayloadDependencyAuditResult replacement_audit;
+    bool skipping_dimension = false;
     bool skipping_sheet_data = false;
     bool saw_sheet_data = false;
     bool replacement_failure = false;
+    const auto write_replacement_sheet_data = [&]() {
+        try {
+            replacement_audit =
+                write_sheet_data_replacement_chunks_and_audit_from_chunk_source(
+                    output, worksheet_part, relationship_scanner,
+                    relationship_scan_failed, read_replacement_sheet_data_chunk,
+                    "sheetData replacement XML", "replacement sheetData XML");
+        } catch (const std::exception&) {
+            replacement_failure = true;
+            throw;
+        }
+    };
     try {
         scan_worksheet_events_from_chunk_source(
             read_next_chunk,
             [&](const WorksheetEvent& event) {
-                if (preservation_collector != nullptr) {
+                if (skipping_dimension) {
+                    if (event.kind == WorksheetEventKind::Metadata
+                        && event.element_name == "dimension"
+                        && is_closing_raw_tag(event.raw_xml)) {
+                        skipping_dimension = false;
+                    }
+                    return;
+                }
+
+                if (preservation_collector != nullptr
+                    && !(refresh_dimension
+                        && event.kind == WorksheetEventKind::Metadata
+                        && event.element_name == "dimension")) {
                     preservation_collector->process_event(event);
                 }
                 if (event.kind == WorksheetEventKind::SheetDataStart) {
                     saw_sheet_data = true;
-                    try {
-                        replacement_audit =
-                            write_sheet_data_replacement_chunks_and_audit_from_chunk_source(
-                                output, worksheet_part, relationship_scanner,
-                                relationship_scan_failed, read_replacement_sheet_data_chunk,
-                                "sheetData replacement XML", "replacement sheetData XML");
-                    } catch (const std::exception&) {
-                        replacement_failure = true;
-                        throw;
-                    }
+                    write_replacement_sheet_data();
                     skipping_sheet_data = true;
                     return;
                 }
@@ -4004,6 +4216,39 @@ WorksheetPayloadDependencyAuditResult write_worksheet_sheet_data_replacement_str
                 }
                 if (skipping_sheet_data) {
                     return;
+                }
+
+                if (refresh_dimension
+                    && event.kind == WorksheetEventKind::WorksheetStart) {
+                    write_file_chunk_and_scan_relationships(
+                        output, relationship_scanner, relationship_scan_failed,
+                        event.raw_xml);
+                    if (!source_has_dimension) {
+                        write_file_chunk_and_scan_relationships(
+                            output, relationship_scanner, relationship_scan_failed,
+                            dimension_tag(element_prefix(event.raw_xml), *dimension_reference));
+                    }
+                    return;
+                }
+
+                if (refresh_dimension
+                    && event.kind == WorksheetEventKind::Metadata
+                    && event.element_name == "dimension"
+                    && !is_closing_raw_tag(event.raw_xml)) {
+                    write_file_chunk_and_scan_relationships(
+                        output, relationship_scanner, relationship_scan_failed,
+                        dimension_tag(element_prefix(event.raw_xml), *dimension_reference));
+                    if (!event.self_closing) {
+                        skipping_dimension = true;
+                    }
+                    return;
+                }
+
+                if (refresh_dimension
+                    && !saw_sheet_data
+                    && event.kind == WorksheetEventKind::WorksheetEnd) {
+                    write_replacement_sheet_data();
+                    saw_sheet_data = true;
                 }
 
                 write_file_chunk_and_scan_relationships(
@@ -4032,6 +4277,22 @@ WorksheetPayloadDependencyAuditResult write_worksheet_sheet_data_replacement_str
         throw FastXlsxError("failed to finalize temporary rewritten worksheet XML");
     }
     return replacement_audit;
+}
+
+bool worksheet_source_has_dimension_metadata(const WorksheetInputChunkCallback& read_next_chunk)
+{
+    bool has_dimension = false;
+    scan_worksheet_events_from_chunk_source(
+        read_next_chunk,
+        [&](const WorksheetEvent& event) {
+            if (event.kind == WorksheetEventKind::Metadata
+                && event.element_name == "dimension"
+                && !is_closing_raw_tag(event.raw_xml)) {
+                has_dimension = true;
+            }
+        },
+        package_editor_cell_replacement_reader_options());
+    return has_dimension;
 }
 
 void write_worksheet_cell_replacement_action(std::ofstream& output,
@@ -4330,6 +4591,80 @@ std::string materialized_part_replacement_reason(
     return "active disallowed source package part materialized replacement would be rejected before planned output";
 }
 
+struct PackageEntryChunkOutputStats {
+    std::size_t chunk_count = 0;
+    std::size_t memory_chunk_count = 0;
+    std::size_t file_chunk_count = 0;
+    std::size_t file_range_chunk_count = 0;
+    std::uint64_t expected_bytes = 0;
+    std::uint64_t memory_bytes = 0;
+    std::uint64_t file_bytes = 0;
+    std::uint64_t file_range_bytes = 0;
+    bool expected_bytes_complete = true;
+};
+
+void add_output_stat_bytes(std::uint64_t& total, std::uint64_t value)
+{
+    if (value > std::numeric_limits<std::uint64_t>::max() - total) {
+        throw FastXlsxError("package entry chunk output statistics overflow");
+    }
+    total += value;
+}
+
+void add_expected_chunk_bytes(PackageEntryChunkOutputStats& stats, std::uint64_t bytes)
+{
+    add_output_stat_bytes(stats.expected_bytes, bytes);
+}
+
+PackageEntryChunkOutputStats summarize_package_entry_chunks_for_output_plan(
+    const std::vector<PackageEntryChunk>& chunks)
+{
+    PackageEntryChunkOutputStats stats;
+    stats.chunk_count = chunks.size();
+    for (const PackageEntryChunk& chunk : chunks) {
+        switch (chunk.kind) {
+        case PackageEntryChunk::Kind::Memory: {
+            ++stats.memory_chunk_count;
+            const auto bytes = static_cast<std::uint64_t>(chunk.data.size());
+            add_output_stat_bytes(stats.memory_bytes, bytes);
+            add_expected_chunk_bytes(stats, bytes);
+            break;
+        }
+        case PackageEntryChunk::Kind::File:
+            ++stats.file_chunk_count;
+            if (chunk.has_file_range) {
+                ++stats.file_range_chunk_count;
+                add_output_stat_bytes(stats.file_range_bytes, chunk.file_size);
+                add_output_stat_bytes(stats.file_bytes, chunk.file_size);
+                add_expected_chunk_bytes(stats, chunk.file_size);
+            } else if (chunk.has_expected_size) {
+                add_output_stat_bytes(stats.file_bytes, chunk.expected_size);
+                add_expected_chunk_bytes(stats, chunk.expected_size);
+            } else {
+                stats.expected_bytes_complete = false;
+            }
+            break;
+        }
+    }
+    return stats;
+}
+
+void apply_staged_replacement_chunk_stats(
+    PackageEditorOutputEntryPlan& plan, const std::vector<PackageEntryChunk>& chunks)
+{
+    const PackageEntryChunkOutputStats stats =
+        summarize_package_entry_chunks_for_output_plan(chunks);
+    plan.staged_replacement_chunk_count = stats.chunk_count;
+    plan.staged_replacement_memory_chunk_count = stats.memory_chunk_count;
+    plan.staged_replacement_file_chunk_count = stats.file_chunk_count;
+    plan.staged_replacement_file_range_chunk_count = stats.file_range_chunk_count;
+    plan.staged_replacement_expected_bytes = stats.expected_bytes;
+    plan.staged_replacement_memory_bytes = stats.memory_bytes;
+    plan.staged_replacement_file_bytes = stats.file_bytes;
+    plan.staged_replacement_file_range_bytes = stats.file_range_bytes;
+    plan.staged_replacement_expected_bytes_complete = stats.expected_bytes_complete;
+}
+
 PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
     const EditPlan& edit_plan, const std::vector<PackagePartReplacement>& replacements,
     const std::vector<PackageEntryReplacement>& entry_replacements,
@@ -4368,6 +4703,29 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
         plan.generated = replacement->write_mode == PartWriteMode::GenerateSmallXml;
         plan.staged_replacement_chunks = !replacement->chunks.empty();
         plan.materialized_replacement = replacement->chunks.empty();
+        plan.indexed_source_entry_direct_range =
+            replacement->indexed_source_entry_direct_range;
+        plan.indexed_source_entry_scanned_source_cell_count =
+            replacement->indexed_source_entry_scanned_source_cell_count;
+        plan.indexed_source_entry_matched_replacement_count =
+            replacement->indexed_source_entry_matched_replacement_count;
+        plan.indexed_source_entry_staged_output_bytes =
+            replacement->indexed_source_entry_staged_output_bytes;
+        plan.indexed_source_entry_source_range_chunk_ms =
+            replacement->indexed_source_entry_source_range_chunk_ms;
+        plan.indexed_source_entry_target_plan_ms =
+            replacement->indexed_source_entry_target_plan_ms;
+        plan.indexed_source_entry_payload_audit_ms =
+            replacement->indexed_source_entry_payload_audit_ms;
+        plan.indexed_source_entry_relationship_audit_ms =
+            replacement->indexed_source_entry_relationship_audit_ms;
+        plan.indexed_source_entry_descriptor_ms =
+            replacement->indexed_source_entry_descriptor_ms;
+        plan.indexed_source_entry_commit_ms =
+            replacement->indexed_source_entry_commit_ms;
+        if (plan.staged_replacement_chunks) {
+            apply_staged_replacement_chunk_stats(plan, replacement->chunks);
+        }
         plan.materialized_replacement_reason =
             materialized_part_replacement_reason(reader, *replacement);
         if (plan.reason.empty()) {
@@ -4533,6 +4891,27 @@ PackageEntry materialize_planned_output_entry(const PackageReader& reader,
             const PackageReaderEntry* source_entry = reader.find_entry(plan.entry_name);
             if (source_entry == nullptr) {
                 throw FastXlsxError("planned output source entry is missing");
+            }
+            bool use_stored_direct_range =
+                source_entry->compression_method == stored_compression_method;
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+            if (package_editor_source_copy_temp_files_hook() != nullptr) {
+                use_stored_direct_range = false;
+            }
+#endif
+            if (use_stored_direct_range) {
+                if (source_entry->compressed_size != source_entry->uncompressed_size) {
+                    throw FastXlsxError(
+                        "stored planned output source entry has mismatched "
+                        "compressed/uncompressed sizes");
+                }
+                PackageEntryChunk chunk = PackageEntryChunk::file_range(
+                    reader.path(), source_entry->data_offset,
+                    source_entry->uncompressed_size);
+                chunk.has_expected_crc32 = true;
+                chunk.expected_crc32 = source_entry->crc32;
+                return PackageEntry {plan.entry_name, std::vector<PackageEntryChunk> {
+                    std::move(chunk)}};
             }
             ScopedPackageEditorTempFile temp_file;
             reader.extract_entry_to_file(plan.entry_name, temp_file.path());
@@ -4735,6 +5114,11 @@ public:
                         staged_package_entry_chunk_context(chunk, chunk_index_)
                         + ": staged package-entry chunk cannot mix memory and file sources");
                 }
+                if (chunk.has_file_range) {
+                    replay_error(
+                        staged_package_entry_chunk_context(chunk, chunk_index_)
+                        + ": staged package-entry memory chunk cannot carry a file range");
+                }
                 ++chunk_index_;
                 try {
                     const std::size_t completed_chunk_index = chunk_index_ - 1;
@@ -4774,25 +5158,35 @@ public:
                             + std::to_string(expected_size) + " bytes during "
                             + staged_file_read_progress_description());
                     }
+                    try {
+                        seek_package_entry_file_chunk_start(input_, chunk);
+                    } catch (const std::exception& error) {
+                        replay_error(
+                            staged_package_entry_chunk_context(chunk, chunk_index_)
+                            + ": " + error.what() + " during "
+                            + staged_file_read_progress_description());
+                    }
                 }
 
                 if (file_bytes_read_ == expected_size) {
                     ++file_read_attempts_;
-                    const int next = input_.peek();
-                    if (next != std::char_traits<char>::eof()) {
-                        replay_error(
-                            staged_package_entry_chunk_context(chunk, chunk_index_)
-                            + ": "
-                            + expected_at_least_size_message(
-                                "staged package-entry chunk file produced more bytes than expected",
-                                expected_size)
-                            + " during " + staged_file_read_progress_description());
-                    }
-                    if (input_.bad()) {
-                        replay_error(
-                            staged_package_entry_chunk_context(chunk, chunk_index_)
-                            + ": failed to read staged package-entry chunk file during "
-                            + staged_file_read_progress_description());
+                    if (!chunk.has_file_range) {
+                        const int next = input_.peek();
+                        if (next != std::char_traits<char>::eof()) {
+                            replay_error(
+                                staged_package_entry_chunk_context(chunk, chunk_index_)
+                                + ": "
+                                + expected_at_least_size_message(
+                                    "staged package-entry chunk file produced more bytes than expected",
+                                    expected_size)
+                                + " during " + staged_file_read_progress_description());
+                        }
+                        if (input_.bad()) {
+                            replay_error(
+                                staged_package_entry_chunk_context(chunk, chunk_index_)
+                                + ": failed to read staged package-entry chunk file during "
+                                + staged_file_read_progress_description());
+                        }
                     }
                     try {
                         require_staged_chunk_crc32_unchanged(
@@ -4812,7 +5206,7 @@ public:
                 const std::uint64_t remaining = expected_size - file_bytes_read_;
                 const std::size_t requested = static_cast<std::size_t>(
                     std::min<std::uint64_t>(
-                        remaining, static_cast<std::uint64_t>(package_entry_file_chunk_size)));
+                        remaining, static_cast<std::uint64_t>(package_entry_reader_chunk_size)));
                 output_chunk.resize(requested);
                 ++file_read_attempts_;
                 input_.read(output_chunk.data(),
@@ -5044,7 +5438,13 @@ void emit_file_chunk_range(
     if (size == 0) {
         return;
     }
-    if (offset > static_cast<std::uint64_t>(
+    const std::uint64_t base_offset = package_entry_file_chunk_payload_offset(chunk);
+    if (offset > std::numeric_limits<std::uint64_t>::max() - base_offset) {
+        throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
+            + ": staged package-entry chunk file range offset overflow");
+    }
+    const std::uint64_t absolute_offset = base_offset + offset;
+    if (absolute_offset > static_cast<std::uint64_t>(
             std::numeric_limits<std::streamoff>::max())) {
         throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
             + ": staged package-entry chunk file range offset is too large");
@@ -5055,14 +5455,14 @@ void emit_file_chunk_range(
         throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
             + ": failed to open staged package-entry chunk file for range read");
     }
-    input.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+    input.seekg(static_cast<std::streamoff>(absolute_offset), std::ios::beg);
     if (!input) {
         throw FastXlsxError(staged_package_entry_chunk_context(chunk, chunk_index)
             + ": failed to seek staged package-entry chunk file range to offset "
-            + std::to_string(offset));
+            + std::to_string(absolute_offset));
     }
 
-    std::array<char, package_entry_file_chunk_size> buffer {};
+    std::vector<char> buffer(package_entry_file_chunk_size);
     std::uint64_t remaining = size;
     std::uint64_t emitted = 0;
     while (remaining > 0) {
@@ -5206,6 +5606,123 @@ PackageEntryIndexedCellReplacementPlan plan_indexed_cell_replacement_from_chunks
     }
 
     return plan;
+}
+
+void add_indexed_chunk_output_bytes(std::uint64_t& total, std::uint64_t size)
+{
+    if (size > std::numeric_limits<std::uint64_t>::max() - total) {
+        throw FastXlsxError("indexed package-entry replacement output is too large");
+    }
+    total += size;
+}
+
+void append_indexed_memory_output_chunk(
+    std::vector<PackageEntryChunk>& output_chunks,
+    std::string_view data)
+{
+    if (data.empty()) {
+        return;
+    }
+
+    if (!output_chunks.empty()) {
+        PackageEntryChunk& previous = output_chunks.back();
+        if (previous.kind == PackageEntryChunk::Kind::Memory
+            && previous.path.empty()
+            && !previous.has_file_range) {
+            previous.data.append(data.data(), data.size());
+            previous.expected_size = static_cast<std::uint64_t>(previous.data.size());
+            previous.has_expected_size = true;
+            previous.expected_crc32 = package_editor_crc32(previous.data);
+            previous.has_expected_crc32 = true;
+            return;
+        }
+    }
+
+    PackageEntryChunk output_chunk = PackageEntryChunk::memory(std::string(data));
+    output_chunk.expected_crc32 = package_editor_crc32(output_chunk.data);
+    output_chunk.has_expected_crc32 = true;
+    output_chunks.push_back(std::move(output_chunk));
+}
+
+void append_package_entry_chunk_range_descriptors_with_layout(
+    std::vector<PackageEntryChunk>& output_chunks,
+    std::uint64_t& output_bytes,
+    const std::vector<PackageEntryChunk>& source_chunks,
+    const PackageEntryChunkRangeLayout& layout,
+    std::uint64_t offset,
+    std::uint64_t size)
+{
+    if (offset > layout.total_size
+        || size > layout.total_size - offset) {
+        throw FastXlsxError(
+            "staged package-entry chunk descriptor range exceeds staged payload size: "
+            + package_entry_chunk_range_description(offset, size, layout.total_size));
+    }
+    if (size == 0) {
+        return;
+    }
+
+    const std::uint64_t range_end = offset + size;
+    std::uint64_t chunk_start = 0;
+    for (std::size_t chunk_index = 0; chunk_index < source_chunks.size(); ++chunk_index) {
+        const std::uint64_t chunk_size = layout.sizes[chunk_index];
+        const std::uint64_t chunk_end = chunk_start + chunk_size;
+        if (chunk_end <= offset) {
+            chunk_start = chunk_end;
+            continue;
+        }
+        if (chunk_start >= range_end) {
+            break;
+        }
+
+        const std::uint64_t overlap_start = std::max(offset, chunk_start);
+        const std::uint64_t overlap_end = std::min(range_end, chunk_end);
+        const std::uint64_t local_offset = overlap_start - chunk_start;
+        const std::uint64_t local_size = overlap_end - overlap_start;
+        const PackageEntryChunk& source_chunk = source_chunks[chunk_index];
+
+        switch (source_chunk.kind) {
+        case PackageEntryChunk::Kind::Memory: {
+            const auto begin = static_cast<std::size_t>(local_offset);
+            const auto length = static_cast<std::size_t>(local_size);
+            append_indexed_memory_output_chunk(
+                output_chunks, std::string_view(source_chunk.data.data() + begin, length));
+            add_indexed_chunk_output_bytes(output_bytes, local_size);
+            break;
+        }
+        case PackageEntryChunk::Kind::File: {
+            const std::uint64_t base_offset =
+                package_entry_file_chunk_payload_offset(source_chunk);
+            if (local_offset > std::numeric_limits<std::uint64_t>::max() - base_offset) {
+                throw FastXlsxError(staged_package_entry_chunk_context(
+                    source_chunk, chunk_index)
+                    + ": indexed package-entry descriptor file range offset overflow");
+            }
+            PackageEntryChunk output_chunk = PackageEntryChunk::file_range(
+                source_chunk.path, base_offset + local_offset, local_size);
+            output_chunks.push_back(std::move(output_chunk));
+            add_indexed_chunk_output_bytes(output_bytes, local_size);
+            break;
+        }
+        default:
+            throw FastXlsxError(staged_package_entry_chunk_context(source_chunk, chunk_index)
+                + ": unsupported staged package-entry chunk kind");
+        }
+
+        chunk_start = chunk_end;
+    }
+}
+
+void append_replacement_payload_descriptors(
+    std::vector<PackageEntryChunk>& output_chunks,
+    std::uint64_t& output_bytes,
+    const WorksheetCellReplacementPayload& payload)
+{
+    payload.for_each_chunk([&](std::string_view chunk) {
+        append_indexed_memory_output_chunk(output_chunks, chunk);
+        add_indexed_chunk_output_bytes(
+            output_bytes, static_cast<std::uint64_t>(chunk.size()));
+    });
 }
 
 WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunks_impl(
@@ -5498,6 +6015,50 @@ WorksheetTransformSummary emit_indexed_cell_replacement_from_package_entry_chunk
         source_chunks, rewrites, replacement_plan, callback);
 }
 
+IndexedPackageEntryChunkReplacementResult make_indexed_cell_replacement_package_entry_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    std::span<const WorksheetIndexedCellRewrite> rewrites,
+    const WorksheetCellReplacementPlan& replacement_plan)
+{
+    const PackageEntryIndexedCellReplacementPlan plan =
+        plan_indexed_cell_replacement_from_chunks(
+            source_chunks, rewrites, replacement_plan);
+
+    IndexedPackageEntryChunkReplacementResult result;
+    result.chunks.reserve(plan.rewrites.size() * 2U + 1U);
+
+    std::uint64_t cursor = 0;
+    for (const WorksheetIndexedCellRewrite& rewrite : plan.rewrites) {
+        const std::uint64_t pass_through_size =
+            rewrite.source_range.start_offset - cursor;
+        append_package_entry_chunk_range_descriptors_with_layout(
+            result.chunks,
+            result.output_bytes,
+            source_chunks,
+            plan.source_layout,
+            cursor,
+            pass_through_size);
+
+        const auto replacement =
+            replacement_plan.replacement_payloads_by_reference.find(
+                std::string_view(rewrite.cell_reference));
+        append_replacement_payload_descriptors(
+            result.chunks, result.output_bytes, replacement->second);
+        cursor = rewrite.source_range.end_offset;
+    }
+
+    append_package_entry_chunk_range_descriptors_with_layout(
+        result.chunks,
+        result.output_bytes,
+        source_chunks,
+        plan.source_layout,
+        cursor,
+        plan.source_layout.total_size - cursor);
+
+    result.summary.matched_replacement_count = plan.rewrites.size();
+    return result;
+}
+
 PackageEditor PackageEditor::open(std::filesystem::path path)
 {
     return PackageEditor(PackageReader::open(std::move(path)));
@@ -5689,6 +6250,24 @@ std::string PackageEditor::current_workbook_xml_for_diagnostics(
             + " because the officeDocument workbook part has been removed");
     }
     return current_planned_materialized_workbook_xml(reader_, replacements_, purpose);
+}
+
+std::vector<PackageEntryChunk> PackageEditor::source_part_stored_entry_chunks(
+    PartName part_name) const
+{
+    return source_stored_entry_range_chunks(
+        reader_, part_name.zip_path(), "source part stored-entry chunk range");
+}
+
+std::vector<PackageEntryChunk>
+PackageEditor::source_worksheet_part_stored_entry_chunks_by_name(
+    std::string_view sheet_name) const
+{
+    const PartName worksheet_part =
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, sheet_name);
+    return source_stored_entry_range_chunks(
+        reader_, worksheet_part.zip_path(), "source worksheet stored-entry chunk range");
 }
 
 void PackageEditor::replace_part(
@@ -5949,7 +6528,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<WorksheetPayloadDependencyAudit> payload_audits,
     std::vector<std::string> relationship_reference_notes,
     std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
-    std::string replacement_reason, bool enforce_payload_policy)
+    std::string replacement_reason, bool enforce_payload_policy,
+    bool validate_staged_chunk_crc32)
 {
     if (chunks.empty()) {
         throw FastXlsxError("staged worksheet replacement requires at least one chunk");
@@ -5958,7 +6538,7 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     const PartName target_worksheet_part = worksheet_part;
     validate_worksheet_replacement_preconditions(manifest_, reader_, worksheet_part, policy);
     require_staged_package_entry_chunks_valid(
-        chunks, "prevalidated worksheet staged replacement");
+        chunks, "prevalidated worksheet staged replacement", validate_staged_chunk_crc32);
 
     WorksheetPayloadDependencyAuditResult payload_audit;
     payload_audit.notes = std::move(payload_notes);
@@ -6150,10 +6730,30 @@ void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet
         "string entry point");
 }
 
+void PackageEditor::replace_worksheet_part_prevalidated_chunks_by_name(
+    std::string_view sheet_name, std::vector<PackageEntryChunk> chunks,
+    const ReferencePolicy& policy, std::string reason)
+{
+    if (reason.empty()) {
+        reason =
+            "target worksheet part prevalidated staged stream rewrite without staged audit reread";
+    }
+
+    replace_worksheet_part_prevalidated_chunks(
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, sheet_name),
+        std::move(chunks), policy, {}, {}, {}, {}, std::move(reason), false, false);
+    edit_plan_.add_note(
+        "by-name worksheet staged chunk prevalidated replacement resolves the worksheet part "
+        "through the planned/source workbook catalog and commits already-audited staged "
+        "chunks without reopening the staged worksheet for a second audit scan");
+}
+
 void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(
     PartName worksheet_part,
     const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
-    const ReferencePolicy& policy)
+    const ReferencePolicy& policy,
+    std::optional<std::string_view> dimension_reference)
 {
     const PartName target_worksheet_part = worksheet_part;
     const auto* worksheet = manifest_.find_part(worksheet_part);
@@ -6172,6 +6772,22 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(
         require_current_worksheet_input_source(reader_, replacements_, entry_replacements_,
             target_worksheet_part, "worksheet sheetData replacement");
 
+    bool source_has_dimension = false;
+    if (dimension_reference.has_value()) {
+        CurrentWorksheetInputChunkReader analysis_reader(reader_, target_worksheet_part,
+            input_source, "current worksheet input for worksheet sheetData dimension refresh");
+        const WorksheetInputChunkCallback analysis_source =
+            [&](std::string& chunk) { return analysis_reader(chunk); };
+        try {
+            source_has_dimension =
+                worksheet_source_has_dimension_metadata(analysis_source);
+        } catch (const std::exception& error) {
+            throw FastXlsxError(failed_to_consume_current_worksheet_input_message(
+                "current worksheet input for worksheet sheetData dimension refresh",
+                error.what()));
+        }
+    }
+
     ScopedPackageEditorTempFile staged_worksheet_file;
     CurrentWorksheetInputChunkReader output_reader(reader_, target_worksheet_part, input_source,
         std::string(worksheet_sheet_data_replacement_output_input_context));
@@ -6184,7 +6800,7 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(
         write_worksheet_sheet_data_replacement_stream_from_chunk_source(
             staged_worksheet_file.path(), target_worksheet_part, &relationship_scanner,
             relationship_scan_failed, &preservation_collector, output_source,
-            read_next_sheet_data_chunk);
+            read_next_sheet_data_chunk, dimension_reference, source_has_dimension);
     reject_payload_dependencies_by_policy(
         replacement_audit, policy, "sheetData replacement");
 
@@ -6254,14 +6870,15 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(
 void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_by_name(
     std::string_view sheet_name,
     const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
-    const ReferencePolicy& policy)
+    const ReferencePolicy& policy,
+    std::optional<std::string_view> dimension_reference)
 {
     const PartName worksheet_part =
         resolve_worksheet_part_by_name_for_patch(
             reader_, manifest_, replacements_, sheet_name);
     try {
         replace_worksheet_sheet_data_from_chunk_source(
-            worksheet_part, read_next_sheet_data_chunk, policy);
+            worksheet_part, read_next_sheet_data_chunk, policy, dimension_reference);
     } catch (const std::exception& error) {
         throw FastXlsxError(
             by_name_worksheet_operation_context(
@@ -6273,6 +6890,142 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_by_name(
         "through the planned/source workbook catalog and consumes replacement "
         "sheetData XML without routing through the materialized sheetData string "
         "entry point");
+}
+
+bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
+    PartName worksheet_part,
+    std::vector<PackageEntryChunk> source_chunks,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    const ReferencePolicy& policy,
+    std::string input_label)
+{
+    if (policy.unsupported_linked_part_action == ReferencePolicyAction::Fail) {
+        return false;
+    }
+    if (source_chunks.empty()) {
+        return false;
+    }
+
+    const RelationshipSet* worksheet_relationships =
+        reader_.relationships_for(worksheet_part);
+    if (worksheet_relationships != nullptr && !worksheet_relationships->empty()) {
+        return false;
+    }
+
+    auto phase_started = std::chrono::steady_clock::now();
+    const std::uint64_t source_range_chunk_ms =
+        steady_clock_elapsed_milliseconds(phase_started);
+
+    phase_started = std::chrono::steady_clock::now();
+    std::vector<std::string_view> target_references;
+    target_references.reserve(replacement_plan.replacement_payloads_by_reference.size());
+    for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
+        target_references.push_back(replacement.first);
+    }
+
+    PackageEntryChunkReader targeted_plan_reader(source_chunks);
+    const WorksheetInputChunkCallback targeted_plan_source =
+        [&](std::string& chunk) { return targeted_plan_reader(chunk); };
+    WorksheetTargetedCellRewritePlan targeted_plan;
+    try {
+        targeted_plan = plan_targeted_cell_rewrites_from_chunk_source(
+            targeted_plan_source,
+            target_references,
+            package_editor_cell_replacement_reader_options());
+    } catch (const std::exception&) {
+        return false;
+    }
+    const std::uint64_t target_plan_ms =
+        steady_clock_elapsed_milliseconds(phase_started);
+    if (!targeted_plan.source_has_top_level_dimension) {
+        return false;
+    }
+
+    phase_started = std::chrono::steady_clock::now();
+    WorksheetPayloadDependencyAuditResult payload_audit =
+        worksheet_replacement_cell_payloads_audit(worksheet_part, replacement_plan);
+    reject_payload_dependencies_by_policy(
+        payload_audit, policy, "worksheet replacement");
+    const std::uint64_t payload_audit_ms =
+        steady_clock_elapsed_milliseconds(phase_started);
+
+    phase_started = std::chrono::steady_clock::now();
+    WorksheetRelationshipReferenceAuditResult relationship_reference_audit =
+        worksheet_replacement_cell_payloads_relationship_reference_audit(
+            worksheet_part, replacement_plan, worksheet_relationships);
+    reject_relationship_reference_audit_by_policy(
+        relationship_reference_audit, policy);
+    const std::uint64_t relationship_audit_ms =
+        steady_clock_elapsed_milliseconds(phase_started);
+
+    phase_started = std::chrono::steady_clock::now();
+    IndexedPackageEntryChunkReplacementResult descriptor_result =
+        make_indexed_cell_replacement_package_entry_chunks(
+            source_chunks, targeted_plan.rewrites, replacement_plan);
+    const std::uint64_t descriptor_ms =
+        steady_clock_elapsed_milliseconds(phase_started);
+
+    const std::uint64_t output_bytes = descriptor_result.output_bytes;
+    const std::size_t matched_replacements =
+        descriptor_result.summary.matched_replacement_count;
+    const std::uint64_t scanned_source_cell_count =
+        targeted_plan.scanned_source_cell_count;
+    const PartName worksheet_part_for_stats = worksheet_part;
+    phase_started = std::chrono::steady_clock::now();
+    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+        std::move(descriptor_result.chunks), policy,
+        std::move(payload_audit.notes), std::move(payload_audit.audits),
+        std::move(relationship_reference_audit.notes),
+        std::move(relationship_reference_audit.audits),
+        "target worksheet part indexed direct-range stream rewrite from worksheet cell replacement",
+        false, false);
+    const std::uint64_t commit_ms =
+        steady_clock_elapsed_milliseconds(phase_started);
+    if (PackagePartReplacement* replacement =
+            find_replacement(replacements_, worksheet_part_for_stats)) {
+        replacement->indexed_source_entry_direct_range = true;
+        replacement->indexed_source_entry_scanned_source_cell_count =
+            scanned_source_cell_count;
+        replacement->indexed_source_entry_matched_replacement_count =
+            static_cast<std::uint64_t>(matched_replacements);
+        replacement->indexed_source_entry_staged_output_bytes = output_bytes;
+        replacement->indexed_source_entry_source_range_chunk_ms =
+            source_range_chunk_ms;
+        replacement->indexed_source_entry_target_plan_ms = target_plan_ms;
+        replacement->indexed_source_entry_payload_audit_ms = payload_audit_ms;
+        replacement->indexed_source_entry_relationship_audit_ms =
+            relationship_audit_ms;
+        replacement->indexed_source_entry_descriptor_ms = descriptor_ms;
+        replacement->indexed_source_entry_commit_ms = commit_ms;
+    }
+    edit_plan_.add_note(
+        "worksheet cell replacement used indexed " + input_label
+        + " direct-range staged chunks for a current worksheet input with no "
+        "worksheet relationships; "
+        "target-only planning scanned "
+        + std::to_string(scanned_source_cell_count)
+        + " source cells, matched " + std::to_string(matched_replacements)
+        + " replacement targets, and staged "
+        + std::to_string(output_bytes) + " worksheet bytes");
+    if (input_label == "source-entry") {
+        edit_plan_.add_note(
+            "worksheet cell replacement indexed source-entry fast path preserves "
+            "untouched worksheet XML as source package file ranges and inserts only "
+            "replacement cell payload chunks; planned staged chunk inputs, compressed "
+            "source entries, materialized planned worksheet inputs, missing-target "
+            "upsert cases, reference-policy Fail mode, and worksheets with "
+            "relationships continue to use the transformer fallback");
+    } else {
+        edit_plan_.add_note(
+            "worksheet cell replacement indexed " + input_label
+            + " fast path preserves planned worksheet staged chunks without "
+            "materializing the rewritten worksheet as staged chunk ranges and "
+            "inserts only replacement cell payload chunks; compressed source "
+            "entries, materialized planned worksheet inputs, missing-target upsert "
+            "cases, reference-policy Fail mode, and worksheets with relationships "
+            "continue to use the transformer fallback");
+    }
+    return true;
 }
 
 void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
@@ -6312,6 +7065,22 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
 
     const WorksheetCellReplacementPlan replacement_plan =
         make_worksheet_cell_replacement_plan(replacements);
+    if (source_entry_chunk_source) {
+        const PackageReaderEntry* source_entry =
+            reader_.find_entry(target_worksheet_part.zip_path());
+        if (source_entry != nullptr
+            && source_entry->compression_method == stored_compression_method
+            && source_entry->compressed_size == source_entry->uncompressed_size) {
+            std::vector<PackageEntryChunk> source_chunks =
+                source_stored_entry_range_chunks(reader_, target_worksheet_part.zip_path(),
+                    "indexed worksheet cell replacement source-entry fast path");
+            if (try_replace_worksheet_cells_with_indexed_chunks(
+                    worksheet_part, std::move(source_chunks), replacement_plan, policy,
+                    "source-entry")) {
+                return;
+            }
+        }
+    }
 
     CurrentWorksheetInputChunkReader analysis_reader(reader_, target_worksheet_part, input_source,
         std::string(worksheet_cell_replacement_analysis_input_context));

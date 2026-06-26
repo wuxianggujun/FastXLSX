@@ -326,6 +326,34 @@ void test_event_reader_exposes_absolute_source_offsets_across_chunks()
         "B1 start offset should point back into the original source XML");
 }
 
+void test_event_reader_can_skip_context_attribute_copies()
+{
+    const std::string xml =
+        R"(<worksheet><sheetData><row r="1">)"
+        R"(<c r="A1"><v>alpha</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+
+    fastxlsx::detail::WorksheetEventReaderOptions options;
+    options.copy_context_attributes = false;
+    const std::vector<CopiedWorksheetEvent> events = read_source_events(xml, 4, options);
+
+    const CopiedWorksheetEvent& row_start = find_first(events, WorksheetEventKind::RowStart);
+    check(row_start.row_number == "1",
+        "no-copy event reader should still expose row number on row start");
+
+    const CopiedWorksheetEvent& cell_start = find_first(events, WorksheetEventKind::CellStart);
+    check(cell_start.cell_reference == "A1",
+        "no-copy event reader should still expose cell reference on cell start");
+
+    const CopiedWorksheetEvent& value = find_first(events, WorksheetEventKind::CellValue);
+    check(value.row_number.empty() && value.cell_reference.empty(),
+        "no-copy event reader should not retain context attributes for later nested events");
+
+    const CopiedWorksheetEvent& cell_end = find_first(events, WorksheetEventKind::CellEnd);
+    check(cell_end.cell_reference.empty(),
+        "no-copy event reader should not retain cell reference for cell end");
+}
+
 void test_event_reader_rejects_xml_declaration_after_root_start()
 {
     const std::string xml =
@@ -604,6 +632,7 @@ int main()
         test_event_reader_exposes_cell_inner_metadata();
         test_event_reader_distinguishes_xml_stylesheet_processing_instruction();
         test_event_reader_exposes_absolute_source_offsets_across_chunks();
+        test_event_reader_can_skip_context_attribute_copies();
         test_event_reader_rejects_xml_declaration_after_root_start();
         test_event_reader_rejects_mismatched_cell_value_boundaries();
         test_event_reader_rejects_invalid_core_element_nesting();

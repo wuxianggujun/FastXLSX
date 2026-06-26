@@ -1609,12 +1609,15 @@ void rewrite_linked_object_source_package(const LinkedObjectSourcePackage& sourc
         },
         {fastxlsx::detail::PackageWriterBackend::StoredZipBootstrap});
 }
-void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff()
+void test_package_editor_replaces_worksheet_cells_by_name_with_indexed_source_entry_fast_path()
 {
-    const CalcSourcePackage source =
+    CalcSourcePackage source =
         write_calc_source_package("fastxlsx-package-editor-cell-replacement-source.xlsx");
     const std::filesystem::path output =
         output_path("fastxlsx-package-editor-cell-replacement-output.xlsx");
+    source.worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><f>SUM(B1:C1)</f><v>3</v></c></row></sheetData></worksheet>)";
+    rewrite_calc_source_package(source);
     const std::vector<std::filesystem::path> temp_files_before =
         package_editor_temp_files();
 
@@ -1637,9 +1640,9 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
             "cell replacement handoff should keep worksheet in the edit plan");
         check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
             "cell replacement handoff should expose staged stream rewrite mode");
-        check(worksheet_plan->reason.find("file-backed stream rewrite")
+        check(worksheet_plan->reason.find("indexed direct-range")
                 != std::string::npos,
-            "cell replacement handoff should describe file-backed staged transformer output");
+            "cell replacement handoff should describe indexed source-entry staged output");
         check_manifest_write_mode(editor, worksheet_part,
             fastxlsx::detail::PartWriteMode::StreamRewrite,
             "cell replacement handoff manifest should mirror staged stream rewrite mode");
@@ -1651,40 +1654,33 @@ void test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_trans
         const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
         check(output_plan.full_calculation_on_load,
             "cell replacement output plan should expose full calculation request");
-        check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
-            "cell replacement output plan should expose file-backed chunk handoff note");
         check(has_note_containing(output_plan.notes,
-                  {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
-            "cell replacement output plan should expose direct source-entry chunk source");
+                  {"indexed source-entry direct-range", "matched 1 replacement targets"}),
+            "cell replacement output plan should expose indexed source-entry fast path note");
         check(has_note_containing(output_plan.notes,
-                  {"source package worksheet XML", "transformer chunk-source adapter"}),
-            "cell replacement output plan should expose source chunk transformer input");
-        check(has_note_containing(output_plan.notes,
-                  {"dependency and dimension analysis", "transformer chunk-source adapter"}),
-            "cell replacement output plan should expose chunked dependency/dimension analysis");
-        check(has_note_containing(output_plan.notes,
-                  {"relationship-id audit", "transformer chunk-source adapter"}),
-            "cell replacement output plan should expose chunked relationship-id audit");
-        check(has_note_containing(output_plan.notes,
-                  {"root validation", "event-reader chunk-source validator"}),
-            "cell replacement output plan should expose chunk-source root validation");
-        check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
-            "cell replacement output plan should expose dimension refresh note");
-        check(has_note_containing(output_plan.notes,
-                  {"one prevalidated non-owning replacement lookup plan",
-                      "dependency/dimension analysis pass",
-                      "dimension-refreshed output pass",
-                      "without reparsing replacement cell payloads",
-                      "rebuilding selector lookup"}),
-            "cell replacement output plan should expose replacement lookup plan reuse");
-        check(has_note_containing(output_plan.notes,
-                  {"explicit replacement payload chunks",
-                      "rather than raw string fields",
-                      "bounded single-cell XML limit"}),
-            "cell replacement output plan should expose explicit payload-chunk boundary");
+                  {"indexed source-entry fast path", "source package file ranges"}),
+            "cell replacement output plan should expose direct source file-range preservation");
         check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
             fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
             "cell replacement output plan should stream-rewrite worksheet chunks");
+        check_output_entry_staged_replacement_chunks(output_plan.entries,
+            "xl/worksheets/sheet1.xml", true,
+            "cell replacement output plan should expose staged worksheet chunks");
+        check_output_entry_materialized_replacement(output_plan.entries,
+            "xl/worksheets/sheet1.xml", false,
+            "cell replacement output plan should avoid materialized worksheet XML");
+        const auto* output_entry_plan =
+            find_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml");
+        check(output_entry_plan != nullptr,
+            "cell replacement output plan should include worksheet entry");
+        check(output_entry_plan->staged_replacement_file_range_chunk_count > 0,
+            "cell replacement output plan should preserve source XML as file ranges");
+        check(output_entry_plan->staged_replacement_memory_chunk_count == 1,
+            "cell replacement output plan should stage only replacement cell XML in memory");
+        check(output_entry_plan->staged_replacement_expected_bytes_complete,
+            "cell replacement output plan should expose complete staged output byte count");
+        check(output_entry_plan->reason.find("indexed direct-range") != std::string::npos,
+            "cell replacement output entry should describe indexed source-entry output");
         check_output_entry_plan(output_plan.entries, "xl/workbook.xml",
             fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
             "cell replacement output plan should local-rewrite workbook metadata");
@@ -2455,7 +2451,7 @@ int main(int argc, char* argv[])
         std::cout << "fastxlsx.package_editor shard: " << shard << '\n';
 
         if (should_run_package_editor_shard(shard, "c5")) {
-            test_package_editor_replaces_worksheet_cells_by_name_with_file_backed_transformer_handoff();
+            test_package_editor_replaces_worksheet_cells_by_name_with_indexed_source_entry_fast_path();
             test_package_editor_replaces_worksheet_cells_with_chunked_payload();
             test_package_editor_contextualizes_current_worksheet_source_read_failure_without_state_changes();
             test_package_editor_contextualizes_missing_current_worksheet_entry_without_state_changes();

@@ -74,10 +74,11 @@ void test_pending_materialized_names_follow_current_catalog_order()
 void test_materialized_flush_target_validation_accepts_current_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
-    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection> projections {
-        fastxlsx::detail::MaterializedWorksheetProjection {
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection> projections {
+        fastxlsx::detail::MaterializedWorksheetSheetDataProjection {
             "Data",
             [](std::string&) { return false; },
+            "A1",
         },
     };
 
@@ -88,10 +89,11 @@ void test_materialized_flush_target_validation_accepts_current_names()
 void test_materialized_flush_target_validation_rejects_missing_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
-    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection> projections {
-        fastxlsx::detail::MaterializedWorksheetProjection {
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection> projections {
+        fastxlsx::detail::MaterializedWorksheetSheetDataProjection {
             "Missing",
             [](std::string&) { return false; },
+            "A1",
         },
     };
 

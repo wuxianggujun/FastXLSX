@@ -1,6 +1,7 @@
 #include "../src/package_editor.hpp"
 #include "../src/package_reader.hpp"
 #include "../src/package_writer.hpp"
+#include "../src/workbook_editor_package_diagnostics.hpp"
 
 #include <fastxlsx/workbook_editor.hpp>
 
@@ -17,7 +18,6 @@
 #include <iostream>
 #include <limits>
 #include <memory>
-#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -65,6 +65,7 @@ struct Options {
     std::uint32_t cols = 10;
     std::uint32_t edits = 1000;
     bool verify_output = true;
+    bool reuse_source = false;
     EditorApi editor_api = EditorApi::PublicWorkbookEditor;
     RewriteStrategy rewrite_strategy = RewriteStrategy::Transformer;
     std::filesystem::path source =
@@ -98,7 +99,10 @@ struct RunStats {
     std::uint64_t source_package_bytes = 0;
     std::uint64_t output_package_bytes = 0;
     std::uint64_t peak_memory_bytes = 0;
+    bool output_plan_observed = false;
     std::size_t output_plan_note_count = 0;
+    bool output_plan_indexed_source_entry_fast_path = false;
+    bool output_plan_transformer_fallback = false;
     bool output_verified = false;
     bool output_contains_first_replacement = false;
     bool output_contains_tail_cell = false;
@@ -106,12 +110,27 @@ struct RunStats {
     bool plan_reports_file_backed_stream_rewrite = false;
     bool output_plan_staged_replacement_chunks = false;
     bool output_plan_materialized_replacement = false;
+    std::uint64_t output_plan_staged_replacement_chunk_count = 0;
+    std::uint64_t output_plan_staged_replacement_memory_chunk_count = 0;
+    std::uint64_t output_plan_staged_replacement_file_chunk_count = 0;
+    std::uint64_t output_plan_staged_replacement_file_range_chunk_count = 0;
+    std::uint64_t output_plan_staged_replacement_expected_bytes = 0;
+    std::uint64_t output_plan_staged_replacement_memory_bytes = 0;
+    std::uint64_t output_plan_staged_replacement_file_bytes = 0;
+    std::uint64_t output_plan_staged_replacement_file_range_bytes = 0;
+    bool output_plan_staged_replacement_expected_bytes_complete = false;
     bool public_facade_reports_targeted_cells = false;
     std::uint64_t public_facade_targeted_cell_count = 0;
     std::uint64_t public_facade_replacement_xml_bytes = 0;
     std::uint64_t indexed_source_cell_count = 0;
     std::uint64_t indexed_matched_replacement_count = 0;
     std::uint64_t indexed_staged_output_bytes = 0;
+    std::uint64_t output_plan_indexed_source_entry_source_range_chunk_ms = 0;
+    std::uint64_t output_plan_indexed_source_entry_target_plan_ms = 0;
+    std::uint64_t output_plan_indexed_source_entry_payload_audit_ms = 0;
+    std::uint64_t output_plan_indexed_source_entry_relationship_audit_ms = 0;
+    std::uint64_t output_plan_indexed_source_entry_descriptor_ms = 0;
+    std::uint64_t output_plan_indexed_source_entry_commit_ms = 0;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -248,6 +267,8 @@ Options parse_args(int argc, char** argv)
             options.editor_api = parse_editor_api(next_value());
         } else if (arg == "--rewrite-strategy") {
             options.rewrite_strategy = parse_rewrite_strategy(next_value());
+        } else if (arg == "--reuse-source") {
+            options.reuse_source = true;
         } else if (arg == "--no-verify-output") {
             options.verify_output = false;
         } else if (arg == "--help" || arg == "-h") {
@@ -258,6 +279,7 @@ Options parse_args(int argc, char** argv)
                 << "--output edited.xlsx --result result.json "
                 << "[--editor-api public-workbook-editor|internal-package-editor] "
                 << "[--rewrite-strategy transformer|indexed-staged] "
+                << "[--reuse-source] "
                 << "[--no-verify-output]\n"
                 << "The tool builds a stored source package with a file-backed "
                 << "worksheet entry, patches existing cells through the public "
@@ -289,6 +311,32 @@ std::uint64_t milliseconds_since(std::chrono::steady_clock::time_point start)
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now() - start)
             .count());
+}
+
+std::uint64_t existing_file_size(const std::filesystem::path& path, std::string_view purpose)
+{
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    if (error) {
+        fail("failed to measure " + std::string(purpose) + ": " + path.string());
+    }
+    if (size > static_cast<std::uintmax_t>(std::numeric_limits<std::uint64_t>::max())) {
+        fail(std::string(purpose) + " is too large: " + path.string());
+    }
+    return static_cast<std::uint64_t>(size);
+}
+
+std::uint64_t existing_file_size_or_zero(const std::filesystem::path& path)
+{
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    if (error) {
+        return 0;
+    }
+    if (size > static_cast<std::uintmax_t>(std::numeric_limits<std::uint64_t>::max())) {
+        fail("source body file is too large: " + path.string());
+    }
+    return static_cast<std::uint64_t>(size);
 }
 
 std::uint64_t peak_memory_bytes()
@@ -428,22 +476,59 @@ private:
             if (!input_) {
                 fail("failed to open benchmark source worksheet body chunk");
             }
+            if (chunk.has_file_range) {
+                if (chunk.file_offset > static_cast<std::uint64_t>(
+                        std::numeric_limits<std::streamoff>::max())) {
+                    fail("benchmark source worksheet file range offset is too large");
+                }
+                input_.seekg(static_cast<std::streamoff>(chunk.file_offset), std::ios::beg);
+                if (!input_) {
+                    fail("failed to seek benchmark source worksheet file range");
+                }
+                file_read_limit_ = chunk.file_size;
+                file_bytes_read_ = 0;
+            } else {
+                file_read_limit_.reset();
+                file_bytes_read_ = 0;
+            }
             file_open_ = true;
         }
 
-        input_.read(buffer_.data(), static_cast<std::streamsize>(buffer_.size()));
+        std::size_t requested = buffer_.size();
+        if (file_read_limit_) {
+            if (file_bytes_read_ == *file_read_limit_) {
+                input_.close();
+                input_.clear();
+                file_open_ = false;
+                file_read_limit_.reset();
+                file_bytes_read_ = 0;
+                ++chunk_index_;
+                return false;
+            }
+            requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(*file_read_limit_ - file_bytes_read_,
+                    static_cast<std::uint64_t>(buffer_.size())));
+        }
+
+        input_.read(buffer_.data(), static_cast<std::streamsize>(requested));
         const std::streamsize read_size = input_.gcount();
         if (input_.bad()) {
             fail("failed to read benchmark source worksheet body chunk");
         }
         if (read_size > 0) {
             output_chunk.assign(buffer_.data(), static_cast<std::size_t>(read_size));
+            file_bytes_read_ += static_cast<std::uint64_t>(read_size);
             return true;
+        }
+        if (file_read_limit_) {
+            fail("benchmark source worksheet file range ended before requested bytes");
         }
 
         input_.close();
         input_.clear();
         file_open_ = false;
+        file_read_limit_.reset();
+        file_bytes_read_ = 0;
         ++chunk_index_;
         return false;
     }
@@ -451,6 +536,8 @@ private:
     const std::vector<fastxlsx::detail::PackageEntryChunk>& chunks_;
     std::size_t chunk_index_ = 0;
     bool file_open_ = false;
+    std::optional<std::uint64_t> file_read_limit_;
+    std::uint64_t file_bytes_read_ = 0;
     std::ifstream input_;
     std::array<char, kBenchmarkChunkSize> buffer_ {};
 };
@@ -604,17 +691,6 @@ std::vector<fastxlsx::WorksheetCellUpdate> make_public_replacements(const Option
     return replacements;
 }
 
-std::filesystem::path indexed_staged_worksheet_temp_path(const Options& options)
-{
-    const std::string filename = options.output.filename().empty()
-        ? std::string("fastxlsx-package-editor-cell-replacement-output.xlsx")
-        : options.output.filename().string();
-    const std::filesystem::path temp_name =
-        std::filesystem::path(filename + ".indexed-staged-worksheet.xml.tmp");
-    const std::filesystem::path parent = options.output.parent_path();
-    return parent.empty() ? temp_name : parent / temp_name;
-}
-
 void remove_file_if_exists(
     const std::filesystem::path& path,
     std::string_view purpose)
@@ -633,7 +709,7 @@ std::filesystem::path apply_indexed_staged_replacement(
     RunStats& stats)
 {
     std::vector<fastxlsx::detail::PackageEntryChunk> source_chunks =
-        source_worksheet_chunks(options);
+        editor.source_worksheet_part_stored_entry_chunks_by_name("Data");
 
     const fastxlsx::detail::WorksheetCellReplacementPlan replacement_plan =
         fastxlsx::detail::make_worksheet_cell_replacement_plan(replacements);
@@ -648,56 +724,30 @@ std::filesystem::path apply_indexed_staged_replacement(
     const fastxlsx::detail::WorksheetTargetedCellRewritePlan targeted_plan =
         fastxlsx::detail::plan_targeted_cell_rewrites_from_chunk_source(
             make_benchmark_chunk_source(source_chunks),
-            target_references);
+            target_references,
+            {},
+            true);
     stats.timings.index_build_ms = milliseconds_since(phase_started);
     stats.indexed_source_cell_count = targeted_plan.scanned_source_cell_count;
 
     phase_started = std::chrono::steady_clock::now();
-    const std::filesystem::path staged_worksheet_path =
-        indexed_staged_worksheet_temp_path(options);
-    ensure_parent_directory(staged_worksheet_path);
-    remove_file_if_exists(staged_worksheet_path, "stale indexed staged worksheet temp file");
-
-    std::ofstream staged_worksheet(staged_worksheet_path, std::ios::binary);
-    if (!staged_worksheet) {
-        fail("failed to open indexed staged worksheet temp file");
-    }
-
-    const fastxlsx::detail::WorksheetTransformSummary summary =
-        fastxlsx::detail::emit_indexed_cell_replacement_from_package_entry_chunks(
+    fastxlsx::detail::IndexedPackageEntryChunkReplacementResult descriptor_result =
+        fastxlsx::detail::make_indexed_cell_replacement_package_entry_chunks(
             source_chunks,
             targeted_plan.rewrites,
-            replacement_plan,
-            [&](std::string_view chunk) {
-                staged_worksheet.write(
-                    chunk.data(), static_cast<std::streamsize>(chunk.size()));
-                if (!staged_worksheet) {
-                    fail("failed to write indexed staged worksheet temp file");
-                }
-            });
-
-    staged_worksheet.close();
-    if (!staged_worksheet) {
-        fail("failed to finalize indexed staged worksheet temp file");
-    }
+            replacement_plan);
     stats.timings.indexed_emit_ms = milliseconds_since(phase_started);
     stats.indexed_matched_replacement_count =
-        static_cast<std::uint64_t>(summary.matched_replacement_count);
-    stats.indexed_staged_output_bytes =
-        static_cast<std::uint64_t>(std::filesystem::file_size(staged_worksheet_path));
-
-    fastxlsx::detail::PackageEntryChunk output_chunk =
-        fastxlsx::detail::PackageEntryChunk::file(staged_worksheet_path);
-    output_chunk.has_expected_size = true;
-    output_chunk.expected_size = stats.indexed_staged_output_bytes;
+        static_cast<std::uint64_t>(descriptor_result.summary.matched_replacement_count);
+    stats.indexed_staged_output_bytes = descriptor_result.output_bytes;
 
     phase_started = std::chrono::steady_clock::now();
-    editor.replace_worksheet_part_chunks_by_name("Data",
-        {std::move(output_chunk)},
+    editor.replace_worksheet_part_prevalidated_chunks_by_name("Data",
+        std::move(descriptor_result.chunks),
         {},
-        "benchmark indexed staged strict cell replacement");
+        "benchmark indexed direct-range staged strict cell replacement");
     stats.timings.indexed_stage_commit_ms = milliseconds_since(phase_started);
-    return staged_worksheet_path;
+    return {};
 }
 
 bool note_contains_all(std::string_view note, std::initializer_list<std::string_view> needles)
@@ -737,6 +787,7 @@ void observe_output_plan(
     const fastxlsx::detail::PackageEditorOutputPlan& plan,
     RunStats& stats)
 {
+    stats.output_plan_observed = true;
     stats.output_plan_note_count = plan.notes.size();
     stats.plan_reports_source_entry_chunk_source =
         has_note_containing(plan.notes,
@@ -750,7 +801,61 @@ void observe_output_plan(
             worksheet_entry->staged_replacement_chunks;
         stats.output_plan_materialized_replacement =
             worksheet_entry->materialized_replacement;
+        stats.output_plan_staged_replacement_chunk_count =
+            static_cast<std::uint64_t>(
+                worksheet_entry->staged_replacement_chunk_count);
+        stats.output_plan_staged_replacement_memory_chunk_count =
+            static_cast<std::uint64_t>(
+                worksheet_entry->staged_replacement_memory_chunk_count);
+        stats.output_plan_staged_replacement_file_chunk_count =
+            static_cast<std::uint64_t>(
+                worksheet_entry->staged_replacement_file_chunk_count);
+        stats.output_plan_staged_replacement_file_range_chunk_count =
+            static_cast<std::uint64_t>(
+                worksheet_entry->staged_replacement_file_range_chunk_count);
+        stats.output_plan_staged_replacement_expected_bytes =
+            worksheet_entry->staged_replacement_expected_bytes;
+        stats.output_plan_staged_replacement_memory_bytes =
+            worksheet_entry->staged_replacement_memory_bytes;
+        stats.output_plan_staged_replacement_file_bytes =
+            worksheet_entry->staged_replacement_file_bytes;
+        stats.output_plan_staged_replacement_file_range_bytes =
+            worksheet_entry->staged_replacement_file_range_bytes;
+        stats.output_plan_staged_replacement_expected_bytes_complete =
+            worksheet_entry->staged_replacement_expected_bytes_complete;
+        if (worksheet_entry->indexed_source_entry_direct_range) {
+            stats.output_plan_indexed_source_entry_fast_path = true;
+            stats.indexed_source_cell_count =
+                worksheet_entry->indexed_source_entry_scanned_source_cell_count;
+            stats.indexed_matched_replacement_count =
+                worksheet_entry->indexed_source_entry_matched_replacement_count;
+            stats.indexed_staged_output_bytes =
+                worksheet_entry->indexed_source_entry_staged_output_bytes;
+            stats.output_plan_indexed_source_entry_source_range_chunk_ms =
+                worksheet_entry->indexed_source_entry_source_range_chunk_ms;
+            stats.output_plan_indexed_source_entry_target_plan_ms =
+                worksheet_entry->indexed_source_entry_target_plan_ms;
+            stats.output_plan_indexed_source_entry_payload_audit_ms =
+                worksheet_entry->indexed_source_entry_payload_audit_ms;
+            stats.output_plan_indexed_source_entry_relationship_audit_ms =
+                worksheet_entry->indexed_source_entry_relationship_audit_ms;
+            stats.output_plan_indexed_source_entry_descriptor_ms =
+                worksheet_entry->indexed_source_entry_descriptor_ms;
+            stats.output_plan_indexed_source_entry_commit_ms =
+                worksheet_entry->indexed_source_entry_commit_ms;
+        }
+        if (worksheet_entry->reason.find("indexed direct-range") != std::string::npos) {
+            stats.output_plan_indexed_source_entry_fast_path = true;
+        }
     }
+    stats.output_plan_indexed_source_entry_fast_path =
+        stats.output_plan_indexed_source_entry_fast_path
+        || has_note_containing(plan.notes,
+            {"indexed source-entry direct-range", "staged chunks"});
+    stats.output_plan_transformer_fallback =
+        !stats.output_plan_indexed_source_entry_fast_path
+        && has_note_containing(plan.notes,
+            {"PackageReader ZIP-entry chunk source", "transformer chunk-source adapter"});
 }
 
 bool stream_contains_all(fastxlsx::detail::PackageReaderChunkCallback source,
@@ -831,6 +936,18 @@ void write_result_json(const Options& options, const RunStats& stats)
     if (!out) {
         fail("failed to open benchmark result file");
     }
+    const std::string_view package_entry_source_mode =
+        stats.output_plan_indexed_source_entry_fast_path
+        ? std::string_view("source-package-worksheet-entry-direct-range-chunks")
+        : (options.rewrite_strategy == RewriteStrategy::IndexedStaged
+                ? std::string_view("source-package-worksheet-entry-direct-range-chunks")
+                : std::string_view("source-zip-entry-chunk-source"));
+    const std::string_view output_entry_mode =
+        stats.output_plan_indexed_source_entry_fast_path
+        ? std::string_view("indexed-source-entry-direct-range-staged-chunks")
+        : (options.rewrite_strategy == RewriteStrategy::IndexedStaged
+                ? std::string_view("indexed-staged-source-range-chunk-replacement")
+                : std::string_view("file-backed-stream-rewrite"));
 
     out << "{\n";
     out << "  \"package_editor_cell_replacement_benchmark_schema_version\": \""
@@ -843,6 +960,9 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"editor_api\": \"" << editor_api_name(options.editor_api) << "\",\n";
     out << "  \"rewrite_strategy\": \""
         << rewrite_strategy_name(options.rewrite_strategy) << "\",\n";
+    out << "  \"source_fixture_mode\": \""
+        << (options.reuse_source ? "reused-existing-source" : "generated-source")
+        << "\",\n";
     out << "  \"source_body_write_ms\": " << stats.timings.source_body_write_ms << ",\n";
     out << "  \"source_package_write_ms\": " << stats.timings.source_package_write_ms << ",\n";
     out << "  \"open_ms\": " << stats.timings.open_ms << ",\n";
@@ -859,7 +979,13 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"source_body_bytes\": " << stats.source_body_bytes << ",\n";
     out << "  \"source_package_bytes\": " << stats.source_package_bytes << ",\n";
     out << "  \"output_package_bytes\": " << stats.output_package_bytes << ",\n";
+    out << "  \"output_plan_observed\": "
+        << (stats.output_plan_observed ? "true" : "false") << ",\n";
     out << "  \"output_plan_note_count\": " << stats.output_plan_note_count << ",\n";
+    out << "  \"output_plan_indexed_source_entry_fast_path\": "
+        << (stats.output_plan_indexed_source_entry_fast_path ? "true" : "false") << ",\n";
+    out << "  \"output_plan_transformer_fallback\": "
+        << (stats.output_plan_transformer_fallback ? "true" : "false") << ",\n";
     out << "  \"plan_reports_source_entry_chunk_source\": "
         << (stats.plan_reports_source_entry_chunk_source ? "true" : "false") << ",\n";
     out << "  \"plan_reports_file_backed_stream_rewrite\": "
@@ -868,6 +994,25 @@ void write_result_json(const Options& options, const RunStats& stats)
         << (stats.output_plan_staged_replacement_chunks ? "true" : "false") << ",\n";
     out << "  \"output_plan_materialized_replacement\": "
         << (stats.output_plan_materialized_replacement ? "true" : "false") << ",\n";
+    out << "  \"output_plan_staged_replacement_chunk_count\": "
+        << stats.output_plan_staged_replacement_chunk_count << ",\n";
+    out << "  \"output_plan_staged_replacement_memory_chunk_count\": "
+        << stats.output_plan_staged_replacement_memory_chunk_count << ",\n";
+    out << "  \"output_plan_staged_replacement_file_chunk_count\": "
+        << stats.output_plan_staged_replacement_file_chunk_count << ",\n";
+    out << "  \"output_plan_staged_replacement_file_range_chunk_count\": "
+        << stats.output_plan_staged_replacement_file_range_chunk_count << ",\n";
+    out << "  \"output_plan_staged_replacement_expected_bytes\": "
+        << stats.output_plan_staged_replacement_expected_bytes << ",\n";
+    out << "  \"output_plan_staged_replacement_memory_bytes\": "
+        << stats.output_plan_staged_replacement_memory_bytes << ",\n";
+    out << "  \"output_plan_staged_replacement_file_bytes\": "
+        << stats.output_plan_staged_replacement_file_bytes << ",\n";
+    out << "  \"output_plan_staged_replacement_file_range_bytes\": "
+        << stats.output_plan_staged_replacement_file_range_bytes << ",\n";
+    out << "  \"output_plan_staged_replacement_expected_bytes_complete\": "
+        << (stats.output_plan_staged_replacement_expected_bytes_complete ? "true" : "false")
+        << ",\n";
     out << "  \"public_facade_reports_targeted_cells\": "
         << (stats.public_facade_reports_targeted_cells ? "true" : "false") << ",\n";
     out << "  \"public_facade_targeted_cell_count\": "
@@ -880,6 +1025,18 @@ void write_result_json(const Options& options, const RunStats& stats)
         << stats.indexed_matched_replacement_count << ",\n";
     out << "  \"indexed_staged_output_bytes\": "
         << stats.indexed_staged_output_bytes << ",\n";
+    out << "  \"output_plan_indexed_source_entry_source_range_chunk_ms\": "
+        << stats.output_plan_indexed_source_entry_source_range_chunk_ms << ",\n";
+    out << "  \"output_plan_indexed_source_entry_target_plan_ms\": "
+        << stats.output_plan_indexed_source_entry_target_plan_ms << ",\n";
+    out << "  \"output_plan_indexed_source_entry_payload_audit_ms\": "
+        << stats.output_plan_indexed_source_entry_payload_audit_ms << ",\n";
+    out << "  \"output_plan_indexed_source_entry_relationship_audit_ms\": "
+        << stats.output_plan_indexed_source_entry_relationship_audit_ms << ",\n";
+    out << "  \"output_plan_indexed_source_entry_descriptor_ms\": "
+        << stats.output_plan_indexed_source_entry_descriptor_ms << ",\n";
+    out << "  \"output_plan_indexed_source_entry_commit_ms\": "
+        << stats.output_plan_indexed_source_entry_commit_ms << ",\n";
     out << "  \"output_verified\": "
         << (stats.output_verified ? "true" : "false") << ",\n";
     out << "  \"output_contains_first_replacement\": "
@@ -894,16 +1051,8 @@ void write_result_json(const Options& options, const RunStats& stats)
                         ? "internal-package-editor-indexed-staged-cell-replacement"
                         : "internal-package-editor-transformer-cell-replacement"))
         << "\",\n";
-    out << "  \"package_entry_source_mode\": \""
-        << (options.rewrite_strategy == RewriteStrategy::IndexedStaged
-                ? "benchmark-prefix-body-file-suffix-staged-chunks"
-                : "source-zip-entry-chunk-source")
-        << "\",\n";
-    out << "  \"output_entry_mode\": \""
-        << (options.rewrite_strategy == RewriteStrategy::IndexedStaged
-                ? "indexed-staged-file-backed-worksheet-replacement"
-                : "file-backed-stream-rewrite")
-        << "\",\n";
+    out << "  \"package_entry_source_mode\": \"" << package_entry_source_mode << "\",\n";
+    out << "  \"output_entry_mode\": \"" << output_entry_mode << "\",\n";
     out << "  \"office_open\": \"not_run\",\n";
     out << "  \"source\": \"" << json_escape(options.source.generic_string()) << "\",\n";
     out << "  \"source_body\": \"" << json_escape(options.source_body.generic_string()) << "\",\n";
@@ -918,14 +1067,20 @@ RunStats run_benchmark(const Options& options)
     const auto total_started = std::chrono::steady_clock::now();
 
     auto phase_started = std::chrono::steady_clock::now();
-    stats.source_body_bytes = write_source_worksheet_body(options);
-    stats.timings.source_body_write_ms = milliseconds_since(phase_started);
+    if (options.reuse_source) {
+        stats.source_body_bytes = existing_file_size_or_zero(options.source_body);
+        stats.source_package_bytes =
+            existing_file_size(options.source, "source package");
+    } else {
+        stats.source_body_bytes = write_source_worksheet_body(options);
+        stats.timings.source_body_write_ms = milliseconds_since(phase_started);
 
-    phase_started = std::chrono::steady_clock::now();
-    write_source_package(options);
-    stats.timings.source_package_write_ms = milliseconds_since(phase_started);
-    stats.source_package_bytes =
-        static_cast<std::uint64_t>(std::filesystem::file_size(options.source));
+        phase_started = std::chrono::steady_clock::now();
+        write_source_package(options);
+        stats.timings.source_package_write_ms = milliseconds_since(phase_started);
+        stats.source_package_bytes =
+            existing_file_size(options.source, "source package");
+    }
 
     phase_started = std::chrono::steady_clock::now();
     std::optional<fastxlsx::detail::PackageEditor> internal_editor;
@@ -963,7 +1118,12 @@ RunStats run_benchmark(const Options& options)
         }
     }
     stats.timings.patch_plan_ms = milliseconds_since(phase_started);
-    if (internal_editor.has_value()) {
+    if (public_editor.has_value()) {
+        observe_output_plan(
+            fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(
+                *public_editor),
+            stats);
+    } else if (internal_editor.has_value()) {
         observe_output_plan(internal_editor->planned_output(), stats);
     }
 
@@ -975,7 +1135,8 @@ RunStats run_benchmark(const Options& options)
         internal_editor->save_as(options.output);
     }
     stats.timings.save_ms = milliseconds_since(phase_started);
-    if (indexed_staged_worksheet_path.has_value()) {
+    if (indexed_staged_worksheet_path.has_value()
+        && !indexed_staged_worksheet_path->empty()) {
         remove_file_if_exists(
             *indexed_staged_worksheet_path, "indexed staged worksheet temp file");
     }
@@ -1003,7 +1164,8 @@ int main(int argc, char** argv)
     try {
         const Options options = parse_args(argc, argv);
         const RunStats stats = run_benchmark(options);
-        std::cout << "Wrote " << options.source.string() << '\n';
+        std::cout << (options.reuse_source ? "Reused " : "Wrote ")
+                  << options.source.string() << '\n';
         std::cout << "Wrote " << options.output.string() << '\n';
         std::cout << "Wrote " << options.result.string() << '\n';
         std::cout << "Patch edit total: " << stats.timings.total_edit_ms << " ms\n";

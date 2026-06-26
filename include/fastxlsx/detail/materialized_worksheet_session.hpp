@@ -126,6 +126,23 @@ public:
         dirty_ = true;
     }
 
+    void clear_cell_values()
+    {
+        std::vector<CellStoreUpdate> updates;
+        updates.reserve(store_.cell_count());
+        const CellValue blank_value = CellValue::blank();
+        for (const auto& [position, record] : store_.records()) {
+            (void)record;
+            updates.push_back(CellStoreUpdate {position, &blank_value});
+        }
+
+        if (updates.empty()) {
+            return;
+        }
+
+        set_cells(updates, CellStoreBatchStylePolicy::PreserveExistingStyles);
+    }
+
     void clear_cell_values(const CellRange& range)
     {
         std::vector<CellStoreUpdate> updates;
@@ -155,6 +172,21 @@ public:
                 position.column < range.first_column || position.column > range.last_column) {
                 continue;
             }
+            positions.push_back(position);
+        }
+
+        if (positions.empty()) {
+            return;
+        }
+        apply_cell_edits(positions, std::span<const CellStoreUpdate>());
+    }
+
+    void erase_cells()
+    {
+        std::vector<CellPosition> positions;
+        positions.reserve(store_.cell_count());
+        for (const auto& [position, record] : store_.records()) {
+            (void)record;
             positions.push_back(position);
         }
 
@@ -232,6 +264,29 @@ public:
         return cell_store_worksheet_chunk_source(store_);
     }
 
+    /// Creates a standalone `<sheetData>` chunk source from the current
+    /// materialized sparse store.
+    ///
+    /// This is the preferred save-as handoff when the source worksheet wrapper
+    /// should be preserved and only sheetData should be replaced. The callback
+    /// references this session's CellStore; callers must keep the session alive
+    /// and unmodified until the callback is fully consumed.
+    [[nodiscard]] WorksheetInputChunkCallback sheet_data_chunk_source(
+        std::shared_ptr<const CellStoreSharedStringIndexProvider>
+            shared_string_index_provider = {}) const
+    {
+        if (shared_string_index_provider) {
+            return cell_store_sheet_data_chunk_source_with_shared_strings(
+                store_, std::move(shared_string_index_provider));
+        }
+        return cell_store_sheet_data_chunk_source(store_);
+    }
+
+    [[nodiscard]] std::string dimension_reference() const
+    {
+        return cell_store_dimension_reference(store_);
+    }
+
 private:
     std::string planned_name_;
     CellStore store_;
@@ -241,6 +296,12 @@ private:
 struct MaterializedWorksheetProjection {
     std::string_view planned_name;
     WorksheetInputChunkCallback read_next_chunk;
+};
+
+struct MaterializedWorksheetSheetDataProjection {
+    std::string_view planned_name;
+    WorksheetInputChunkCallback read_next_chunk;
+    std::string dimension_reference;
 };
 
 /// Internal registry for WorkbookEditor-owned materialized worksheet sessions.
@@ -432,6 +493,32 @@ public:
                 MaterializedWorksheetProjection {
                     session.planned_name(),
                     session.worksheet_chunk_source(shared_string_index_provider),
+                });
+        }
+        return projections;
+    }
+
+    /// Creates standalone `<sheetData>` chunk sources for dirty materialized
+    /// sessions while carrying the sparse-store dimension reference.
+    ///
+    /// Returned names and callbacks reference registry-owned sessions. Callers
+    /// must keep this registry alive and avoid mutating the corresponding
+    /// sessions until the callbacks are fully consumed.
+    [[nodiscard]] std::vector<MaterializedWorksheetSheetDataProjection>
+    dirty_sheet_data_chunk_sources(
+        std::shared_ptr<const CellStoreSharedStringIndexProvider>
+            shared_string_index_provider = {}) const
+    {
+        std::vector<MaterializedWorksheetSheetDataProjection> projections;
+        for (const auto& [_, session] : sessions_) {
+            if (!session.dirty()) {
+                continue;
+            }
+            projections.push_back(
+                MaterializedWorksheetSheetDataProjection {
+                    session.planned_name(),
+                    session.sheet_data_chunk_source(shared_string_index_provider),
+                    session.dimension_reference(),
                 });
         }
         return projections;

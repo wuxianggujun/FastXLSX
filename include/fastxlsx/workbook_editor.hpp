@@ -24,6 +24,8 @@ class WorksheetEditor;
 
 namespace detail {
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
+struct WorkbookEditorPackagePlanAccessor;
+
 void testing_workbook_editor_materialize_source_sheet(
     WorkbookEditor& editor,
     std::string_view planned_name,
@@ -638,14 +640,15 @@ struct WorkbookEditorRenameOptions {
 /// `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
 /// `set_column_values()` can replace cell values while preserving currently
 /// materialized source style handles on those coordinates.
-/// `clear_cell_value()`, `clear_row()`, `clear_rows()`, `clear_column()`,
-/// `clear_columns()`, and the `clear_cell_values()` overloads can turn existing
+/// `clear_cell_value()`, no-argument `clear_cell_values()`, `clear_row()`,
+/// `clear_rows()`, `clear_column()`, `clear_columns()`, and the
+/// `clear_cell_values()` range / batch overloads can turn existing
 /// materialized cells into explicit blanks while preserving those same style
 /// handles; missing cells are successful no-ops and range or coordinate batch
 /// clears do not synthesize blank records for missing coordinates. This does
 /// not migrate or merge styles, synthesize styles for missing cells, create
 /// tombstones, or allow caller-supplied foreign style handles.
-/// `erase_cell()`, `erase_cells()`, `erase_row()`, `erase_rows()`,
+/// `erase_cell()`, the `erase_cells()` overloads, `erase_row()`, `erase_rows()`,
 /// `erase_column()`, and `erase_columns()` remove active sparse records instead
 /// of writing explicit blanks. Empty, valueless, unquoted, unterminated, padded,
 /// signed, leading-zero,
@@ -680,6 +683,27 @@ public:
     /// materialized session.
     [[nodiscard]] std::optional<CellValue> try_cell(
         std::string_view cell_reference) const;
+
+    /// Returns whether one cell is represented by the materialized sparse store.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. Row and
+    /// column are 1-based Excel coordinates. This checks represented state only:
+    /// explicit blank records return true, missing cells return false, and no
+    /// CellValue payload is copied. Invalid coordinates throw FastXlsxError and
+    /// do not update WorkbookEditor::last_edit_error(). This is not a dense
+    /// matrix probe, metadata read, worksheet `<dimension>` check, or large-file
+    /// low-memory random access API; it does not mutate, flush, or reload the
+    /// materialized session.
+    [[nodiscard]] bool contains_cell(std::uint32_t row, std::uint32_t column) const;
+
+    /// Returns whether a strict uppercase A1 cell reference is represented.
+    ///
+    /// The reference must name exactly one cell, such as `A1` or
+    /// `XFD1048576`. Lowercase references, ranges, zero or leading-zero rows,
+    /// and coordinates outside Excel limits throw FastXlsxError. This is a
+    /// parsing convenience over the row/column overload and preserves the same
+    /// represented-state, diagnostic, and non-mutating semantics.
+    [[nodiscard]] bool contains_cell(std::string_view cell_reference) const;
 
     /// Returns the sparse-store value for a cell.
     ///
@@ -1046,6 +1070,22 @@ public:
     /// row/column clear_cell_value() overload.
     void clear_cell_value(std::string_view cell_reference);
 
+    /// Clears every represented sparse cell value while preserving styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Every
+    /// active sparse record currently represented by the materialized store is
+    /// converted to an explicit blank. Existing source StyleId handles are
+    /// preserved per cell. An empty materialized store is a successful no-op
+    /// that does not dirty the session and clears prior public edit diagnostics.
+    ///
+    /// Dirty save_as() keeps represented coordinates as blank `<c>` cells and
+    /// may keep the worksheet dimension expanded to those coordinates. This is
+    /// not worksheet deletion, sheetData removal, dense range editing,
+    /// tombstone output, table/range metadata recalculation,
+    /// style migration/merge/creation, or a large-file low-memory random-editing
+    /// path.
+    void clear_cell_values();
+
     /// Clears represented values from one sparse row while preserving styles.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The row is
@@ -1181,6 +1221,20 @@ public:
     /// non-goals are identical.
     void clear_cell_values(std::initializer_list<WorksheetCellReference> cells);
 
+    /// Removes every represented sparse cell record.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. All active
+    /// sparse records currently represented by the materialized store are
+    /// removed. An empty materialized store is a successful no-op that does not
+    /// dirty the session and clears prior public edit diagnostics.
+    ///
+    /// Dirty save_as() omits erased sparse records from projected sheetData and
+    /// produces an empty sparse-store worksheet dimension (`A1`) when no records
+    /// remain. This is not worksheet deletion, sheetData part removal, row or
+    /// column shifting, tombstone output, table/range metadata recalculation,
+    /// relationship repair, or a large-file low-memory random-editing path.
+    void erase_cells();
+
     /// Removes sparse-store cell records inside a rectangular range.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. The
@@ -1281,6 +1335,19 @@ public:
     /// session and does not update WorkbookEditor::last_edit_error().
     [[nodiscard]] std::size_t cell_count() const;
 
+    /// Returns the minimal sparse-store bounding range for represented cells.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. Empty
+    /// materialized stores return std::nullopt. Non-empty stores return a
+    /// 1-based inclusive CellRange covering every active sparse record,
+    /// including explicit blank records. This is a sparse-state query, not a
+    /// worksheet `<dimension>` metadata read/repair, dense range read,
+    /// iterator, metadata recalculation, or large-file low-memory random access
+    /// API. It does not mutate dirty state, update
+    /// WorkbookEditor::last_edit_error(), flush, or reload the materialized
+    /// session.
+    [[nodiscard]] std::optional<CellRange> used_range() const;
+
     /// Returns an owning row-major snapshot of all active sparse cell records.
     ///
     /// API mode: In-memory / existing-workbook small-file inspection. This
@@ -1340,6 +1407,30 @@ public:
     /// session.
     [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells(
         std::string_view range_reference) const;
+
+    /// Returns owning snapshots for an explicit sparse coordinate batch.
+    ///
+    /// API mode: In-memory / existing-workbook small-file inspection. Each
+    /// coordinate is 1-based and validated against Excel worksheet limits. The
+    /// input order is respected, duplicate coordinates are allowed, and only
+    /// active sparse records currently present in the materialized store are
+    /// returned. Missing coordinates are skipped and are not synthesized as
+    /// blank snapshots. This is a convenience over sparse_cells(CellRange),
+    /// not a dense batch read, iterator API, metadata inspection, or
+    /// large-file low-memory random access path. It does not mutate dirty state,
+    /// update WorkbookEditor::last_edit_error(), flush, or reload the
+    /// materialized session.
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells(
+        std::span<const WorksheetCellReference> cells) const;
+
+    /// Returns owning snapshots for a small literal sparse coordinate batch.
+    ///
+    /// This convenience overload consumes the initializer-list synchronously and
+    /// delegates to the std::span overload, so coordinate preflight, duplicate
+    /// handling, missing-cell skipping, diagnostics, and non-goals are
+    /// identical.
+    [[nodiscard]] std::vector<WorksheetCellSnapshot> sparse_cells(
+        std::initializer_list<WorksheetCellReference> cells) const;
 
     /// Returns an owning row-major snapshot of active sparse records inside a
     /// rectangular range.
@@ -2289,6 +2380,16 @@ public:
         std::string new_name,
         WorkbookEditorRenameOptions options);
 
+    /// Requests workbook full-calculation metadata for the saved package.
+    ///
+    /// API mode: Patch / workbook metadata rewrite. This queues the same
+    /// workbook calc metadata helper used by worksheet rewrite paths: it sets
+    /// `fullCalcOnLoad="1"` on `xl/workbook.xml` and removes stale
+    /// `xl/calcChain.xml` when present. This does not evaluate formulas, repair
+    /// relationships, update defined names, or expose the internal calc-chain
+    /// policy surface.
+    void request_full_calculation();
+
     /// Writes the edited workbook to a new package path.
     ///
     /// This never edits the source package in place. It rejects an output path
@@ -2339,6 +2440,7 @@ private:
     friend std::vector<std::string>
     detail::testing_workbook_editor_dirty_materialized_session_names(
         const WorkbookEditor& editor);
+    friend struct detail::WorkbookEditorPackagePlanAccessor;
 #endif
     WorkbookEditor();
 

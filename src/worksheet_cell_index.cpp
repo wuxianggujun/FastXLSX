@@ -5,12 +5,12 @@
 #include <algorithm>
 #include <cctype>
 #include <limits>
-#include <map>
 #include <optional>
 #include <set>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -30,8 +30,9 @@ bool is_ascii_digit(char ch)
 
 std::uint32_t uppercase_column_value(char ch)
 {
-    const char upper =
-        static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+    const char upper = (ch >= 'a' && ch <= 'z')
+        ? static_cast<char>(ch - ('a' - 'A'))
+        : ch;
     return static_cast<std::uint32_t>(upper - 'A' + 1);
 }
 
@@ -183,17 +184,219 @@ std::uint64_t event_end_offset(const fastxlsx::detail::WorksheetEvent& event)
     return event.raw_xml_offset + static_cast<std::uint64_t>(event.raw_xml.size());
 }
 
+std::uint64_t checked_range_end_offset(std::uint64_t start, std::size_t size)
+{
+    if (static_cast<std::uint64_t>(size)
+        > std::numeric_limits<std::uint64_t>::max() - start) {
+        throw fastxlsx::FastXlsxError("worksheet cell index source offset overflow");
+    }
+    return start + static_cast<std::uint64_t>(size);
+}
+
+bool starts_with_at(std::string_view text, std::size_t position, std::string_view prefix)
+{
+    return position <= text.size() && text.substr(position, prefix.size()) == prefix;
+}
+
+bool xml_is_space(char ch)
+{
+    return std::isspace(static_cast<unsigned char>(ch)) != 0;
+}
+
+bool is_xml_declaration_tag(std::string_view raw)
+{
+    if (!starts_with_at(raw, 0, "<?xml")) {
+        return false;
+    }
+    if (raw.size() <= 5) {
+        return false;
+    }
+    const char after_target = raw[5];
+    return xml_is_space(after_target) || after_target == '?';
+}
+
+std::string_view local_xml_name(std::string_view name)
+{
+    const std::size_t colon = name.find(':');
+    if (colon == std::string_view::npos) {
+        return name;
+    }
+    return name.substr(colon + 1);
+}
+
+std::size_t find_xml_markup_end_or_npos(std::string_view xml, std::size_t open)
+{
+    char quote = '\0';
+    for (std::size_t index = open + 1; index < xml.size(); ++index) {
+        const char ch = xml[index];
+        if (quote != '\0') {
+            if (ch == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (ch == '"' || ch == '\'') {
+            quote = ch;
+            continue;
+        }
+        if (ch == '>') {
+            return index;
+        }
+    }
+    return std::string_view::npos;
+}
+
+std::size_t xml_tag_name_begin(std::string_view raw_tag)
+{
+    std::size_t position = 1;
+    if (position < raw_tag.size() && raw_tag[position] == '/') {
+        ++position;
+    }
+    const std::size_t limit = raw_tag.empty() ? 0 : raw_tag.size() - 1;
+    while (position < limit && xml_is_space(raw_tag[position])) {
+        ++position;
+    }
+    return position;
+}
+
+std::size_t xml_tag_name_end(std::string_view raw_tag, std::size_t position)
+{
+    const std::size_t limit = raw_tag.empty() ? 0 : raw_tag.size() - 1;
+    while (position < limit && !xml_is_space(raw_tag[position])
+        && raw_tag[position] != '/' && raw_tag[position] != '?'
+        && raw_tag[position] != '>') {
+        ++position;
+    }
+    return position;
+}
+
+std::string_view xml_element_name(std::string_view raw_tag)
+{
+    const std::size_t begin = xml_tag_name_begin(raw_tag);
+    const std::size_t end = xml_tag_name_end(raw_tag, begin);
+    if (begin == end) {
+        throw fastxlsx::FastXlsxError("worksheet cell index found an empty XML tag");
+    }
+    return local_xml_name(raw_tag.substr(begin, end - begin));
+}
+
+bool is_xml_closing_tag(std::string_view raw_tag)
+{
+    return raw_tag.size() > 2 && raw_tag[1] == '/';
+}
+
+bool is_xml_self_closing_tag(std::string_view raw_tag)
+{
+    if (is_xml_closing_tag(raw_tag)) {
+        return false;
+    }
+    std::size_t index = raw_tag.size() - 2;
+    while (index > 0 && xml_is_space(raw_tag[index])) {
+        --index;
+    }
+    return raw_tag[index] == '/';
+}
+
+std::string_view unqualified_xml_attribute_value(
+    std::string_view raw_tag, std::string_view attribute_name)
+{
+    std::size_t position =
+        xml_tag_name_end(raw_tag, xml_tag_name_begin(raw_tag));
+    const std::size_t limit = raw_tag.empty() ? 0 : raw_tag.size() - 1;
+
+    while (position < limit) {
+        while (position < limit && xml_is_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position >= limit || raw_tag[position] == '/' || raw_tag[position] == '?') {
+            return {};
+        }
+
+        const std::size_t name_begin = position;
+        while (position < limit && !xml_is_space(raw_tag[position])
+            && raw_tag[position] != '=' && raw_tag[position] != '/'
+            && raw_tag[position] != '?' && raw_tag[position] != '>') {
+            ++position;
+        }
+        const std::string_view name =
+            raw_tag.substr(name_begin, position - name_begin);
+
+        while (position < limit && xml_is_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position >= limit || raw_tag[position] != '=') {
+            continue;
+        }
+        ++position;
+        while (position < limit && xml_is_space(raw_tag[position])) {
+            ++position;
+        }
+        if (position >= limit || (raw_tag[position] != '"' && raw_tag[position] != '\'')) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found an unquoted attribute value");
+        }
+
+        const char quote = raw_tag[position];
+        ++position;
+        const std::size_t value_begin = position;
+        while (position < limit && raw_tag[position] != quote) {
+            ++position;
+        }
+        if (position >= limit) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found an unterminated attribute value");
+        }
+
+        if (name == attribute_name) {
+            return raw_tag.substr(value_begin, position - value_begin);
+        }
+        ++position;
+    }
+
+    return {};
+}
+
+bool xml_has_non_whitespace(std::string_view value)
+{
+    for (const char ch : value) {
+        if (!xml_is_space(ch)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+char cell_value_element_code(std::string_view name) noexcept
+{
+    if (name == "v") {
+        return 'v';
+    }
+    if (name == "t") {
+        return 't';
+    }
+    if (name == "f") {
+        return 'f';
+    }
+    return '\0';
+}
+
 struct ActiveCellRange {
     std::string reference;
     std::uint64_t start_offset = 0;
 };
 
-using TargetCoordinateKey = std::pair<std::uint32_t, std::uint32_t>;
+using TargetCoordinateKey = std::uint64_t;
 
 TargetCoordinateKey target_coordinate_key(WorksheetCellCoordinate coordinate) noexcept
 {
-    return TargetCoordinateKey {coordinate.row, coordinate.column};
+    return (static_cast<std::uint64_t>(coordinate.row) << 32U)
+        | static_cast<std::uint64_t>(coordinate.column);
 }
+
+struct TargetCoordinateBucket {
+    TargetCoordinateKey key = 0;
+    std::vector<std::size_t> target_indices;
+};
 
 void sort_and_validate_rewrite_ranges(
     std::vector<fastxlsx::detail::WorksheetIndexedCellRewrite>& plan)
@@ -224,6 +427,9 @@ struct TargetedCellReference {
 struct ActiveTargetedCellRange {
     WorksheetCellCoordinate coordinate;
     std::uint64_t start_offset = 0;
+};
+
+class TargetedRewritePlanComplete {
 };
 
 class WorksheetCellIndexBuilder {
@@ -295,7 +501,9 @@ private:
 class TargetedWorksheetCellRewritePlanner {
 public:
     explicit TargetedWorksheetCellRewritePlanner(
-        std::span<const std::string_view> cell_references)
+        std::span<const std::string_view> cell_references,
+        bool stop_after_all_targets_found)
+        : stop_after_all_targets_found_(stop_after_all_targets_found)
     {
         add_targets(cell_references);
     }
@@ -304,12 +512,75 @@ public:
     {
         using fastxlsx::detail::WorksheetEventKind;
 
+        if (event.kind == WorksheetEventKind::Metadata
+            && event.element_name == "dimension") {
+            observe_dimension_metadata();
+            return;
+        }
         if (event.kind == WorksheetEventKind::CellStart) {
-            consume_cell_start(event);
+            consume_cell_start(event.cell_reference,
+                event.raw_xml_offset,
+                event.raw_xml.size(),
+                event.self_closing);
             return;
         }
         if (event.kind == WorksheetEventKind::CellEnd) {
-            consume_cell_end(event);
+            consume_cell_end(event.raw_xml_offset, event.raw_xml.size(), event.self_closing);
+        }
+    }
+
+    void observe_dimension_metadata() noexcept
+    {
+        source_has_top_level_dimension_ = true;
+    }
+
+    void consume_cell_start(std::string_view cell_reference,
+        std::uint64_t raw_xml_offset,
+        std::size_t raw_xml_size,
+        bool self_closing)
+    {
+        const WorksheetCellCoordinate coordinate =
+            parse_source_cell_reference(cell_reference);
+        ++scanned_source_cell_count_;
+
+        if (self_closing) {
+            if (record_source_range(coordinate,
+                fastxlsx::detail::WorksheetCellIndexedRange {
+                    raw_xml_offset,
+                    checked_range_end_offset(raw_xml_offset, raw_xml_size),
+                })) {
+                throw TargetedRewritePlanComplete {};
+            }
+            return;
+        }
+        if (active_cell_.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found a nested source cell");
+        }
+        active_cell_ = ActiveTargetedCellRange {
+            coordinate,
+            raw_xml_offset,
+        };
+    }
+
+    void consume_cell_end(
+        std::uint64_t raw_xml_offset, std::size_t raw_xml_size, bool self_closing)
+    {
+        if (self_closing) {
+            return;
+        }
+        if (!active_cell_.has_value()) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found a closing source cell without a start");
+        }
+        const bool all_targets_found = record_source_range(active_cell_->coordinate,
+            fastxlsx::detail::WorksheetCellIndexedRange {
+                active_cell_->start_offset,
+                checked_range_end_offset(raw_xml_offset, raw_xml_size),
+            });
+        active_cell_.reset();
+        if (all_targets_found) {
+            throw TargetedRewritePlanComplete {};
         }
     }
 
@@ -321,11 +592,12 @@ public:
 
         fastxlsx::detail::WorksheetTargetedCellRewritePlan plan;
         plan.scanned_source_cell_count = scanned_source_cell_count_;
+        plan.source_has_top_level_dimension = source_has_top_level_dimension_;
         plan.rewrites.reserve(targets_.size());
         for (const TargetedCellReference& target : targets_) {
             if (!target.found) {
                 throw fastxlsx::FastXlsxError(
-                    "worksheet indexed rewrite target cell is missing from source index: "
+                    "worksheet indexed rewrite target cell is missing from source index; not found: "
                     + target.requested_reference);
             }
             plan.rewrites.push_back(fastxlsx::detail::WorksheetIndexedCellRewrite {
@@ -342,6 +614,7 @@ private:
     {
         std::set<std::string, std::less<>> seen_targets;
         targets_.reserve(cell_references.size());
+        targets_by_coordinate_.reserve(cell_references.size());
 
         for (std::string_view cell_reference : cell_references) {
             if (cell_reference.empty()) {
@@ -363,54 +636,16 @@ private:
             const std::size_t target_index = targets_.size();
             targets_.push_back(std::move(target));
             if (targets_.back().coordinate.has_value()) {
-                targets_by_coordinate_[target_coordinate_key(*targets_.back().coordinate)]
-                    .push_back(target_index);
+                TargetCoordinateBucket bucket;
+                bucket.key = target_coordinate_key(*targets_.back().coordinate);
+                bucket.target_indices.push_back(target_index);
+                targets_by_coordinate_.push_back(std::move(bucket));
             }
         }
+        sort_and_merge_target_buckets();
     }
 
-    void consume_cell_start(const fastxlsx::detail::WorksheetEvent& event)
-    {
-        const WorksheetCellCoordinate coordinate =
-            parse_source_cell_reference(event.cell_reference);
-        ++scanned_source_cell_count_;
-
-        if (event.self_closing) {
-            record_source_range(coordinate,
-                fastxlsx::detail::WorksheetCellIndexedRange {
-                    event.raw_xml_offset,
-                    event_end_offset(event),
-                });
-            return;
-        }
-        if (active_cell_.has_value()) {
-            throw fastxlsx::FastXlsxError(
-                "worksheet cell index found a nested source cell");
-        }
-        active_cell_ = ActiveTargetedCellRange {
-            coordinate,
-            event.raw_xml_offset,
-        };
-    }
-
-    void consume_cell_end(const fastxlsx::detail::WorksheetEvent& event)
-    {
-        if (event.self_closing) {
-            return;
-        }
-        if (!active_cell_.has_value()) {
-            throw fastxlsx::FastXlsxError(
-                "worksheet cell index found a closing source cell without a start");
-        }
-        record_source_range(active_cell_->coordinate,
-            fastxlsx::detail::WorksheetCellIndexedRange {
-                active_cell_->start_offset,
-                event_end_offset(event),
-            });
-        active_cell_.reset();
-    }
-
-    void record_source_range(
+    [[nodiscard]] bool record_source_range(
         WorksheetCellCoordinate coordinate,
         fastxlsx::detail::WorksheetCellIndexedRange range)
     {
@@ -419,12 +654,13 @@ private:
                 "worksheet cell index found an invalid source cell range");
         }
 
-        const auto targets = targets_by_coordinate_.find(target_coordinate_key(coordinate));
-        if (targets == targets_by_coordinate_.end()) {
-            return;
+        const TargetCoordinateKey key = target_coordinate_key(coordinate);
+        const TargetCoordinateBucket* targets = find_target_bucket(key);
+        if (targets == nullptr) {
+            return false;
         }
 
-        for (const std::size_t target_index : targets->second) {
+        for (const std::size_t target_index : targets->target_indices) {
             TargetedCellReference& target = targets_[target_index];
             if (target.found) {
                 throw fastxlsx::FastXlsxError(
@@ -433,14 +669,532 @@ private:
             }
             target.found = true;
             target.range = range;
+            ++found_target_count_;
+            if (stop_after_all_targets_found_
+                && found_target_count_ == targets_.size()) {
+                return true;
+            }
         }
+        return false;
+    }
+
+    [[nodiscard]] const TargetCoordinateBucket* find_target_bucket(
+        TargetCoordinateKey key)
+    {
+        if (source_coordinates_monotonic_) {
+            if (have_last_source_coordinate_ && key < last_source_coordinate_) {
+                source_coordinates_monotonic_ = false;
+            } else {
+                have_last_source_coordinate_ = true;
+                last_source_coordinate_ = key;
+                while (next_target_bucket_index_ < targets_by_coordinate_.size()
+                    && targets_by_coordinate_[next_target_bucket_index_].key < key) {
+                    ++next_target_bucket_index_;
+                }
+                if (next_target_bucket_index_ >= targets_by_coordinate_.size()
+                    || targets_by_coordinate_[next_target_bucket_index_].key != key) {
+                    return nullptr;
+                }
+                return &targets_by_coordinate_[next_target_bucket_index_];
+            }
+        }
+
+        const auto targets = std::lower_bound(targets_by_coordinate_.begin(),
+            targets_by_coordinate_.end(), key,
+            [](const TargetCoordinateBucket& bucket, TargetCoordinateKey target_key) {
+                return bucket.key < target_key;
+            });
+        if (targets == targets_by_coordinate_.end() || targets->key != key) {
+            return nullptr;
+        }
+        return &(*targets);
+    }
+
+    void sort_and_merge_target_buckets()
+    {
+        std::sort(targets_by_coordinate_.begin(), targets_by_coordinate_.end(),
+            [](const TargetCoordinateBucket& left, const TargetCoordinateBucket& right) {
+                return left.key < right.key;
+            });
+
+        std::vector<TargetCoordinateBucket> merged;
+        merged.reserve(targets_by_coordinate_.size());
+        for (TargetCoordinateBucket& bucket : targets_by_coordinate_) {
+            if (!merged.empty() && merged.back().key == bucket.key) {
+                merged.back().target_indices.insert(
+                    merged.back().target_indices.end(),
+                    bucket.target_indices.begin(),
+                    bucket.target_indices.end());
+                continue;
+            }
+            merged.push_back(std::move(bucket));
+        }
+        targets_by_coordinate_ = std::move(merged);
     }
 
     std::vector<TargetedCellReference> targets_;
-    std::map<TargetCoordinateKey, std::vector<std::size_t>> targets_by_coordinate_;
+    std::vector<TargetCoordinateBucket> targets_by_coordinate_;
     std::optional<ActiveTargetedCellRange> active_cell_;
     std::uint64_t scanned_source_cell_count_ = 0;
+    std::size_t found_target_count_ = 0;
+    std::size_t next_target_bucket_index_ = 0;
+    TargetCoordinateKey last_source_coordinate_ = 0;
+    bool source_has_top_level_dimension_ = false;
+    bool stop_after_all_targets_found_ = false;
+    bool source_coordinates_monotonic_ = true;
+    bool have_last_source_coordinate_ = false;
 };
+
+class TargetedWorksheetCellFastScanner {
+public:
+    explicit TargetedWorksheetCellFastScanner(TargetedWorksheetCellRewritePlanner& planner)
+        : planner_(planner)
+    {
+    }
+
+    void emit_comment(std::string_view raw, std::uint64_t offset) const
+    {
+        (void)raw;
+        (void)offset;
+        reject_markup_after_root();
+    }
+
+    void emit_processing_instruction(std::string_view raw, std::uint64_t offset) const
+    {
+        (void)offset;
+        reject_markup_after_root();
+        if (is_xml_declaration_tag(raw) && seen_worksheet_start_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found XML declaration after worksheet root");
+        }
+    }
+
+    void emit_unsupported(std::string_view raw, std::uint64_t offset) const
+    {
+        (void)raw;
+        (void)offset;
+        reject_markup_outside_root();
+    }
+
+    void emit_text(std::string_view text, std::uint64_t offset) const
+    {
+        (void)offset;
+        if (text.empty()) {
+            return;
+        }
+        if (!seen_worksheet_start_ && xml_has_non_whitespace(text)) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found text before worksheet root");
+        }
+        if (seen_worksheet_end_ && xml_has_non_whitespace(text)) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found text after worksheet root");
+        }
+    }
+
+    void emit_tag(std::string_view raw, std::uint64_t offset)
+    {
+        const std::string_view name = xml_element_name(raw);
+        const bool closing = is_xml_closing_tag(raw);
+        const bool self_closing = is_xml_self_closing_tag(raw);
+        if (name != "worksheet") {
+            reject_markup_outside_root();
+        } else {
+            reject_markup_after_root();
+        }
+
+        if (closing) {
+            emit_closing_tag(name, offset, raw.size());
+            return;
+        }
+        emit_opening_tag(raw, name, self_closing, offset);
+    }
+
+    void finish() const
+    {
+        if (!seen_worksheet_start_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index requires a worksheet root");
+        }
+        if (!seen_worksheet_end_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index requires a closing worksheet root");
+        }
+        if (in_sheet_data_ || in_row_ || in_cell_ || in_cell_value_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index ended inside an open worksheet element");
+        }
+    }
+
+private:
+    void reject_markup_after_root() const
+    {
+        if (seen_worksheet_end_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found markup after worksheet root");
+        }
+    }
+
+    void reject_markup_outside_root() const
+    {
+        if (!seen_worksheet_start_) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found markup before worksheet root");
+        }
+        reject_markup_after_root();
+    }
+
+    void clear_current_cell_value()
+    {
+        in_cell_value_ = false;
+        current_cell_value_element_ = '\0';
+    }
+
+    void emit_closing_tag(
+        std::string_view name, std::uint64_t offset, std::size_t raw_size)
+    {
+        const char value_element = cell_value_element_code(name);
+        if (value_element != '\0' && in_cell_) {
+            if (!in_cell_value_ || current_cell_value_element_ != value_element) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found a mismatched cell value boundary");
+            }
+            clear_current_cell_value();
+            return;
+        }
+
+        if (name == "c") {
+            if (!in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found a closing cell without a start");
+            }
+            if (in_cell_value_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found a cell boundary inside an open cell value");
+            }
+            planner_.consume_cell_end(offset, raw_size, false);
+            in_cell_ = false;
+            return;
+        }
+
+        if (name == "row") {
+            if (!in_row_ || in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an invalid row boundary");
+            }
+            in_row_ = false;
+            return;
+        }
+
+        if (name == "sheetData") {
+            if (!in_sheet_data_ || in_row_ || in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an invalid sheetData boundary");
+            }
+            in_sheet_data_ = false;
+            return;
+        }
+
+        if (name == "worksheet") {
+            if (in_sheet_data_ || in_row_ || in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an invalid worksheet boundary");
+            }
+            seen_worksheet_end_ = true;
+            return;
+        }
+
+        if (seen_worksheet_start_ && !seen_worksheet_end_ && !in_sheet_data_
+            && name == "dimension") {
+            planner_.observe_dimension_metadata();
+        }
+    }
+
+    void emit_opening_tag(
+        std::string_view raw,
+        std::string_view name,
+        bool self_closing,
+        std::uint64_t offset)
+    {
+        if (name == "worksheet") {
+            if (seen_worksheet_start_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found duplicate worksheet root");
+            }
+            seen_worksheet_start_ = true;
+            if (self_closing) {
+                seen_worksheet_end_ = true;
+            }
+            return;
+        }
+
+        if (name == "sheetData") {
+            if (seen_sheet_data_ || in_sheet_data_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an invalid sheetData boundary");
+            }
+            seen_sheet_data_ = true;
+            in_sheet_data_ = true;
+            if (self_closing) {
+                in_sheet_data_ = false;
+            }
+            return;
+        }
+
+        if (name == "row") {
+            if (!in_sheet_data_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found row outside sheetData");
+            }
+            if (in_row_ || in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an invalid row boundary");
+            }
+            if (!self_closing) {
+                in_row_ = true;
+            }
+            return;
+        }
+
+        if (name == "c") {
+            if (!in_row_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found cell outside row");
+            }
+            if (in_cell_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an invalid cell boundary");
+            }
+
+            const std::string_view cell_reference =
+                unqualified_xml_attribute_value(raw, "r");
+            planner_.consume_cell_start(
+                cell_reference, offset, raw.size(), self_closing);
+            if (!self_closing) {
+                in_cell_ = true;
+            }
+            return;
+        }
+
+        const char value_element = cell_value_element_code(name);
+        if (value_element != '\0' && in_cell_) {
+            if (in_cell_value_) {
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found nested cell value markup");
+            }
+            if (!self_closing) {
+                in_cell_value_ = true;
+                current_cell_value_element_ = value_element;
+            }
+            return;
+        }
+
+        if (seen_worksheet_start_ && !seen_worksheet_end_ && !in_sheet_data_
+            && name == "dimension") {
+            planner_.observe_dimension_metadata();
+        }
+    }
+
+    TargetedWorksheetCellRewritePlanner& planner_;
+    bool seen_worksheet_start_ = false;
+    bool seen_worksheet_end_ = false;
+    bool seen_sheet_data_ = false;
+    bool in_sheet_data_ = false;
+    bool in_row_ = false;
+    bool in_cell_ = false;
+    bool in_cell_value_ = false;
+    char current_cell_value_element_ = '\0';
+};
+
+std::uint64_t add_targeted_source_offset(std::uint64_t base, std::size_t relative)
+{
+    return checked_range_end_offset(base, relative);
+}
+
+std::size_t consume_targeted_fast_scan_events(std::string_view xml_window,
+    bool final_chunk,
+    TargetedWorksheetCellFastScanner& scanner,
+    std::uint64_t window_begin_offset)
+{
+    std::size_t position = 0;
+    while (position < xml_window.size()) {
+        const std::size_t open = xml_window.find('<', position);
+        if (open == std::string_view::npos) {
+            if (final_chunk) {
+                scanner.emit_text(xml_window.substr(position),
+                    add_targeted_source_offset(window_begin_offset, position));
+                return xml_window.size();
+            }
+            return position;
+        }
+
+        if (open > position) {
+            scanner.emit_text(xml_window.substr(position, open - position),
+                add_targeted_source_offset(window_begin_offset, position));
+            position = open;
+        }
+
+        if (starts_with_at(xml_window, position, "<!--")) {
+            const std::size_t end = xml_window.find("-->", position + 4);
+            if (end == std::string_view::npos) {
+                if (!final_chunk) {
+                    return position;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an unterminated XML comment");
+            }
+            scanner.emit_comment(
+                xml_window.substr(position, end + 3 - position),
+                add_targeted_source_offset(window_begin_offset, position));
+            position = end + 3;
+            continue;
+        }
+
+        if (starts_with_at(xml_window, position, "<?")) {
+            const std::size_t end = xml_window.find("?>", position + 2);
+            if (end == std::string_view::npos) {
+                if (!final_chunk) {
+                    return position;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found an unterminated processing instruction");
+            }
+            scanner.emit_processing_instruction(
+                xml_window.substr(position, end + 2 - position),
+                add_targeted_source_offset(window_begin_offset, position));
+            position = end + 2;
+            continue;
+        }
+
+        if (starts_with_at(xml_window, position, "<!")) {
+            const std::size_t end = find_xml_markup_end_or_npos(xml_window, position);
+            if (end == std::string_view::npos) {
+                if (!final_chunk) {
+                    return position;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "worksheet cell index found unterminated markup");
+            }
+            scanner.emit_unsupported(
+                xml_window.substr(position, end + 1 - position),
+                add_targeted_source_offset(window_begin_offset, position));
+            position = end + 1;
+            continue;
+        }
+
+        const std::size_t close = find_xml_markup_end_or_npos(xml_window, position);
+        if (close == std::string_view::npos) {
+            if (!final_chunk) {
+                return position;
+            }
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index found unterminated markup");
+        }
+        scanner.emit_tag(
+            xml_window.substr(position, close + 1 - position),
+            add_targeted_source_offset(window_begin_offset, position));
+        position = close + 1;
+    }
+
+    return position;
+}
+
+void erase_targeted_consumed_prefix(std::string& window, std::size_t consumed)
+{
+    if (consumed == window.size()) {
+        window.clear();
+        return;
+    }
+    if (consumed > 0) {
+        window.erase(0, consumed);
+    }
+}
+
+void process_targeted_fast_scan_window(std::string& window,
+    bool final_chunk,
+    TargetedWorksheetCellFastScanner& scanner,
+    std::uint64_t& window_begin_offset)
+{
+    const std::size_t consumed = consume_targeted_fast_scan_events(
+        window, final_chunk, scanner, window_begin_offset);
+    erase_targeted_consumed_prefix(window, consumed);
+    window_begin_offset = add_targeted_source_offset(window_begin_offset, consumed);
+}
+
+void process_targeted_fast_scan_chunk(std::string_view chunk,
+    fastxlsx::detail::WorksheetEventReaderOptions options,
+    std::string& window,
+    TargetedWorksheetCellFastScanner& scanner,
+    std::uint64_t& window_begin_offset)
+{
+    std::size_t chunk_offset = 0;
+    while (!window.empty() && chunk_offset < chunk.size()) {
+        if (window.size() >= options.max_window_bytes) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index exceeded bounded input window");
+        }
+
+        const std::size_t available = options.max_window_bytes - window.size();
+        const std::size_t remaining = chunk.size() - chunk_offset;
+        const std::size_t bytes_to_append = std::min(available, remaining);
+        window.append(chunk.data() + chunk_offset, bytes_to_append);
+        chunk_offset += bytes_to_append;
+        process_targeted_fast_scan_window(window, false, scanner, window_begin_offset);
+
+        if (bytes_to_append == 0 && !window.empty()) {
+            throw fastxlsx::FastXlsxError(
+                "worksheet cell index exceeded bounded input window");
+        }
+    }
+
+    if (chunk_offset >= chunk.size()) {
+        return;
+    }
+
+    const std::string_view remaining = chunk.substr(chunk_offset);
+    const std::size_t consumed = consume_targeted_fast_scan_events(
+        remaining, false, scanner, window_begin_offset);
+    window_begin_offset = add_targeted_source_offset(window_begin_offset, consumed);
+    if (consumed == remaining.size()) {
+        return;
+    }
+
+    const std::string_view unconsumed = remaining.substr(consumed);
+    if (unconsumed.size() > options.max_window_bytes) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet cell index exceeded bounded input window");
+    }
+    window.assign(unconsumed.data(), unconsumed.size());
+}
+
+void scan_targeted_rewrite_plan_from_chunk_source(
+    const fastxlsx::detail::WorksheetInputChunkCallback& read_next_chunk,
+    TargetedWorksheetCellRewritePlanner& planner,
+    fastxlsx::detail::WorksheetEventReaderOptions options)
+{
+    if (!read_next_chunk) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet cell index requires a chunk source");
+    }
+    if (options.max_window_bytes == 0) {
+        throw fastxlsx::FastXlsxError(
+            "worksheet cell index requires a nonzero input window limit");
+    }
+
+    TargetedWorksheetCellFastScanner scanner(planner);
+    std::string window;
+    window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
+    std::uint64_t window_begin_offset = 0;
+
+    std::string chunk;
+    while (read_next_chunk(chunk)) {
+        process_targeted_fast_scan_chunk(
+            chunk, options, window, scanner, window_begin_offset);
+    }
+
+    process_targeted_fast_scan_window(window, true, scanner, window_begin_offset);
+    scanner.finish();
+}
 
 std::size_t materialized_index_chunk_size(
     fastxlsx::detail::WorksheetEventReaderOptions options)
@@ -621,7 +1375,7 @@ std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(
         const WorksheetCellIndexedRange* range = index.find(cell_reference);
         if (range == nullptr) {
             throw FastXlsxError(
-                "worksheet indexed rewrite target cell is missing from source index: "
+                "worksheet indexed rewrite target cell is missing from source index; not found: "
                 + std::string(cell_reference));
         }
 
@@ -639,19 +1393,23 @@ std::vector<WorksheetIndexedCellRewrite> plan_indexed_cell_rewrites(
 WorksheetTargetedCellRewritePlan plan_targeted_cell_rewrites_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::span<const std::string_view> cell_references,
-    WorksheetEventReaderOptions options)
+    WorksheetEventReaderOptions options,
+    bool stop_after_all_targets_found)
 {
     if (cell_references.empty()) {
         return {};
     }
 
-    TargetedWorksheetCellRewritePlanner planner(cell_references);
-    scan_worksheet_events_from_chunk_source(
-        read_next_chunk,
-        [&](const WorksheetEvent& event) {
-            planner.consume(event);
-        },
-        options);
+    TargetedWorksheetCellRewritePlanner planner(
+        cell_references, stop_after_all_targets_found);
+    try {
+        scan_targeted_rewrite_plan_from_chunk_source(
+            read_next_chunk, planner, options);
+    } catch (const TargetedRewritePlanComplete&) {
+        // Opt-in fast path for benchmark/prototype sparse rewrites: once every
+        // requested target has an exact byte range, the remaining worksheet tail
+        // can be copied by the byte-range emitter without more target lookup.
+    }
     return std::move(planner).finish();
 }
 

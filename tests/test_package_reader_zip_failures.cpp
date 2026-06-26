@@ -117,7 +117,7 @@ void test_package_reader_streams_deflated_entry_chunks_with_minizip()
         R"(<Default Extension="bin" ContentType="application/octet-stream"/>)"
         R"(</Types>)";
     std::string unknown_body;
-    for (int index = 0; index < 4096; ++index) {
+    for (int index = 0; unknown_body.size() <= 2U * 1024U * 1024U; ++index) {
         unknown_body += "deflated-entry-direct-chunk-source-";
         unknown_body += std::to_string(index);
         unknown_body += '\n';
@@ -1380,11 +1380,11 @@ void test_package_reader_rejects_corrupt_entry_crc_on_chunk_source()
     const std::filesystem::path source_path =
         output_path("fastxlsx-package-reader-entry-chunks-crc-source.xlsx");
     std::string opaque_body = "opaque";
-    for (int index = 0; index < 4096; ++index) {
+    for (int index = 0; opaque_body.size() <= 2U * 1024U * 1024U; ++index) {
         opaque_body += "\nstored-chunk-source-crc-target-row-";
         opaque_body += std::to_string(index);
     }
-    check(opaque_body.size() > 64U * 1024U,
+    check(opaque_body.size() > 1024U * 1024U,
         "stored chunk-source CRC fixture should exceed one reader chunk");
 
     fastxlsx::detail::write_package(source_path,

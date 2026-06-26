@@ -291,19 +291,21 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `set_row_values()`、`set_row_values(initializer_list<CellValue>)`、
   `set_column_values()`、`set_column_values(initializer_list<CellValue>)`、
   `clear_cell_value()`、`clear_row()`、`clear_rows()`、`clear_column()`、
-  `clear_columns()`、`clear_cell_values(CellRange)`、
+  `clear_columns()`、`clear_cell_values()`、`clear_cell_values(CellRange)`、
   `clear_cell_values(std::string_view)`、
   `clear_cell_values(span<WorksheetCellReference>)`、
   `clear_cell_values(initializer_list<WorksheetCellReference>)`、`erase_cell()`、
-  `erase_cells(CellRange)`、`erase_cells(std::string_view)`、
+  `erase_cells()`、`erase_cells(CellRange)`、`erase_cells(std::string_view)`、
   `erase_cells(span<WorksheetCellReference>)`、
   `erase_cells(initializer_list<WorksheetCellReference>)`、
   row/column coordinate guardrails、
   single-cell mutation/read API 的 strict uppercase A1 string overload、
   `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
-  `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
-  `sparse_cells(std::string_view)` strict uppercase A1 range overload、
-  `row_cells()`、`column_cells()`、`cell_count()` 和
+`has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
+`sparse_cells(std::string_view)` strict uppercase A1 range overload、
+`sparse_cells(std::span<const WorksheetCellReference>)` / initializer-list
+batch overload、
+  `contains_cell()`、`used_range()`、`row_cells()`、`column_cells()`、`cell_count()` 和
   `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
   `WorkbookEditor::save_as()` 自动 flush；caller-supplied default `StyleId{0}`
   会归一化为 no style handle，workbook-backed source `t="s"` shared string cells
@@ -637,11 +639,12 @@ rows 1..N，覆盖已有 prefix cell 时保留 source style，缺失 prefix cell
 record 插入，input prefix 之外已有的 sparse cells 保持不变；empty input 是 clean
 no-op。它们不是 `set_row()` / `set_column()` 这种整行/整列 replacement，不删除尾部
 cells，也不做行列插入/删除、dense range writing、metadata recalculation 或 style
-migration。`clear_cell_value()` / `clear_row()` / `clear_rows()` /
+migration。`clear_cell_value()` / `clear_cell_values()` / `clear_row()` / `clear_rows()` /
 `clear_column()` / `clear_columns()` / `clear_cell_values(CellRange)` /
 `clear_cell_values(std::string_view)` /
 `clear_cell_values(span<WorksheetCellReference>)` 会把已有 cell 转成显式 blank 并保留该
-style；row/column/range/A1 range/坐标批量版本都只清 already represented sparse records，不补齐
+style；no-arg 版本清当前 materialized store 中所有 represented records，
+row/column/range/A1 range/坐标批量版本都只清 already represented sparse records，不补齐
 missing cells。missing cell / missing-only row/column/range/A1 range / missing-only coordinate
 batch 是成功 no-op，不写 tombstone。`erase_cells(CellRange)` 是 `erase_cell()` 的矩形 sparse range
 版本：它使用 1-based inclusive `CellRange` guardrail，只删除 range 内已经 represented
@@ -649,7 +652,8 @@ batch 是成功 no-op，不写 tombstone。`erase_cells(CellRange)` 是 `erase_c
 是同一语义的 strict uppercase A1 range convenience。`erase_cells(span<WorksheetCellReference>)`
 是显式坐标批量版本：它预先验证所有坐标，删除已有 active sparse records，duplicate
 coordinate 在首次删除后成为 no-op，missing-only batch 是成功 no-op，dirty output
-省略这些 erased records 而不是写 explicit blank 或 tombstone。
+省略这些 erased records 而不是写 explicit blank 或 tombstone。no-arg `erase_cells()`
+删除当前 materialized store 中所有 represented records。
 读取 source worksheet 时，显式默认 `s` 属性值精确为 `0`（例如 `s="0"`、
 `s='0'` 或 `s = "0"`）也会归一化为 no style handle；非默认 source style ids
 会先按 source `xl/styles.xml` 的 `cellXfs` 边界验证，再作为 workbook-local
@@ -738,6 +742,7 @@ sheet.clear_row(1);
 sheet.clear_rows(2, 3);
 sheet.clear_column(4);
 sheet.clear_columns(5, 6);
+sheet.clear_cell_values(); // Clear all represented cells to explicit blanks.
 sheet.clear_cell_values(fastxlsx::CellRange{1, 1, 10, 5});
 sheet.clear_cell_values("A1:E10"); // Strict uppercase A1 range, still sparse.
 std::vector<fastxlsx::WorksheetCellReference> clear_targets = {
@@ -754,9 +759,12 @@ sheet.erase_cells(fastxlsx::CellRange{5, 1, 10, 5});
 sheet.erase_cells("A5:E10"); // Removes represented records only.
 sheet.erase_cells(erase_targets);
 sheet.erase_cells({{6, 1}, {6, 2}});
+sheet.erase_cells(); // Remove all represented sparse records.
 const auto cells = sheet.sparse_cells(); // Owning row-major sparse snapshot.
 const auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 const auto a1_visible_cells = sheet.sparse_cells("A1:J10");
+const bool has_a1 = sheet.contains_cell("A1"); // Represented-state probe; blanks count.
+const auto represented_bounds = sheet.used_range(); // std::optional<CellRange>.
 const auto first_row_cells = sheet.row_cells(1);
 const auto first_column_cells = sheet.column_cells(1);
 sheet.erase_cell(2, 1);
@@ -795,7 +803,13 @@ sparse records，不补齐 missing cells。`row_cells()` /
 `column_cells()` 是同一 sparse snapshot 语义的 row/column convenience：只返回目标
 row 或 column 中已 represented 的 active sparse records，missing cells 不会被合成
 blank，invalid row/column read 不更新 `last_edit_error()`。这些读取 API 都不暴露内部
-iterator/lifetime，不是 dense range read、dense row/column read 或 streaming sparse
+iterator/lifetime。`contains_cell()` 是同一 materialized sparse store 的 represented-state
+probe：source-backed records、edited records 和 explicit blank records 返回 true，
+missing / erased cells 返回 false；它不复制 `CellValue`，invalid coordinates / A1
+references 不更新 `last_edit_error()`。`used_range()` 返回 represented sparse records 的 optional
+1-based inclusive bounding `CellRange`，empty materialized store 返回 `std::nullopt`，
+explicit blank records 计入边界；它不是 worksheet `<dimension>` metadata read/repair、
+dense range read、dense row/column read 或 streaming sparse
 iterator，也不会同步 worksheet metadata。
 `clear_cell_values(CellRange)` 使用同样的 1-based inclusive range guardrail，只把
 range 内已经存在的 active records 清成 explicit blanks 并保留各自 source style
@@ -804,7 +818,9 @@ CellRange 路径的 strict uppercase A1 range parser convenience，不增加 den
 editing。
 `clear_cell_values(span<WorksheetCellReference>)` 使用显式坐标列表做同样的清值语义：
 invalid coordinate 会拒绝整个 batch，missing coordinate 不合成 blank，duplicate
-coordinate 允许。
+coordinate 允许。no-arg `clear_cell_values()` 对当前 materialized store 中所有
+represented records 执行同样的 style-preserving explicit blank 语义；empty store 是
+clean no-op。
 `clear_row()` / `clear_rows()` 使用同样的 1-based row guardrail，只把目标行内已经
 represented 的 active sparse records 清成 explicit blanks 并保留各自 source style
 handle；missing row / missing-only row range 是成功 no-op，反向 row range 会失败且不污染状态。
@@ -819,7 +835,8 @@ missing-only range 是成功 no-op。`erase_cells(std::string_view)` 只是该 C
 路径的 strict uppercase A1 range parser convenience，不增加 dense range deletion。
 `erase_cells(span<WorksheetCellReference>)` 使用显式坐标列表做批量 remove 语义：
 invalid coordinate 会拒绝整个 batch，missing coordinate 不合成 tombstone，duplicate
-coordinate 允许且后续重复项是 no-op。
+coordinate 允许且后续重复项是 no-op。no-arg `erase_cells()` 删除当前 materialized
+store 中所有 represented records；empty store 是 clean no-op。
 `erase_row()` / `erase_rows()` 使用同样的 1-based row guardrail 删除目标行内已经
 represented 的 active sparse records；missing row / missing-only row range 是成功 no-op，
 反向 row range 会失败且不污染状态。它们不做 row deletion、row shifting 或 row metadata edit。

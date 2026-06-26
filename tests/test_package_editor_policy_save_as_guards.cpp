@@ -243,11 +243,10 @@ void test_package_editor_save_as_copy_original_read_failure_preserves_state_and_
         editor.save_as(output);
     } catch (const std::exception& error) {
         failed = true;
-        check_contains(error.what(),
-            "failed to materialize planned output source-copy entry 'custom/opaque.bin'",
-            "copy-original failure should include planned output entry materialization context");
-        check_contains(error.what(), "failed to copy source package entry",
-            "copy-original failure should include copy context");
+        check_contains(error.what(), "failed to write PackageEditor output package",
+            "copy-original failure should include PackageEditor write context");
+        check_contains(error.what(), "ZIP entry 'custom/opaque.bin' chunk 0",
+            "copy-original failure should include direct source-range chunk context");
         check_contains(error.what(), "custom/opaque.bin",
             "copy-original failure should include the source entry name");
         check_contains(error.what(), "CRC",

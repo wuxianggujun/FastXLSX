@@ -698,8 +698,15 @@ void test_public_worksheet_editor_materializes_local_names_without_namespace_val
     check_contains(worksheet_xml,
         R"(<c r="D1" t="inlineStr"><is><t>wrong-ns-dirty</t></is></c>)",
         "dirty projection should include edits beside wrong-namespace local-name source cells");
-    check_not_contains(worksheet_xml, "urn:fastxlsx:not-spreadsheetml",
-        "dirty standalone projection should not preserve wrong source namespace declarations");
+    check_contains(worksheet_xml,
+        R"(<bad:worksheet xmlns:bad="urn:fastxlsx:not-spreadsheetml">)",
+        "dirty sheetData flush should preserve wrong source worksheet namespace declarations");
+    check_contains(worksheet_xml, R"(<bad:dimension ref="A1:D1"/>)",
+        "dirty sheetData flush should refresh dimension using the source worksheet prefix");
+    check_not_contains(worksheet_xml, "<bad:c",
+        "dirty sheetData flush should not preserve wrong source cell namespace prefixes");
+    check_not_contains(worksheet_xml, "<bad:v",
+        "dirty sheetData flush should not preserve wrong source value namespace prefixes");
     check(output_entries.find("xl/sharedStrings.xml") != output_entries.end()
             && output_entries.at("xl/sharedStrings.xml")
                 == source_entries.at("xl/sharedStrings.xml"),

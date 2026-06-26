@@ -426,6 +426,150 @@ void test_package_editor_staged_chunk_part_replacement_writes_chunks()
         restore_output_reader, opaque_part.zip_path(), expected_chunked_opaque);
 }
 
+void test_package_editor_source_part_stored_entry_chunks_reference_source_package_payload()
+{
+    const CalcSourcePackage source =
+        write_calc_source_package("fastxlsx-package-editor-source-entry-range-source.xlsx");
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+
+    std::vector<fastxlsx::detail::PackageEntryChunk> chunks =
+        editor.source_part_stored_entry_chunks(worksheet_part);
+    check(chunks.size() == 1,
+        "source stored-entry helper should expose one package file range chunk");
+    const fastxlsx::detail::PackageEntryChunk& chunk = chunks.front();
+    check(chunk.kind == fastxlsx::detail::PackageEntryChunk::Kind::File,
+        "source stored-entry helper should expose a file-backed chunk");
+    check(chunk.has_file_range,
+        "source stored-entry helper should expose an explicit package payload range");
+    check(chunk.path == editor.reader().path(),
+        "source stored-entry helper should reference the source package file");
+    check(chunk.has_expected_size
+            && chunk.expected_size == static_cast<std::uint64_t>(source.worksheet.size()),
+        "source stored-entry helper should record the source worksheet entry size");
+    const fastxlsx::detail::PackageReaderEntry* source_entry =
+        editor.reader().find_entry(worksheet_part.zip_path());
+    check(source_entry != nullptr,
+        "source stored-entry helper test should find the source worksheet entry");
+    check(chunk.has_expected_crc32 && chunk.expected_crc32 == source_entry->crc32,
+        "source stored-entry helper should reuse the source worksheet entry CRC");
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(chunks)
+            == source.worksheet,
+        "source stored-entry helper should read the worksheet bytes from the package payload");
+
+    std::vector<fastxlsx::detail::PackageEntryChunk> by_name_chunks =
+        editor.source_worksheet_part_stored_entry_chunks_by_name("Sheet1");
+    check(by_name_chunks.size() == 1 && by_name_chunks.front().has_expected_crc32
+            && by_name_chunks.front().expected_crc32 == source_entry->crc32,
+        "by-name source stored-entry helper should reuse the source worksheet entry CRC");
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(
+              std::move(by_name_chunks)) == source.worksheet,
+        "by-name source stored-entry helper should resolve the source worksheet part");
+
+    bool failed = false;
+    try {
+        (void)editor.source_part_stored_entry_chunks(
+            fastxlsx::detail::PartName("/xl/worksheets/missing.xml"));
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "source package entry is missing",
+            "missing source entry failure should explain the missing package payload");
+    }
+    check(failed, "source stored-entry helper should reject missing source entries");
+}
+
+void test_package_editor_prevalidated_staged_chunk_part_replacement_by_name()
+{
+    LinkedObjectSourcePackage source =
+        write_sheet_data_patch_source_package(
+            "fastxlsx-package-editor-prevalidated-staged-chunk-source.xlsx");
+    rewrite_linked_object_source_package(source);
+
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-prevalidated-staged-chunk-output.xlsx");
+    const std::filesystem::path replacement_path =
+        output_path("fastxlsx-package-editor-prevalidated-staged-chunk-worksheet.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string replacement_worksheet =
+        R"(<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData><row r="1"><c r="A1"><v>99</v></c></row></sheetData></worksheet>)";
+    write_binary_file(replacement_path, replacement_worksheet);
+    std::vector<fastxlsx::detail::PackageEntryChunk> prevalidated_chunks {
+        fastxlsx::detail::PackageEntryChunk::file_range(
+            replacement_path, 0, static_cast<std::uint64_t>(replacement_worksheet.size())),
+    };
+    check(!prevalidated_chunks.front().has_expected_crc32,
+        "prevalidated file-range replacement should not need a descriptor-time CRC contract");
+    fastxlsx::detail::ReferencePolicy policy;
+    policy.request_full_calculation_on_sheet_rewrite = false;
+    policy.calc_chain_action = fastxlsx::detail::CalcChainAction::Preserve;
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_worksheet_part_prevalidated_chunks_by_name("Sheet1",
+        std::move(prevalidated_chunks),
+        policy);
+
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "prevalidated staged chunk replacement should resolve the worksheet part");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "prevalidated staged chunk replacement should plan a stream rewrite");
+    check_contains(worksheet_plan->reason, "prevalidated staged stream rewrite",
+        "prevalidated staged chunk replacement should record the fast-path reason");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "prevalidated staged chunk replacement should update manifest write mode");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "prevalidated staged chunk replacement should not request recalculation");
+    check(editor.edit_plan().calc_chain_action() == fastxlsx::detail::CalcChainAction::Preserve,
+        "prevalidated staged chunk replacement should preserve calcChain policy");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "prevalidated staged chunk replacement should appear as a staged stream rewrite");
+    check_output_entry_staged_replacement_chunks(output_plan.entries, worksheet_part.zip_path(),
+        true,
+        "prevalidated staged chunk replacement output plan should expose staged chunks");
+    check_output_entry_materialized_replacement(output_plan.entries, worksheet_part.zip_path(),
+        false,
+        "prevalidated staged chunk replacement output plan should not expose materialized replacement");
+    const auto* output_entry_plan =
+        find_output_entry_plan(output_plan.entries, worksheet_part.zip_path());
+    check(output_entry_plan != nullptr,
+        "prevalidated staged chunk replacement output plan should include the worksheet entry");
+    check(output_entry_plan->staged_replacement_chunk_count == 1,
+        "prevalidated staged chunk replacement output plan should expose chunk count");
+    check(output_entry_plan->staged_replacement_file_chunk_count == 1,
+        "prevalidated staged chunk replacement output plan should expose file chunk count");
+    check(output_entry_plan->staged_replacement_file_range_chunk_count == 1,
+        "prevalidated staged chunk replacement output plan should expose file-range chunk count");
+    check(output_entry_plan->staged_replacement_memory_chunk_count == 0,
+        "prevalidated staged chunk replacement output plan should not report memory chunks");
+    check(output_entry_plan->staged_replacement_expected_bytes
+            == static_cast<std::uint64_t>(replacement_worksheet.size()),
+        "prevalidated staged chunk replacement output plan should expose expected bytes");
+    check(output_entry_plan->staged_replacement_file_range_bytes
+            == static_cast<std::uint64_t>(replacement_worksheet.size()),
+        "prevalidated staged chunk replacement output plan should expose file-range bytes");
+    check(output_entry_plan->staged_replacement_expected_bytes_complete,
+        "prevalidated staged chunk replacement output plan should have complete expected bytes");
+    check_contains(output_entry_plan->reason, "prevalidated staged stream rewrite",
+        "prevalidated staged chunk replacement output plan should expose the fast-path reason");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().empty(),
+        "prevalidated staged chunk replacement should skip payload audit collection");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().empty(),
+        "prevalidated staged chunk replacement should skip relationship audit collection");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+    check_preserved_source_entries(editor.reader(), output_reader, worksheet_part.zip_path());
+}
+
 void test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks()
 {
     const std::filesystem::path body_path =
@@ -472,6 +616,74 @@ void test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks
             == expected.substr(static_cast<std::size_t>(spanning_offset),
                 static_cast<std::size_t>(spanning_size)),
         "staged chunk range reader should slice across memory/file/memory chunks");
+}
+
+void test_package_editor_file_range_chunks_read_and_write_ranges()
+{
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-file-range-body.bin");
+    const std::string body = "0123456789abcdef";
+    write_binary_file(body_path, body);
+
+    const auto make_chunks = [&] {
+        return std::vector<fastxlsx::detail::PackageEntryChunk> {
+            fastxlsx::detail::PackageEntryChunk::memory("pre-"),
+            fastxlsx::detail::PackageEntryChunk::file_range(body_path, 2, 5),
+            fastxlsx::detail::PackageEntryChunk::memory("-post"),
+        };
+    };
+    const auto make_gapped_chunks = [&] {
+        return std::vector<fastxlsx::detail::PackageEntryChunk> {
+            fastxlsx::detail::PackageEntryChunk::file_range(body_path, 0, 2),
+            fastxlsx::detail::PackageEntryChunk::memory("+"),
+            fastxlsx::detail::PackageEntryChunk::file_range(body_path, 4, 2),
+            fastxlsx::detail::PackageEntryChunk::memory("+"),
+            fastxlsx::detail::PackageEntryChunk::file_range(body_path, 8, 2),
+        };
+    };
+    const std::string expected = "pre-23456-post";
+    const std::string expected_gapped = "01+45+89";
+
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(make_chunks())
+            == expected,
+        "file-range chunks should replay only the requested file slice");
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(make_gapped_chunks())
+            == expected_gapped,
+        "file-range chunks should omit skipped source gaps");
+    check(fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+              make_chunks(), 2, 9)
+            == "e-23456-p",
+        "file-range chunks should support second-level range slicing");
+
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-file-range-chunks-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-file-range-chunks-output.xlsx");
+    const std::filesystem::path gapped_output =
+        output_path("fastxlsx-package-editor-file-range-chunks-gapped-output.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part_chunks(
+        opaque_part, make_chunks(), "file-range staged opaque chunks");
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, opaque_part.zip_path(), expected);
+    check_entry_bytes(output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
+
+    fastxlsx::detail::PackageEditor gapped_editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    gapped_editor.replace_part_chunks(
+        opaque_part, make_gapped_chunks(), "gapped file-range staged opaque chunks");
+    gapped_editor.save_as(gapped_output);
+
+    const fastxlsx::detail::PackageReader gapped_output_reader =
+        fastxlsx::detail::PackageReader::open(gapped_output);
+    check_entry_bytes(gapped_output_reader, opaque_part.zip_path(), expected_gapped);
+    check_entry_bytes(gapped_output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
 }
 
 void test_package_editor_rejects_invalid_staged_chunk_ranges()
@@ -538,6 +750,22 @@ void test_package_editor_rejects_invalid_staged_chunk_ranges()
             "missing file chunk should fail during range layout validation");
     }
     check(failed, "staged chunk range reader should reject missing file chunks");
+
+    fastxlsx::detail::PackageEntryChunk invalid_file_range =
+        fastxlsx::detail::PackageEntryChunk::file_range(
+            body_path, 2, static_cast<std::uint64_t>(body.size()));
+    failed = false;
+    try {
+        (void)fastxlsx::detail::testing_read_package_entry_chunk_range_to_string(
+            {invalid_file_range}, 0, 1);
+    } catch (const std::exception& error) {
+        failed = true;
+        check_contains(error.what(), "file range exceeds file size",
+            "invalid file-range chunk should report the file-size boundary");
+        check_contains(error.what(), "range offset 2",
+            "invalid file-range chunk should report the range offset");
+    }
+    check(failed, "staged chunk range reader should reject file ranges beyond file size");
 
     fastxlsx::detail::PackageEntryChunk mixed =
         fastxlsx::detail::PackageEntryChunk::memory("mixed");
@@ -645,6 +873,124 @@ void test_package_editor_indexed_staged_chunk_replacement_slices_source_chunks()
         "preplanned indexed staged chunk replacement should splice source chunks");
     check(preplanned_summary.matched_replacement_count == 2,
         "preplanned indexed staged chunk replacement should report matched replacements");
+
+    const fastxlsx::detail::IndexedPackageEntryChunkReplacementResult descriptor_result =
+        fastxlsx::detail::make_indexed_cell_replacement_package_entry_chunks(
+            source_chunks, preplanned_rewrites, replacement_plan);
+    check(descriptor_result.output_bytes == static_cast<std::uint64_t>(expected.size()),
+        "indexed descriptor replacement should report output bytes");
+    check(descriptor_result.summary.matched_replacement_count == 2,
+        "indexed descriptor replacement should report matched replacements");
+    check(fastxlsx::detail::testing_read_package_entry_chunks_to_string(
+              descriptor_result.chunks)
+            == expected,
+        "indexed descriptor replacement should replay source file ranges and payload chunks");
+    const bool has_file_range_chunk =
+        std::any_of(descriptor_result.chunks.begin(), descriptor_result.chunks.end(),
+            [](const fastxlsx::detail::PackageEntryChunk& chunk) {
+                return chunk.kind == fastxlsx::detail::PackageEntryChunk::Kind::File
+                    && chunk.has_file_range;
+            });
+    check(has_file_range_chunk,
+        "indexed descriptor replacement should preserve source pass-through as file ranges");
+    const bool file_range_has_crc_contract =
+        std::any_of(descriptor_result.chunks.begin(), descriptor_result.chunks.end(),
+            [](const fastxlsx::detail::PackageEntryChunk& chunk) {
+                return chunk.kind == fastxlsx::detail::PackageEntryChunk::Kind::File
+                    && chunk.has_file_range && chunk.has_expected_crc32;
+            });
+    check(!file_range_has_crc_contract,
+        "indexed descriptor replacement should leave source file ranges without CRC prepass");
+}
+
+void test_package_editor_cell_replacement_uses_indexed_source_entry_fast_path()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-cell-replace-indexed-source-entry-source.xlsx");
+    const std::filesystem::path output = output_path(
+        "fastxlsx-package-editor-cell-replace-indexed-source-entry-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string replacement_cell = R"(<c r="A1"><v>42</v></c>)";
+    const std::string expected_worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>42</v></c></row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source.path, worksheet_part.zip_path(),
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)");
+
+    fastxlsx::detail::ReferencePolicy policy;
+    policy.request_full_calculation_on_sheet_rewrite = false;
+    policy.calc_chain_action = fastxlsx::detail::CalcChainAction::Preserve;
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::array replacements {
+        worksheet_cell_replacement("A1", replacement_cell),
+    };
+    editor.replace_worksheet_cells(worksheet_part, replacements, policy);
+
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"indexed source-entry direct-range", "matched 1 replacement targets"}),
+        "cell replacement should record the indexed source-entry fast path");
+    const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+    check(worksheet_plan != nullptr,
+        "indexed source-entry cell replacement should plan the worksheet part");
+    check(worksheet_plan->write_mode == fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "indexed source-entry cell replacement should use stream rewrite");
+    check_contains(worksheet_plan->reason, "indexed direct-range",
+        "indexed source-entry cell replacement should expose the fast-path reason");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "indexed source-entry cell replacement should update manifest write mode");
+
+    const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
+    check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
+        "indexed source-entry cell replacement should appear as a staged stream rewrite");
+    check_output_entry_staged_replacement_chunks(output_plan.entries, worksheet_part.zip_path(),
+        true,
+        "indexed source-entry cell replacement should expose staged chunks");
+    check_output_entry_materialized_replacement(output_plan.entries, worksheet_part.zip_path(),
+        false,
+        "indexed source-entry cell replacement should not materialize the worksheet XML");
+    const auto* output_entry_plan =
+        find_output_entry_plan(output_plan.entries, worksheet_part.zip_path());
+    check(output_entry_plan != nullptr,
+        "indexed source-entry output plan should include the worksheet entry");
+    check(output_entry_plan->staged_replacement_chunk_count
+            == output_entry_plan->staged_replacement_file_range_chunk_count
+                + output_entry_plan->staged_replacement_memory_chunk_count,
+        "indexed source-entry output plan should account for every staged chunk");
+    check(output_entry_plan->staged_replacement_file_range_chunk_count > 0,
+        "indexed source-entry output plan should preserve source XML as file ranges");
+    check(output_entry_plan->staged_replacement_memory_chunk_count == 1,
+        "indexed source-entry output plan should stage only the replacement cell as memory");
+    check(output_entry_plan->staged_replacement_file_range_bytes > 0,
+        "indexed source-entry output plan should report source file-range bytes");
+    check(output_entry_plan->staged_replacement_memory_bytes
+            == static_cast<std::uint64_t>(replacement_cell.size()),
+        "indexed source-entry output plan should report replacement memory bytes");
+    check(output_entry_plan->staged_replacement_expected_bytes
+            == static_cast<std::uint64_t>(expected_worksheet.size()),
+        "indexed source-entry output plan should report final worksheet bytes");
+    check(output_entry_plan->staged_replacement_expected_bytes_complete,
+        "indexed source-entry output plan should have complete expected bytes");
+    check(output_entry_plan->indexed_source_entry_direct_range,
+        "indexed source-entry output plan should expose structured direct-range telemetry");
+    check(output_entry_plan->indexed_source_entry_scanned_source_cell_count == 1,
+        "indexed source-entry output plan should report scanned source cells");
+    check(output_entry_plan->indexed_source_entry_matched_replacement_count == 1,
+        "indexed source-entry output plan should report matched replacements");
+    check(output_entry_plan->indexed_source_entry_staged_output_bytes
+            == static_cast<std::uint64_t>(expected_worksheet.size()),
+        "indexed source-entry output plan should report staged output bytes");
+    check_contains(output_entry_plan->reason, "indexed direct-range",
+        "indexed source-entry output plan should expose the fast-path reason");
+
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), expected_worksheet);
+    check_preserved_source_entries(editor.reader(), output_reader, worksheet_part.zip_path());
 }
 
 void test_package_editor_indexed_staged_chunk_replacement_rejects_invalid_inputs()
@@ -923,6 +1269,67 @@ void test_package_editor_save_as_rejects_changed_staged_chunk_crc_without_state_
     check_entry_bytes(output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
 }
 
+void test_package_editor_save_as_rejects_changed_single_staged_chunk_crc()
+{
+    const SourcePackage source =
+        write_source_package("fastxlsx-package-editor-single-staged-crc-source.xlsx");
+    const std::filesystem::path output =
+        output_path("fastxlsx-package-editor-single-staged-crc-output.xlsx");
+    const std::filesystem::path body_path =
+        output_path("fastxlsx-package-editor-single-staged-crc-body.bin");
+    const std::string output_sentinel =
+        "do not overwrite single staged crc failure output";
+    write_binary_file(output, output_sentinel);
+
+    const std::string opaque_body = "single-file-backed-body";
+    write_binary_file(body_path, opaque_body);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    editor.replace_part_chunks(opaque_part,
+        {
+            fastxlsx::detail::PackageEntryChunk::file(body_path),
+        },
+        "single staged opaque stream chunk with expected CRC");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+
+    write_binary_file(body_path, same_size_different_payload(opaque_body));
+
+    bool save_failed = false;
+    try {
+        editor.save_as(output);
+    } catch (const std::exception& error) {
+        save_failed = true;
+        check_contains(error.what(),
+            "ZIP entry chunk CRC32 changed after staging",
+            "single staged chunk CRC mutation should still be validated while writing");
+        check_contains(error.what(), "ZIP entry 'custom/opaque.bin' chunk 0",
+            "single staged chunk CRC mutation should report chunk context");
+        check_contains(error.what(), body_path.filename().generic_string(),
+            "single staged chunk CRC mutation should include the file-backed chunk path");
+    }
+
+    check(save_failed,
+        "save_as should reject a single staged file chunk whose CRC changed after validation");
+    check(fastxlsx::test::read_file(output) == output_sentinel,
+        "single staged chunk CRC failure should preserve existing output bytes");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "single staged chunk CRC failure should preserve edit-plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "single staged chunk CRC failure should not append notes");
+
+    write_binary_file(body_path, opaque_body);
+    editor.save_as(output);
+
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, opaque_part.zip_path(), opaque_body);
+    check_entry_bytes(output_reader, "xl/worksheets/sheet1.xml", source.worksheet);
+}
+
 void test_package_editor_rejects_invalid_generic_staged_chunks_without_state_changes()
 {
     const SourcePackage source =
@@ -1022,6 +1429,16 @@ void test_package_editor_rejects_invalid_generic_staged_chunks_without_state_cha
         "failed to measure staged package-entry chunk file",
         "fastxlsx-package-editor-invalid-generic-staged-chunks-missing-output.xlsx",
         "missing file generic staged chunk");
+
+    const std::filesystem::path range_body_path =
+        output_path("fastxlsx-package-editor-invalid-generic-staged-chunks-range.bin");
+    write_binary_file(range_body_path, "range");
+    fastxlsx::detail::PackageEntryChunk invalid_range_chunk =
+        fastxlsx::detail::PackageEntryChunk::file_range(range_body_path, 3, 8);
+    expect_invalid_chunk(std::move(invalid_range_chunk),
+        "file range exceeds file size",
+        "fastxlsx-package-editor-invalid-generic-staged-chunks-range-output.xlsx",
+        "invalid file-range generic staged chunk");
 }
 
 void test_package_editor_rejects_invalid_worksheet_staged_chunks_without_state_changes()
@@ -1216,12 +1633,17 @@ int main(int argc, char* argv[])
             test_package_editor_file_backs_copy_original_package_part_source_entries();
             test_package_editor_replaces_one_part_and_preserves_unknown_parts();
             test_package_editor_staged_chunk_part_replacement_writes_chunks();
+            test_package_editor_source_part_stored_entry_chunks_reference_source_package_payload();
+            test_package_editor_prevalidated_staged_chunk_part_replacement_by_name();
             test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks();
+            test_package_editor_file_range_chunks_read_and_write_ranges();
             test_package_editor_rejects_invalid_staged_chunk_ranges();
             test_package_editor_indexed_staged_chunk_replacement_slices_source_chunks();
+            test_package_editor_cell_replacement_uses_indexed_source_entry_fast_path();
             test_package_editor_indexed_staged_chunk_replacement_rejects_invalid_inputs();
             test_package_editor_save_as_rejects_changed_staged_chunk_size_without_state_changes();
             test_package_editor_save_as_rejects_changed_staged_chunk_crc_without_state_changes();
+            test_package_editor_save_as_rejects_changed_single_staged_chunk_crc();
             test_package_editor_rejects_invalid_generic_staged_chunks_without_state_changes();
             test_package_editor_rejects_invalid_worksheet_staged_chunks_without_state_changes();
             test_package_editor_rejects_materialized_stream_rewrite_part_without_state_changes();

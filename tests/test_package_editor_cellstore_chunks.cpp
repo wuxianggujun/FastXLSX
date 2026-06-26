@@ -1908,148 +1908,35 @@ void test_package_editor_source_loaded_cell_store_worksheet_chunks_use_planned_n
         worksheet_part.zip_path(), true,
         "source-backed CellStore rename+queued worksheet full-projection existing-directory failure should preserve staged chunks");
 
-    const std::vector<std::filesystem::path> temp_files_before_source_copy_failure =
+    const std::vector<std::filesystem::path> temp_files_before_direct_source_copy =
         package_editor_temp_files();
-    const std::string source_copy_failure_output_sentinel =
-        "do not overwrite this combined CellStore source-copy temp failure output";
-    write_binary_file(output, source_copy_failure_output_sentinel);
-    const std::vector<std::filesystem::path> output_temp_files_before_source_copy_failure =
+    const std::string direct_source_copy_output_sentinel =
+        "will be replaced by combined CellStore direct source-range save";
+    write_binary_file(output, direct_source_copy_output_sentinel);
+    const std::vector<std::filesystem::path> output_temp_files_before_direct_source_copy =
         package_editor_output_sibling_temp_files(output);
 
-    bool failed_source_copy_temp_size = false;
-    {
-        ScopedPackageEditorSourceCopyTempFilesHook hook(
-            truncate_package_editor_source_copy_temp_files);
-        try {
-            editor.save_as(output);
-        } catch (const fastxlsx::FastXlsxError& error) {
-            failed_source_copy_temp_size = true;
-            check_contains(error.what(), "failed to write PackageEditor output package",
-                "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should include PackageEditor context");
-            check_contains(error.what(), "ZIP entry chunk size changed after staging",
-                "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should enforce size metadata");
-        }
-    }
-    check(failed_source_copy_temp_size,
-        "source-backed CellStore rename+queued worksheet full-projection should reject changed source-copy temp size");
+    editor.save_as(output);
 
     check(editor.edit_plan().size() == planned_plan_size,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should preserve edit-plan size");
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should preserve edit-plan size");
     check(editor.edit_plan().notes().size() == planned_note_count,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should not append notes");
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should not append notes");
     check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should preserve calc policy");
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should preserve calc policy");
     check_manifest_write_mode(editor, worksheet_part,
         fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should keep worksheet staged rewrite");
-    const fastxlsx::detail::PackageEditorOutputPlan after_source_copy_failed_save_output_plan =
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should keep worksheet staged rewrite");
+    const fastxlsx::detail::PackageEditorOutputPlan after_direct_source_copy_output_plan =
         editor.planned_output();
-    check_output_entry_staged_replacement_chunks(after_source_copy_failed_save_output_plan.entries,
+    check_output_entry_staged_replacement_chunks(after_direct_source_copy_output_plan.entries,
         worksheet_part.zip_path(), true,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should preserve staged chunks");
-    check(fastxlsx::test::read_file(output) == source_copy_failure_output_sentinel,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should not overwrite existing output");
-    check_no_new_package_editor_temp_files(temp_files_before_source_copy_failure,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should clean source-copy temp files");
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should preserve staged chunks");
+    check_no_new_package_editor_temp_files(temp_files_before_direct_source_copy,
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should not leak source-copy temp files");
     check_no_new_package_editor_output_sibling_temp_files(
-        output_temp_files_before_source_copy_failure, output,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp failure should clean output sibling temp files");
-
-    const std::vector<std::filesystem::path> temp_files_before_missing_source_copy =
-        package_editor_temp_files();
-    const std::string missing_source_copy_output_sentinel =
-        "do not overwrite this combined CellStore missing source-copy temp failure output";
-    write_binary_file(output, missing_source_copy_output_sentinel);
-    const std::vector<std::filesystem::path> output_temp_files_before_missing_source_copy =
-        package_editor_output_sibling_temp_files(output);
-
-    bool failed_missing_source_copy_temp = false;
-    {
-        ScopedPackageEditorSourceCopyTempFilesHook hook(
-            delete_package_editor_source_copy_temp_files);
-        try {
-            editor.save_as(output);
-        } catch (const fastxlsx::FastXlsxError& error) {
-            failed_missing_source_copy_temp = true;
-            check_contains(error.what(), "failed to write PackageEditor output package",
-                "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should include PackageEditor context");
-            check_contains(error.what(), "failed to stat file-backed ZIP entry chunk",
-                "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should report stat failure");
-        }
-    }
-    check(failed_missing_source_copy_temp,
-        "source-backed CellStore rename+queued worksheet full-projection should reject missing source-copy temp file");
-
-    check(editor.edit_plan().size() == planned_plan_size,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should preserve edit-plan size");
-    check(editor.edit_plan().notes().size() == planned_note_count,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should not append notes");
-    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should preserve calc policy");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should keep worksheet staged rewrite");
-    const fastxlsx::detail::PackageEditorOutputPlan after_missing_source_copy_failed_save_output_plan =
-        editor.planned_output();
-    check_output_entry_staged_replacement_chunks(
-        after_missing_source_copy_failed_save_output_plan.entries,
-        worksheet_part.zip_path(), true,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should preserve staged chunks");
-    check(fastxlsx::test::read_file(output) == missing_source_copy_output_sentinel,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should not overwrite existing output");
-    check_no_new_package_editor_temp_files(temp_files_before_missing_source_copy,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should clean source-copy temp files");
-    check_no_new_package_editor_output_sibling_temp_files(
-        output_temp_files_before_missing_source_copy, output,
-        "source-backed CellStore rename+queued worksheet full-projection missing source-copy temp failure should clean output sibling temp files");
-
-    const std::vector<std::filesystem::path> temp_files_before_source_copy_crc_failure =
-        package_editor_temp_files();
-    const std::string source_copy_crc_failure_output_sentinel =
-        "do not overwrite this combined CellStore source-copy CRC failure output";
-    write_binary_file(output, source_copy_crc_failure_output_sentinel);
-    const std::vector<std::filesystem::path> output_temp_files_before_source_copy_crc_failure =
-        package_editor_output_sibling_temp_files(output);
-
-    bool failed_source_copy_temp_crc = false;
-    {
-        ScopedPackageEditorSourceCopyTempFilesHook hook(
-            rewrite_package_editor_source_copy_temp_files_same_size);
-        try {
-            editor.save_as(output);
-        } catch (const fastxlsx::FastXlsxError& error) {
-            failed_source_copy_temp_crc = true;
-            check_contains(error.what(), "failed to write PackageEditor output package",
-                "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should include PackageEditor context");
-            check_contains(error.what(), "ZIP entry chunk CRC32 changed after staging",
-                "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should enforce CRC metadata");
-        }
-    }
-    check(failed_source_copy_temp_crc,
-        "source-backed CellStore rename+queued worksheet full-projection should reject changed source-copy temp CRC");
-
-    check(editor.edit_plan().size() == planned_plan_size,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should preserve edit-plan size");
-    check(editor.edit_plan().notes().size() == planned_note_count,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should not append notes");
-    check(editor.edit_plan().calc_chain_action() == planned_calc_chain_action,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should preserve calc policy");
-    check_manifest_write_mode(editor, worksheet_part,
-        fastxlsx::detail::PartWriteMode::StreamRewrite,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should keep worksheet staged rewrite");
-    const fastxlsx::detail::PackageEditorOutputPlan after_source_copy_crc_failed_save_output_plan =
-        editor.planned_output();
-    check_output_entry_staged_replacement_chunks(
-        after_source_copy_crc_failed_save_output_plan.entries,
-        worksheet_part.zip_path(), true,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should preserve staged chunks");
-    check(fastxlsx::test::read_file(output) == source_copy_crc_failure_output_sentinel,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should not overwrite existing output");
-    check_no_new_package_editor_temp_files(temp_files_before_source_copy_crc_failure,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should clean source-copy temp files");
-    check_no_new_package_editor_output_sibling_temp_files(
-        output_temp_files_before_source_copy_crc_failure, output,
-        "source-backed CellStore rename+queued worksheet full-projection source-copy temp CRC failure should clean output sibling temp files");
+        output_temp_files_before_direct_source_copy, output,
+        "source-backed CellStore rename+queued worksheet full-projection direct source-range save should clean output sibling temp files");
 
     const std::vector<std::filesystem::path> temp_files_before_writer_failure =
         package_editor_temp_files();

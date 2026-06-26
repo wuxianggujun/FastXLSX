@@ -70,6 +70,14 @@ struct WorksheetEventReaderOptions {
     /// for the next chunk. It is an internal guardrail, not a public large-file
     /// performance target.
     std::size_t max_window_bytes = 64U * 1024U;
+
+    /// Copies current row/cell attributes so later nested/end events can expose
+    /// them safely.
+    ///
+    /// Target-only scanners can disable this when they only need the attribute
+    /// on the start tag event and track active cell state themselves.
+    bool copy_context_attributes = true;
+
 };
 
 /// Scans worksheet XML from a pull-based chunk source.

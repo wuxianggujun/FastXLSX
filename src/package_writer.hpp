@@ -17,6 +17,9 @@ struct PackageEntryChunk {
     Kind kind = Kind::Memory;
     std::string data;
     std::filesystem::path path;
+    bool has_file_range = false;
+    std::uint64_t file_offset = 0;
+    std::uint64_t file_size = 0;
     bool has_expected_size = false;
     std::uint64_t expected_size = 0;
     bool has_expected_crc32 = false;
@@ -37,6 +40,20 @@ struct PackageEntryChunk {
         PackageEntryChunk chunk;
         chunk.kind = Kind::File;
         chunk.path = std::move(value);
+        return chunk;
+    }
+
+    [[nodiscard]] static PackageEntryChunk file_range(
+        std::filesystem::path value, std::uint64_t offset, std::uint64_t size)
+    {
+        PackageEntryChunk chunk;
+        chunk.kind = Kind::File;
+        chunk.path = std::move(value);
+        chunk.has_file_range = true;
+        chunk.file_offset = offset;
+        chunk.file_size = size;
+        chunk.has_expected_size = true;
+        chunk.expected_size = size;
         return chunk;
     }
 };

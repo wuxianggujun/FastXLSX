@@ -150,17 +150,21 @@ In-memory `WorksheetEditor` 切片：`WorksheetEditorOptions`、
 `set_column_values()` / `set_column_values(initializer_list<CellValue>)` /
 `clear_cell_value()` /
 `clear_row()` / `clear_rows()` / `clear_column()` / `clear_columns()` /
+`clear_cell_values()` /
 `set_cell_values(initializer_list<WorksheetCellUpdate>)` /
 `clear_cell_values(CellRange)` / `clear_cell_values(std::string_view)` /
 `clear_cell_values(span<WorksheetCellReference>)` /
 `clear_cell_values(initializer_list<WorksheetCellReference>)` /
-`erase_cell()` / `erase_cells(CellRange)` /
+`erase_cell()` / `erase_cells()` / `erase_cells(CellRange)` /
 `erase_cells(std::string_view)` /
 `erase_cells(span<WorksheetCellReference>)` /
 `erase_cells(initializer_list<WorksheetCellReference>)`、
 `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
 `sparse_cells(std::string_view)` strict uppercase A1 range overload、
-`row_cells()`、`column_cells()`、`cell_count()` 和
+`sparse_cells(span<WorksheetCellReference>)` /
+`sparse_cells(initializer_list<WorksheetCellReference>)` explicit sparse
+coordinate batch overloads、
+`contains_cell()`、`used_range()`、`row_cells()`、`column_cells()`、`cell_count()` 和
 `estimated_memory_usage()`。Small new-workbook
 `Workbook::rename_worksheet()` / `Workbook::remove_worksheet()` 也已落地，只修改
 当前待生成 workbook 中的 in-memory sheet buffer，并不编辑已有 XLSX；`Workbook` /
@@ -181,8 +185,8 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 | --- | --- | --- | --- |
 | New workbook streaming | 已公开，继续低风险打磨 | `WorkbookWriter`, `WorksheetWriter`, `CellView`, styles, validations, hyperlinks, tables, conditional formatting, images | 不支持随机回写历史行；不把 convenience API 放进 row hot path |
 | Small new workbook | 已公开，适合小文件创建 | `Workbook`, `Worksheet`, `Cell`, `Workbook::add_worksheet()`, `Workbook::save()`, `worksheet_count()`, `worksheet_names()`, `has_worksheet()`, `worksheet()`, `try_worksheet()`, `rename_worksheet()`, `remove_worksheet()`, `Workbook::cell_count()`, `Workbook::estimated_memory_usage()`, `Worksheet::cell_count()`, `Worksheet::estimated_memory_usage()` | 不承诺大文件低内存；不作为 existing-file editor；lookup / rename old-name / remove name 和 duplicate-name rule 均为 ASCII case-insensitive；`rename_worksheet()` / `remove_worksheet()` 只修改待生成 workbook 中的 buffered sheet，不是 existing-file sheet edit/delete；size diagnostics 是近似观测，不是 RSS、硬预算或 large-export progress |
-| Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `CellPatchMissingCellPolicy`, `replace_sheet_data()`, `replace_cells()`, `replace_image()`, `rename_sheet()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；`replace_cells()` 默认只替换已存在 cells，显式 `CellPatchMissingCellPolicy::Insert` 只做 point upsert，能插入缺失 cells / 合成 minimal rows，但不 shift 行列、不 resize tables/filters/drawings/defined names；不做 relationship repair、sharedStrings/style migration、drawing/image semantic editing |
-| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, source-load and mutation `max_cells` / `memory_budget_bytes` guardrails plus max-cells and memory-budget mutation failure/recovery hygiene, missing-erase diagnostic cleanup, explicit blank insertion guardrail coverage, mutation diagnostic replacement/clear ordering, and mixed public edit diagnostic replacement/clear ordering, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorkbookEditor::formula_reference_audits()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `set_cells()`, `append_row()`, `set_row()`, `set_column()`, `erase_row()`, `erase_rows()`, `erase_column()`, `erase_columns()`, `set_cell_value()`, `set_cell_values()`, `set_row_values()`, `set_column_values()`, `clear_cell_value()`, `clear_row()`, `clear_rows()`, `clear_column()`, `clear_columns()`, `clear_cell_values(CellRange)`, `clear_cell_values(span<WorksheetCellReference>)`, `erase_cell()`, `erase_cells(span<WorksheetCellReference>)`, strict row/column coordinate guardrails, strict uppercase A1 overloads, default `StyleId{0}` normalization to no style handle, row/column / A1 / sparse batch caller non-default `StyleId` rejection no-state-pollution, sparse batch full-cell replacement with preflighted duplicate-coordinate later-wins semantics, sparse append-row next-represented-row semantics with empty-input no-op and staged width / row-limit / guardrail failures, sparse set-row represented-row replacement/clear semantics with missing-row no-op and staged width / style / guardrail failures, sparse set-column represented-column replacement/clear semantics with missing-column no-op and staged height / style / guardrail failures, sparse row / column prefix value-only writes with source-style preservation and untouched prefix-outside sparse cells, sparse row / row-range / column / column-range value clear with source-style preservation, sparse row / row-range / column / column-range erase with missing-only no-op semantics, sparse batch value-only replacement with source-style preservation, explicit blank clears through single-cell / row / column / range / coordinate-batch clear APIs, sparse coordinate batch erase with missing-only no-op semantics, source explicit `s="0"` / `s='0'` normalization to no style handle, workbook-backed canonical non-zero source style id `cellXfs` validation and numeric passthrough, style-preserving value-only updates and explicit blank clears through `set_cell_value()` / `set_cell_values()` / `set_row_values()` / `set_column_values()` / `clear_cell_value()` / `clear_row()` / `clear_rows()` / `clear_column()` / `clear_columns()` / `clear_cell_values(CellRange)` / `clear_cell_values(span<WorksheetCellReference>)`, source `t="str"` scalar-string and formula-string materialization, source `t="e"` opaque error-token materialization, `WorksheetCellReference`, `WorksheetCellUpdate`, `WorksheetCellSnapshot`, `WorkbookEditorFormulaReferenceAudit`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, `row_cells()`, `column_cells()`, sparse row/column owning snapshots without missing-cell synthesis, pre-/post-save matching-option `worksheet()` / `try_worksheet()` session reacquire reuse, post-save materialized summary and aggregate diagnostic lifecycle, renamed-sheet planned-name materialized diagnostics, materialized formula sheet-reference audit for rename risk without formula rewrite, guarded source sharedStrings materialization plus narrow append projection/reuse and absent-table optional-dependency, lazy selected-sheet dependency, and non-critical metadata boundaries, relationship-target, XML/entity/attribute, custom source cell-type, and direct raw cell/worksheet/sheetData/row-text fail-fast hygiene, source inline/sharedStrings rich-text flattening, prefixed source worksheet/inlineStr local-name materialization, namespace-URI non-validation coverage for supported local-names, wrong-namespace unsupported local-name failure hygiene including sharedStrings item/rich-run local-names, malformed source sharedStrings and inline rich metadata failure hygiene, source wrapper metadata dirty-projection boundary, cell-external comment/PI dirty-projection boundary, clean read-only materialized no-op save copy-original boundary, failed-materialization no-op save copy-original boundary, missing `try_worksheet()` no-op save copy-original boundary, `cell_count()`, `estimated_memory_usage()` | 不支持 caller-supplied 非默认 style id 写入、style migration / merge、sharedStrings broad rebuild / migration、sharedStrings XML repair / schema count repair、sharedStrings relationship repair/pruning、external sharedStrings target materialization、date/custom cell materialization、Excel error-token validation、formula evaluation or formula rewrite、namespace URI validation/repair、unsupported local-name import/tolerance、rich-text preservation、malformed rich metadata repair、source wrapper metadata preservation / sync、comment import / XML trivia preservation、tombstone clear API、row/column delete/insert、row shifting、row metadata creation、coordinate inference / clamping、semantic metadata sync、clean-session commit semantics、transaction history、dense range writes beyond active sparse-record clear and sparse batch replacement/clear APIs, dense range reads、dense row/column reads、streaming sparse iterators 或 large-file low-memory random editing；`memory_budget_bytes` 是 sparse-store estimate guardrail，不是 process RSS 或 save-time package assembly peak |
+| Existing workbook Patch facade | 已公开窄切片 | `WorkbookEditor::open()`, source/planned catalog inspection, `CellPatchMissingCellPolicy`, `replace_sheet_data()`, `replace_cells()`, `replace_image()`, `rename_sheet()`, `request_full_calculation()`, `save_as()`, coarse diagnostics | 不公开 `PackageEditor` / `EditPlan`；`replace_cells()` 默认只替换已存在 cells，显式 `CellPatchMissingCellPolicy::Insert` 只做 point upsert，能插入缺失 cells / 合成 minimal rows，但不 shift 行列、不 resize tables/filters/drawings/defined names；`request_full_calculation()` 只提供 workbook fullCalcOnLoad / stale calcChain cleanup，不做 relationship repair、sharedStrings/style migration、drawing/image semantic editing |
+| Existing workbook In-memory worksheet editor | 已公开首个 small-file 切片 | `WorksheetEditorOptions`, source-load and mutation `max_cells` / `memory_budget_bytes` guardrails plus max-cells and memory-budget mutation failure/recovery hygiene, missing-erase diagnostic cleanup, explicit blank insertion guardrail coverage, mutation diagnostic replacement/clear ordering, and mixed public edit diagnostic replacement/clear ordering, `WorkbookEditor::worksheet()`, `WorkbookEditor::try_worksheet()`, `WorkbookEditor::formula_reference_audits()`, `WorksheetEditor::name()`, `try_cell()`, `get_cell()`, `set_cell()`, `set_cells()`, `append_row()`, `set_row()`, `set_column()`, `erase_row()`, `erase_rows()`, `erase_column()`, `erase_columns()`, `set_cell_value()`, `set_cell_values()`, `set_row_values()`, `set_column_values()`, `clear_cell_value()`, `clear_cell_values()`, `clear_row()`, `clear_rows()`, `clear_column()`, `clear_columns()`, `clear_cell_values(CellRange)`, `clear_cell_values(span<WorksheetCellReference>)`, `erase_cell()`, `erase_cells()`, `erase_cells(span<WorksheetCellReference>)`, strict row/column coordinate guardrails, strict uppercase A1 overloads, default `StyleId{0}` normalization to no style handle, row/column / A1 / sparse batch caller non-default `StyleId` rejection no-state-pollution, sparse batch full-cell replacement with preflighted duplicate-coordinate later-wins semantics, sparse append-row next-represented-row semantics with empty-input no-op and staged width / row-limit / guardrail failures, sparse set-row represented-row replacement/clear semantics with missing-row no-op and staged width / style / guardrail failures, sparse set-column represented-column replacement/clear semantics with missing-column no-op and staged height / style / guardrail failures, sparse row / row-range / column / column-range / whole-store value clear with source-style preservation, sparse row / row-range / column / column-range / whole-store erase with missing-only no-op semantics, sparse batch value-only replacement with source-style preservation, explicit blank clears through single-cell / whole-store / row / column / range / coordinate-batch clear APIs, sparse coordinate batch erase with missing-only no-op semantics, source explicit `s="0"` / `s='0'` normalization to no style handle, workbook-backed canonical non-zero source style id `cellXfs` validation and numeric passthrough, style-preserving value-only updates and explicit blank clears through `set_cell_value()` / `set_cell_values()` / `set_row_values()` / `set_column_values()` / `clear_cell_value()` / `clear_cell_values()` / `clear_row()` / `clear_rows()` / `clear_column()` / `clear_columns()` / `clear_cell_values(CellRange)` / `clear_cell_values(span<WorksheetCellReference>)`, source `t="str"` scalar-string and formula-string materialization, source `t="e"` opaque error-token materialization, `WorksheetCellReference`, `WorksheetCellUpdate`, `WorksheetCellSnapshot`, `WorkbookEditorFormulaReferenceAudit`, `has_pending_changes()`, `sparse_cells()`, `sparse_cells(CellRange)`, `row_cells()`, `column_cells()`, sparse row/column owning snapshots without missing-cell synthesis, pre-/post-save matching-option `worksheet()` / `try_worksheet()` session reacquire reuse, post-save materialized summary and aggregate diagnostic lifecycle, renamed-sheet planned-name materialized diagnostics, materialized formula sheet-reference audit for rename risk without formula rewrite, guarded source sharedStrings materialization plus narrow append projection/reuse and absent-table optional-dependency, lazy selected-sheet dependency, and non-critical metadata boundaries, relationship-target, XML/entity/attribute, custom source cell-type, and direct raw cell/worksheet/sheetData/row-text fail-fast hygiene, source inline/sharedStrings rich-text flattening, prefixed source worksheet/inlineStr local-name materialization, namespace-URI non-validation coverage for supported local-names, wrong-namespace unsupported local-name failure hygiene including sharedStrings item/rich-run local-names, malformed source sharedStrings and inline rich metadata failure hygiene, source wrapper metadata dirty-projection boundary, cell-external comment/PI dirty-projection boundary, clean read-only materialized no-op save copy-original boundary, failed-materialization no-op save copy-original boundary, missing `try_worksheet()` no-op save copy-original boundary, `cell_count()`, `estimated_memory_usage()` | 不支持 caller-supplied 非默认 style id 写入、style migration / merge、sharedStrings broad rebuild / migration、sharedStrings XML repair / schema count repair、sharedStrings relationship repair/pruning、external sharedStrings target materialization、date/custom cell materialization、Excel error-token validation、formula evaluation or formula rewrite、namespace URI validation/repair、unsupported local-name import/tolerance、rich-text preservation、malformed rich metadata repair、source wrapper metadata preservation / sync、comment import / XML trivia preservation、tombstone clear API、row/column delete/insert、row shifting、row metadata creation、coordinate inference / clamping、semantic metadata sync、clean-session commit semantics、transaction history、dense range writes beyond active sparse-record clear and sparse batch replacement/clear APIs, dense range reads、dense row/column reads、streaming sparse iterators 或 large-file low-memory random editing；`memory_budget_bytes` 是 sparse-store estimate guardrail，不是 process RSS 或 save-time package assembly peak |
 | Materialized worksheet foundation | internal + public handoff 底座 | `CellStore`, materialized-session registry, chunked projection, `WorkbookEditor::save_as()` dirty-session auto-flush | internal test hooks 仍不是 public API；不公开 source chunk lifetimes、EditPlan 或 PackageEditor |
 | Existing-file semantic objects | preserve/audit/fail 为主 | internal preservation and audit coverage for drawings, media, tables, comments, VBA, custom XML, pivot/external links, unknown entries | 不做语义编辑、range/table/chart sync、orphan cleanup、relationship pruning/repair |
 | Formula / calculation | 写入和重算请求基础 | formula cell XML, `fullCalcOnLoad`, calcChain cleanup policy in Patch paths；能力矩阵见 `docs/FORMULA_SUPPORT.md` | 不计算公式、不写 cached values、不 rebuild `calcChain.xml` |
@@ -283,6 +287,29 @@ multi-area, reversed, leading-zero, and out-of-limit references, returns only
 active sparse records without missing-cell synthesis, preserves read
 diagnostics, and is not dense range read, iterator, metadata recalculation, or
 large-file random access.
+
+Matrix addendum: P8.736 adds `WorksheetEditor::sparse_cells(std::span<const
+WorksheetCellReference>)` and the matching initializer-list overload for
+small-file sparse coordinate batch inspection. They return owning snapshots for
+already represented cells in input order, skip missing coordinates, allow
+duplicate coordinates, preserve read diagnostics, and are not dense batch reads,
+iterator APIs, metadata recalculation, or large-file random access.
+
+Matrix addendum: P8.769 adds `WorksheetEditor::contains_cell()` for row/column
+and strict uppercase A1 represented-state inspection. It returns true for
+source-backed records, edited records, and explicit blank records, false for
+missing or erased cells, copies no `CellValue`, preserves `last_edit_error()` on
+invalid reads, and is not worksheet `<dimension>` metadata inspection, dense
+matrix access, iterator exposure, or large-file low-memory random access.
+
+Matrix addendum: P8.770 adds no-argument
+`WorksheetEditor::clear_cell_values()` and `WorksheetEditor::erase_cells()` as
+whole materialized sparse-store operations. The clear operation converts every
+represented record to an explicit blank while preserving current source style
+handles; the erase operation removes every represented record. Empty stores are
+clean no-ops that clear public edit diagnostics. These are not worksheet
+deletion, sheetData part removal, dense range mutation, metadata recalculation,
+relationship repair, or large-file low-memory random access.
 
 Matrix addendum: P8.736 adds
 `WorksheetEditor::clear_cell_values(std::string_view)` and
@@ -557,15 +584,19 @@ whole-`<sheetData>` 替换、targeted cell replacement/upsert、media part repla
   `set_cell_values(span<WorksheetCellUpdate>)`、
   `clear_cell_value(row, column)`、`clear_row(row)`、
   `clear_rows(first_row, last_row)`、`clear_column(column)`、
-  `clear_columns(first_column, last_column)`、`clear_cell_values(CellRange)`、
+  `clear_columns(first_column, last_column)`、`clear_cell_values()`、
+  `clear_cell_values(CellRange)`、
   `clear_cell_values(std::string_view)`、
   `clear_cell_values(span<WorksheetCellReference>)`、`erase_cell(row, column)`、
-  `erase_cells(CellRange)`、`erase_cells(std::string_view)`、
+  `erase_cells()`、`erase_cells(CellRange)`、`erase_cells(std::string_view)`、
   `erase_cells(span<WorksheetCellReference>)`、除
   `set_cells()`、`set_cell_values()` 和 clear/erase batch/range 以外的 single-cell
   read/mutation API 的 strict uppercase A1 string overload、
   `has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
   `sparse_cells(std::string_view)` strict uppercase A1 range overload、
+  `sparse_cells(span<WorksheetCellReference>)` /
+  `sparse_cells(initializer_list<WorksheetCellReference>)` explicit sparse
+  coordinate batch overloads、
   `row_cells()`、`column_cells()`、`cell_count()` 和
   `estimated_memory_usage()`。
   `try_cell()` 对 missing sparse record 返回 empty；`get_cell()` 对 missing sparse
@@ -583,11 +614,18 @@ whole-`<sheetData>` 替换、targeted cell replacement/upsert、media part repla
   `sparse_cells()` 返回 owning row-major `WorksheetCellSnapshot` vector，包含
   explicit blank records。`sparse_cells(CellRange)` 和
   `sparse_cells(std::string_view)` 返回 1-based inclusive range 内已经存在的
-  active sparse records，不合成 missing cells。`row_cells()` /
+  active sparse records，不合成 missing cells。`sparse_cells(span<WorksheetCellReference>)`
+  和 initializer-list overload 按 caller 输入顺序返回已经 represented 的 owning
+  snapshots，允许重复坐标并跳过 missing coordinates。`used_range()` 返回 represented
+  sparse records 的 optional 1-based inclusive bounding `CellRange`，empty materialized
+  store 返回 `std::nullopt`，explicit blank records 计入边界。`row_cells()` /
   `column_cells()` 返回单个 row 或 column 内已经 represented 的 active sparse records，
-  同样不合成 missing cells、不更新 `last_edit_error()`。这些 snapshot reads 都不暴露
-  内部 iterator/lifetime，不是 dense range / row / column read 或 streaming sparse
-  iterator，不修改 dirty state，也不更新 `last_edit_error()`。
+  同样不合成 missing cells、不更新 `last_edit_error()`。`contains_cell()` 返回当前
+  materialized sparse store 的 represented-state boolean，explicit blank records 计为
+  represented，missing / erased cells 计为 false，且不复制 `CellValue`。这些 reads 都不暴露
+  内部 iterator/lifetime，不是 worksheet `<dimension>` metadata read/repair、dense
+  range / row / column read 或 streaming sparse iterator，不修改 dirty state，也不
+  更新 `last_edit_error()`。
   `has_pending_changes()` 是 worksheet-local dirty-state inspection：它只报告当前
   materialized session 是否等待 `WorkbookEditor::save_as()` auto-flush，不触发 flush，
   不增加 `pending_change_count()`，不暴露 internal Patch `EditPlan`，也不更新
@@ -652,7 +690,9 @@ whole-`<sheetData>` 替换、targeted cell replacement/upsert、media part repla
   `clear_cell_values(span<WorksheetCellReference>)` 是显式坐标 batch clear：invalid
   coordinate 会在状态变更前拒绝整个 batch；已有 sparse records 会变为保留 style 的
   explicit blank，missing coordinates 不合成 records，missing-only batch 是
-  successful no-op。
+  successful no-op。no-arg `clear_cell_values()` 对当前 materialized store 中所有
+  represented records 执行同样的 style-preserving explicit blank 语义；empty store 是
+  clean no-op。
   `erase_cells(CellRange)` 使用同样的 1-based inclusive range guardrail，只删除
   range 内已有 active sparse records；missing cells 不合成 tombstone，missing-only
   range 是 successful no-op。它不是 dense range deletion、
@@ -663,7 +703,8 @@ whole-`<sheetData>` 替换、targeted cell replacement/upsert、media part repla
   `erase_cells(span<WorksheetCellReference>)` 是显式坐标 batch remove：invalid
   coordinate 会在状态变更前拒绝整个 batch；已有 sparse records 会被删除，
   duplicate coordinates 在首次删除后成为 no-op，missing coordinates 不合成
-  tombstone，missing-only batch 是 successful no-op。
+  tombstone，missing-only batch 是 successful no-op。no-arg `erase_cells()` 删除当前
+  materialized store 中所有 represented records；empty store 是 clean no-op。
 - `save_as(output_path)`：输出到新路径；不承诺原地 atomic overwrite，也不绕过现有
   Patch save-as guard。没有 queued public edits 时，它只写 reader-backed roundtrip
   copy，保留解压后的 source package entries；这不是 public `PackageEditor`、in-place
@@ -702,14 +743,18 @@ whole-`<sheetData>` 替换、targeted cell replacement/upsert、media part repla
   `erase_column(column)`、`erase_columns(first_column, last_column)`、
   `clear_cell_value(row, column)`、`clear_row(row)`、
   `clear_rows(first_row, last_row)`、`clear_column(column)`、
-  `clear_columns(first_column, last_column)`、`clear_cell_values(CellRange)`、
+  `clear_columns(first_column, last_column)`、`clear_cell_values()`、
+  `clear_cell_values(CellRange)`、
   `clear_cell_values(std::string_view)`、`erase_cell(row, column)`、
-  `erase_cells(CellRange)`、`erase_cells(std::string_view)`、
+  `erase_cells()`、`erase_cells(CellRange)`、`erase_cells(std::string_view)`、
   `erase_cells(span<WorksheetCellReference>)`、
   strict uppercase single-cell A1 overload、
   `has_pending_changes()` dirty-state inspection、
   `sparse_cells()` owning snapshot、`sparse_cells(CellRange)` filtered owning
   snapshot、`sparse_cells(std::string_view)` strict A1 range owning snapshot、
+  `sparse_cells(span<WorksheetCellReference>)` /
+  `sparse_cells(initializer_list<WorksheetCellReference>)` explicit sparse
+  coordinate batch owning snapshots、
   `row_cells()` / `column_cells()` sparse row/column owning snapshots、
   `cell_count()`、`estimated_memory_usage()`。
 - 候选：broader range iteration / streaming sparse record iterator / dense
@@ -743,10 +788,11 @@ whole-`<sheetData>` 替换、targeted cell replacement/upsert、media part repla
   `clear_cell_value(ref)` 把现有 active record 转成显式 blank 并保留该 style，
   missing target 是 successful no-op；`clear_row()` / `clear_rows()` 和
   `clear_column()` / `clear_columns()` 对 row/column 内已有 active records 执行同样
-  value-clear 语义，missing-only row/column 输入不合成 cells；`clear_cell_values(CellRange)` /
+  value-clear 语义，missing-only row/column 输入不合成 cells；`clear_cell_values()` 对全部
+  represented records 执行同样 value-clear 语义；`clear_cell_values(CellRange)` /
   `clear_cell_values(std::string_view)` 对 range 内已有 active records 执行同样
   value-clear 语义，missing cells 不合成；`erase_cell(ref)` 和
-  `erase_cells(CellRange)` / `erase_cells(std::string_view)` /
+  no-arg `erase_cells()` / `erase_cells(CellRange)` / `erase_cells(std::string_view)` /
   `erase_cells(span<WorksheetCellReference>)` 删除 active record；
   `CellValue::blank()` 表示 caller 明确写入 blank replacement cell。当前 dirty
   projection 写空 `<c>`，styled blank 写 `s="N"`，但不会生成 tombstone。

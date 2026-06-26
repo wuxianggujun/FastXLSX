@@ -1620,6 +1620,10 @@ void test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension()
         R"(<row r="1"><c r="A1"><v>1</v></c></row>)"
         R"(<row r="3"><c r="C3"><v>3</v></c></row>)"
         R"(</sheetData></worksheet>)";
+    const std::string worksheet_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.invalid/" TargetMode="External"/>)"
+        R"(</Relationships>)";
     fastxlsx::detail::write_package(source.path,
         {
             {"[Content_Types].xml", source.content_types},
@@ -1627,6 +1631,7 @@ void test_package_editor_worksheet_cell_replacement_refreshes_stale_dimension()
             {"xl/workbook.xml", source.workbook},
             {"xl/_rels/workbook.xml.rels", source.workbook_relationships},
             {"xl/worksheets/sheet1.xml", source.worksheet},
+            {"xl/worksheets/_rels/sheet1.xml.rels", worksheet_relationships},
             {"xl/calcChain.xml", source.calc_chain},
             {"custom/opaque.bin", source.unknown},
         },

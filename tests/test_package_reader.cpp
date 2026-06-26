@@ -369,15 +369,16 @@ void test_stored_zip_backend_contextualizes_actual_chunk_failures()
             "stored backend chunk failure should identify the output entry and chunk");
         check_contains(error.what(), file_chunk_path.filename().generic_string(),
             "stored backend chunk failure should include the file-backed chunk path");
-        check_contains(error.what(), "produced more bytes than expected",
+        check_contains(error.what(), "ZIP entry chunk size changed after staging",
             "stored backend chunk failure should preserve the size-contract detail");
         check_contains(error.what(),
             std::string("expected ") + std::to_string(original_body.size()) + " bytes",
             "stored backend chunk failure should report expected bytes");
         check_contains(error.what(),
-            std::string("read at least ") + std::to_string(original_body.size() + 1U)
+            std::string("actual ") + std::to_string(
+                std::string(original_body + "-extended-after-validation").size())
                 + " bytes",
-            "stored backend chunk failure should report the lower-bound actual bytes");
+            "stored backend chunk failure should report the actual bytes");
     }
 
     std::error_code remove_error;
@@ -636,7 +637,7 @@ void test_package_reader_streams_stored_entry_chunks()
     const std::filesystem::path path =
         output_path("fastxlsx-package-reader-entry-chunks.xlsx");
     std::string unknown_body;
-    for (int index = 0; index < 4096; ++index) {
+    for (int index = 0; unknown_body.size() <= 2U * 1024U * 1024U; ++index) {
         unknown_body += "stored-entry-direct-chunk-source-";
         unknown_body += std::to_string(index);
         unknown_body += '\n';

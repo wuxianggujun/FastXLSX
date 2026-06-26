@@ -136,9 +136,9 @@ std::vector<std::string> workbook_editor_pending_materialized_worksheet_names(
 
 void validate_workbook_editor_materialized_flush_targets(
     const WorkbookEditorSheetCatalogPlan& sheet_catalog,
-    const std::vector<MaterializedWorksheetProjection>& projections)
+    const std::vector<MaterializedWorksheetSheetDataProjection>& projections)
 {
-    for (const MaterializedWorksheetProjection& projection : projections) {
+    for (const MaterializedWorksheetSheetDataProjection& projection : projections) {
         if (!sheet_catalog.has_current(projection.planned_name)) {
             throw FastXlsxError(
                 workbook_editor_missing_planned_sheet_message(projection.planned_name));
@@ -154,17 +154,18 @@ flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
 {
     std::optional<MaterializedSharedStringsProjectionPlan> shared_strings_projection =
         try_plan_materialized_shared_strings_projection(editor.reader(), materialized_sessions);
-    const std::vector<MaterializedWorksheetProjection> projections =
-        materialized_sessions.dirty_worksheet_chunk_sources(
+    const std::vector<MaterializedWorksheetSheetDataProjection> projections =
+        materialized_sessions.dirty_sheet_data_chunk_sources(
             shared_strings_projection.has_value()
                 ? shared_strings_projection->index_provider
                 : std::shared_ptr<const CellStoreSharedStringIndexProvider> {});
     validate_workbook_editor_materialized_flush_targets(sheet_catalog, projections);
 
     WorkbookEditorMaterializedFlushResult result;
-    for (const MaterializedWorksheetProjection& projection : projections) {
-        editor.replace_worksheet_part_from_chunk_source_by_name(
-            projection.planned_name, projection.read_next_chunk);
+    for (const MaterializedWorksheetSheetDataProjection& projection : projections) {
+        editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
+            projection.planned_name, projection.read_next_chunk, {},
+            std::string_view(projection.dimension_reference));
 
         MaterializedWorksheetSession* session =
             materialized_sessions.try_session(projection.planned_name);

@@ -102,6 +102,25 @@ std::optional<CellValue> WorksheetEditor::try_cell(std::string_view cell_referen
     return try_cell(coordinate.row, coordinate.column);
 }
 
+bool WorksheetEditor::contains_cell(std::uint32_t row, std::uint32_t column) const
+{
+    const WorkbookEditor::Impl& state = *owner().impl_;
+    detail::validate_worksheet_editor_cell_coordinate(row, column);
+    const detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name_);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+    }
+    return session->try_cell(row, column) != nullptr;
+}
+
+bool WorksheetEditor::contains_cell(std::string_view cell_reference) const
+{
+    const detail::WorksheetEditorCellCoordinate coordinate =
+        detail::parse_worksheet_editor_a1_cell_reference(cell_reference);
+    return contains_cell(coordinate.row, coordinate.column);
+}
+
 CellValue WorksheetEditor::get_cell(std::uint32_t row, std::uint32_t column) const
 {
     std::optional<CellValue> value = try_cell(row, column);
@@ -657,6 +676,24 @@ void WorksheetEditor::clear_cell_value(std::string_view cell_reference)
     }
 }
 
+void WorksheetEditor::clear_cell_values()
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->clear_cell_values();
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::clear_row(std::uint32_t row)
 {
     clear_rows(row, row);
@@ -811,6 +848,24 @@ void WorksheetEditor::clear_cell_values(std::initializer_list<WorksheetCellRefer
     clear_cell_values(std::span<const WorksheetCellReference>(cells.begin(), cells.size()));
 }
 
+void WorksheetEditor::erase_cells()
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->erase_cells();
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
 void WorksheetEditor::erase_cells(CellRange range)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -944,6 +999,47 @@ std::size_t WorksheetEditor::cell_count() const
     return session->cell_count();
 }
 
+std::optional<CellRange> WorksheetEditor::used_range() const
+{
+    const WorkbookEditor::Impl& state = *owner().impl_;
+    const detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name_);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+    }
+
+    const auto& records = session->store().records();
+    if (records.empty()) {
+        return std::nullopt;
+    }
+
+    auto iterator = records.begin();
+    CellRange range {
+        iterator->first.row,
+        iterator->first.column,
+        iterator->first.row,
+        iterator->first.column,
+    };
+    ++iterator;
+
+    for (; iterator != records.end(); ++iterator) {
+        const detail::CellPosition& position = iterator->first;
+        if (position.row < range.first_row) {
+            range.first_row = position.row;
+        }
+        if (position.column < range.first_column) {
+            range.first_column = position.column;
+        }
+        if (position.row > range.last_row) {
+            range.last_row = position.row;
+        }
+        if (position.column > range.last_column) {
+            range.last_column = position.column;
+        }
+    }
+    return range;
+}
+
 std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells() const
 {
     const WorkbookEditor::Impl& state = *owner().impl_;
@@ -984,6 +1080,45 @@ std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(
     std::string_view range_reference) const
 {
     return sparse_cells(detail::parse_worksheet_editor_a1_cell_range(range_reference));
+}
+
+std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(
+    std::span<const WorksheetCellReference> cells) const
+{
+    const WorkbookEditor::Impl& state = *owner().impl_;
+    for (const WorksheetCellReference& cell : cells) {
+        detail::validate_worksheet_editor_cell_coordinate(cell.row, cell.column);
+    }
+
+    const detail::MaterializedWorksheetSession* session =
+        state.materialized_sessions.try_session(planned_name_);
+    if (session == nullptr) {
+        throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+    }
+    if (cells.empty()) {
+        return {};
+    }
+
+    std::vector<WorksheetCellSnapshot> snapshots;
+    snapshots.reserve(cells.size());
+    for (const WorksheetCellReference& cell : cells) {
+        const detail::CellRecord* record = session->try_cell(cell.row, cell.column);
+        if (record == nullptr) {
+            continue;
+        }
+
+        snapshots.push_back(WorksheetCellSnapshot {
+            cell,
+            record->to_value(),
+        });
+    }
+    return snapshots;
+}
+
+std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(
+    std::initializer_list<WorksheetCellReference> cells) const
+{
+    return sparse_cells(std::span<const WorksheetCellReference>(cells.begin(), cells.size()));
 }
 
 std::vector<WorksheetCellSnapshot> WorksheetEditor::sparse_cells(CellRange range) const

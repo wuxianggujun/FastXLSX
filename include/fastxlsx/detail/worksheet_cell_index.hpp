@@ -95,6 +95,7 @@ struct WorksheetIndexedCellRewrite {
 struct WorksheetTargetedCellRewritePlan {
     std::vector<WorksheetIndexedCellRewrite> rewrites;
     std::uint64_t scanned_source_cell_count = 0;
+    bool source_has_top_level_dimension = false;
 };
 
 /// Validates a target set against a source cell index and returns source-order
@@ -114,10 +115,17 @@ struct WorksheetTargetedCellRewritePlan {
 /// instead of source cell count. It parses source cell references while scanning
 /// but intentionally does not build a global source-cell duplicate index; use
 /// `WorksheetCellIndex` when the caller needs full source validation.
+///
+/// `stop_after_all_targets_found` is an internal benchmark/prototype fast path
+/// for trusted source shapes: once every requested target has an exact source
+/// byte range, scanning stops and the caller must rely on its byte-range emitter
+/// to copy the remaining worksheet tail. Keep the default `false` when duplicate
+/// target-source detection after the last matched target matters.
 [[nodiscard]] WorksheetTargetedCellRewritePlan plan_targeted_cell_rewrites_from_chunk_source(
     const WorksheetInputChunkCallback& read_next_chunk,
     std::span<const std::string_view> cell_references,
-    WorksheetEventReaderOptions options = {});
+    WorksheetEventReaderOptions options = {},
+    bool stop_after_all_targets_found = false);
 
 [[nodiscard]] std::string_view worksheet_cell_range_xml(
     std::string_view worksheet_xml,

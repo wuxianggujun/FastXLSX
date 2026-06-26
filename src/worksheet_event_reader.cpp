@@ -361,6 +361,20 @@ private:
         current_cell_storage_.clear();
     }
 
+    void clear_transient_row_context()
+    {
+        if (!copy_context_attributes_) {
+            current_row_ = {};
+        }
+    }
+
+    void clear_transient_cell_context()
+    {
+        if (!copy_context_attributes_) {
+            current_cell_ = {};
+        }
+    }
+
     void clear_current_cell_value()
     {
         in_cell_value_ = false;
@@ -512,6 +526,7 @@ private:
                 {},
                 self_closing },
                 offset);
+            clear_transient_row_context();
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::RowEnd,
                     raw,
@@ -542,6 +557,7 @@ private:
                 {},
                 self_closing },
                 offset);
+            clear_transient_cell_context();
             if (self_closing) {
                 emit(WorksheetEvent { WorksheetEventKind::CellEnd,
                     raw,
@@ -767,7 +783,7 @@ void scan_worksheet_events_from_chunk_source(
         throw FastXlsxError("worksheet event reader requires a nonzero input window limit");
     }
 
-    WorksheetEventState state(callback, true);
+    WorksheetEventState state(callback, options.copy_context_attributes);
     std::string window;
     window.reserve(std::min<std::size_t>(options.max_window_bytes, 4096U));
     std::uint64_t window_begin_offset = 0;

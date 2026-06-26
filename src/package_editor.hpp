@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -56,6 +57,16 @@ struct PackagePartReplacement {
     std::vector<PackageEntryChunk> chunks;
     PartWriteMode write_mode = PartWriteMode::LocalDomRewrite;
     std::string reason;
+    bool indexed_source_entry_direct_range = false;
+    std::uint64_t indexed_source_entry_scanned_source_cell_count = 0;
+    std::uint64_t indexed_source_entry_matched_replacement_count = 0;
+    std::uint64_t indexed_source_entry_staged_output_bytes = 0;
+    std::uint64_t indexed_source_entry_source_range_chunk_ms = 0;
+    std::uint64_t indexed_source_entry_target_plan_ms = 0;
+    std::uint64_t indexed_source_entry_payload_audit_ms = 0;
+    std::uint64_t indexed_source_entry_relationship_audit_ms = 0;
+    std::uint64_t indexed_source_entry_descriptor_ms = 0;
+    std::uint64_t indexed_source_entry_commit_ms = 0;
 };
 
 struct PackageEntryReplacement {
@@ -76,6 +87,25 @@ struct PackageEditorOutputEntryPlan {
     bool file_backed_source_copy = false;
     bool staged_replacement_chunks = false;
     bool materialized_replacement = false;
+    std::size_t staged_replacement_chunk_count = 0;
+    std::size_t staged_replacement_memory_chunk_count = 0;
+    std::size_t staged_replacement_file_chunk_count = 0;
+    std::size_t staged_replacement_file_range_chunk_count = 0;
+    std::uint64_t staged_replacement_expected_bytes = 0;
+    std::uint64_t staged_replacement_memory_bytes = 0;
+    std::uint64_t staged_replacement_file_bytes = 0;
+    std::uint64_t staged_replacement_file_range_bytes = 0;
+    bool staged_replacement_expected_bytes_complete = false;
+    bool indexed_source_entry_direct_range = false;
+    std::uint64_t indexed_source_entry_scanned_source_cell_count = 0;
+    std::uint64_t indexed_source_entry_matched_replacement_count = 0;
+    std::uint64_t indexed_source_entry_staged_output_bytes = 0;
+    std::uint64_t indexed_source_entry_source_range_chunk_ms = 0;
+    std::uint64_t indexed_source_entry_target_plan_ms = 0;
+    std::uint64_t indexed_source_entry_payload_audit_ms = 0;
+    std::uint64_t indexed_source_entry_relationship_audit_ms = 0;
+    std::uint64_t indexed_source_entry_descriptor_ms = 0;
+    std::uint64_t indexed_source_entry_commit_ms = 0;
     std::string file_backed_source_copy_reason;
     std::string materialized_replacement_reason;
     PackageEntryAuditKind audit_kind = PackageEntryAuditKind::Generic;
@@ -129,6 +159,18 @@ struct SheetCatalogRenameOptions {
     std::span<const WorksheetIndexedCellRewrite> rewrites,
     const WorksheetCellReplacementPlan& replacement_plan,
     const WorksheetOutputChunkCallback& callback);
+
+struct IndexedPackageEntryChunkReplacementResult {
+    std::vector<PackageEntryChunk> chunks;
+    WorksheetTransformSummary summary;
+    std::uint64_t output_bytes = 0;
+};
+
+[[nodiscard]] IndexedPackageEntryChunkReplacementResult
+make_indexed_cell_replacement_package_entry_chunks(
+    const std::vector<PackageEntryChunk>& source_chunks,
+    std::span<const WorksheetIndexedCellRewrite> rewrites,
+    const WorksheetCellReplacementPlan& replacement_plan);
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 using PackageEditorSourceCopyTempFilesHook =
@@ -259,6 +301,16 @@ public:
     // materialization API.
     [[nodiscard]] std::string current_workbook_xml_for_diagnostics(
         std::string_view purpose) const;
+    // Internal source package range helper for staged rewrite prototypes. It
+    // exposes an existing stored source package entry as PackageEntryChunk
+    // file ranges over the original .xlsx bytes, without extracting the entry
+    // into a sidecar file. This is only valid for stored/no-compression source
+    // entries where compressed bytes equal decompressed bytes; DEFLATE inputs
+    // must still use PackageReader chunk sources.
+    [[nodiscard]] std::vector<PackageEntryChunk> source_part_stored_entry_chunks(
+        PartName part_name) const;
+    [[nodiscard]] std::vector<PackageEntryChunk>
+    source_worksheet_part_stored_entry_chunks_by_name(std::string_view sheet_name) const;
 
     void replace_part(PartName part_name, std::string materialized_small_xml,
         PartWriteMode write_mode, std::string reason = {});
@@ -322,6 +374,14 @@ public:
     void replace_worksheet_part_chunks_by_name(std::string_view sheet_name,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy = {},
         std::string reason = {});
+    // Internal benchmark/prototype by-name commit for staged worksheet chunks
+    // that the caller has already validated or audited elsewhere. It resolves
+    // the worksheet part through the same planned/source workbook catalog path,
+    // but skips the second staged audit pass used by
+    // replace_worksheet_part_chunks_by_name().
+    void replace_worksheet_part_prevalidated_chunks_by_name(std::string_view sheet_name,
+        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy = {},
+        std::string reason = {});
     // Internal Patch helper for template-style data updates. Replaces only the
     // worksheet <sheetData> element while preserving the surrounding worksheet
     // XML through a bounded local rewrite, then delegates calcChain/fullCalcOnLoad
@@ -349,9 +409,14 @@ public:
     // semantic sync for sharedStrings, styles, tables, drawings, filters,
     // columns, print/page setup, protection, ignored errors, object
     // relationships, extensions, or merged ranges.
+    // Callers that already computed a trusted replacement sparse-store
+    // dimension may pass `dimension_reference` to replace the worksheet
+    // `<dimension>` metadata while still preserving the rest of the wrapper.
+    // The default preserves source/planned dimension metadata as-is.
     void replace_worksheet_sheet_data_from_chunk_source(PartName worksheet_part,
         const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
-        const ReferencePolicy& policy = {});
+        const ReferencePolicy& policy = {},
+        std::optional<std::string_view> dimension_reference = std::nullopt);
     // Internal Patch convenience for workbook-targeted template fills. Resolves
     // the sheet name through the source workbook sheet catalog, or through the
     // currently planned `/xl/workbook.xml` small XML when a materialized workbook
@@ -365,7 +430,8 @@ public:
     // does not rename, add, delete, or repair sheets.
     void replace_worksheet_sheet_data_from_chunk_source_by_name(std::string_view sheet_name,
         const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
-        const ReferencePolicy& policy = {});
+        const ReferencePolicy& policy = {},
+        std::optional<std::string_view> dimension_reference = std::nullopt);
     // Internal handoff from the P8 worksheet transformer foundation. Source
     // package entries are scanned through PackageReader ZIP-entry chunk sources
     // for root validation, dependency/dimension analysis, relationship-id audit,
@@ -387,9 +453,11 @@ public:
         const ReferencePolicy& policy = {});
     // Internal Patch upsert variant for targeted cells. Existing cells are
     // replaced; missing cells are inserted into source-order rows, and missing
-    // rows are synthesized as minimal `<row r="N">` records. It still streams
-    // source/planned worksheet XML through the transformer and does not repair
-    // range-bearing metadata, sharedStrings, styles, relationships, or formulas.
+    // rows are synthesized as minimal `<row r="N">` records. Existing-only
+    // source-entry edits may reuse the strict direct-range staged-chunk fast
+    // path; missing-target upserts still stream source/planned worksheet XML
+    // through the transformer. It does not repair range-bearing metadata,
+    // sharedStrings, styles, relationships, or formulas.
     void replace_or_insert_worksheet_cells(PartName worksheet_part,
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy = {});
@@ -430,13 +498,20 @@ private:
         std::span<const WorksheetCellReplacement> replacements,
         const ReferencePolicy& policy,
         WorksheetCellReplacementMode mode);
+    bool try_replace_worksheet_cells_with_indexed_chunks(
+        PartName worksheet_part,
+        std::vector<PackageEntryChunk> source_chunks,
+        const WorksheetCellReplacementPlan& replacement_plan,
+        const ReferencePolicy& policy,
+        std::string input_label);
     void replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
         std::vector<std::string> payload_notes,
         std::vector<WorksheetPayloadDependencyAudit> payload_audits,
         std::vector<std::string> relationship_reference_notes,
         std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
-        std::string replacement_reason, bool enforce_payload_policy = true);
+        std::string replacement_reason, bool enforce_payload_policy = true,
+        bool validate_staged_chunk_crc32 = true);
 
     PackageReader reader_;
     PackageManifest manifest_;

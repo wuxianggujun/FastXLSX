@@ -178,7 +178,7 @@ std::streamsize checked_stream_size(std::uint64_t size)
     return static_cast<std::streamsize>(size);
 }
 
-constexpr std::size_t package_reader_io_buffer_size = 64U * 1024U;
+constexpr std::size_t package_reader_io_buffer_size = 1024U * 1024U;
 
 const std::array<std::uint32_t, 256>& package_reader_crc32_table()
 {

@@ -22,7 +22,7 @@ struct WorkbookEditorMaterializedFlushResult {
 
 void validate_workbook_editor_materialized_flush_targets(
     const WorkbookEditorSheetCatalogPlan& sheet_catalog,
-    const std::vector<MaterializedWorksheetProjection>& projections);
+    const std::vector<MaterializedWorksheetSheetDataProjection>& projections);
 
 [[nodiscard]] WorkbookEditorMaterializedFlushResult
 flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
@@ -31,4 +31,3 @@ flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
     const WorkbookEditorSheetCatalogPlan& sheet_catalog);
 
 } // namespace fastxlsx::detail
-

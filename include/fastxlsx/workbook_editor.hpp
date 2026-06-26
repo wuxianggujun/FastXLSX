@@ -650,7 +650,11 @@ struct WorkbookEditorRenameOptions {
 /// tombstones, or allow caller-supplied foreign style handles.
 /// `erase_cell()`, the `erase_cells()` overloads, `erase_row()`, `erase_rows()`,
 /// `erase_column()`, and `erase_columns()` remove active sparse records instead
-/// of writing explicit blanks. Empty, valueless, unquoted, unterminated, padded,
+/// of writing explicit blanks. `insert_rows()`, `delete_rows()`,
+/// `insert_columns()`, and `delete_columns()` are the first small-file
+/// structural shift helpers: they only move/delete represented sparse cells in
+/// this materialized store and leave workbook/worksheet metadata for caller
+/// review. Empty, valueless, unquoted, unterminated, padded,
 /// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -920,6 +924,97 @@ public:
     /// output, table/range metadata recalculation, relationship repair, or a
     /// large-file low-memory random-editing path.
     void erase_columns(std::uint32_t first_column, std::uint32_t last_column);
+
+    /// Inserts sparse rows by shifting represented cells downward.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// insertion point is a 1-based Excel row number and `row_count` is a count,
+    /// not an inclusive end row. `row_count == 0` is a successful no-op after
+    /// validating `first_row`; it clears prior public edit diagnostics and does
+    /// not dirty the session. For positive counts, every represented sparse
+    /// cell with `row >= first_row` is moved down by `row_count`. If no
+    /// represented cell is at or below the insertion point, the call is a
+    /// successful no-op because this slice has no row metadata model.
+    ///
+    /// The shift is preflighted as one sparse-store coordinate transform.
+    /// Invalid rows, counts outside the Excel row range, or any shifted record
+    /// moving past row 1,048,576 reject before the active sparse store is
+    /// mutated. Existing CellValue payloads and materialized source StyleId
+    /// handles move with their sparse records.
+    ///
+    /// Dirty save_as() projects the shifted sheetData and refreshed sparse
+    /// dimension, but it does not update formulas, tables, autoFilter,
+    /// mergeCells, data validations, conditional formatting, hyperlinks,
+    /// drawings/charts/VBA, defined names, relationships, sharedStrings/styles
+    /// metadata, or calcChain beyond the existing worksheet rewrite policy.
+    /// This is not a complete Excel row-insert operation and not a large-file
+    /// low-memory random-editing path.
+    void insert_rows(std::uint32_t first_row, std::uint32_t row_count);
+
+    /// Deletes sparse rows by removing represented cells and shifting later cells upward.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The first
+    /// argument is a 1-based Excel row number and `row_count` is a count, not an
+    /// inclusive end row. `row_count == 0` is a successful no-op after
+    /// validating `first_row`. For positive counts, represented cells in
+    /// `[first_row, first_row + row_count - 1]` are removed and represented
+    /// cells below that range move up by `row_count`.
+    ///
+    /// The whole transform is preflighted. Invalid rows or counts outside the
+    /// Excel row range reject before mutation. Cell values and materialized
+    /// source StyleId handles move with shifted records.
+    ///
+    /// Dirty save_as() projects the shifted sheetData and refreshed sparse
+    /// dimension only. It does not recalculate or repair range metadata,
+    /// formulas, tables, drawings/charts/VBA, relationships,
+    /// sharedStrings/styles, or calcChain. This is not a complete Excel row
+    /// deletion operation and not a large-file low-memory random-editing path.
+    void delete_rows(std::uint32_t first_row, std::uint32_t row_count);
+
+    /// Inserts sparse columns by shifting represented cells rightward.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The
+    /// insertion point is a 1-based Excel column number and `column_count` is a
+    /// count. `column_count == 0` is a successful no-op after validating
+    /// `first_column`. For positive counts, every represented sparse cell with
+    /// `column >= first_column` is moved right by `column_count`. If no
+    /// represented cell is at or right of the insertion point, the call is a
+    /// successful no-op because this slice has no column metadata model.
+    ///
+    /// The shift is preflighted as one sparse-store coordinate transform.
+    /// Invalid columns, counts outside the Excel column range, or any shifted
+    /// record moving past column 16,384 (`XFD`) reject before mutation. Existing
+    /// CellValue payloads and materialized source StyleId handles move with
+    /// their sparse records.
+    ///
+    /// Dirty save_as() projects the shifted sheetData and refreshed sparse
+    /// dimension only. It does not update formulas, tables, autoFilter,
+    /// mergeCells, data validations, conditional formatting, hyperlinks,
+    /// drawings/charts/VBA, defined names, relationships, sharedStrings/styles
+    /// metadata, or calcChain beyond the existing worksheet rewrite policy.
+    /// This is not a complete Excel column-insert operation and not a
+    /// large-file low-memory random-editing path.
+    void insert_columns(std::uint32_t first_column, std::uint32_t column_count);
+
+    /// Deletes sparse columns by removing represented cells and shifting later cells leftward.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The first
+    /// argument is a 1-based Excel column number and `column_count` is a count.
+    /// `column_count == 0` is a successful no-op after validating
+    /// `first_column`. For positive counts, represented cells in
+    /// `[first_column, first_column + column_count - 1]` are removed and
+    /// represented cells to the right move left by `column_count`.
+    ///
+    /// The whole transform is preflighted. Invalid columns or counts outside
+    /// the Excel column range reject before mutation. Cell values and
+    /// materialized source StyleId handles move with shifted records.
+    ///
+    /// Dirty save_as() projects the shifted sheetData and refreshed sparse
+    /// dimension only. It does not recalculate or repair range metadata,
+    /// formulas, tables, drawings/charts/VBA, relationships,
+    /// sharedStrings/styles, or calcChain. This is not a complete Excel column
+    /// deletion operation and not a large-file low-memory random-editing path.
+    void delete_columns(std::uint32_t first_column, std::uint32_t column_count);
 
     /// Replaces one sparse-store cell value while preserving its current style.
     ///

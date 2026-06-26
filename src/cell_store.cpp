@@ -53,6 +53,15 @@ std::size_t entry_memory_usage(const CellPosition& position, const CellRecord& r
     return sizeof(position) + record_memory_usage(record) + (sizeof(void*) * 3);
 }
 
+std::size_t records_memory_usage(const std::map<CellPosition, CellRecord>& records) noexcept
+{
+    std::size_t total = sizeof(CellStore);
+    for (const auto& [position, record] : records) {
+        total += entry_memory_usage(position, record);
+    }
+    return total;
+}
+
 bool is_space(char ch)
 {
     return std::isspace(static_cast<unsigned char>(ch)) != 0;
@@ -2983,6 +2992,25 @@ void CellStore::set_cells(
 {
     (void)apply_cell_edits(
         std::span<const CellPosition>(), updates, style_policy);
+}
+
+void CellStore::replace_records(std::map<CellPosition, CellRecord> records)
+{
+    for (const auto& [position, record] : records) {
+        (void)record;
+        validate_position(position.row, position.column);
+    }
+
+    if (options_.max_cells.has_value() && records.size() > *options_.max_cells) {
+        throw FastXlsxError("CellStore max_cells guardrail exceeded");
+    }
+
+    if (options_.memory_budget_bytes.has_value() &&
+        records_memory_usage(records) > *options_.memory_budget_bytes) {
+        throw FastXlsxError("CellStore memory_budget_bytes guardrail exceeded");
+    }
+
+    cells_ = std::move(records);
 }
 
 void CellStore::erase_cell(std::uint32_t row, std::uint32_t column)

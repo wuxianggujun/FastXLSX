@@ -929,13 +929,15 @@ workbook 视图。
 `include/fastxlsx` API；当前 `PackageEditor` 仍是 internal test-only 基础，
 `WorkbookEditor` 只暴露 whole-`<sheetData>` 替换、targeted cell replacement/upsert、窄
 sheet catalog 改名和 `save_as()`，并已有 small-file `WorksheetEditor` 随机 cell 编辑首片；
-尚未暴露 document properties editing、row/column structural edits、semantic metadata
-sync 等更宽能力。
+其中 `WorksheetEditor` 只提供 represented sparse row/column insert/delete shift
+helpers，不是完整 Excel structural edit。尚未暴露 document properties editing、
+完整 row/column metadata/range/formula/table/drawing 同步、semantic metadata sync 等更宽能力。
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);
 auto sheet = editor.worksheet("Data");
 sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
+sheet.insert_rows(2, 1); // only shifts represented sparse cells; no metadata sync
 auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
 auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 auto has_sheet_edits = sheet.has_pending_changes(); // dirty-state inspection only

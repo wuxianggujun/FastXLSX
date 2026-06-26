@@ -196,6 +196,132 @@ public:
         apply_cell_edits(positions, std::span<const CellStoreUpdate>());
     }
 
+    void insert_rows(std::uint32_t first_row, std::uint32_t row_count)
+    {
+        validate_row_span("MaterializedWorksheetSession::insert_rows()", first_row, row_count);
+        if (row_count == 0 || store_.empty()) {
+            return;
+        }
+
+        std::map<CellPosition, CellRecord> shifted_records;
+        bool shifted_any_record = false;
+        for (const auto& [position, record] : store_.records()) {
+            CellPosition shifted_position = position;
+            if (position.row >= first_row) {
+                if (position.row > max_excel_rows - row_count) {
+                    throw FastXlsxError(
+                        "MaterializedWorksheetSession::insert_rows() cannot shift cells past Excel row 1048576");
+                }
+                shifted_position.row = position.row + row_count;
+                shifted_any_record = true;
+            }
+            insert_shifted_record(shifted_records, shifted_position, record,
+                "MaterializedWorksheetSession::insert_rows()");
+        }
+
+        if (!shifted_any_record) {
+            return;
+        }
+        store_.replace_records(std::move(shifted_records));
+        dirty_ = true;
+    }
+
+    void delete_rows(std::uint32_t first_row, std::uint32_t row_count)
+    {
+        validate_row_span("MaterializedWorksheetSession::delete_rows()", first_row, row_count);
+        if (row_count == 0 || store_.empty()) {
+            return;
+        }
+
+        const std::uint32_t last_deleted_row = first_row + row_count - 1U;
+        std::map<CellPosition, CellRecord> shifted_records;
+        bool changed_any_record = false;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.row >= first_row && position.row <= last_deleted_row) {
+                changed_any_record = true;
+                continue;
+            }
+
+            CellPosition shifted_position = position;
+            if (position.row > last_deleted_row) {
+                shifted_position.row = position.row - row_count;
+                changed_any_record = true;
+            }
+            insert_shifted_record(shifted_records, shifted_position, record,
+                "MaterializedWorksheetSession::delete_rows()");
+        }
+
+        if (!changed_any_record) {
+            return;
+        }
+        store_.replace_records(std::move(shifted_records));
+        dirty_ = true;
+    }
+
+    void insert_columns(std::uint32_t first_column, std::uint32_t column_count)
+    {
+        validate_column_span(
+            "MaterializedWorksheetSession::insert_columns()", first_column, column_count);
+        if (column_count == 0 || store_.empty()) {
+            return;
+        }
+
+        std::map<CellPosition, CellRecord> shifted_records;
+        bool shifted_any_record = false;
+        for (const auto& [position, record] : store_.records()) {
+            CellPosition shifted_position = position;
+            if (position.column >= first_column) {
+                if (position.column > max_excel_columns - column_count) {
+                    throw FastXlsxError(
+                        "MaterializedWorksheetSession::insert_columns() cannot shift cells past Excel column 16384");
+                }
+                shifted_position.column = position.column + column_count;
+                shifted_any_record = true;
+            }
+            insert_shifted_record(shifted_records, shifted_position, record,
+                "MaterializedWorksheetSession::insert_columns()");
+        }
+
+        if (!shifted_any_record) {
+            return;
+        }
+        store_.replace_records(std::move(shifted_records));
+        dirty_ = true;
+    }
+
+    void delete_columns(std::uint32_t first_column, std::uint32_t column_count)
+    {
+        validate_column_span(
+            "MaterializedWorksheetSession::delete_columns()", first_column, column_count);
+        if (column_count == 0 || store_.empty()) {
+            return;
+        }
+
+        const std::uint32_t last_deleted_column = first_column + column_count - 1U;
+        std::map<CellPosition, CellRecord> shifted_records;
+        bool changed_any_record = false;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.column >= first_column && position.column <= last_deleted_column) {
+                changed_any_record = true;
+                continue;
+            }
+
+            CellPosition shifted_position = position;
+            if (position.column > last_deleted_column) {
+                shifted_position.column = position.column - column_count;
+                changed_any_record = true;
+            }
+            insert_shifted_record(shifted_records, shifted_position, record,
+                "MaterializedWorksheetSession::delete_columns()");
+        }
+
+        if (!changed_any_record) {
+            return;
+        }
+        store_.replace_records(std::move(shifted_records));
+        dirty_ = true;
+    }
+
     [[nodiscard]] const CellRecord* try_cell(
         std::uint32_t row, std::uint32_t column) const
     {
@@ -288,6 +414,45 @@ public:
     }
 
 private:
+    static constexpr std::uint32_t max_excel_rows = 1048576U;
+    static constexpr std::uint32_t max_excel_columns = 16384U;
+
+    static void validate_row_span(
+        std::string_view operation, std::uint32_t first_row, std::uint32_t row_count)
+    {
+        if (first_row == 0 || first_row > max_excel_rows) {
+            throw FastXlsxError(std::string(operation)
+                + " requires first_row in the Excel row range 1..1048576");
+        }
+        if (row_count > max_excel_rows - first_row + 1U) {
+            throw FastXlsxError(std::string(operation)
+                + " row_count exceeds the Excel row range 1..1048576");
+        }
+    }
+
+    static void validate_column_span(std::string_view operation,
+        std::uint32_t first_column, std::uint32_t column_count)
+    {
+        if (first_column == 0 || first_column > max_excel_columns) {
+            throw FastXlsxError(std::string(operation)
+                + " requires first_column in the Excel column range 1..16384");
+        }
+        if (column_count > max_excel_columns - first_column + 1U) {
+            throw FastXlsxError(std::string(operation)
+                + " column_count exceeds the Excel column range 1..16384");
+        }
+    }
+
+    static void insert_shifted_record(std::map<CellPosition, CellRecord>& records,
+        CellPosition position, const CellRecord& record, std::string_view operation)
+    {
+        const auto [_, inserted] = records.emplace(position, record);
+        if (!inserted) {
+            throw FastXlsxError(std::string(operation)
+                + " produced duplicate shifted sparse cell coordinates");
+        }
+    }
+
     std::string planned_name_;
     CellStore store_;
     bool dirty_ = false;

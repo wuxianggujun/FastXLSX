@@ -189,6 +189,10 @@ public:
         std::span<const CellPosition> erasures,
         std::span<const CellStoreUpdate> updates,
         CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace);
+    /// Replaces the full sparse record map after a preflighted coordinate
+    /// transform. This is an internal helper for materialized row/column shifts;
+    /// callers must provide already-remapped records, not dense worksheet data.
+    void replace_records(std::map<CellPosition, CellRecord> records);
     void set_cells(
         std::span<const CellStoreUpdate> updates,
         CellStoreBatchStylePolicy style_policy = CellStoreBatchStylePolicy::Replace);

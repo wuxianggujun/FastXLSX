@@ -286,6 +286,7 @@ public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLS
   `set_row()`、`set_row(initializer_list<CellValue>)`、
   `set_column()`、`set_column(initializer_list<CellValue>)`、
   `erase_row()`、`erase_rows()`、`erase_column()`、`erase_columns()`、
+  `insert_rows()`、`delete_rows()`、`insert_columns()`、`delete_columns()`、
   `set_cell_value()`、`set_cell_values()`、
   `set_cell_values(initializer_list<WorksheetCellUpdate>)`、
   `set_row_values()`、`set_row_values(initializer_list<CellValue>)`、
@@ -318,7 +319,11 @@ batch overload、
   no-state-pollution hygiene；`erase_cell()` / `erase_cells()` / `set_row()` /
   `set_column()` / `erase_row()` / `erase_rows()` / `erase_column()` /
   `erase_columns()` 会移除 active sparse record，并为后续
-  insertions 释放这些 sparse-store guardrail budgets；missing-cell `erase_cell()`
+  insertions 释放这些 sparse-store guardrail budgets；`insert_rows()` /
+  `delete_rows()` / `insert_columns()` / `delete_columns()` 只对 represented sparse
+  cells 做小文件坐标 shift / delete，不创建 row/column metadata，也不同步 formulas、
+  tables、drawing/chart/VBA、relationships、sharedStrings/styles 或 calcChain；
+  missing-cell `erase_cell()`
   保持 clean no-op，并会清除先前 public mutation diagnostic；explicit blank
   insertion 作为 active sparse record 也受这些 guardrail 约束；`clear_row()` /
   `clear_rows()` / `clear_column()` / `clear_columns()` 是 value-only clear，
@@ -623,7 +628,19 @@ table/range metadata recalculation 或大文件低内存 random editing。
 目标 column / inclusive column range 中已经 represented 的 active sparse records，
 missing column / missing-only range 是成功 no-op。它们不是 column delete、column
 shifting、column metadata edit、dense range delete、tombstone output、
-table/range metadata recalculation 或大文件低内存 random editing。`set_cells()`、
+table/range metadata recalculation 或大文件低内存 random editing。
+`insert_rows()` / `insert_columns()` 是小文件 sparse-store 坐标 shift 便利 API：
+它们把 insertion point 之后的 represented cells 分别下移 / 右移 `count`，不合成
+空行、空列或 row/column metadata；如果 insertion point 后没有 represented cell，
+则是 clean no-op。`delete_rows()` / `delete_columns()` 删除目标 count 范围内的
+represented cells，并把范围后的 represented cells 分别上移 / 左移。四个 API 都以
+1-based Excel row/column 坐标和 count 为输入，`count == 0` 是成功 no-op；非法坐标、
+count 越界、或 shift 会越过 Excel 行列上限时都会在 sparse store 变更前失败。
+这些 helper 只更新 materialized sparse cells 和 dirty projection 的 `<dimension>` /
+`sheetData`，不做完整 Excel row/column structural edit，不更新 formulas、
+tables、autoFilter、mergeCells、data validations、conditional formatting、hyperlinks、
+drawing/chart/VBA、defined names、relationships、sharedStrings/styles 或 calcChain。
+`set_cells()`、
 `set_cell_values()`、`clear_cell_values(span<WorksheetCellReference>)` 和
 `erase_cells(span<WorksheetCellReference>)`，以及 `append_row()` / `set_row()` /
 `set_column()` 都有
@@ -790,7 +807,8 @@ already represented active records，不会把矩形范围内的 missing cells d
 row/column overload 同样要求 1-based Excel 坐标：
 invalid read throws but does not update `last_edit_error()`，invalid
 `set_cell()` / `set_cells()` / `append_row()` / `set_row()` / `set_column()` / `erase_row()` /
-`erase_rows()` / `erase_column()` / `erase_columns()` / `set_cell_values()` /
+`erase_rows()` / `erase_column()` / `erase_columns()` / `insert_rows()` /
+`delete_rows()` / `insert_columns()` / `delete_columns()` / `set_cell_values()` /
 `set_row_values()` / `set_column_values()` / `clear_row()` /
 `clear_rows()` / `clear_column()` / `clear_columns()` / `clear_cell_values(span)` /
 `erase_cell()` / `erase_cells(CellRange)` / `erase_cells(span)` throws、updates `last_edit_error()`，并且不会 dirty 或 mutate sparse store；
@@ -909,8 +927,9 @@ worksheet 仍有 rename / whole-`<sheetData>` replacement summary。
   chunks，replacement `<sheetData>` caller chunks 会在 rewritten output pass 中直接
   消费而不是先单独 staging/replay，但仍受 bounded local rewrite 限制，不是完整大文件
   transformer。
-- sharedStrings 索引迁移、style id 迁移或 styles merge、relationship repair/pruning、
-  table/drawing/chart/defined-name 语义同步、calcChain rebuild 和公式求值。
+- 完整 Excel row/column structural edits、sharedStrings 索引迁移、style id 迁移或
+  styles merge、relationship repair/pruning、table/drawing/chart/defined-name
+  语义同步、calcChain rebuild 和公式求值。
 - existing-workbook 图片、VBA、table、chart、pivot、comments 等复杂对象的语义编辑。
 
 `src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取

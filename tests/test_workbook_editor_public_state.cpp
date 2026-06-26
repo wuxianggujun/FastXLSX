@@ -5846,6 +5846,308 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
     }
 }
 
+void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-insert-rows-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
+    sheet.insert_rows(2, 2);
+
+    check(sheet.cell_count() == 4,
+        "insert_rows should preserve sparse cell count when it only shifts records");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "insert_rows should preserve cells above the insertion point");
+    check(sheet.get_cell("B1").number_value() == 1.0,
+        "insert_rows should preserve same-row cells above the insertion point");
+    check(sheet.get_cell("A4").text_value() == "placeholder-a2",
+        "insert_rows should shift source-backed cells downward by row_count");
+    check(sheet.get_cell("C5").text_value() == "extra-c3",
+        "insert_rows should shift dirty cells downward by row_count");
+    check(!sheet.try_cell("A2").has_value(),
+        "insert_rows should leave the inserted sparse row without synthesized cells");
+    check(!sheet.try_cell("C3").has_value(),
+        "insert_rows should remove the old shifted sparse coordinate");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 5, 3,
+        "insert_rows should refresh the in-memory sparse used range");
+    check(sheet.has_pending_changes(),
+        "insert_rows should dirty the materialized worksheet when records shift");
+    check(editor.pending_materialized_cell_count() == 4,
+        "insert_rows should keep aggregate materialized cell count stable");
+    check(!editor.last_edit_error().has_value(),
+        "successful insert_rows should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C5"/>)",
+        "insert_rows save_as should project the shifted sparse dimension");
+    check_contains(worksheet_xml, R"(<c r="A4")",
+        "insert_rows save_as should write the shifted source-backed row coordinate");
+    check_contains(worksheet_xml, R"(<c r="C5")",
+        "insert_rows save_as should write the shifted dirty row coordinate");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "insert_rows save_as should not keep the old source-backed row coordinate");
+    check_not_contains(worksheet_xml, R"(r="C3")",
+        "insert_rows save_as should not keep the old dirty row coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "insert_rows should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-rows-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(4, 2, fastxlsx::CellValue::text("tail-b4"));
+    sheet.delete_rows(1, 1);
+
+    check(sheet.cell_count() == 2,
+        "delete_rows should remove represented records in the deleted sparse rows");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a2",
+        "delete_rows should shift later source-backed rows upward");
+    check(sheet.get_cell("B3").text_value() == "tail-b4",
+        "delete_rows should shift later dirty rows upward");
+    check(!sheet.try_cell("B1").has_value(),
+        "delete_rows should remove represented cells from the deleted row");
+    check(!sheet.try_cell("A2").has_value(),
+        "delete_rows should remove old shifted source coordinates");
+    check(!sheet.try_cell("B4").has_value(),
+        "delete_rows should remove old shifted dirty coordinates");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 2,
+        "delete_rows should refresh the in-memory sparse used range");
+    check(!editor.last_edit_error().has_value(),
+        "successful delete_rows should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+        "delete_rows save_as should project the shifted sparse dimension");
+    check_contains(worksheet_xml, R"(<c r="A1")",
+        "delete_rows save_as should write the shifted source-backed cell");
+    check_contains(worksheet_xml, R"(<c r="B3")",
+        "delete_rows save_as should write the shifted dirty cell");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "delete_rows save_as should omit deleted row text cells");
+    check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "delete_rows save_as should omit deleted row numeric cells");
+}
+
+void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-insert-columns-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
+    sheet.insert_columns(2, 2);
+
+    check(sheet.cell_count() == 4,
+        "insert_columns should preserve sparse cell count when it only shifts records");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "insert_columns should preserve cells left of the insertion point");
+    check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+        "insert_columns should preserve lower cells left of the insertion point");
+    check(sheet.get_cell("D1").number_value() == 1.0,
+        "insert_columns should shift source-backed cells right by column_count");
+    check(sheet.get_cell("E3").text_value() == "extra-c3",
+        "insert_columns should shift dirty cells right by column_count");
+    check(!sheet.try_cell("B1").has_value(),
+        "insert_columns should leave inserted sparse columns without synthesized cells");
+    check(!sheet.try_cell("C3").has_value(),
+        "insert_columns should remove the old shifted dirty coordinate");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 5,
+        "insert_columns should refresh the in-memory sparse used range");
+    check(!editor.last_edit_error().has_value(),
+        "successful insert_columns should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E3"/>)",
+        "insert_columns save_as should project the shifted sparse dimension");
+    check_contains(worksheet_xml, R"(<c r="D1"><v>1</v></c>)",
+        "insert_columns save_as should write the shifted source-backed numeric cell");
+    check_contains(worksheet_xml, R"(<c r="E3")",
+        "insert_columns save_as should write the shifted dirty cell");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "insert_columns save_as should not keep the old shifted source coordinate");
+    check_not_contains(worksheet_xml, R"(r="C3")",
+        "insert_columns save_as should not keep the old shifted dirty coordinate");
+}
+
+void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-columns-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(2, 4, fastxlsx::CellValue::text("tail-d2"));
+    sheet.delete_columns(1, 1);
+
+    check(sheet.cell_count() == 2,
+        "delete_columns should remove represented records in the deleted sparse columns");
+    check(sheet.get_cell("A1").number_value() == 1.0,
+        "delete_columns should shift later source-backed columns left");
+    check(sheet.get_cell("C2").text_value() == "tail-d2",
+        "delete_columns should shift later dirty columns left");
+    check(!sheet.try_cell("A2").has_value(),
+        "delete_columns should remove represented cells from the deleted column");
+    check(!sheet.try_cell("D2").has_value(),
+        "delete_columns should remove old shifted dirty coordinates");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "delete_columns should refresh the in-memory sparse used range");
+    check(!editor.last_edit_error().has_value(),
+        "successful delete_columns should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "delete_columns save_as should project the shifted sparse dimension");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "delete_columns save_as should write the shifted source-backed numeric cell");
+    check_contains(worksheet_xml, R"(<c r="C2")",
+        "delete_columns save_as should write the shifted dirty cell");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "delete_columns save_as should omit deleted column row-one text cells");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "delete_columns save_as should omit deleted column row-two text cells");
+}
+
+void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-guards-source.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before shift zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before shift zero-count no-op");
+
+        sheet.insert_rows(2, 0);
+        sheet.delete_rows(2, 0);
+        sheet.insert_columns(2, 0);
+        sheet.delete_columns(2, 0);
+        check(!editor.last_edit_error().has_value(),
+            "zero-count row/column shifts should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "zero-count row/column shifts should not dirty a clean materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "zero-count row/column shifts should preserve sparse cell count");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool invalid_row_failed = false;
+        try {
+            sheet.insert_rows(0, 1);
+        } catch (const fastxlsx::FastXlsxError&) {
+            invalid_row_failed = true;
+        }
+        check(invalid_row_failed, "insert_rows should reject invalid row numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed insert_rows invalid-row mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "insert_rows invalid-row failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "insert_rows invalid-row failure should preserve sparse cell count");
+
+        bool invalid_count_failed = false;
+        try {
+            sheet.delete_columns(16384, 2);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            invalid_count_failed = true;
+            check_contains(error.what(), "16384",
+                "delete_columns invalid count should expose the Excel column limit");
+        }
+        check(invalid_count_failed,
+            "delete_columns should reject count ranges past the Excel column limit");
+        check(!sheet.has_pending_changes(),
+            "delete_columns invalid-count failure should not dirty the materialized worksheet");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "delete_columns invalid-count failure should preserve source cells");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(1048576, 1, fastxlsx::CellValue::text("row-edge"));
+        const std::size_t dirty_count = sheet.cell_count();
+        bool row_overflow_failed = false;
+        try {
+            sheet.insert_rows(1, 1);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            row_overflow_failed = true;
+            check_contains(error.what(), "1048576",
+                "insert_rows overflow should expose the Excel row limit");
+        }
+        check(row_overflow_failed,
+            "insert_rows should reject shifts that move a represented cell past the row limit");
+        check(sheet.cell_count() == dirty_count,
+            "insert_rows overflow failure should preserve sparse cell count");
+        check(sheet.get_cell("A1048576").text_value() == "row-edge",
+            "insert_rows overflow failure should preserve the edge cell");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "insert_rows overflow failure should not shift earlier cells");
+        check(sheet.has_pending_changes(),
+            "insert_rows overflow failure should preserve prior dirty state");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(1, 16384, fastxlsx::CellValue::text("column-edge"));
+        const std::size_t dirty_count = sheet.cell_count();
+        bool column_overflow_failed = false;
+        try {
+            sheet.insert_columns(1, 1);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            column_overflow_failed = true;
+            check_contains(error.what(), "16384",
+                "insert_columns overflow should expose the Excel column limit");
+        }
+        check(column_overflow_failed,
+            "insert_columns should reject shifts that move a represented cell past the column limit");
+        check(sheet.cell_count() == dirty_count,
+            "insert_columns overflow failure should preserve sparse cell count");
+        check(sheet.get_cell("XFD1").text_value() == "column-edge",
+            "insert_columns overflow failure should preserve the edge cell");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "insert_columns overflow failure should not shift earlier cells");
+        check(sheet.has_pending_changes(),
+            "insert_columns overflow failure should preserve prior dirty state");
+    }
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -6791,6 +7093,11 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
+            test_public_worksheet_editor_insert_rows_shifts_sparse_records();
+            test_public_worksheet_editor_delete_rows_shifts_sparse_records();
+            test_public_worksheet_editor_insert_columns_shifts_sparse_records();
+            test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

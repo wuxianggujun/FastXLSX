@@ -35216,6 +35216,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.813 - Pin renamed WorksheetEditor formula missing queries
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove missing-sheet and old-source-name lookups do not pollute a saved
+renamed planned-name styled formula shift session.
+
+Output:
+- Added public-state coverage for a saved styled formula shift under
+  `RenamedData`, followed by `try_worksheet()` and throwing `worksheet()` calls
+  against both `Missing` and the old source name `Data`.
+- The regression verifies those failed lookups leave diagnostics empty, keep the
+  saved `RenamedData` handle clean, preserve source/planned names and catalog
+  state, keep pending materialized diagnostics empty, and retain `D4` as
+  `A3+B3` with the source `StyleId`.
+- A later matching `RenamedData` reacquire still dirties the shared session with
+  `insert_columns(2, 1)`, moves the formula to `E4` as `B3+C3`, preserves the
+  style id, saves, and reopens clean under `RenamedData`.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.812 - Pin renamed WorksheetEditor formula invalid mutations
 
 Status: completed.

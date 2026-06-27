@@ -200,6 +200,9 @@ and column shifts: formulas like `Data!A1+Data!B1` are audited at their shifted
 formula cell coordinates with shifted `Data!A3` / `Data!B3` or `Data!B1` /
 `Data!C1` reference tokens, while `formula_reference_audits()` remains read-only
 and still only reports stale source-name risk instead of rewriting formulas.
+Those materialized formula audit checks now also snapshot aggregate materialized
+memory and full pending worksheet edit summaries, so row/column shift formula
+scans cannot mutate dirty diagnostic fields while reporting shifted tokens.
 The same insert-side audit is now pinned after a fresh output reopen:
 `WorkbookEditor::open(output)` rematerializes the shifted styled formulas, reports
 both shifted `Data!A3` / `Data!B3` or `Data!B1` / `Data!C1` tokens, and marks

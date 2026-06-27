@@ -35216,6 +35216,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.812 - Pin renamed WorksheetEditor formula invalid mutations
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid mutations with rejected formula payloads do not pollute a
+saved renamed planned-name styled formula shift session.
+
+Output:
+- Added public-state coverage for a saved styled formula shift under
+  `RenamedData`, followed by invalid formula `set_cell()` calls and an invalid
+  erase against the saved clean materialized session.
+- The regression verifies those failures set the public diagnostic but leave
+  both handles clean, preserve source/planned names and catalog state, keep
+  pending materialized diagnostics empty, retain the saved `D4` `A3+B3` formula
+  with its source `StyleId`, and do not leak rejected formula text into the
+  first or second output.
+- A later valid `insert_columns(2, 1)` clears the diagnostic, dirties the shared
+  session, moves the formula to `E4` as `B3+C3`, preserves the style id, saves,
+  and reopens clean under `RenamedData`.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.811 - Pin renamed WorksheetEditor formula option mismatch
 
 Status: completed.

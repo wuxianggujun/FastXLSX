@@ -208,6 +208,10 @@ The saved styled formula session now also covers option-mismatch reacquire:
 mismatched `WorksheetEditorOptions` fail without updating diagnostics or
 dirtying the clean `RenamedData` session, and a later matching reacquire can
 still shift the formula to `E4` as `B3+C3` with the same `StyleId`.
+Invalid mutations now cover that saved styled formula state as well: rejected
+formula payload writes and invalid erases set diagnostics without dirtying or
+leaking rejected formula text, while the next valid shift clears diagnostics and
+saves `E4` as `B3+C3` with the original `StyleId`.
 The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and

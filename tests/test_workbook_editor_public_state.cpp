@@ -233,6 +233,22 @@ void check_public_state_reopened_unmatched_formula_audit(
         std::string(message_prefix) + " should not reconstruct rename risk after reopen");
 }
 
+void check_public_state_reopened_formula_audit_clean_editor(
+    const fastxlsx::WorkbookEditor& reopened,
+    std::string_view message_prefix)
+{
+    check(!reopened.has_pending_changes() &&
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_replacement_cell_count() == 0 &&
+            reopened.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened.pending_replacement_worksheet_names().empty() &&
+            reopened.pending_worksheet_edits().empty() &&
+            !reopened.last_edit_error().has_value(),
+        std::string(message_prefix) + " should keep the reopened editor clean");
+}
+
 void check_public_state_reopened_delete_formula_audit_output(
     const std::filesystem::path& output,
     std::string_view cell_reference,
@@ -250,13 +266,8 @@ void check_public_state_reopened_delete_formula_audit_output(
         std::string(message_prefix) + " should expose only the saved planned sheet name");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
         reopened.source_formula_reference_audits();
-    check(!reopened.has_pending_changes() &&
-            reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0 &&
-            reopened.pending_worksheet_edits().empty() &&
-            !reopened.last_edit_error().has_value(),
-        std::string(message_prefix) + " source audit should keep the reopened editor clean");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, std::string(message_prefix) + " source audit");
     check(source_audits.size() == 1,
         std::string(message_prefix) + " source audit should keep only the surviving reference");
     check(find_public_state_formula_audit(source_audits, row, column, "Data!#REF!") == nullptr,
@@ -269,11 +280,8 @@ void check_public_state_reopened_delete_formula_audit_output(
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         std::string(message_prefix) + " should reopen into a clean materialized session");
-    check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0 &&
-            reopened.pending_worksheet_edits().empty(),
-        std::string(message_prefix) + " should keep materialized diagnostics clean before audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, std::string(message_prefix) + " before materialized audit");
 
     const std::optional<fastxlsx::CellValue> reopened_formula =
         reopened_sheet.try_cell(cell_reference);
@@ -286,12 +294,8 @@ void check_public_state_reopened_delete_formula_audit_output(
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
         reopened.formula_reference_audits();
-    check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0 &&
-            reopened.pending_worksheet_edits().empty() &&
-            !reopened.last_edit_error().has_value(),
-        std::string(message_prefix) + " should keep materialized diagnostics clean after audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, std::string(message_prefix) + " after materialized audit");
     check(reopened_audits.size() == 1,
         std::string(message_prefix) + " should keep only the surviving reference after reopen");
     check(find_public_state_formula_audit(
@@ -321,13 +325,8 @@ void check_public_state_reopened_shift_formula_audit_output(
         std::string(message_prefix) + " should expose only the saved planned sheet name");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
         reopened.source_formula_reference_audits();
-    check(!reopened.has_pending_changes() &&
-            reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0 &&
-            reopened.pending_worksheet_edits().empty() &&
-            !reopened.last_edit_error().has_value(),
-        std::string(message_prefix) + " source audit should keep the reopened editor clean");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, std::string(message_prefix) + " source audit");
     check(source_audits.size() == 2,
         std::string(message_prefix) + " source audit should report both shifted references");
     check_public_state_reopened_unmatched_formula_audit(
@@ -342,11 +341,8 @@ void check_public_state_reopened_shift_formula_audit_output(
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         std::string(message_prefix) + " should reopen into a clean materialized session");
-    check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0 &&
-            reopened.pending_worksheet_edits().empty(),
-        std::string(message_prefix) + " should keep materialized diagnostics clean before audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, std::string(message_prefix) + " before materialized audit");
 
     const std::optional<fastxlsx::CellValue> reopened_formula =
         reopened_sheet.try_cell(cell_reference);
@@ -359,12 +355,8 @@ void check_public_state_reopened_shift_formula_audit_output(
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
         reopened.formula_reference_audits();
-    check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0 &&
-            reopened.pending_worksheet_edits().empty() &&
-            !reopened.last_edit_error().has_value(),
-        std::string(message_prefix) + " should keep materialized diagnostics clean after audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, std::string(message_prefix) + " after materialized audit");
     check(reopened_audits.size() == 2,
         std::string(message_prefix) + " should report both shifted references after reopen");
     check_public_state_reopened_unmatched_formula_audit(
@@ -387,6 +379,10 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
     const bool has_pending_changes_before_audit = editor.has_pending_changes();
     const std::vector<std::string> replacement_names_before_audit =
         editor.pending_replacement_worksheet_names();
+    const std::size_t replacement_count_before_audit =
+        editor.pending_replacement_cell_count();
+    const std::size_t replacement_memory_before_audit =
+        editor.estimated_pending_replacement_memory_usage();
     const std::vector<std::string> materialized_names_before_audit =
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
@@ -403,8 +399,13 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
         std::string(message_prefix) + " should not increment public edit count");
     check(editor.has_pending_changes() == has_pending_changes_before_audit,
         std::string(message_prefix) + " should not change pending-change state");
+    check(editor.pending_replacement_cell_count() == replacement_count_before_audit,
+        std::string(message_prefix) + " should preserve replacement cell count");
+    check(editor.estimated_pending_replacement_memory_usage()
+            == replacement_memory_before_audit,
+        std::string(message_prefix) + " should preserve replacement memory estimate");
     check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
-        std::string(message_prefix) + " should not create replacement diagnostics");
+        std::string(message_prefix) + " should preserve replacement worksheet names");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
         std::string(message_prefix) + " should preserve dirty materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
@@ -437,6 +438,10 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
     const bool has_pending_changes_before_audit = editor.has_pending_changes();
     const std::vector<std::string> replacement_names_before_audit =
         editor.pending_replacement_worksheet_names();
+    const std::size_t replacement_count_before_audit =
+        editor.pending_replacement_cell_count();
+    const std::size_t replacement_memory_before_audit =
+        editor.estimated_pending_replacement_memory_usage();
     const std::vector<std::string> materialized_names_before_audit =
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
@@ -453,8 +458,13 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
         std::string(message_prefix) + " should not increment public edit count");
     check(editor.has_pending_changes() == has_pending_changes_before_audit,
         std::string(message_prefix) + " should not change pending-change state");
+    check(editor.pending_replacement_cell_count() == replacement_count_before_audit,
+        std::string(message_prefix) + " should preserve replacement cell count");
+    check(editor.estimated_pending_replacement_memory_usage()
+            == replacement_memory_before_audit,
+        std::string(message_prefix) + " should preserve replacement memory estimate");
     check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
-        std::string(message_prefix) + " should not create replacement diagnostics");
+        std::string(message_prefix) + " should preserve replacement worksheet names");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
         std::string(message_prefix) + " should preserve dirty materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
@@ -515,6 +525,10 @@ check_public_state_formula_audits_preserve_editor_diagnostics(
     const bool has_pending_changes_before_audit = editor.has_pending_changes();
     const std::vector<std::string> replacement_names_before_audit =
         editor.pending_replacement_worksheet_names();
+    const std::size_t replacement_count_before_audit =
+        editor.pending_replacement_cell_count();
+    const std::size_t replacement_memory_before_audit =
+        editor.estimated_pending_replacement_memory_usage();
     const std::vector<std::string> materialized_names_before_audit =
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
@@ -532,8 +546,13 @@ check_public_state_formula_audits_preserve_editor_diagnostics(
         std::string(message_prefix) + " should not increment public edit count");
     check(editor.has_pending_changes() == has_pending_changes_before_audit,
         std::string(message_prefix) + " should not change pending-change state");
+    check(editor.pending_replacement_cell_count() == replacement_count_before_audit,
+        std::string(message_prefix) + " should preserve replacement cell count");
+    check(editor.estimated_pending_replacement_memory_usage()
+            == replacement_memory_before_audit,
+        std::string(message_prefix) + " should preserve replacement memory");
     check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
-        std::string(message_prefix) + " should not create replacement diagnostics");
+        std::string(message_prefix) + " should preserve replacement worksheet names");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
         std::string(message_prefix) + " should preserve materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,

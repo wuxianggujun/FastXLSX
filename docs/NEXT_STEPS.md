@@ -311,6 +311,11 @@ The shared row/column shift reopened-output helper now has the same widened
 diagnostic contract, covering saved insert/delete row/column shifts,
 reacquire/retry paths, invalid-to-valid recovery, rich formula shifts, and
 cross-handle shift preservation before and after readback.
+Formula-audit diagnostic snapshots now include replacement cell-count and
+replacement-memory preservation as well. The fresh reopened formula-audit
+helpers also assert empty replacement dirty-name diagnostics around source and
+materialized audit calls, keeping the read-only audit path from mutating either
+replacement or materialized public-state surfaces.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

@@ -1,5 +1,19 @@
 #include "test_workbook_editor_public_retry_common.hpp"
 
+void check_retry_cell_range_equals(
+    const std::optional<fastxlsx::CellRange>& range,
+    std::uint32_t first_row,
+    std::uint32_t first_column,
+    std::uint32_t last_row,
+    std::uint32_t last_column,
+    std::string_view message)
+{
+    check(range.has_value() && range->first_row == first_row &&
+            range->first_column == first_column && range->last_row == last_row &&
+            range->last_column == last_column,
+        message);
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_preserves_reacquired_state()
 {
     const std::filesystem::path source =
@@ -809,6 +823,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
             shifted_formula.text_value() == "A2+B3",
         "post-reacquire row shift should translate the moved formula text");
+    check_retry_cell_range_equals(matching.used_range(), 1, 1, 3, 3,
+        "post-reacquire row shift should refresh the in-memory sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_three =
         matching.row_cells(3);
     check(shifted_row_three.size() == 2 &&
@@ -959,6 +975,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
             shifted_formula.text_value() == "B1+C2",
         "post-reacquire column shift should translate the moved formula text");
+    check_retry_cell_range_equals(matching.used_range(), 1, 1, 2, 4,
+        "post-reacquire column shift should refresh the in-memory sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one =
         matching.row_cells(1);
     check(shifted_row_one.size() == 2 &&
@@ -1111,6 +1129,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "A1+B3",
             "post-reacquire delete_rows should translate the moved formula text");
+        check_retry_cell_range_equals(matching.used_range(), 1, 1, 3, 3,
+            "post-reacquire delete_rows should refresh the in-memory sparse used range");
         const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_three =
             matching.row_cells(3);
         check(shifted_row_three.size() == 2 &&
@@ -1257,6 +1277,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "A2+C1",
             "post-reacquire delete_columns should translate the moved formula text");
+        check_retry_cell_range_equals(matching.used_range(), 1, 1, 2, 3,
+            "post-reacquire delete_columns should refresh the in-memory sparse used range");
         const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one =
             matching.row_cells(1);
         check(shifted_row_one.size() == 2 &&

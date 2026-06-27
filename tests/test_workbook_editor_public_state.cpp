@@ -3831,6 +3831,12 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         "initializer-list batch overloads should preserve untouched worksheets");
 }
 
+void check_reopened_clean_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view sheet_name,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect);
+
 void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
 {
     const std::filesystem::path source =
@@ -3883,6 +3889,40 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
         "append_row should persist explicit blank cells in input order");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "append_row should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "append_row",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "append_row reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "append_row reopened output should expose appended row bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "append_row reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "append_row reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "append_row reopened output should keep source-backed A2");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "appended-a3",
+                "append_row reopened output should read appended text");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b3.number_value() == 7.0,
+                "append_row reopened output should read appended number");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "A3+B1",
+                "append_row reopened output should read appended formula");
+            const fastxlsx::CellValue reopened_d3 = reopened_sheet.get_cell("D3");
+            check(reopened_d3.kind() == fastxlsx::CellValueKind::Blank,
+                "append_row reopened output should read appended explicit blank");
+        });
 }
 
 void test_public_worksheet_editor_append_row_noop_and_guardrails()
@@ -4005,12 +4045,6 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
             "append_row after erase should not resurrect erased source cells");
     }
 }
-
-void check_reopened_clean_sheet_output(
-    const std::filesystem::path& output,
-    std::string_view sheet_name,
-    std::string_view scenario,
-    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect);
 
 void test_public_worksheet_editor_set_row_replaces_sparse_row()
 {

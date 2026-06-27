@@ -399,6 +399,9 @@ width, row-limit, style, max_cells, and memory-budget failures do not mutate the
 active sparse store. This is not row insertion, row metadata creation,
 table/range metadata recalculation, sharedStrings/styles migration, or
 large-file low-memory random editing.
+The saved append output is reopened in public-state coverage to verify clean
+readback for the appended text, number, formula, explicit blank, and preserved
+source-backed rows.
 `WorksheetEditor::set_row()` now covers the matching sparse represented-row
 replacement convenience for small files: it deletes currently represented cells
 in the target row, writes input values to columns 1..N, treats empty input as a

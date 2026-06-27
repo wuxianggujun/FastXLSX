@@ -2752,6 +2752,29 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
         "A1 range clear should omit the prior C3 text payload");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "A1 range mutations should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "A1 range sparse mutation",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "A1 range reopened output should keep sparse mutation count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 2, 4, 4,
+                "A1 range reopened output should expose sparse mutation bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "A1 range reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "A1 range reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank,
+                "A1 range reopened output should read blanked B1");
+            check(!reopened_sheet.try_cell("B2").has_value(),
+                "A1 range reopened output should not synthesize missing B2");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Blank,
+                "A1 range reopened output should read blanked C3");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "outside-a1-range",
+                "A1 range reopened output should keep outside D4 text");
+        });
 }
 
 void test_public_worksheet_editor_a1_range_mutations_invalid_references()

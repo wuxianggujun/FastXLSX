@@ -181,6 +181,10 @@ The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,
 output isolation, and shifted sparse readback.
+The direct invalid-to-valid shift recovery path now covers row and column
+validation failures followed by a valid shift on the same clean borrowed
+`WorksheetEditor`, proving the later mutation clears diagnostics, dirties only
+the materialized session, saves, and reopens as clean shifted sparse state.
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.

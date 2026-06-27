@@ -7877,6 +7877,126 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         });
 }
 
+void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-invalid-recovery-source.xlsx");
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-invalid-row-recovery-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
+            "invalid-to-valid shift should reject invalid row insertion first");
+        check(threw_fastxlsx_error([&] { sheet.delete_rows(1048576, 2); }),
+            "invalid-to-valid shift should reject invalid row deletion range");
+        check(editor.last_edit_error().has_value(),
+            "invalid-to-valid row shift should retain the invalid shift diagnostic");
+        check(!sheet.has_pending_changes() && editor.pending_materialized_cell_count() == 0,
+            "invalid-to-valid row shift failures should leave the borrowed handle clean");
+        check(sheet.cell_count() == 3,
+            "invalid-to-valid row shift failures should preserve sparse count");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "invalid-to-valid row shift failures should preserve source-backed cells");
+
+        sheet.insert_rows(2, 1);
+        check(!editor.last_edit_error().has_value(),
+            "valid insert_rows after invalid shifts should clear the prior diagnostic");
+        check(sheet.has_pending_changes(),
+            "valid insert_rows after invalid shifts should dirty the same borrowed handle");
+        check(sheet.cell_count() == 3 && editor.pending_materialized_cell_count() == 3,
+            "valid insert_rows after invalid shifts should keep aggregate sparse count stable");
+        check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+            "valid insert_rows after invalid shifts should move source-backed rows");
+        check(!sheet.try_cell("A2").has_value(),
+            "valid insert_rows after invalid shifts should remove the old shifted coordinate");
+
+        editor.save_as(output);
+        check_reopened_shift_output(output, "invalid-to-valid row shift recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "invalid-to-valid row recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                    "invalid-to-valid row recovery reopened output should expose shifted bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "invalid-to-valid row recovery reopened output should keep source A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "invalid-to-valid row recovery reopened output should keep source B1");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "placeholder-a2",
+                    "invalid-to-valid row recovery reopened output should read shifted A2");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "invalid-to-valid row recovery reopened output should keep old A2 absent");
+            });
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-invalid-column-recovery-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] { sheet.insert_columns(0, 1); }),
+            "invalid-to-valid shift should reject invalid column insertion first");
+        check(threw_fastxlsx_error([&] { sheet.delete_columns(16384, 2); }),
+            "invalid-to-valid shift should reject invalid column deletion range");
+        check(editor.last_edit_error().has_value(),
+            "invalid-to-valid column shift should retain the invalid shift diagnostic");
+        check(!sheet.has_pending_changes() && editor.pending_materialized_cell_count() == 0,
+            "invalid-to-valid column shift failures should leave the borrowed handle clean");
+        check(sheet.cell_count() == 3,
+            "invalid-to-valid column shift failures should preserve sparse count");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "invalid-to-valid column shift failures should preserve source-backed cells");
+
+        sheet.insert_columns(2, 1);
+        check(!editor.last_edit_error().has_value(),
+            "valid insert_columns after invalid shifts should clear the prior diagnostic");
+        check(sheet.has_pending_changes(),
+            "valid insert_columns after invalid shifts should dirty the same borrowed handle");
+        check(sheet.cell_count() == 3 && editor.pending_materialized_cell_count() == 3,
+            "valid insert_columns after invalid shifts should keep aggregate sparse count stable");
+        const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+        check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_number.number_value() == 1.0,
+            "valid insert_columns after invalid shifts should move source-backed columns");
+        check(!sheet.try_cell("B1").has_value(),
+            "valid insert_columns after invalid shifts should remove the old shifted coordinate");
+
+        editor.save_as(output);
+        check_reopened_shift_output(output, "invalid-to-valid column shift recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "invalid-to-valid column recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                    "invalid-to-valid column recovery reopened output should expose shifted bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "invalid-to-valid column recovery reopened output should keep source A1");
+                const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+                check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_c1.number_value() == 1.0,
+                    "invalid-to-valid column recovery reopened output should read shifted B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "invalid-to-valid column recovery reopened output should keep source A2");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "invalid-to-valid column recovery reopened output should keep old B1 absent");
+            });
+    }
+}
+
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
 {
     const std::filesystem::path source =
@@ -9689,6 +9809,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
+            test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();

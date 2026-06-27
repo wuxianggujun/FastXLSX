@@ -371,6 +371,8 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
         editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
     const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
@@ -386,6 +388,9 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
         std::string(message_prefix) + " should preserve dirty materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
         std::string(message_prefix) + " should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == materialized_memory_before_audit,
+        std::string(message_prefix) + " should preserve materialized memory estimate");
     check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
         std::string(message_prefix) + " should not create pending edit summaries");
     check(editor.last_edit_error() == last_error_before_audit,
@@ -414,6 +419,8 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
         editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
     const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
@@ -429,6 +436,9 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
         std::string(message_prefix) + " should preserve dirty materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
         std::string(message_prefix) + " should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == materialized_memory_before_audit,
+        std::string(message_prefix) + " should preserve materialized memory estimate");
     check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
         std::string(message_prefix) + " should not create pending edit summaries");
     check(editor.last_edit_error() == last_error_before_audit,

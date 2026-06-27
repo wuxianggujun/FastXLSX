@@ -6292,6 +6292,70 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         "delete_columns save_as should omit deleted column row-two text cells");
 }
 
+void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-source.xlsx");
+    const std::string formula =
+        R"(SUM(A1,$B$2,A1:B2,Sheet1!C3,'Other Sheet'!D:D,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(E5),A1foo,_A1,A1_,R1C1))";
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
+        sheet.insert_rows(2, 1);
+
+        const std::string expected =
+            R"(SUM(A2,$B$2,A2:B3,Sheet1!C4,'Other Sheet'!D:D,[Book.xlsx]Sheet1!2:2,"A1",Table1[A1],LOG10(E6),A1foo,_A1,A1_,R1C1))";
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == expected,
+            "insert_rows should translate supported moved formula reference shapes");
+        check(!sheet.try_cell("C2").has_value(),
+            "insert_rows rich formula translation should remove the old coordinate");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string expected_cell_xml = "<c r=\"C3\"><f>" + expected + "</f></c>";
+        check_contains(worksheet_xml, expected_cell_xml,
+            "insert_rows save_as should persist translated rich formula references");
+        check_not_contains(worksheet_xml, R"(r="C2")",
+            "insert_rows rich formula save_as should not keep the old coordinate");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
+        sheet.insert_columns(2, 2);
+
+        const std::string expected =
+            R"(SUM(C1,$B$2,C1:D2,Sheet1!E3,'Other Sheet'!F:F,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(G5),A1foo,_A1,A1_,R1C1))";
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("E2");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == expected,
+            "insert_columns should translate supported moved formula reference shapes");
+        check(!sheet.try_cell("C2").has_value(),
+            "insert_columns rich formula translation should remove the old coordinate");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string expected_cell_xml = "<c r=\"E2\"><f>" + expected + "</f></c>";
+        check_contains(worksheet_xml, expected_cell_xml,
+            "insert_columns save_as should persist translated rich formula references");
+        check_not_contains(worksheet_xml, R"(r="C2")",
+            "insert_columns rich formula save_as should not keep the old coordinate");
+    }
+}
+
 void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
 {
     const std::filesystem::path source =
@@ -7544,6 +7608,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();
             test_public_worksheet_editor_shift_memory_guard_failure_preserves_state();

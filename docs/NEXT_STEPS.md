@@ -181,6 +181,11 @@ The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,
 output isolation, and shifted sparse readback.
+Post-save matching reacquire now has the same structural-shift lifecycle
+coverage: after an `insert_rows()` save, a matching `worksheet("Data")`
+reacquire reuses the saved clean materialized session, a later
+`insert_columns()` through the reacquired handle is visible through the older
+handle, and both first/second outputs reopen with isolated shifted sparse state.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

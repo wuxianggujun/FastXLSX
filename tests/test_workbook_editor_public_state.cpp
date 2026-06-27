@@ -7877,6 +7877,142 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_reuses_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    check(sheet.has_pending_changes(),
+        "shift reacquire should dirty the borrowed handle before the first save");
+    check(sheet.cell_count() == 3,
+        "shift reacquire should keep sparse count after the first shift");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire should expose the first shifted source row before save");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire first save should clean the original borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire first save should clear dirty materialized diagnostics");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire first save should record the materialized handoff");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "shift reacquire should return the saved clean materialized session");
+    check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
+        "shift reacquire should preserve sparse count on both handles");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire should reuse the saved shifted state instead of reloading source");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "shift reacquire should keep old shifted coordinates absent on both handles");
+
+    reacquired.insert_columns(2, 1);
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "shift reacquire later shift should dirty the shared session on both handles");
+    const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 1 && dirty_names[0] == "Data",
+        "shift reacquire later shift should report only Data as dirty materialized");
+    check(editor.pending_materialized_cell_count() == 3,
+        "shift reacquire later shift should report the shared sparse count once");
+    const fastxlsx::CellValue shifted_number = reacquired.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "shift reacquire later shift should move the source-backed number");
+    const fastxlsx::CellValue old_handle_number = sheet.get_cell("C1");
+    check(old_handle_number.kind() == fastxlsx::CellValueKind::Number &&
+            old_handle_number.number_value() == 1.0,
+        "shift reacquire later shift should be visible through the older handle");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire later shift should keep the prior row shift on both handles");
+    check(!sheet.try_cell("B1").has_value() && !reacquired.try_cell("B1").has_value() &&
+            !sheet.try_cell("A2").has_value() && !reacquired.try_cell("A2").has_value(),
+        "shift reacquire later shift should keep old sparse coordinates absent on both handles");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire second save should clean both handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire second save should clear dirty materialized diagnostics again");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire second save should record the second materialized handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, R"(<dimension ref="A1:B3"/>)",
+        "shift reacquire first output should keep the first shifted bounds");
+    check_contains(first_xml, R"(<c r="B1"><v>1</v></c>)",
+        "shift reacquire first output should keep B1 before the later column shift");
+    check_contains(first_xml, R"(<c r="A3")",
+        "shift reacquire first output should contain the shifted source row");
+    check_not_contains(first_xml, R"(r="C1")",
+        "shift reacquire first output should not include the later column shift");
+    check_not_contains(first_xml, R"(r="A2")",
+        "shift reacquire first output should omit the old row coordinate");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, R"(<dimension ref="A1:C3"/>)",
+        "shift reacquire second output should project the combined shifted bounds");
+    check_contains(second_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shift reacquire second output should contain the later column shift");
+    check_contains(second_xml, R"(<c r="A3")",
+        "shift reacquire second output should retain the earlier row shift");
+    check_not_contains(second_xml, R"(r="B1")",
+        "shift reacquire second output should omit the old column coordinate");
+    check_not_contains(second_xml, R"(r="A2")",
+        "shift reacquire second output should keep the old row coordinate absent");
+
+    check_reopened_shift_output(first_output, "shift reacquire first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire first save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "shift reacquire first save reopened output should expose first-shift bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "shift reacquire first save reopened output should keep B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire first save reopened output should read shifted A2");
+            check(!reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire first save reopened output should omit later and old coordinates");
+        });
+    check_reopened_shift_output(second_output, "shift reacquire second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire second save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire second save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire second save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire second save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire second save reopened output should keep old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
 {
     const std::filesystem::path source =
@@ -10512,6 +10648,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
+            test_public_worksheet_editor_shift_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();

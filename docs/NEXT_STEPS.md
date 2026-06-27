@@ -195,6 +195,10 @@ existing-directory output attempts all preserve dirty diagnostics under
 `RenamedData`, keep the source workbook unchanged under `Data`, leave the first
 renamed output isolated, and a safe retry reopens only as `RenamedData` with
 the combined shifted coordinates.
+After that rejected-save retry, same-editor planned-name reacquire is pinned as
+well: `try_worksheet("RenamedData")` returns the clean saved combined-shift
+session, the old `Data` name remains unavailable, a later `delete_rows(3, 1)`
+shrinks all shared handles, and the third output reopens only as `RenamedData`.
 The renamed planned-name shift path also covers option-mismatch reacquire:
 mismatched `WorksheetEditorOptions` against `RenamedData` fail without updating
 `last_edit_error()`, dirtying materialized diagnostics, restoring the old

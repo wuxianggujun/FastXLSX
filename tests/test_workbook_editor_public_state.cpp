@@ -8038,6 +8038,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-second-output.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-third-output.xlsx");
     std::filesystem::remove_all(missing_parent_output.parent_path());
     std::filesystem::remove_all(file_parent);
     fastxlsx::test::write_file(file_parent, "not a directory");
@@ -8259,6 +8261,123 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(!reopened_sheet.try_cell("B1").has_value() &&
             !reopened_sheet.try_cell("A2").has_value(),
         "renamed shift failed save reopened output should keep old coordinates absent");
+
+    std::optional<fastxlsx::WorksheetEditor> maybe_after_retry =
+        editor.try_worksheet("RenamedData");
+    check(maybe_after_retry.has_value(),
+        "renamed shift failed save after retry should find the saved planned-name session");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed shift failed save after retry should keep the old source name unavailable");
+    if (!maybe_after_retry.has_value()) {
+        return;
+    }
+
+    fastxlsx::WorksheetEditor after_retry = std::move(*maybe_after_retry);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "renamed shift failed save after retry should return a clean saved session");
+    check(editor.pending_change_count() == 3,
+        "renamed shift failed save after retry clean reacquire should not add handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift failed save after retry clean reacquire should keep dirty diagnostics empty");
+    check(editor.source_worksheet_names() == expected_source_names &&
+            editor.worksheet_names() == expected_planned_names,
+        "renamed shift failed save after retry clean reacquire should preserve catalog names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
+        "renamed shift failed save after retry clean reacquire should preserve the planned catalog");
+    check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "renamed shift failed save after retry should preserve the combined shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "renamed shift failed save after retry should expose the combined shifted number on all handles");
+    check(!after_retry.try_cell("B1").has_value() &&
+            !after_retry.try_cell("A2").has_value(),
+        "renamed shift failed save after retry should keep old sparse coordinates absent");
+
+    after_retry.delete_rows(3, 1);
+    check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
+            reacquired.has_pending_changes(),
+        "renamed shift failed save after retry later delete should dirty all shared handles");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed shift failed save after retry later delete should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 2,
+        "renamed shift failed save after retry later delete should shrink the dirty sparse count");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "renamed shift failed save after retry later delete should expose one dirty summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "RenamedData" &&
+                    summaries[0].renamed &&
+                    summaries[0].materialized_dirty,
+                "renamed shift failed save after retry later delete summary should retain planned state");
+            check(summaries[0].materialized_cell_count == 2,
+                "renamed shift failed save after retry later delete summary should report sparse count");
+        }
+    }
+    check(!after_retry.try_cell("A3").has_value() &&
+            !sheet.try_cell("A3").has_value() &&
+            !reacquired.try_cell("A3").has_value(),
+        "renamed shift failed save after retry later delete should remove the shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0,
+        "renamed shift failed save after retry later delete should preserve the shifted number");
+
+    editor.save_as(third_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "renamed shift failed save after retry third save should clean all shared handles");
+    check(editor.pending_change_count() == 4,
+        "renamed shift failed save after retry third save should record the third materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift failed save after retry third save should clear dirty diagnostics");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_workbook_xml = third_entries.at("xl/workbook.xml");
+    const std::string third_worksheet_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_workbook_xml, R"(name="RenamedData")",
+        "renamed shift failed save after retry third output should keep the planned catalog name");
+    check_not_contains(third_workbook_xml, R"(name="Data")",
+        "renamed shift failed save after retry third output should omit the source catalog name");
+    check_contains(third_worksheet_xml, R"(<dimension ref="A1:C1"/>)",
+        "renamed shift failed save after retry third output should shrink after deleting row 3");
+    check_contains(third_worksheet_xml, R"(<c r="A1")",
+        "renamed shift failed save after retry third output should keep A1");
+    check_contains(third_worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "renamed shift failed save after retry third output should keep shifted B1");
+    check_not_contains(third_worksheet_xml, R"(r="A3")",
+        "renamed shift failed save after retry third output should omit deleted row 3");
+    check_not_contains(third_worksheet_xml, R"(r="B1")",
+        "renamed shift failed save after retry third output should keep old B1 absent");
+    check_not_contains(third_worksheet_xml, R"(r="A2")",
+        "renamed shift failed save after retry third output should keep old A2 absent");
+
+    fastxlsx::WorkbookEditor third_reopened = fastxlsx::WorkbookEditor::open(third_output);
+    check(third_reopened.has_worksheet("RenamedData") &&
+            !third_reopened.has_worksheet("Data"),
+        "renamed shift failed save after retry third reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor third_reopened_sheet =
+        third_reopened.worksheet("RenamedData");
+    check(!third_reopened.has_pending_changes() &&
+            !third_reopened_sheet.has_pending_changes(),
+        "renamed shift failed save after retry third reopened output should start clean");
+    check(third_reopened_sheet.cell_count() == 2,
+        "renamed shift failed save after retry third reopened output should shrink sparse count");
+    check_cell_range_equals(third_reopened_sheet.used_range(), 1, 1, 1, 3,
+        "renamed shift failed save after retry third reopened output should expose shrunken bounds");
+    check(third_reopened_sheet.get_cell("C1").number_value() == 1.0,
+        "renamed shift failed save after retry third reopened output should read shifted B1");
+    check(!third_reopened_sheet.try_cell("A3").has_value() &&
+            !third_reopened_sheet.try_cell("B1").has_value() &&
+            !third_reopened_sheet.try_cell("A2").has_value(),
+        "renamed shift failed save after retry third reopened output should keep deleted and old coordinates absent");
 }
 
 void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_planned_session()

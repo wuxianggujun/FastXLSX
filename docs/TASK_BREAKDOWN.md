@@ -35216,6 +35216,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.804 - Pin renamed WorksheetEditor shift after-retry reacquire
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a renamed planned-name materialized shift session remains reusable
+inside the same editor after rejected save attempts and a successful safe
+retry.
+
+Output:
+- Extended the renamed shift failed-save regression to reacquire
+  `RenamedData` after the safe retry while keeping old `Data` unavailable.
+- The clean after-retry handle shares the saved combined shifted sparse state
+  with the older handles, then `delete_rows(3, 1)` dirties all handles under
+  `RenamedData` and shrinks the materialized sparse count to two.
+- A third `save_as()` writes only `RenamedData`, reopens clean with the
+  shrunken `A1:C1` bounds, keeps shifted `C1`, and omits deleted `A3` plus old
+  `B1` / `A2` coordinates.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no workbook catalog repair beyond
+  the existing planned-name helper, no formula/definedName rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.803 - Pin renamed WorksheetEditor shift directory-output failed save
 
 Status: completed.

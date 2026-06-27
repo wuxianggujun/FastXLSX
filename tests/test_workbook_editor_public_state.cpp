@@ -8535,6 +8535,19 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "renamed formula audit shift post-save reacquire should keep materialized diagnostics clean");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
+        editor.formula_reference_audits();
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula audit shift post-save reacquire formula audit should keep diagnostics clean");
+    check(post_save_audits.size() == 2,
+        "renamed formula audit shift post-save reacquire should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        post_save_audits, 4, 4, expected_formula, "Data!A3", "A3",
+        "renamed formula audit shift post-save reacquire A reference");
+    check_public_state_renamed_shift_formula_audit(
+        post_save_audits, 4, 4, expected_formula, "Data!B3", "B3",
+        "renamed formula audit shift post-save reacquire B reference");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shift post-save reacquire source scan");
 
@@ -8750,6 +8763,19 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "renamed column formula audit shift post-save reacquire should keep materialized diagnostics clean");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
+        editor.formula_reference_audits();
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed column formula audit shift post-save reacquire formula audit should keep diagnostics clean");
+    check(post_save_audits.size() == 2,
+        "renamed column formula audit shift post-save reacquire should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        post_save_audits, 2, 5, expected_formula, "Data!B1", "B1",
+        "renamed column formula audit shift post-save reacquire B reference");
+    check_public_state_renamed_shift_formula_audit(
+        post_save_audits, 2, 5, expected_formula, "Data!C1", "C1",
+        "renamed column formula audit shift post-save reacquire C reference");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shift post-save reacquire source scan");
 

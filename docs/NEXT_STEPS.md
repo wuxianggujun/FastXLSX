@@ -200,6 +200,11 @@ and column shifts: formulas like `Data!A1+Data!B1` are audited at their shifted
 formula cell coordinates with shifted `Data!A3` / `Data!B3` or `Data!B1` /
 `Data!C1` reference tokens, while `formula_reference_audits()` remains read-only
 and still only reports stale source-name risk instead of rewriting formulas.
+The delete-side audit boundary now covers mixed `#REF!` translations as well:
+after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
+`Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit
+reports only the surviving shifted sheet-qualified A1 token instead of treating
+`Data!#REF!` as a reference.
 Renamed formula shifts are now pinned across same-editor post-save reacquire:
 after saving the `insert_rows(2, 2)` styled formula shift, `try_worksheet("RenamedData")`
 reuses the clean formula/style session, old `Data` stays unavailable, a later

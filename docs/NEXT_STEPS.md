@@ -139,6 +139,9 @@ absence.
 The `set_row_values()` / `set_column_values()` max-cells recovery saves are
 also reopened, pinning value-prefix overwrites, preserved sparse tails, and
 rejected prefix targets.
+Whole-store `clear_cell_values()` / `erase_cells()` saves are now reopened after
+both the first projection and post-save handle reuse, covering styled blanks,
+empty worksheets, and later value/appended edits.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

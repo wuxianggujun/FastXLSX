@@ -6034,6 +6034,22 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "save_as should clear dirty materialized memory after whole-store clear");
         check(editor.pending_worksheet_edits().empty(),
             "save_as should clear dirty materialized summaries after whole-store clear");
+        check_reopened_clean_sheet_output(output, "Styled", "clear_cell_values first save",
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "clear_cell_values first save reopened output should keep blank records");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "clear_cell_values first save reopened output should keep blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "clear_cell_values first save reopened output should preserve styled blank");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank &&
+                        !reopened_b1.has_style(),
+                    "clear_cell_values first save reopened output should keep unstyled blank");
+            });
 
         fastxlsx::WorksheetEditor reacquired = editor.worksheet("Styled");
         check(!reacquired.has_pending_changes(),
@@ -6084,6 +6100,24 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "second save_as should clear dirty memory after whole-store clear handle reuse");
         check(editor.pending_worksheet_edits().empty(),
             "second save_as should clear summaries after whole-store clear handle reuse");
+        check_reopened_clean_sheet_output(output_after_reacquire, "Styled",
+            "clear_cell_values reacquired save",
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "clear_cell_values reacquired save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "clear_cell_values reacquired save reopened output should keep row bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_a1.number_value() == 2.5 &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "clear_cell_values reacquired save reopened output should preserve styled value edit");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_b1.text_value() == "after-clear-reacquire",
+                    "clear_cell_values reacquired save reopened output should read later text edit");
+            });
     }
 
     {
@@ -6152,6 +6186,19 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "save_as should clear dirty materialized memory after whole-store erase");
         check(editor.pending_worksheet_edits().empty(),
             "save_as should clear dirty materialized summaries after whole-store erase");
+        check_reopened_clean_sheet_output(output, "Data", "erase_cells first save",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 0,
+                    "erase_cells first save reopened output should stay empty");
+                check(!reopened_sheet.used_range().has_value(),
+                    "erase_cells first save reopened output should expose no sparse bounds");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "erase_cells first save reopened output should keep source A1 absent");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "erase_cells first save reopened output should keep source A2 absent");
+                check(!reopened_sheet.try_cell("D4").has_value(),
+                    "erase_cells first save reopened output should keep dirty D4 absent");
+            });
 
         check(threw_fastxlsx_error([&] {
             sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-clear-all-noop"));
@@ -6228,6 +6275,24 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "second save_as should clear dirty memory after whole-store erase handle reuse");
         check(editor.pending_worksheet_edits().empty(),
             "second save_as should clear summaries after whole-store erase handle reuse");
+        check_reopened_clean_sheet_output(output_after_reacquire, "Data",
+            "erase_cells reacquired save",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "erase_cells reacquired save reopened output should keep appended sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "erase_cells reacquired save reopened output should keep appended bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "after-erase-reacquire",
+                    "erase_cells reacquired save reopened output should read appended text");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 9.0,
+                    "erase_cells reacquired save reopened output should read appended number");
+                check(!reopened_sheet.try_cell("D4").has_value(),
+                    "erase_cells reacquired save reopened output should keep erased dirty D4 absent");
+            });
     }
 }
 

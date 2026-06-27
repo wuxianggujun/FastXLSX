@@ -11147,6 +11147,214 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_
         "renamed formula delete-row option mismatch reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid_mutations_preserve_styled_session()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-mutation-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-mutation-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-mutation-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.delete_rows(1, 1);
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-row invalid mutations first save should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-row invalid mutations first save should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-row invalid mutations first save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-row invalid mutations first save should keep diagnostics clear");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed formula delete-row invalid mutations matching reacquire should stay clean before failures");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed formula delete-row invalid mutations should keep the old source name unavailable");
+    const std::optional<fastxlsx::CellValue> saved_formula = reacquired.try_cell("D1");
+    check(saved_formula.has_value() &&
+            saved_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            saved_formula->text_value() == "#REF!+#REF!" &&
+            saved_formula->has_style() &&
+            saved_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-row invalid mutations matching reacquire should read the saved styled formula");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1,
+            fastxlsx::CellValue::formula("invalid-renamed-delete-row-formula-row-zero"));
+    }), "renamed formula delete-row invalid mutations should reject formula set_cell row zero");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("XFE1",
+            fastxlsx::CellValue::formula("invalid-renamed-delete-row-formula-a1-overflow"));
+    }), "renamed formula delete-row invalid mutations should reject formula set_cell column overflow");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "renamed formula delete-row invalid mutations should reject range erase_cell references");
+
+    check(editor.last_edit_error().has_value(),
+        "renamed formula delete-row invalid mutations should populate last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(), "WorksheetEditor cell reference is invalid",
+            "renamed formula delete-row invalid mutations should expose the latest invalid reference diagnostic");
+    }
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row invalid mutations should keep both planned-name handles clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-row invalid mutations should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row invalid mutations should not dirty materialized diagnostics");
+    check(editor.source_worksheet_names() == expected_source_names &&
+            editor.worksheet_names() == expected_planned_names,
+        "renamed formula delete-row invalid mutations should preserve source and planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
+        "renamed formula delete-row invalid mutations should preserve the planned workbook catalog");
+    check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+        "renamed formula delete-row invalid mutations should preserve planned-name lookup state");
+    const std::optional<fastxlsx::CellValue> preserved_formula = sheet.try_cell("D1");
+    check(preserved_formula.has_value() &&
+            preserved_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            preserved_formula->text_value() == "#REF!+#REF!" &&
+            preserved_formula->has_style() &&
+            preserved_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-row invalid mutations should preserve the saved styled formula");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("B1").text_value() == "row2-gap-b2" &&
+            reacquired.get_cell("C1").text_value() == "row2-gap-c2" &&
+            sheet.get_cell("A2").text_value() == "extra-c3",
+        "renamed formula delete-row invalid mutations should preserve shifted source cells");
+    check(!sheet.try_cell("D2").has_value() &&
+            !reacquired.try_cell("A3").has_value(),
+        "renamed formula delete-row invalid mutations should keep old shifted coordinates absent");
+
+    reacquired.insert_columns(2, 1);
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-row invalid mutations later valid shift should clear diagnostics");
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "renamed formula delete-row invalid mutations later shift should dirty the shared styled session");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed formula delete-row invalid mutations later shift should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 5,
+        "renamed formula delete-row invalid mutations later shift should keep the styled sparse count");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("E1");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "#REF!+#REF!" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-row invalid mutations later shift should preserve #REF formula and style id");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C1").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("D1").text_value() == "row2-gap-c2" &&
+            sheet.get_cell("A2").text_value() == "extra-c3",
+        "renamed formula delete-row invalid mutations later shift should move source-backed cells");
+    check(!reacquired.try_cell("B1").has_value() &&
+            !reacquired.try_cell("D2").has_value() &&
+            !reacquired.try_cell("A3").has_value(),
+        "renamed formula delete-row invalid mutations later shift should keep old coordinates absent");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row invalid mutations second save should clean both styled handles");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-row invalid mutations second save should record the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-row invalid mutations second save should clear dirty diagnostics again");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    const std::string first_styled_formula_xml =
+        std::string(R"(<c r="D1" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+#REF!</f></c>)";
+    check_contains(first_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-row invalid mutations first output should keep the planned catalog name");
+    check_not_contains(first_workbook_xml, R"(name="Data")",
+        "renamed formula delete-row invalid mutations first output should omit the source catalog name");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "renamed formula delete-row invalid mutations first output should keep delete-row bounds");
+    check_contains(first_worksheet_xml, first_styled_formula_xml,
+        "renamed formula delete-row invalid mutations first output should keep the delete-row styled formula");
+    check_not_contains(first_worksheet_xml, "invalid-renamed-delete-row-formula-",
+        "renamed formula delete-row invalid mutations first output should not contain rejected payloads");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    const std::string second_styled_formula_xml =
+        std::string(R"(<c r="E1" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+#REF!</f></c>)";
+    check_contains(second_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-row invalid mutations second output should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "renamed formula delete-row invalid mutations second output should omit the source catalog name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:E2"/>)",
+        "renamed formula delete-row invalid mutations second output should project combined shifted bounds");
+    check_contains(second_worksheet_xml, R"(<c r="A1")",
+        "renamed formula delete-row invalid mutations second output should keep shifted A2");
+    check_contains(second_worksheet_xml, R"(<c r="C1")",
+        "renamed formula delete-row invalid mutations second output should write shifted B2");
+    check_contains(second_worksheet_xml, R"(<c r="D1")",
+        "renamed formula delete-row invalid mutations second output should write shifted C2");
+    check_contains(second_worksheet_xml, second_styled_formula_xml,
+        "renamed formula delete-row invalid mutations second output should write translated formula with style id");
+    check_not_contains(second_worksheet_xml, "invalid-renamed-delete-row-formula-",
+        "renamed formula delete-row invalid mutations second output should not leak rejected payloads");
+    check_not_contains(second_worksheet_xml, R"(r="B1")",
+        "renamed formula delete-row invalid mutations second output should omit inserted blank B1");
+    check_not_contains(second_worksheet_xml, R"(r="D2")",
+        "renamed formula delete-row invalid mutations second output should omit the old formula coordinate");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed formula delete-row invalid mutations reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed formula delete-row invalid mutations reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "renamed formula delete-row invalid mutations reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 5,
+        "renamed formula delete-row invalid mutations reopened output should keep shifted sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+        "renamed formula delete-row invalid mutations reopened output should expose combined shifted bounds");
+    const std::optional<fastxlsx::CellValue> reopened_e1 =
+        reopened_sheet.try_cell("E1");
+    check(reopened_e1.has_value() &&
+            reopened_e1->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_e1->text_value() == "#REF!+#REF!" &&
+            reopened_e1->has_style() &&
+            reopened_e1->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-row invalid mutations reopened output should read translated styled formula");
+    check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+            reopened_sheet.get_cell("C1").text_value() == "row2-gap-b2" &&
+            reopened_sheet.get_cell("D1").text_value() == "row2-gap-c2" &&
+            reopened_sheet.get_cell("A2").text_value() == "extra-c3",
+        "renamed formula delete-row invalid mutations reopened output should read shifted source cells");
+    check(!reopened_sheet.try_cell("B1").has_value() &&
+            !reopened_sheet.try_cell("D2").has_value() &&
+            !reopened_sheet.try_cell("A3").has_value(),
+        "renamed formula delete-row invalid mutations reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing_query_preserves_styled_session()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -17542,6 +17750,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_deletes_formula_rows();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_save_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_mismatch_preserves_styled_session();
+            test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid_mutations_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing_query_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid_reads_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacquire_reuses_styled_session();

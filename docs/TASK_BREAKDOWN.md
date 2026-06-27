@@ -34613,6 +34613,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.780 - Pin post-save WorksheetEditor shift option mismatch hygiene
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove mismatched `WorksheetEditorOptions` still fail fast against a saved
+structural-shift materialized session and do not reconfigure, reload, or dirty
+that session.
+
+Output:
+- Added public-state coverage that saves a `Data.insert_rows()` projection and
+  then rejects mismatched `try_worksheet("Data", options)` /
+  `worksheet("Data", options)` calls against the saved session.
+- The regression verifies mismatch failures leave `last_edit_error()` clear,
+  preserve clean dirty diagnostics and the saved shifted sparse state, and do
+  not add another materialized handoff.
+- A later matching reacquire still reuses the saved shifted state, can perform a
+  follow-up `insert_columns()`, saves successfully, and reopens as combined
+  shifted sparse state.
+
+Non-goals / boundary:
+- No production code change, no dynamic option widening/merging, no source
+  reload, no metadata repair, no sharedStrings/styles migration, no calcChain
+  rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

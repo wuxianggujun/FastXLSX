@@ -186,6 +186,10 @@ coverage: after an `insert_rows()` save, a matching `worksheet("Data")`
 reacquire reuses the saved clean materialized session, a later
 `insert_columns()` through the reacquired handle is visible through the older
 handle, and both first/second outputs reopen with isolated shifted sparse state.
+The corresponding post-save shift option-mismatch path is pinned too:
+mismatched `WorksheetEditorOptions` fail against the saved shifted session
+without updating `last_edit_error()`, dirtying materialized diagnostics, losing
+the shifted sparse state, or blocking a later matching reacquire + shift save.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

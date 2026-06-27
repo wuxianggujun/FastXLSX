@@ -200,6 +200,10 @@ after saving the `insert_rows(2, 2)` styled formula shift, `try_worksheet("Renam
 reuses the clean formula/style session, old `Data` stays unavailable, a later
 `insert_columns(2, 1)` moves the formula to `E4` as `B3+C3`, and the second
 output reopens clean under `RenamedData`.
+The same styled formula shift is now pinned across a rejected source-overwrite
+save: a failed `save_as(source)` keeps the dirty `D4` formula as `A3+B3` with
+its `StyleId` under `RenamedData`, leaves the source package unchanged under
+`Data`, and a safe retry reopens clean under `RenamedData`.
 The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and

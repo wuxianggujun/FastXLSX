@@ -8245,6 +8245,165 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         "renamed formula reacquire reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserves_styled_session()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-failed-save-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-failed-save-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+
+    sheet.insert_rows(2, 2);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
+    const auto check_dirty_styled_formula_session = [&](std::string_view scenario) {
+        const std::string label = std::string(scenario);
+
+        check(!editor.last_edit_error().has_value(),
+            label + " should keep last_edit_error clear");
+        check(editor.has_pending_changes(),
+            label + " should keep the public editor dirty");
+        check(editor.pending_change_count() == 1,
+            label + " should keep only the queued rename before materialized handoff");
+        check(sheet.has_pending_changes(),
+            label + " should keep the styled formula handle dirty");
+        check(sheet.cell_count() == 7,
+            label + " should preserve the shifted sparse count");
+        check(sheet.estimated_memory_usage() == shifted_memory,
+            label + " should preserve the shifted materialized memory estimate");
+        check(editor.pending_materialized_worksheet_names()
+                  == std::vector<std::string>{"RenamedData"},
+            label + " should report dirty materialized state under the planned name");
+        check(editor.pending_materialized_cell_count() == 7,
+            label + " should report the shifted styled formula sparse count");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            label + " should report the shifted styled formula memory estimate");
+        check(editor.source_worksheet_names() == expected_source_names,
+            label + " should preserve source worksheet names");
+        check(editor.worksheet_names() == expected_planned_names,
+            label + " should preserve planned worksheet names");
+        check(workbook_editor_catalog_entries_equal(
+                  editor.worksheet_catalog(), expected_catalog),
+            label + " should preserve the renamed worksheet catalog");
+        check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+            label + " should expose only the planned sheet name");
+
+        const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
+        check(shifted_formula.has_value() &&
+                shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula->text_value() == "A3+B3" &&
+                shifted_formula->has_style() &&
+                shifted_formula->style_id().value() == styled_formula_style.value(),
+            label + " should keep the shifted styled formula in memory");
+        check(sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+                sheet.get_cell("A5").text_value() == "extra-c3",
+            label + " should keep shifted source rows in memory");
+        check(!sheet.try_cell("D2").has_value() && !sheet.try_cell("A2").has_value(),
+            label + " should keep old shifted coordinates absent");
+    };
+
+    check_dirty_styled_formula_session(
+        "renamed formula failed save dirty state before rejected source overwrite");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "renamed formula failed save should reject exact source overwrite");
+    check_dirty_styled_formula_session(
+        "renamed formula failed save rejected source overwrite");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_workbook_xml = source_entries.at("xl/workbook.xml");
+    const std::string source_worksheet_xml = source_entries.at("xl/worksheets/sheet1.xml");
+    const std::string source_styled_formula_xml =
+        std::string(R"(<c r="D2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A1+B1</f></c>)";
+    check_contains(source_workbook_xml, R"(name="Data")",
+        "renamed formula failed save should leave the source workbook catalog unchanged");
+    check_not_contains(source_workbook_xml, R"(name="RenamedData")",
+        "renamed formula failed save should not write the planned name into the source workbook");
+    check_contains(source_worksheet_xml, R"(<dimension ref="A1:D3"/>)",
+        "renamed formula failed save should leave the source workbook bounds unchanged");
+    check_contains(source_worksheet_xml, source_styled_formula_xml,
+        "renamed formula failed save should leave the source styled formula unchanged");
+    check_contains(source_worksheet_xml, R"(<c r="A3" t="inlineStr"><is><t>extra-c3</t></is></c>)",
+        "renamed formula failed save should leave the source trailing row unchanged");
+    check_not_contains(source_worksheet_xml, R"(r="D4")",
+        "renamed formula failed save should not write the row-shifted formula into the source workbook");
+    check_not_contains(source_worksheet_xml, R"(r="A5")",
+        "renamed formula failed save should not write shifted trailing rows into the source workbook");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula failed save safe retry should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed formula failed save safe retry should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula failed save safe retry should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula failed save safe retry should keep diagnostics clear");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string output_workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string output_styled_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A3+B3</f></c>)";
+    check_contains(output_workbook_xml, R"(name="RenamedData")",
+        "renamed formula failed save safe retry should write the planned catalog name");
+    check_not_contains(output_workbook_xml, R"(name="Data")",
+        "renamed formula failed save safe retry should omit the source catalog name");
+    check_contains(output_worksheet_xml, R"(<dimension ref="A1:D5"/>)",
+        "renamed formula failed save safe retry should write row-shifted bounds");
+    check_contains(output_worksheet_xml, output_styled_formula_xml,
+        "renamed formula failed save safe retry should write translated formula with style id");
+    check_contains(output_worksheet_xml, R"(<c r="A4")",
+        "renamed formula failed save safe retry should write shifted source row two");
+    check_contains(output_worksheet_xml, R"(<c r="A5" t="inlineStr"><is><t>extra-c3</t></is></c>)",
+        "renamed formula failed save safe retry should write shifted source row three");
+    check_not_contains(output_worksheet_xml, R"(r="D2")",
+        "renamed formula failed save safe retry should omit the old formula coordinate");
+    check_not_contains(output_worksheet_xml, R"(r="A2")",
+        "renamed formula failed save safe retry should omit the inserted blank row coordinate");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed formula failed save reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed formula failed save reopened output should start clean");
+    check(reopened_sheet.cell_count() == 7,
+        "renamed formula failed save reopened output should keep shifted sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+        "renamed formula failed save reopened output should expose row-shifted bounds");
+    const std::optional<fastxlsx::CellValue> reopened_d4 =
+        reopened_sheet.try_cell("D4");
+    check(reopened_d4.has_value() &&
+            reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_d4->text_value() == "A3+B3" &&
+            reopened_d4->has_style() &&
+            reopened_d4->style_id().value() == styled_formula_style.value(),
+        "renamed formula failed save reopened output should read translated styled formula");
+    check(reopened_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+            reopened_sheet.get_cell("B4").text_value() == "row2-gap-b2" &&
+            reopened_sheet.get_cell("C4").text_value() == "row2-gap-c2" &&
+            reopened_sheet.get_cell("A5").text_value() == "extra-c3",
+        "renamed formula failed save reopened output should read shifted source cells");
+    check(!reopened_sheet.try_cell("D2").has_value() &&
+            !reopened_sheet.try_cell("A2").has_value(),
+        "renamed formula failed save reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_after_rename_deletes_formula_references()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -14223,6 +14382,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
             test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session();
+            test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_references();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_rows();
             test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session();

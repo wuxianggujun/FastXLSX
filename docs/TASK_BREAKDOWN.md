@@ -35216,6 +35216,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.810 - Pin renamed WorksheetEditor formula failed-save retry
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a rejected source-overwrite save keeps a dirty renamed planned-name
+styled formula shift session retryable.
+
+Output:
+- Added public-state coverage for a styled `Data!D2` formula followed by
+  `rename_sheet("Data", "RenamedData")`, `insert_rows(2, 2)`, rejected
+  `save_as(source)`, and a safe retry.
+- The regression verifies the failed save preserves dirty materialized
+  diagnostics under `RenamedData`, leaves the source package catalog and
+  original `D2` styled formula under `Data`, and keeps the shifted `D4` formula
+  as `A3+B3` with the source `StyleId`.
+- The safe retry writes only `RenamedData`, persists the translated styled
+  formula and shifted source rows, clears dirty diagnostics, and reopened
+  readback starts clean.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.809 - Pin renamed WorksheetEditor formula shift reacquire reuse
 
 Status: completed.

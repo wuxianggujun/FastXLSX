@@ -81,6 +81,9 @@ verify the rejected target stays absent while source-backed cells remain clean.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.
+The mixed public-edit diagnostic recovery path also reopens the saved output to
+verify copy-original `Data` state and replacement-only `Untouched` state after
+failed replacement, rename, and materialized mutation attempts.
 Existing-cell blank overwrite after rejected blank insertions is reopened as
 well, pinning explicit blank readback without admitting the rejected target.
 Public-state

@@ -7087,6 +7087,68 @@ void check_reopened_last_error_recovery_output(
         "last-error recovery reopened column_cells should keep rejected column empty");
 }
 
+void check_reopened_mixed_last_error_recovery_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_untouched =
+        reopened_editor.worksheet("Untouched");
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        "mixed diagnostic recovery reopened output should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_data.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes(),
+        "mixed diagnostic recovery reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0,
+        "mixed diagnostic recovery reopened output should not expose dirty diagnostics");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        "mixed diagnostic recovery reopened output should not expose dirty sheet names");
+
+    check(reopened_data.cell_count() == 3,
+        "mixed diagnostic recovery reopened Data should keep source sparse count");
+    check_cell_range_equals(reopened_data.used_range(), 1, 1, 2, 2,
+        "mixed diagnostic recovery reopened Data should keep the source used range");
+    const fastxlsx::CellValue reopened_data_a1 = reopened_data.get_cell("A1");
+    check(reopened_data_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_data_a1.text_value() == "placeholder-a1",
+        "mixed diagnostic recovery reopened Data should keep source-backed A1");
+    const fastxlsx::CellValue reopened_data_b1 = reopened_data.get_cell("B1");
+    check(reopened_data_b1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_data_b1.number_value() == 1.0,
+        "mixed diagnostic recovery reopened Data should keep source-backed B1");
+    const fastxlsx::CellValue reopened_data_a2 = reopened_data.get_cell("A2");
+    check(reopened_data_a2.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_data_a2.text_value() == "placeholder-a2",
+        "mixed diagnostic recovery reopened Data should keep source-backed A2");
+
+    check(reopened_untouched.cell_count() == 1,
+        "mixed diagnostic recovery reopened Untouched should expose replacement count");
+    check_cell_range_equals(reopened_untouched.used_range(), 1, 1, 1, 1,
+        "mixed diagnostic recovery reopened Untouched should expose replacement range");
+    const fastxlsx::CellValue reopened_untouched_a1 =
+        reopened_untouched.get_cell("A1");
+    check(reopened_untouched_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_untouched_a1.text_value() == "mixed-diagnostic-recovered",
+        "mixed diagnostic recovery reopened Untouched should read back replacement text");
+    check(!reopened_untouched.try_cell("B1").has_value(),
+        "mixed diagnostic recovery reopened Untouched should not keep old B1");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_untouched_row_one =
+        reopened_untouched.row_cells(1);
+    check(reopened_untouched_row_one.size() == 1 &&
+            reopened_untouched_row_one[0].reference.row == 1 &&
+            reopened_untouched_row_one[0].reference.column == 1 &&
+            reopened_untouched_row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_untouched_row_one[0].value.text_value() ==
+                "mixed-diagnostic-recovered",
+        "mixed diagnostic recovery reopened row_cells should expose replacement A1 only");
+}
+
 void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()
 {
     const std::filesystem::path max_source =
@@ -7780,6 +7842,7 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
         "failed replacement payload should not leak into output");
     check_not_contains(output_entries.at("xl/workbook.xml"), "Bad/Name",
         "failed rename target should not leak into workbook catalog");
+    check_reopened_mixed_last_error_recovery_output(output);
 }
 
 

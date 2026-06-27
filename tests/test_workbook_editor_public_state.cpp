@@ -7035,6 +7035,58 @@ void check_reopened_blank_guardrail_overwrite_output(
         prefix + " reopened column_cells should keep rejected blank column empty");
 }
 
+void check_reopened_last_error_recovery_output(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        "last-error recovery reopened output should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        "last-error recovery reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        "last-error recovery reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        "last-error recovery reopened output should keep the source sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+        "last-error recovery reopened output should keep the source used range");
+
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a1.text_value() == "fixed",
+        "last-error recovery reopened output should read back the successful overwrite");
+    const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+    check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_b1.number_value() == 1.0,
+        "last-error recovery reopened output should keep source-backed B1");
+    const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+    check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a2.text_value() == "placeholder-a2",
+        "last-error recovery reopened output should keep source-backed A2");
+    check(!reopened_sheet.try_cell("D4").has_value(),
+        "last-error recovery reopened output should keep rejected D4 absent");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
+        reopened_sheet.row_cells(1);
+    check(reopened_row_one.size() == 2 &&
+            reopened_row_one[0].reference.row == 1 &&
+            reopened_row_one[0].reference.column == 1 &&
+            reopened_row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_row_one[0].value.text_value() == "fixed" &&
+            reopened_row_one[1].reference.row == 1 &&
+            reopened_row_one[1].reference.column == 2 &&
+            reopened_row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_row_one[1].value.number_value() == 1.0,
+        "last-error recovery reopened row_cells should expose fixed A1 and source B1");
+    check(reopened_sheet.column_cells(4).empty(),
+        "last-error recovery reopened column_cells should keep rejected column empty");
+}
+
 void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()
 {
     const std::filesystem::path max_source =
@@ -7606,6 +7658,7 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "memory-budget rejected payload should not leak into output");
     check_not_contains(worksheet_xml, R"(r="D4")",
         "memory-budget rejected D4 should not leak into output");
+    check_reopened_last_error_recovery_output(output, options);
 }
 
 void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics()

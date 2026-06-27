@@ -35216,6 +35216,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.825 - Pin renamed WorksheetEditor delete-row formula invalid reads
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid reads do not pollute a saved renamed delete-row formula
+materialized session.
+
+Output:
+- Added public-state coverage for a saved `delete_rows(1, 1)` styled formula
+  session under `RenamedData`, followed by invalid cell/range reads, invalid
+  row/column snapshots, and a valid-but-missing `get_cell("D2")`.
+- The regression verifies these read failures leave diagnostics clear, keep
+  both saved handles clean, preserve catalog/source state, keep dirty
+  materialized diagnostics empty, and preserve `D1` as `#REF!+#REF!` with the
+  source `StyleId`.
+- A matching reacquire can still apply `insert_columns(2, 1)`, save, and reopen
+  clean with the formula moved to `E1` as `#REF!+#REF!` while preserving style.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.824 - Pin renamed WorksheetEditor delete-column formula invalid reads
 
 Status: completed.

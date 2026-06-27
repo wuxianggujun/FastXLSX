@@ -270,6 +270,11 @@ Delete-row formula missing-query hygiene is pinned too: `Missing` and old
 `Data` lookups leave the saved styled `D1` state clean and diagnostic-free, and
 matching `RenamedData` reacquire can still save/reopen styled `E1` as
 `#REF!+#REF!`.
+Delete-row formula invalid-read hygiene now mirrors the column case: invalid
+coordinates/ranges, invalid row/column snapshots, and a valid-missing
+`get_cell("D2")` leave the saved styled `D1` state clean and diagnostic-free,
+and matching `RenamedData` reacquire can still save/reopen styled `E1` as
+`#REF!+#REF!`.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

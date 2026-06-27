@@ -100,6 +100,9 @@ erased source cells survive saved sparse projection cleanly.
 The `used_range()` dirty/empty inspection path is reopened as well, pinning
 clean readback for a saved worksheet whose sparse cells were fully erased after
 diagnostic-preserving reads.
+The `row_cells()` / `column_cells()` snapshot path is reopened to verify saved
+row/column ordering, explicit blank cells, source-backed records, later edits,
+and outside-coordinate sparse cells.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

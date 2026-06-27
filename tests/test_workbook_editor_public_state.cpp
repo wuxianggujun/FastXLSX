@@ -3655,6 +3655,49 @@ void test_public_worksheet_editor_row_and_column_cells_snapshot()
         "edits after row_cells and column_cells snapshots should still persist");
     check_contains(worksheet_xml, "outside-row-column",
         "cells outside inspected rows and columns should still persist");
+
+    check_reopened_clean_sheet_output(output, "Data", "row and column snapshot",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 6,
+                "row/column snapshot reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "row/column snapshot reopened output should expose dirty-session bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
+                reopened_sheet.row_cells(1);
+            check(reopened_row_one.size() == 3,
+                "row/column snapshot reopened row_cells should keep row-one sparse count");
+            check(reopened_row_one[0].reference.row == 1 && reopened_row_one[0].reference.column == 1 &&
+                    reopened_row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_one[0].value.text_value() == "changed-after-row-column-snapshot",
+                "row/column snapshot reopened row_cells should read post-snapshot A1 edit");
+            check(reopened_row_one[1].reference.row == 1 && reopened_row_one[1].reference.column == 2 &&
+                    reopened_row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_row_one[1].value.number_value() == 1.0,
+                "row/column snapshot reopened row_cells should keep source-backed B1");
+            check(reopened_row_one[2].reference.row == 1 && reopened_row_one[2].reference.column == 3 &&
+                    reopened_row_one[2].value.kind() == fastxlsx::CellValueKind::Blank,
+                "row/column snapshot reopened row_cells should read explicit C1 blank");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_one =
+                reopened_sheet.column_cells(1);
+            check(reopened_column_one.size() == 3,
+                "row/column snapshot reopened column_cells should keep column-one sparse count");
+            check(reopened_column_one[0].reference.row == 1 &&
+                    reopened_column_one[0].reference.column == 1 &&
+                    reopened_column_one[0].value.text_value() == "changed-after-row-column-snapshot",
+                "row/column snapshot reopened column_cells should read edited A1 first");
+            check(reopened_column_one[1].reference.row == 2 &&
+                    reopened_column_one[1].reference.column == 1 &&
+                    reopened_column_one[1].value.text_value() == "placeholder-a2",
+                "row/column snapshot reopened column_cells should keep source-backed A2");
+            check(reopened_column_one[2].reference.row == 3 &&
+                    reopened_column_one[2].reference.column == 1 &&
+                    reopened_column_one[2].value.text_value() == "column-new",
+                "row/column snapshot reopened column_cells should keep edited A3");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "outside-row-column",
+                "row/column snapshot reopened output should keep outside D4 text");
+        });
 }
 
 void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics()

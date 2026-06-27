@@ -8383,6 +8383,23 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row should reject reversed sparse_cells range");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row invalid-read source scan");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1,
+            fastxlsx::CellValue::formula("invalid-renamed-formula-row-zero"));
+    }), "renamed formula audit shifted row should reject row-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("XFE1",
+            fastxlsx::CellValue::formula("invalid-renamed-formula-a1-overflow"));
+    }), "renamed formula audit shifted row should reject A1 column overflow set_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "renamed formula audit shifted row should reject range erase_cell references");
+    check(editor.last_edit_error().has_value(),
+        "renamed formula audit shifted row invalid mutations should populate last_edit_error");
+    check(sheet.has_pending_changes() &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed formula audit shifted row invalid mutations should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row invalid-mutation source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8480,6 +8497,23 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted should reject reversed sparse_cells range");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted invalid-read source scan");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1,
+            fastxlsx::CellValue::formula("invalid-renamed-column-formula-row-zero"));
+    }), "renamed column formula audit shifted should reject row-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("XFE1",
+            fastxlsx::CellValue::formula("invalid-renamed-column-formula-a1-overflow"));
+    }), "renamed column formula audit shifted should reject A1 column overflow set_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "renamed column formula audit shifted should reject range erase_cell references");
+    check(editor.last_edit_error().has_value(),
+        "renamed column formula audit shifted invalid mutations should populate last_edit_error");
+    check(sheet.has_pending_changes() &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed column formula audit shifted invalid mutations should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted invalid-mutation source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

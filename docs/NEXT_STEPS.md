@@ -249,6 +249,10 @@ isolation: path-equivalent source overwrite, empty output path, missing parent,
 non-directory parent, and existing-directory output failures leave source
 formula scans on the original source XML tokens and keep the dirty shifted
 materialized session saveable.
+The following safe-save retry is pinned as well: after those rejected output
+paths, a later safe `save_as(output)` still writes the shifted qualified
+formula, leaves the source package and rejected path artifacts unchanged, and
+reopens with clean source formula audits over the saved output.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

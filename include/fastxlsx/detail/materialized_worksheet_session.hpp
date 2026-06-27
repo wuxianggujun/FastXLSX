@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fastxlsx/detail/cell_store.hpp>
+#include <fastxlsx/detail/formula.hpp>
 #include <fastxlsx/workbook.hpp>
 
 #include <cstddef>
@@ -215,7 +216,7 @@ public:
                 shifted_position.row = position.row + row_count;
                 shifted_any_record = true;
             }
-            insert_shifted_record(shifted_records, shifted_position, record,
+            insert_shifted_record(shifted_records, position, shifted_position, record,
                 "MaterializedWorksheetSession::insert_rows()");
         }
 
@@ -247,7 +248,7 @@ public:
                 shifted_position.row = position.row - row_count;
                 changed_any_record = true;
             }
-            insert_shifted_record(shifted_records, shifted_position, record,
+            insert_shifted_record(shifted_records, position, shifted_position, record,
                 "MaterializedWorksheetSession::delete_rows()");
         }
 
@@ -278,7 +279,7 @@ public:
                 shifted_position.column = position.column + column_count;
                 shifted_any_record = true;
             }
-            insert_shifted_record(shifted_records, shifted_position, record,
+            insert_shifted_record(shifted_records, position, shifted_position, record,
                 "MaterializedWorksheetSession::insert_columns()");
         }
 
@@ -311,7 +312,7 @@ public:
                 shifted_position.column = position.column - column_count;
                 changed_any_record = true;
             }
-            insert_shifted_record(shifted_records, shifted_position, record,
+            insert_shifted_record(shifted_records, position, shifted_position, record,
                 "MaterializedWorksheetSession::delete_columns()");
         }
 
@@ -444,9 +445,24 @@ private:
     }
 
     static void insert_shifted_record(std::map<CellPosition, CellRecord>& records,
-        CellPosition position, const CellRecord& record, std::string_view operation)
+        CellPosition source_position, CellPosition position, const CellRecord& record,
+        std::string_view operation)
     {
-        const auto [_, inserted] = records.emplace(position, record);
+        CellRecord shifted_record = record;
+        if (record.kind == CellValueKind::Formula
+            && (source_position.row != position.row
+                || source_position.column != position.column)) {
+            shifted_record.text_value = translate_formula_references(
+                record.text_value,
+                FormulaTranslationDelta {
+                    static_cast<std::int64_t>(position.row)
+                        - static_cast<std::int64_t>(source_position.row),
+                    static_cast<std::int64_t>(position.column)
+                        - static_cast<std::int64_t>(source_position.column),
+                });
+        }
+
+        const auto [_, inserted] = records.emplace(position, std::move(shifted_record));
         if (!inserted) {
             throw FastXlsxError(std::string(operation)
                 + " produced duplicate shifted sparse cell coordinates");

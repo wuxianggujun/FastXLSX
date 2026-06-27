@@ -652,9 +652,10 @@ struct WorkbookEditorRenameOptions {
 /// `erase_column()`, and `erase_columns()` remove active sparse records instead
 /// of writing explicit blanks. `insert_rows()`, `delete_rows()`,
 /// `insert_columns()`, and `delete_columns()` are the first small-file
-/// structural shift helpers: they only move/delete represented sparse cells in
-/// this materialized store and leave workbook/worksheet metadata for caller
-/// review. Empty, valueless, unquoted, unterminated, padded,
+/// structural shift helpers: they move/delete represented sparse cells in this
+/// materialized store, translate relative references in moved formula cells,
+/// and leave workbook/worksheet metadata for caller review. Empty, valueless,
+/// unquoted, unterminated, padded,
 /// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
 /// style tokens, duplicate style attributes, and qualified style-like
@@ -943,10 +944,11 @@ public:
     /// handles move with their sparse records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension, but it does not update formulas, tables, autoFilter,
-    /// mergeCells, data validations, conditional formatting, hyperlinks,
-    /// drawings/charts/VBA, defined names, relationships, sharedStrings/styles
-    /// metadata, or calcChain beyond the existing worksheet rewrite policy.
+    /// dimension, and translates relative references in moved formula cells,
+    /// but it does not update tables, autoFilter, mergeCells, data
+    /// validations, conditional formatting, hyperlinks, drawings/charts/VBA,
+    /// defined names, relationships, sharedStrings/styles metadata, or
+    /// calcChain beyond the existing worksheet rewrite policy.
     /// This is not a complete Excel row-insert operation and not a large-file
     /// low-memory random-editing path.
     void insert_rows(std::uint32_t first_row, std::uint32_t row_count);
@@ -965,10 +967,11 @@ public:
     /// source StyleId handles move with shifted records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension only. It does not recalculate or repair range metadata,
-    /// formulas, tables, drawings/charts/VBA, relationships,
-    /// sharedStrings/styles, or calcChain. This is not a complete Excel row
-    /// deletion operation and not a large-file low-memory random-editing path.
+    /// dimension only. It translates relative references in moved formula
+    /// cells, but it does not recalculate or repair range metadata, tables,
+    /// drawings/charts/VBA, relationships, sharedStrings/styles, or calcChain.
+    /// This is not a complete Excel row deletion operation and not a large-file
+    /// low-memory random-editing path.
     void delete_rows(std::uint32_t first_row, std::uint32_t row_count);
 
     /// Inserts sparse columns by shifting represented cells rightward.
@@ -988,10 +991,11 @@ public:
     /// their sparse records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension only. It does not update formulas, tables, autoFilter,
-    /// mergeCells, data validations, conditional formatting, hyperlinks,
-    /// drawings/charts/VBA, defined names, relationships, sharedStrings/styles
-    /// metadata, or calcChain beyond the existing worksheet rewrite policy.
+    /// dimension, and translates relative references in moved formula cells,
+    /// but it does not update tables, autoFilter, mergeCells, data
+    /// validations, conditional formatting, hyperlinks, drawings/charts/VBA,
+    /// defined names, relationships, sharedStrings/styles metadata, or
+    /// calcChain beyond the existing worksheet rewrite policy.
     /// This is not a complete Excel column-insert operation and not a
     /// large-file low-memory random-editing path.
     void insert_columns(std::uint32_t first_column, std::uint32_t column_count);
@@ -1010,10 +1014,11 @@ public:
     /// materialized source StyleId handles move with shifted records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension only. It does not recalculate or repair range metadata,
-    /// formulas, tables, drawings/charts/VBA, relationships,
-    /// sharedStrings/styles, or calcChain. This is not a complete Excel column
-    /// deletion operation and not a large-file low-memory random-editing path.
+    /// dimension only. It translates relative references in moved formula
+    /// cells, but it does not recalculate or repair range metadata, tables,
+    /// drawings/charts/VBA, relationships, sharedStrings/styles, or calcChain.
+    /// This is not a complete Excel column deletion operation and not a
+    /// large-file low-memory random-editing path.
     void delete_columns(std::uint32_t first_column, std::uint32_t column_count);
 
     /// Replaces one sparse-store cell value while preserving its current style.

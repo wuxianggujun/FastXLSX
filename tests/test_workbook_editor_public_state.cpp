@@ -1834,6 +1834,33 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_styled_shift_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2"),
+            fastxlsx::CellView::text("row2-gap-b2"),
+            fastxlsx::CellView::text("row2-gap-c2"),
+            fastxlsx::CellView::formula("A1+B1").with_style(formula_style)});
+        data.append_row({fastxlsx::CellView::text("extra-c3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 // Writes a source workbook with document properties so patch tests can verify
 // that WorkbookEditor preserves docProps bytes through save_as().
 std::filesystem::path write_two_sheet_source_with_document_properties(std::string_view name)
@@ -5848,8 +5875,11 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
 
 void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
 {
+    fastxlsx::StyleId styled_formula_style;
     const std::filesystem::path source =
-        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-insert-rows-source.xlsx");
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-insert-rows-source.xlsx",
+            styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-output.xlsx");
 
@@ -5859,25 +5889,76 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
     sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
     sheet.insert_rows(2, 2);
 
-    check(sheet.cell_count() == 4,
+    check(sheet.cell_count() == 8,
         "insert_rows should preserve sparse cell count when it only shifts records");
-    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+    const std::optional<fastxlsx::CellValue> shifted_a1 = sheet.try_cell("A1");
+    check(shifted_a1.has_value() && shifted_a1->text_value() == "placeholder-a1",
         "insert_rows should preserve cells above the insertion point");
-    check(sheet.get_cell("B1").number_value() == 1.0,
+    const std::optional<fastxlsx::CellValue> shifted_b1 = sheet.try_cell("B1");
+    check(shifted_b1.has_value() && shifted_b1->number_value() == 1.0,
         "insert_rows should preserve same-row cells above the insertion point");
-    check(sheet.get_cell("A4").text_value() == "placeholder-a2",
+    const std::optional<fastxlsx::CellValue> shifted_a4 = sheet.try_cell("A4");
+    check(shifted_a4.has_value() && shifted_a4->text_value() == "placeholder-a2",
         "insert_rows should shift source-backed cells downward by row_count");
-    check(sheet.get_cell("C5").text_value() == "extra-c3",
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
+    check(shifted_formula.has_value()
+            && shifted_formula->kind() == fastxlsx::CellValueKind::Formula
+            && shifted_formula->text_value() == "A3+B3"
+            && shifted_formula->has_style()
+            && shifted_formula->style_id().value() == styled_formula_style.value(),
+        "insert_rows should translate moved formula text and preserve the source style id");
+    const std::optional<fastxlsx::CellValue> shifted_filler = sheet.try_cell("B4");
+    check(shifted_filler.has_value() && shifted_filler->text_value() == "row2-gap-b2",
+        "insert_rows should preserve the shifted second-row filler cell");
+    const std::optional<fastxlsx::CellValue> shifted_a5 = sheet.try_cell("A5");
+    check(shifted_a5.has_value() && shifted_a5->text_value() == "extra-c3",
+        "insert_rows should shift source-backed trailing cells downward by row_count");
+    const std::optional<fastxlsx::CellValue> shifted_c5 = sheet.try_cell("C5");
+    check(shifted_c5.has_value() && shifted_c5->text_value() == "extra-c3",
         "insert_rows should shift dirty cells downward by row_count");
     check(!sheet.try_cell("A2").has_value(),
         "insert_rows should leave the inserted sparse row without synthesized cells");
+    check(!sheet.try_cell("D2").has_value(),
+        "insert_rows should remove the old shifted formula coordinate");
     check(!sheet.try_cell("C3").has_value(),
         "insert_rows should remove the old shifted sparse coordinate");
-    check_cell_range_equals(sheet.used_range(), 1, 1, 5, 3,
+    check_cell_range_equals(sheet.used_range(), 1, 1, 5, 4,
         "insert_rows should refresh the in-memory sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_four = sheet.row_cells(4);
+    check(shifted_row_four.size() == 4,
+        "insert_rows row_cells should expose the shifted row snapshot");
+    check(shifted_row_four[0].reference.row == 4 && shifted_row_four[0].reference.column == 1 &&
+            shifted_row_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_four[0].value.text_value() == "placeholder-a2",
+        "insert_rows row_cells should keep the shifted source-backed cell first");
+    check(shifted_row_four[1].reference.row == 4 && shifted_row_four[1].reference.column == 2 &&
+            shifted_row_four[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_four[1].value.text_value() == "row2-gap-b2",
+        "insert_rows row_cells should keep the shifted filler cell in column order");
+    check(shifted_row_four[2].reference.row == 4 && shifted_row_four[2].reference.column == 3 &&
+            shifted_row_four[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_four[2].value.text_value() == "row2-gap-c2",
+        "insert_rows row_cells should keep the second shifted filler cell in column order");
+    check(shifted_row_four[3].reference.row == 4 && shifted_row_four[3].reference.column == 4 &&
+            shifted_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_row_four[3].value.text_value() == "A3+B3" &&
+            shifted_row_four[3].value.has_style() &&
+            shifted_row_four[3].value.style_id().value() == styled_formula_style.value(),
+        "insert_rows row_cells should keep the translated formula cell and style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_four =
+        sheet.column_cells(4);
+    check(shifted_column_four.size() == 1,
+        "insert_rows column_cells should expose the shifted formula column snapshot");
+    check(shifted_column_four[0].reference.row == 4 &&
+            shifted_column_four[0].reference.column == 4 &&
+            shifted_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_column_four[0].value.text_value() == "A3+B3" &&
+            shifted_column_four[0].value.has_style() &&
+            shifted_column_four[0].value.style_id().value() == styled_formula_style.value(),
+        "insert_rows column_cells should keep the translated formula cell and style id");
     check(sheet.has_pending_changes(),
         "insert_rows should dirty the materialized worksheet when records shift");
-    check(editor.pending_materialized_cell_count() == 4,
+    check(editor.pending_materialized_cell_count() == 8,
         "insert_rows should keep aggregate materialized cell count stable");
     check(!editor.last_edit_error().has_value(),
         "successful insert_rows should keep diagnostics clear");
@@ -5885,18 +5966,78 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<dimension ref="A1:C5"/>)",
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A3+B3</f></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D5"/>)",
         "insert_rows save_as should project the shifted sparse dimension");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "insert_rows save_as should write the translated formula cell with the preserved style id");
     check_contains(worksheet_xml, R"(<c r="A4")",
         "insert_rows save_as should write the shifted source-backed row coordinate");
+    check_contains(worksheet_xml, R"(<c r="B4")",
+        "insert_rows save_as should write the shifted filler cell");
+    check_contains(worksheet_xml, R"(<c r="A5")",
+        "insert_rows save_as should write the shifted source-backed trailing row coordinate");
     check_contains(worksheet_xml, R"(<c r="C5")",
         "insert_rows save_as should write the shifted dirty row coordinate");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "insert_rows save_as should not keep the old formula coordinate");
     check_not_contains(worksheet_xml, R"(r="A2")",
         "insert_rows save_as should not keep the old source-backed row coordinate");
     check_not_contains(worksheet_xml, R"(r="C3")",
         "insert_rows save_as should not keep the old dirty row coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "insert_rows should preserve untouched worksheets");
+}
+
+void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-insert-rows-snapshot-source.xlsx",
+            styled_formula_style);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 2);
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> cells = sheet.sparse_cells();
+    check(cells.size() == 7,
+        "insert_rows sparse_cells should keep the shifted sparse record count");
+    check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+            cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[0].value.text_value() == "placeholder-a1",
+        "insert_rows sparse_cells should keep row-major source-backed A1 first");
+    check(cells[1].reference.row == 1 && cells[1].reference.column == 2 &&
+            cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            cells[1].value.number_value() == 1.0,
+        "insert_rows sparse_cells should keep same-row cells after A1");
+    check(cells[2].reference.row == 4 && cells[2].reference.column == 1 &&
+            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[2].value.text_value() == "placeholder-a2",
+        "insert_rows sparse_cells should expose the shifted source-backed row");
+    check(cells[3].reference.row == 4 && cells[3].reference.column == 2 &&
+            cells[3].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[3].value.text_value() == "row2-gap-b2",
+        "insert_rows sparse_cells should preserve the shifted filler cell");
+    check(cells[4].reference.row == 4 && cells[4].reference.column == 3 &&
+            cells[4].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[4].value.text_value() == "row2-gap-c2",
+        "insert_rows sparse_cells should preserve the other shifted filler cell");
+    check(cells[5].reference.row == 4 && cells[5].reference.column == 4 &&
+            cells[5].value.kind() == fastxlsx::CellValueKind::Formula &&
+            cells[5].value.text_value() == "A3+B3" &&
+            cells[5].value.has_style() &&
+            cells[5].value.style_id().value() == styled_formula_style.value(),
+        "insert_rows sparse_cells should translate the shifted formula cell and keep its style");
+    check(cells[6].reference.row == 5 && cells[6].reference.column == 1 &&
+            cells[6].value.kind() == fastxlsx::CellValueKind::Text &&
+            cells[6].value.text_value() == "extra-c3",
+        "insert_rows sparse_cells should keep later dirty rows after the shift");
 }
 
 void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
@@ -5909,35 +6050,66 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
+    sheet.set_cell(4, 3, fastxlsx::CellValue::formula("A2+B4"));
     sheet.set_cell(4, 2, fastxlsx::CellValue::text("tail-b4"));
     sheet.delete_rows(1, 1);
 
-    check(sheet.cell_count() == 2,
+    check(sheet.cell_count() == 3,
         "delete_rows should remove represented records in the deleted sparse rows");
     check(sheet.get_cell("A1").text_value() == "placeholder-a2",
         "delete_rows should shift later source-backed rows upward");
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula
+            && shifted_formula.text_value() == "A1+B3",
+        "delete_rows should translate moved formula text by the row shift");
     check(sheet.get_cell("B3").text_value() == "tail-b4",
         "delete_rows should shift later dirty rows upward");
     check(!sheet.try_cell("B1").has_value(),
         "delete_rows should remove represented cells from the deleted row");
     check(!sheet.try_cell("A2").has_value(),
         "delete_rows should remove old shifted source coordinates");
+    check(!sheet.try_cell("C4").has_value(),
+        "delete_rows should remove the old shifted formula coordinate");
     check(!sheet.try_cell("B4").has_value(),
         "delete_rows should remove old shifted dirty coordinates");
-    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 2,
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 3,
         "delete_rows should refresh the in-memory sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_three = sheet.row_cells(3);
+    check(shifted_row_three.size() == 2,
+        "delete_rows row_cells should expose the shifted row snapshot");
+    check(shifted_row_three[0].reference.row == 3 && shifted_row_three[0].reference.column == 2 &&
+            shifted_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_three[0].value.text_value() == "tail-b4",
+        "delete_rows row_cells should keep the shifted dirty cell first");
+    check(shifted_row_three[1].reference.row == 3 && shifted_row_three[1].reference.column == 3 &&
+            shifted_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_row_three[1].value.text_value() == "A1+B3",
+        "delete_rows row_cells should keep the translated formula cell second");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_three =
+        sheet.column_cells(3);
+    check(shifted_column_three.size() == 1,
+        "delete_rows column_cells should expose the shifted formula column snapshot");
+    check(shifted_column_three[0].reference.row == 3 &&
+            shifted_column_three[0].reference.column == 3 &&
+            shifted_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_column_three[0].value.text_value() == "A1+B3",
+        "delete_rows column_cells should keep the translated formula cell");
     check(!editor.last_edit_error().has_value(),
         "successful delete_rows should keep diagnostics clear");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
         "delete_rows save_as should project the shifted sparse dimension");
     check_contains(worksheet_xml, R"(<c r="A1")",
         "delete_rows save_as should write the shifted source-backed cell");
+    check_contains(worksheet_xml, R"(<c r="C3"><f>A1+B3</f></c>)",
+        "delete_rows save_as should write the translated formula cell");
     check_contains(worksheet_xml, R"(<c r="B3")",
         "delete_rows save_as should write the shifted dirty cell");
+    check_not_contains(worksheet_xml, R"(r="C4")",
+        "delete_rows save_as should not keep the old formula coordinate");
     check_not_contains(worksheet_xml, "placeholder-a1",
         "delete_rows save_as should omit deleted row text cells");
     check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
@@ -5954,10 +6126,11 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
+    sheet.set_cell(2, 3, fastxlsx::CellValue::formula("A1+B1"));
     sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
     sheet.insert_columns(2, 2);
 
-    check(sheet.cell_count() == 4,
+    check(sheet.cell_count() == 5,
         "insert_columns should preserve sparse cell count when it only shifts records");
     check(sheet.get_cell("A1").text_value() == "placeholder-a1",
         "insert_columns should preserve cells left of the insertion point");
@@ -5965,14 +6138,45 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         "insert_columns should preserve lower cells left of the insertion point");
     check(sheet.get_cell("D1").number_value() == 1.0,
         "insert_columns should shift source-backed cells right by column_count");
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("E2");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula
+            && shifted_formula.text_value() == "C1+D1",
+        "insert_columns should translate moved formula text by the column shift");
     check(sheet.get_cell("E3").text_value() == "extra-c3",
         "insert_columns should shift dirty cells right by column_count");
     check(!sheet.try_cell("B1").has_value(),
         "insert_columns should leave inserted sparse columns without synthesized cells");
+    check(!sheet.try_cell("C2").has_value(),
+        "insert_columns should remove the old shifted formula coordinate");
     check(!sheet.try_cell("C3").has_value(),
         "insert_columns should remove the old shifted dirty coordinate");
     check_cell_range_equals(sheet.used_range(), 1, 1, 3, 5,
         "insert_columns should refresh the in-memory sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_two = sheet.row_cells(2);
+    check(shifted_row_two.size() == 2,
+        "insert_columns row_cells should expose the shifted row snapshot");
+    check(shifted_row_two[0].reference.row == 2 && shifted_row_two[0].reference.column == 1 &&
+            shifted_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_two[0].value.text_value() == "placeholder-a2",
+        "insert_columns row_cells should keep the source-backed cell first");
+    check(shifted_row_two[1].reference.row == 2 && shifted_row_two[1].reference.column == 5 &&
+            shifted_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_row_two[1].value.text_value() == "C1+D1",
+        "insert_columns row_cells should keep the translated formula cell second");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_five =
+        sheet.column_cells(5);
+    check(shifted_column_five.size() == 2,
+        "insert_columns column_cells should expose the shifted formula column snapshot");
+    check(shifted_column_five[0].reference.row == 2 &&
+            shifted_column_five[0].reference.column == 5 &&
+            shifted_column_five[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_column_five[0].value.text_value() == "C1+D1",
+        "insert_columns column_cells should keep the translated formula cell first");
+    check(shifted_column_five[1].reference.row == 3 &&
+            shifted_column_five[1].reference.column == 5 &&
+            shifted_column_five[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_column_five[1].value.text_value() == "extra-c3",
+        "insert_columns column_cells should keep the shifted dirty cell second");
     check(!editor.last_edit_error().has_value(),
         "successful insert_columns should keep diagnostics clear");
 
@@ -5983,8 +6187,12 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         "insert_columns save_as should project the shifted sparse dimension");
     check_contains(worksheet_xml, R"(<c r="D1"><v>1</v></c>)",
         "insert_columns save_as should write the shifted source-backed numeric cell");
+    check_contains(worksheet_xml, R"(<c r="E2"><f>C1+D1</f></c>)",
+        "insert_columns save_as should write the translated formula cell");
     check_contains(worksheet_xml, R"(<c r="E3")",
         "insert_columns save_as should write the shifted dirty cell");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "insert_columns save_as should not keep the old formula coordinate");
     check_not_contains(worksheet_xml, R"(r="B1")",
         "insert_columns save_as should not keep the old shifted source coordinate");
     check_not_contains(worksheet_xml, R"(r="C3")",
@@ -6001,21 +6209,48 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
+    sheet.set_cell(1, 3, fastxlsx::CellValue::formula("B2+D1"));
     sheet.set_cell(2, 4, fastxlsx::CellValue::text("tail-d2"));
     sheet.delete_columns(1, 1);
 
-    check(sheet.cell_count() == 2,
+    check(sheet.cell_count() == 3,
         "delete_columns should remove represented records in the deleted sparse columns");
     check(sheet.get_cell("A1").number_value() == 1.0,
         "delete_columns should shift later source-backed columns left");
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("B1");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula
+            && shifted_formula.text_value() == "A2+C1",
+        "delete_columns should translate moved formula text by the column shift");
     check(sheet.get_cell("C2").text_value() == "tail-d2",
         "delete_columns should shift later dirty columns left");
     check(!sheet.try_cell("A2").has_value(),
         "delete_columns should remove represented cells from the deleted column");
+    check(!sheet.try_cell("C1").has_value(),
+        "delete_columns should remove the old shifted formula coordinate");
     check(!sheet.try_cell("D2").has_value(),
         "delete_columns should remove old shifted dirty coordinates");
     check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
         "delete_columns should refresh the in-memory sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one = sheet.row_cells(1);
+    check(shifted_row_one.size() == 2,
+        "delete_columns row_cells should expose the shifted row snapshot");
+    check(shifted_row_one[0].reference.row == 1 && shifted_row_one[0].reference.column == 1 &&
+            shifted_row_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_row_one[0].value.number_value() == 1.0,
+        "delete_columns row_cells should keep the source-backed cell first");
+    check(shifted_row_one[1].reference.row == 1 && shifted_row_one[1].reference.column == 2 &&
+            shifted_row_one[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_row_one[1].value.text_value() == "A2+C1",
+        "delete_columns row_cells should keep the translated formula cell second");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_two =
+        sheet.column_cells(2);
+    check(shifted_column_two.size() == 1,
+        "delete_columns column_cells should expose the shifted formula column snapshot");
+    check(shifted_column_two[0].reference.row == 1 &&
+            shifted_column_two[0].reference.column == 2 &&
+            shifted_column_two[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_column_two[0].value.text_value() == "A2+C1",
+        "delete_columns column_cells should keep the translated formula cell");
     check(!editor.last_edit_error().has_value(),
         "successful delete_columns should keep diagnostics clear");
 
@@ -6026,12 +6261,70 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         "delete_columns save_as should project the shifted sparse dimension");
     check_contains(worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
         "delete_columns save_as should write the shifted source-backed numeric cell");
+    check_contains(worksheet_xml, R"(<c r="B1"><f>A2+C1</f></c>)",
+        "delete_columns save_as should write the translated formula cell");
     check_contains(worksheet_xml, R"(<c r="C2")",
         "delete_columns save_as should write the shifted dirty cell");
+    check_not_contains(worksheet_xml, R"(r="C1")",
+        "delete_columns save_as should not keep the old formula coordinate");
     check_not_contains(worksheet_xml, "placeholder-a1",
         "delete_columns save_as should omit deleted column row-one text cells");
     check_not_contains(worksheet_xml, "placeholder-a2",
         "delete_columns save_as should omit deleted column row-two text cells");
+}
+
+void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-formula-ref-source.xlsx");
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-row-ref-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 3, fastxlsx::CellValue::formula("A1+A:A+1:1+B4"));
+        sheet.delete_rows(1, 1);
+
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == "#REF!+A:A+#REF!+B3",
+            "delete_rows should translate row-out-of-bounds formula references to #REF!");
+        check(!sheet.try_cell("C4").has_value(),
+            "delete_rows formula #REF translation should remove the old formula coordinate");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml,
+            R"(<c r="C3"><f>#REF!+A:A+#REF!+B3</f></c>)",
+            "delete_rows save_as should persist row-out-of-bounds formula references as #REF!");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-column-ref-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(1, 4, fastxlsx::CellValue::formula("A1+A:A+1:1+D2"));
+        sheet.delete_columns(1, 1);
+
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("C1");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == "#REF!+#REF!+1:1+C2",
+            "delete_columns should translate column-out-of-bounds formula references to #REF!");
+        check(!sheet.try_cell("D1").has_value(),
+            "delete_columns formula #REF translation should remove the old formula coordinate");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml,
+            R"(<c r="C1"><f>#REF!+#REF!+1:1+C2</f></c>)",
+            "delete_columns save_as should persist column-out-of-bounds formula references as #REF!");
+    }
 }
 
 void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()
@@ -7094,9 +7387,11 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_column_removes_sparse_column();
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
             test_public_worksheet_editor_insert_rows_shifts_sparse_records();
+            test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot();
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();

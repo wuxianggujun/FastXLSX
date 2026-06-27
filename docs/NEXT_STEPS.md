@@ -43,12 +43,14 @@ public `request_full_calculation()` helper that queues workbook
 internal calc-chain policy surface. These are the recommended public paths when
 a bounded set of cells must be edited in a large worksheet and whole-`<sheetData>`
 replacement or `WorksheetEditor` materialization is the wrong design. The
-boundary remains intentionally strict: duplicate inputs are later-wins, text is
-emitted as inline strings, caller `StyleId` values are written as-is without
-validation, formula payloads request recalculation, and the APIs do not shift
-rows/columns, migrate sharedStrings/styles, resize or recalculate
-tables/filters/drawings/defined names, prune/repair relationships, or provide
-arbitrary indexed random editing. The benchmark tool
+boundary remains intentionally strict for these targeted Patch paths:
+duplicate inputs are later-wins, text is emitted as inline strings, caller
+`StyleId` values are written as-is without validation, formula payloads
+request recalculation, and these APIs do not migrate sharedStrings/styles,
+resize or recalculate tables/filters/drawings/defined names, prune/repair
+relationships, or provide arbitrary indexed random editing. Row/column shift
+semantics belong to the small-file materialized `WorksheetEditor` lane, not
+these large-worksheet targeted Patch calls. The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level
 `fastxlsx_bench_package_editor_cell_replacement` remains useful for transformer

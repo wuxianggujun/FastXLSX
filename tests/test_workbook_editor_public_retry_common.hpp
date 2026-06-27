@@ -1827,6 +1827,33 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_styled_shift_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2"),
+            fastxlsx::CellView::text("row2-gap-b2"),
+            fastxlsx::CellView::text("row2-gap-c2"),
+            fastxlsx::CellView::formula("A1+B1").with_style(formula_style)});
+        data.append_row({fastxlsx::CellView::text("extra-c3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 // Writes a source workbook with document properties so patch tests can verify
 // that WorkbookEditor preserves docProps bytes through save_as().
 std::filesystem::path write_two_sheet_source_with_document_properties(std::string_view name)

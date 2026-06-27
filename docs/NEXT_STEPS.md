@@ -61,10 +61,11 @@ a failed source-overwrite `save_as()`, safe retry, and matching post-save
 `worksheet()` reacquire, including moved source-backed cells, formula text
 translation, row/column out-of-bounds `#REF!` translation, dirty borrowed
 handles, restored-name diagnostics, insert/delete row/column owning snapshot
-views, sparse used-range refresh, and saved XML projection. The retry/guard
-shard also pins that shift no-ops clear stale diagnostics without dirtying
-reacquired sessions, while invalid shift ranges preserve the saved sparse store
-until a later valid shift clears the diagnostic and flushes. Public-state
+views, sparse used-range refresh, source-backed styled formula `StyleId`
+preservation, and saved XML projection. The retry/guard shard also pins that
+shift no-ops clear stale diagnostics without dirtying reacquired sessions, while
+invalid shift ranges preserve the saved sparse store until a later valid shift
+clears the diagnostic and flushes. Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,
 A1-style ranges, sheet-qualified references, whole-row/whole-column ranges, and

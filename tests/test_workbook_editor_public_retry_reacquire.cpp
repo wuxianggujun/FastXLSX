@@ -1076,6 +1076,118 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         "second column-shift worksheet output should not leak the transient planned name");
 }
 
+void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preserves_reacquired_state()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-styled-shift-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-styled-shift-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-styled-shift-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientStyledShift");
+    editor.rename_sheet("TransientStyledShift", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("rename-back-styled-shift-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before styled shift recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before styled row shift should keep both handles clean");
+    const fastxlsx::CellValue saved_formula = reacquired.get_cell("D2");
+    check(saved_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            saved_formula.text_value() == "A1+B1" &&
+            saved_formula.has_style() &&
+            saved_formula.style_id().value() == styled_formula_style.value(),
+        "matching reacquire before styled row shift should reuse saved formula style");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    matching.insert_rows(2, 2);
+
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "post-reacquire styled row shift should dirty all shared handles");
+    const fastxlsx::CellValue shifted_formula = matching.get_cell("D4");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "A3+B3" &&
+            shifted_formula.has_style() &&
+            shifted_formula.style_id().value() == styled_formula_style.value(),
+        "post-reacquire row shift should translate formula text and preserve style id");
+    check_retry_cell_range_equals(matching.used_range(), 1, 1, 5, 4,
+        "post-reacquire styled row shift should refresh the in-memory sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_four =
+        matching.row_cells(4);
+    check(shifted_row_four.size() == 4 &&
+            shifted_row_four[3].reference.row == 4 &&
+            shifted_row_four[3].reference.column == 4 &&
+            shifted_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_row_four[3].value.text_value() == "A3+B3" &&
+            shifted_row_four[3].value.has_style() &&
+            shifted_row_four[3].value.style_id().value() == styled_formula_style.value(),
+        "post-reacquire styled row shift row_cells should expose formula style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_four =
+        matching.column_cells(4);
+    check(shifted_column_four.size() == 1 &&
+            shifted_column_four[0].reference.row == 4 &&
+            shifted_column_four[0].reference.column == 4 &&
+            shifted_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_column_four[0].value.text_value() == "A3+B3" &&
+            shifted_column_four[0].value.has_style() &&
+            shifted_column_four[0].value.style_id().value() == styled_formula_style.value(),
+        "post-reacquire styled row shift column_cells should expose formula style id");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-reacquire styled row shift dirty diagnostics should use restored source name");
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all styled shift recovery handles");
+
+    const std::string saved_formula_xml =
+        std::string(R"(<c r="D2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A1+B1</f></c>)";
+    const std::string shifted_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A3+B3</f></c>)";
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first styled shift recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientStyledShift",
+        "first styled shift recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), saved_formula_xml,
+        "first output should contain the saved styled formula before row shift");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second styled shift recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientStyledShift",
+        "second styled shift recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), shifted_formula_xml,
+        "second output should persist shifted formula text with the preserved style id");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), saved_formula_xml,
+        "second output should not keep the old styled formula coordinate");
+    check_contains(second_entries.at("xl/styles.xml"), R"(numFmtId=")",
+        "second output should preserve the source workbook styles part");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_preserve_reacquired_state()
 {
     {
@@ -1555,6 +1667,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preserves_reacquired_state();
+            test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preserves_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_shifts_preserve_reacquired_state();
         }

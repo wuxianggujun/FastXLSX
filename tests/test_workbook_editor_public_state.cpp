@@ -3281,6 +3281,34 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
         "cells outside the inspected A1 range should still persist");
     check_not_contains(worksheet_xml, "placeholder-a2",
         "A1 range sparse_cells should not revive erased source cells");
+    check_reopened_clean_sheet_output(output, "Data", "sparse_cells A1 range snapshot",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "A1 range sparse_cells reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "A1 range sparse_cells reopened output should expose dirty-session bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "A1 range sparse_cells reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 2.0,
+                "A1 range sparse_cells reopened output should read post-snapshot B1 edit");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "A1 range sparse_cells reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Blank,
+                "A1 range sparse_cells reopened output should read explicit B3 blank");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "a1-range-new",
+                "A1 range sparse_cells reopened output should read in-range C3 text");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "a1-range-excluded",
+                "A1 range sparse_cells reopened output should keep outside D4 text");
+        });
 }
 
 void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()

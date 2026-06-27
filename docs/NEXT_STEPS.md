@@ -91,6 +91,9 @@ source-backed, blank, inserted, and erased sparse cells cleanly.
 The bounded `sparse_cells(range)` snapshot path is also reopened to verify
 range-limited owning snapshots do not block later edits, outside-range cells
 survive, and erased source cells stay absent after save.
+The A1-string `sparse_cells("B1:C3")` path is reopened with the same dirty
+projection checks, pinning string-range parsing and saved sparse readback
+without extending the parser boundary.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

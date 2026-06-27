@@ -8355,6 +8355,16 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row should reject source overwrite");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row rejected source-overwrite source scan");
+    fastxlsx::WorksheetEditorOptions mismatched_options;
+    mismatched_options.max_cells = 2;
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("RenamedData", mismatched_options);
+    }), "renamed formula audit shifted row should reject mismatched try_worksheet options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("RenamedData", mismatched_options);
+    }), "renamed formula audit shifted row should reject mismatched worksheet options");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row option-mismatch source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8424,6 +8434,16 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted should reject source overwrite");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted rejected source-overwrite source scan");
+    fastxlsx::WorksheetEditorOptions mismatched_options;
+    mismatched_options.max_cells = 2;
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("RenamedData", mismatched_options);
+    }), "renamed column formula audit shifted should reject mismatched try_worksheet options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("RenamedData", mismatched_options);
+    }), "renamed column formula audit shifted should reject mismatched worksheet options");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted option-mismatch source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

@@ -237,6 +237,10 @@ That same delete-column formula path now covers failed-save retry hygiene too:
 a rejected exact source overwrite keeps the dirty `C2` formula as `#REF!+A1`
 with the original `StyleId`, leaves the source workbook unchanged under
 `Data`, and a safe retry saves/reopens clean under `RenamedData`.
+Delete-column formula option-mismatch hygiene is now pinned after save:
+mismatched `WorksheetEditorOptions` fail without diagnostics or dirty state,
+the matching `RenamedData` reacquire still reads styled `C2`, and a later
+`insert_rows(2, 1)` saves/reopens styled `C3` as `#REF!+A2`.
 The symmetric renamed delete-row formula path is pinned as well:
 `delete_rows(1, 1)` moves the styled formula to `D1`, translates both row-one
 references to `#REF!`, preserves the style id, and saves/reopens only under

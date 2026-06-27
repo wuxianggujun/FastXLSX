@@ -8841,6 +8841,174 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-second-output.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-third-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::vector<std::string> expected_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire after retry first save should clean the original borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire after retry first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire after retry first save should clear dirty diagnostics");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "Missing",
+        "shift reacquire after retry dirty state before rejected save",
+        1,
+        3,
+        shifted_memory);
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "shift reacquire after retry should reject saving over the source workbook");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "Missing",
+        "shift reacquire after retry rejected source-overwrite",
+        1,
+        3,
+        shifted_memory);
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire after retry safe retry should clean both borrowed handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire after retry safe retry should clear dirty diagnostics");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire after retry safe retry should record the second handoff");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire after retry safe retry should keep diagnostics clear");
+
+    std::optional<fastxlsx::WorksheetEditor> maybe_after_retry =
+        editor.try_worksheet("Data");
+    check(maybe_after_retry.has_value(),
+        "shift reacquire after retry should find the saved shifted worksheet");
+    if (!maybe_after_retry.has_value()) {
+        return;
+    }
+
+    fastxlsx::WorksheetEditor after_retry = std::move(*maybe_after_retry);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire after retry should return a clean saved session");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire after retry clean reacquire should keep dirty diagnostics empty");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire after retry clean reacquire should not add handoffs");
+    check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire after retry should preserve the combined shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "shift reacquire after retry should expose the combined shifted number on all handles");
+    check(!after_retry.try_cell("B1").has_value() &&
+            !after_retry.try_cell("A2").has_value(),
+        "shift reacquire after retry should keep old sparse coordinates absent");
+
+    after_retry.delete_rows(3, 1);
+    check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
+            reacquired.has_pending_changes(),
+        "shift reacquire after retry later delete should dirty all shared handles");
+    {
+        const std::vector<std::string> dirty_names =
+            editor.pending_materialized_worksheet_names();
+        check(dirty_names.size() == 1 && dirty_names[0] == "Data",
+            "shift reacquire after retry later delete should report Data dirty once");
+    }
+    check(editor.pending_materialized_cell_count() == 2,
+        "shift reacquire after retry later delete should shrink the dirty sparse count");
+    check(!after_retry.try_cell("A3").has_value() &&
+            !sheet.try_cell("A3").has_value() &&
+            !reacquired.try_cell("A3").has_value(),
+        "shift reacquire after retry later delete should remove the shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0,
+        "shift reacquire after retry later delete should preserve the shifted number");
+
+    editor.save_as(third_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire after retry third save should clean all shared handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire after retry third save should clear dirty diagnostics");
+    check(editor.pending_change_count() == 3,
+        "shift reacquire after retry third save should record the third handoff");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, R"(<dimension ref="A1:C3"/>)",
+        "shift reacquire after retry second output should keep combined shifted bounds");
+    check_contains(second_xml, R"(<c r="A3")",
+        "shift reacquire after retry second output should keep the shifted source row");
+    check_contains(second_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shift reacquire after retry second output should keep the shifted number");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    const std::string third_xml = third_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(third_xml, R"(<dimension ref="A1:C1"/>)",
+        "shift reacquire after retry third output should shrink after deleting row 3");
+    check_contains(third_xml, R"(<c r="A1")",
+        "shift reacquire after retry third output should keep A1");
+    check_contains(third_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shift reacquire after retry third output should keep shifted B1");
+    check_not_contains(third_xml, R"(r="A3")",
+        "shift reacquire after retry third output should omit deleted row 3");
+    check_not_contains(third_xml, R"(r="B1")",
+        "shift reacquire after retry third output should keep old B1 absent");
+    check_not_contains(third_xml, R"(r="A2")",
+        "shift reacquire after retry third output should keep old A2 absent");
+
+    check_reopened_shift_output(third_output, "shift reacquire after retry third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "shift reacquire after retry reopened output should shrink sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                "shift reacquire after retry reopened output should expose shrunken bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire after retry reopened output should read shifted B1");
+            check(!reopened_sheet.try_cell("A3").has_value() &&
+                    !reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire after retry reopened output should keep deleted and old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_preserves_dirty_session()
 {
     const std::filesystem::path source =
@@ -12220,6 +12388,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_session();
             test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session();
             test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_session();
+            test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses_session();
             test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_preserves_dirty_session();
             test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_preserves_dirty_session();
             test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_preserves_dirty_session();

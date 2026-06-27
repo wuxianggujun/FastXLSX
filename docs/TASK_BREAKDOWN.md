@@ -35002,6 +35002,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.791 - Pin post-safe-retry WorksheetEditor shift reacquire reuse
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a matching optional reacquire after a rejected post-save structural
+shift `save_as()` and later safe retry reuses the combined shifted session for
+continued edits.
+
+Output:
+- Added public-state coverage that saves a row-shift projection, reacquires and
+  applies a column shift, rejects `save_as(source)`, safely saves the combined
+  shift, then reacquires through `try_worksheet("Data")` from the same editor.
+- The regression verifies the post-retry optional handle is clean, shares the
+  saved combined shifted sparse state with older handles, and does not add a
+  new materialized handoff until the next mutation.
+- A later `delete_rows(3, 1)` dirties all shared handles, shrinks the dirty
+  sparse count, saves to a third output, and reopens with the deleted shifted
+  row absent while the shifted number remains.
+
+Non-goals / boundary:
+- No production code change, no output path policy change, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

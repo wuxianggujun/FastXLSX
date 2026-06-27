@@ -212,6 +212,10 @@ non-directory-parent, and existing-directory `save_as()` calls preserve both
 borrowed handles, dirty materialized diagnostics, handoff count,
 source/first-output isolation, and the later safe save still flushes the
 combined shifted sparse state.
+After that safe retry, same-editor optional reacquire is pinned too: the saved
+combined shifted session remains clean and reusable, a later `delete_rows()`
+shrinks the sparse state through every borrowed handle, and the third output
+reopens with the deleted row absent.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

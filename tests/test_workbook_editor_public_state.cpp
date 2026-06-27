@@ -8133,6 +8133,129 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire missing query first save should clean the borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire missing query first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire missing query first save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire missing query first save should keep diagnostics clear");
+
+    const std::optional<fastxlsx::WorksheetEditor> missing = editor.try_worksheet("Missing");
+    check(!missing.has_value(),
+        "shift reacquire missing query try_worksheet should report a missing sheet");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Missing"); }),
+        "shift reacquire missing query worksheet should reject the missing sheet");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire missing query should not update last_edit_error");
+    check(!sheet.has_pending_changes(),
+        "shift reacquire missing query should leave the saved handle clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire missing query should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire missing query should not dirty materialized diagnostics");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire missing query should preserve the saved shifted row");
+    check(!sheet.try_cell("A2").has_value(),
+        "shift reacquire missing query should keep old shifted rows absent");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "shift reacquire missing query matching reacquire should stay clean");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire missing query matching reacquire should reuse saved shifted state");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "shift reacquire missing query matching reacquire should keep old row absent");
+
+    reacquired.insert_columns(2, 1);
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "shift reacquire missing query later shift should dirty the shared session");
+    const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 1 && dirty_names[0] == "Data",
+        "shift reacquire missing query later shift should report Data dirty once");
+    check(editor.pending_materialized_cell_count() == 3,
+        "shift reacquire missing query later shift should report the shared sparse count once");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "shift reacquire missing query later shift should be visible through the older handle");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            !reacquired.try_cell("B1").has_value(),
+        "shift reacquire missing query later shift should retain the row shift and move columns");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire missing query second save should clean both handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire missing query second save should clear dirty diagnostics again");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire missing query second save should record the later handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, R"(<dimension ref="A1:B3"/>)",
+        "shift reacquire missing query first output should keep shifted row bounds");
+    check_contains(first_xml, R"(<c r="B1"><v>1</v></c>)",
+        "shift reacquire missing query first output should keep B1 before later shift");
+    check_contains(first_xml, R"(<c r="A3")",
+        "shift reacquire missing query first output should keep the shifted source row");
+    check_not_contains(first_xml, R"(r="C1")",
+        "shift reacquire missing query first output should not include later column shift");
+    check_not_contains(first_xml, R"(r="A2")",
+        "shift reacquire missing query first output should keep old row coordinate absent");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, R"(<dimension ref="A1:C3"/>)",
+        "shift reacquire missing query second output should project combined shifted bounds");
+    check_contains(second_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shift reacquire missing query second output should include shifted B1");
+    check_contains(second_xml, R"(<c r="A3")",
+        "shift reacquire missing query second output should retain the shifted source row");
+    check_not_contains(second_xml, R"(r="B1")",
+        "shift reacquire missing query second output should omit old B1");
+    check_not_contains(second_xml, R"(r="A2")",
+        "shift reacquire missing query second output should keep old row coordinate absent");
+
+    check_reopened_shift_output(second_output, "shift reacquire missing query second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire missing query reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire missing query reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire missing query reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire missing query reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire missing query reopened output should keep old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
 {
     const std::filesystem::path source =
@@ -10770,6 +10893,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
             test_public_worksheet_editor_shift_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_saved_session();
+            test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session();
             test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();

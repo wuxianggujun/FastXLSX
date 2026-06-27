@@ -190,6 +190,10 @@ The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing
 the shifted sparse state, or blocking a later matching reacquire + shift save.
+Missing-sheet query failures now cover the same post-save shift boundary:
+missing `try_worksheet()` / `worksheet()` calls leave the saved shifted session
+clean, keep diagnostics empty, add no materialized handoff, and a later matching
+reacquire can still perform and save a follow-up shift.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

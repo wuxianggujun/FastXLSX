@@ -34648,6 +34648,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.781 - Pin post-save WorksheetEditor shift missing-query hygiene
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove missing-sheet query failures after a saved structural-shift
+materialized session do not mutate, dirty, or reload that saved session.
+
+Output:
+- Added public-state coverage that saves a `Data.insert_rows()` projection and
+  then runs missing `try_worksheet("Missing")` / `worksheet("Missing")` calls
+  against the same editor.
+- The regression verifies missing-query failures leave `last_edit_error()`
+  clear, keep dirty materialized diagnostics empty, preserve the saved shifted
+  sparse state, and do not add another materialized handoff.
+- A later matching reacquire still reuses the saved shifted state, can perform a
+  follow-up `insert_columns()`, saves successfully, and reopens as combined
+  shifted sparse state.
+
+Non-goals / boundary:
+- No production code change, no missing-sheet synthesis, no source reload, no
+  metadata repair, no sharedStrings/styles migration, no calcChain rebuild, and
+  no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

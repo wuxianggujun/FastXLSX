@@ -195,6 +195,10 @@ The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and
 saves/reopens only under `RenamedData` while keeping shifted `B2` at `A2`.
+The symmetric renamed delete-row formula path is pinned as well:
+`delete_rows(1, 1)` moves the styled formula to `D1`, translates both row-one
+references to `#REF!`, preserves the style id, and saves/reopens only under
+`RenamedData` with shifted row-two and row-three cells.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

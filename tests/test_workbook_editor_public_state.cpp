@@ -8618,12 +8618,15 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
         "renamed formula audit shift post-save reacquire should reuse a clean saved session");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula audit shift post-save reacquire should keep materialized diagnostics clean");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
-        editor.formula_reference_audits();
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "renamed formula audit shift post-save reacquire formula audit");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula audit shift post-save reacquire formula audit should keep diagnostics clean");
     check(post_save_audits.size() == 2,
         "renamed formula audit shift post-save reacquire should report both shifted references");
@@ -8869,12 +8872,15 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
         "renamed column formula audit shift post-save reacquire should reuse a clean saved session");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed column formula audit shift post-save reacquire should keep materialized diagnostics clean");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
-        editor.formula_reference_audits();
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "renamed column formula audit shift post-save reacquire formula audit");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed column formula audit shift post-save reacquire formula audit should keep diagnostics clean");
     check(post_save_audits.size() == 2,
         "renamed column formula audit shift post-save reacquire should report both shifted references");

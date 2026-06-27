@@ -291,6 +291,12 @@ formula audits cannot silently alter materialized memory diagnostics.
 They now compare full `pending_worksheet_edits()` summaries as well, covering
 rename, replacement, dirty materialized, cell-count, and memory summary fields
 instead of only the number of summaries.
+Insert-side same-editor post-save formula audits now reuse the shared
+materialized-audit diagnostic snapshot as well: after row/column insert shifts
+are saved and `RenamedData` is reacquired as a clean session,
+`formula_reference_audits()` preserves aggregate memory, full edit summaries,
+pending-state, and `last_edit_error` while still reporting both shifted
+qualified tokens from the materialized store.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

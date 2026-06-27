@@ -6355,6 +6355,39 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-nonzero-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before shift nonzero no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before shift nonzero no-op");
+
+        sheet.insert_rows(10, 1);
+        sheet.insert_columns(10, 1);
+        check(!editor.last_edit_error().has_value(),
+            "nonzero row/column shift no-ops should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "nonzero row/column shift no-ops should not dirty a clean materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "nonzero row/column shift no-ops should preserve sparse cell count");
+        check(editor.pending_materialized_cell_count() == 0,
+            "nonzero row/column shift no-ops should not contribute pending materialized cells");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "nonzero row/column shift no-ops should preserve source-backed cells");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "save_as after nonzero row/column shift no-ops should copy source entries");
+    }
+
+    {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 

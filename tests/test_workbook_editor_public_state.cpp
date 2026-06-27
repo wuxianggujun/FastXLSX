@@ -8129,6 +8129,9 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-row-overflow-output.xlsx");
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -8152,9 +8155,48 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows overflow failure should not shift earlier cells");
         check(sheet.has_pending_changes(),
             "insert_rows overflow failure should preserve prior dirty state");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B1048576"/>)",
+            "insert_rows overflow save_as should preserve the unshifted dirty dimension");
+        check_contains(worksheet_xml, "row-edge",
+            "insert_rows overflow save_as should persist the pre-existing edge cell");
+        check_contains(worksheet_xml, "placeholder-a1",
+            "insert_rows overflow save_as should keep source cells unshifted");
+        check_not_contains(worksheet_xml, R"(r="A1048577")",
+            "insert_rows overflow save_as should not write an out-of-bounds row");
+        check_reopened_clean_sheet_output(output, "Data", "insert_rows overflow recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "insert_rows overflow recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1048576, 2,
+                    "insert_rows overflow recovery reopened output should keep edge bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "insert_rows overflow recovery reopened output should keep source A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "insert_rows overflow recovery reopened output should keep source B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "insert_rows overflow recovery reopened output should keep source A2");
+                const fastxlsx::CellValue reopened_edge =
+                    reopened_sheet.get_cell("A1048576");
+                check(reopened_edge.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_edge.text_value() == "row-edge",
+                    "insert_rows overflow recovery reopened output should keep edge A1048576");
+            });
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-column-overflow-output.xlsx");
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -8178,6 +8220,41 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_columns overflow failure should not shift earlier cells");
         check(sheet.has_pending_changes(),
             "insert_columns overflow failure should preserve prior dirty state");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:XFD2"/>)",
+            "insert_columns overflow save_as should preserve the unshifted dirty dimension");
+        check_contains(worksheet_xml, "column-edge",
+            "insert_columns overflow save_as should persist the pre-existing edge cell");
+        check_contains(worksheet_xml, "placeholder-a1",
+            "insert_columns overflow save_as should keep source cells unshifted");
+        check_not_contains(worksheet_xml, R"(r="XFE1")",
+            "insert_columns overflow save_as should not write an out-of-bounds column");
+        check_reopened_clean_sheet_output(output, "Data", "insert_columns overflow recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "insert_columns overflow recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 16384,
+                    "insert_columns overflow recovery reopened output should keep edge bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "insert_columns overflow recovery reopened output should keep source A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "insert_columns overflow recovery reopened output should keep source B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "insert_columns overflow recovery reopened output should keep source A2");
+                const fastxlsx::CellValue reopened_edge = reopened_sheet.get_cell("XFD1");
+                check(reopened_edge.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_edge.text_value() == "column-edge",
+                    "insert_columns overflow recovery reopened output should keep edge XFD1");
+            });
     }
 }
 

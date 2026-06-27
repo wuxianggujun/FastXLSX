@@ -164,6 +164,9 @@ erased source cells.
 The dirty-state save/reuse path now reopens both the first erased-cell save and
 the later post-save mutation output, verifying clean readback across repeated
 `save_as()` calls on the same materialized handle.
+The row/column shift overflow paths now also save and reopen the preserved
+dirty state, proving edge cells remain at their original legal coordinates and
+no out-of-bounds shifted cells leak into output.
 Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,

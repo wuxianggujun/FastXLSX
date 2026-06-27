@@ -279,6 +279,9 @@ tokens, while delete-side `#REF!` sessions still report the original
 Those source-scan isolation checks now also snapshot the aggregate
 `estimated_pending_materialized_memory_usage()` value, so read-only source
 formula audits cannot silently alter materialized memory diagnostics.
+They now compare full `pending_worksheet_edits()` summaries as well, covering
+rename, replacement, dirty materialized, cell-count, and memory summary fields
+instead of only the number of summaries.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

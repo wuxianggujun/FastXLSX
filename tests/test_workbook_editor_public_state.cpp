@@ -6937,6 +6937,54 @@ void check_reopened_guardrail_budget_release_output(
         prefix + " reopened column_cells should expose the replacement insertion");
 }
 
+void check_reopened_missing_erase_guardrail_clean_output(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options,
+    std::string_view scenario)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened clean output should not expose pending state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " reopened clean output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        prefix + " reopened clean output should keep the source sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+        prefix + " reopened clean output should keep the source used range");
+
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a1.text_value() == "placeholder-a1",
+        prefix + " reopened clean output should keep source-backed A1");
+    const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+    check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_b1.number_value() == 1.0,
+        prefix + " reopened clean output should keep source-backed B1");
+    const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+    check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a2.text_value() == "placeholder-a2",
+        prefix + " reopened clean output should keep source-backed A2");
+    check(!reopened_sheet.try_cell("D4").has_value(),
+        prefix + " reopened clean output should keep rejected D4 absent");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+        reopened_sheet.row_cells(2);
+    check(reopened_row_two.size() == 1 &&
+            reopened_row_two[0].reference.row == 2 &&
+            reopened_row_two[0].reference.column == 1 &&
+            reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_row_two[0].value.text_value() == "placeholder-a2",
+        prefix + " reopened row_cells should expose only source-backed A2");
+    check(reopened_sheet.column_cells(4).empty(),
+        prefix + " reopened column_cells should keep rejected column empty");
+}
+
 void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()
 {
     const std::filesystem::path max_source =
@@ -7150,6 +7198,10 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "clean save after missing max_cells erase should preserve source A2");
     check_not_contains(max_worksheet_xml, "missing-erase-max-rejected",
         "rejected max_cells text should not leak after missing erase");
+    check_reopened_missing_erase_guardrail_clean_output(
+        max_output,
+        max_options,
+        "max_cells missing-erase clean save");
 
     const std::filesystem::path memory_source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-missing-erase-memory-source.xlsx");
@@ -7221,6 +7273,10 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "clean save after missing memory-budget erase should preserve source A2");
     check_not_contains(memory_worksheet_xml, "missing-erase-memory-rejected",
         "rejected memory-budget text should not leak after missing erase");
+    check_reopened_missing_erase_guardrail_clean_output(
+        memory_output,
+        memory_options,
+        "memory-budget missing-erase clean save");
 }
 
 void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()

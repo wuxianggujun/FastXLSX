@@ -189,6 +189,11 @@ The same recovery shape now also covers already-dirty materialized sessions:
 invalid row/column shifts preserve the dirty sparse store and diagnostics, a
 later valid shift clears the diagnostic, moves both source-backed and dirty
 cells, and saved outputs reopen cleanly with the shifted sparse state.
+Cross-handle dirty shift state is pinned as well: when `Data` and `Untouched`
+are both dirty materialized sessions, a row shift on `Data` keeps workbook-level
+dirty names/counts scoped to both sheets, leaves the other dirty handle's
+coordinates unchanged, auto-flushes both sessions on `save_as()`, and reopens
+both saved sheets as clean public state.
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.

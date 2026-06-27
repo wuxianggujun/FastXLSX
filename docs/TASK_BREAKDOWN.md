@@ -34444,6 +34444,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.775 - Pin cross-handle dirty WorksheetEditor shift state
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a materialized row/column shift on one dirty `WorksheetEditor`
+handle stays scoped to that worksheet while another dirty materialized handle
+keeps its own sparse coordinates and workbook-level diagnostics still aggregate
+both sessions.
+
+Output:
+- Added public-state coverage where `Data` and `Untouched` are both dirty
+  materialized sessions before a `Data.insert_rows()` call.
+- The regression verifies dirty materialized worksheet names remain in catalog
+  order, aggregate dirty cell count remains the sum of both sparse sessions, and
+  the `Untouched` handle is neither shifted nor synthesized.
+- `save_as()` auto-flushes both dirty materialized sessions; saved XML and
+  reopened public state verify shifted `Data` cells and unchanged dirty
+  `Untouched` cells.
+
+Non-goals / boundary:
+- No production code change, no cross-sheet mutation API, no row/column metadata
+  editing, no metadata repair, no sharedStrings/styles migration, no calcChain
+  rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

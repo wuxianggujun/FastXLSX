@@ -359,6 +359,10 @@ void check_public_state_reopened_shift_formula_audit_output(
         second_qualified_reference_text, second_reference_text, message_prefix);
 }
 
+bool workbook_editor_edit_summaries_equal(
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs);
+
 void check_public_state_source_formula_audit_preserves_shift_fixture(
     const fastxlsx::WorkbookEditor& editor,
     std::string_view message_prefix)
@@ -373,7 +377,8 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
         editor.pending_materialized_cell_count();
     const std::size_t materialized_memory_before_audit =
         editor.estimated_pending_materialized_memory_usage();
-    const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
+        editor.pending_worksheet_edits();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
@@ -391,8 +396,9 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
     check(editor.estimated_pending_materialized_memory_usage()
             == materialized_memory_before_audit,
         std::string(message_prefix) + " should preserve materialized memory estimate");
-    check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
-        std::string(message_prefix) + " should not create pending edit summaries");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_audit),
+        std::string(message_prefix) + " should preserve pending edit summaries");
     check(editor.last_edit_error() == last_error_before_audit,
         std::string(message_prefix) + " should not update last_edit_error");
 
@@ -421,7 +427,8 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
         editor.pending_materialized_cell_count();
     const std::size_t materialized_memory_before_audit =
         editor.estimated_pending_materialized_memory_usage();
-    const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
+        editor.pending_worksheet_edits();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
@@ -439,8 +446,9 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
     check(editor.estimated_pending_materialized_memory_usage()
             == materialized_memory_before_audit,
         std::string(message_prefix) + " should preserve materialized memory estimate");
-    check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
-        std::string(message_prefix) + " should not create pending edit summaries");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_audit),
+        std::string(message_prefix) + " should preserve pending edit summaries");
     check(editor.last_edit_error() == last_error_before_audit,
         std::string(message_prefix) + " should not update last_edit_error");
 

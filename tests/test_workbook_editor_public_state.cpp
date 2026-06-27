@@ -8392,6 +8392,17 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row materialization failure should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row materialization-failure source scan");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+    check(!untouched.has_pending_changes(),
+        "renamed formula audit shifted row materialization recovery should stay clean");
+    check(untouched.get_cell("A1").text_value() == "keep-me" &&
+            untouched.get_cell("B1").number_value() == 99.0,
+        "renamed formula audit shifted row materialization recovery should read untouched source cells");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed formula audit shifted row materialization recovery should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row materialization-recovery source scan");
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "renamed formula audit shifted row should reject row-zero try_cell");
     check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),
@@ -8532,6 +8543,17 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted materialization failure should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted materialization-failure source scan");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+    check(!untouched.has_pending_changes(),
+        "renamed column formula audit shifted materialization recovery should stay clean");
+    check(untouched.get_cell("A1").text_value() == "keep-me" &&
+            untouched.get_cell("B1").number_value() == 99.0,
+        "renamed column formula audit shifted materialization recovery should read untouched source cells");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed column formula audit shifted materialization recovery should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted materialization-recovery source scan");
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "renamed column formula audit shifted should reject row-zero try_cell");
     check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),

@@ -905,26 +905,33 @@ and formulas as `<f>` without cached values. This is not date cell import,
 error-token validation, formula evaluation, cached-result generation, sharedStrings writeback, style
 migration, wrapper metadata preservation, XML repair, or large-file random
 editing.
+The matching source-load `max_cells` guard recovery path now also reopens the
+saved replacement output, verifying clean public state after the failed
+materialization and confirming old source cells are not resurrected.
 P8.510 adds the matching public memory-budget guardrail evidence for source
 materialization: `WorksheetEditorOptions::memory_budget_bytes` failures through
 `try_worksheet()` expose the `CellStore` diagnostic, leave no partial
 materialized session, pending cell/memory diagnostics, dirty state, or
 `last_edit_error()`, and a later default-options materialization can still edit
-and save. This remains a sparse-store estimate guardrail, not process RSS,
-save-time package assembly accounting, or large-file random editing.
+and save. The saved recovery output is reopened to verify clean public state and
+source-backed readback. This remains a sparse-store estimate guardrail, not
+process RSS, save-time package assembly accounting, or large-file random
+editing.
 P8.511 extends that evidence to post-materialization mutations: an exact-budget
 `WorksheetEditor` session rejects an oversized `set_cell()` insert with the
 same `CellStore` diagnostic, updates `last_edit_error()`, preserves sparse and
 pending dirty diagnostics, and still accepts a later in-budget overwrite that
-saves normally. This is mutation-side sparse-store hygiene, not workbook-level
-memory budgeting, save-time package peak accounting, or large-file random
-editing.
+saves normally. The saved recovery output is reopened to verify clean readback
+for the overwrite and rejected-coordinate absence. This is mutation-side
+sparse-store hygiene, not workbook-level memory budgeting, save-time package
+peak accounting, or large-file random editing.
 P8.512 pins the symmetric post-materialization cell-count guardrail: an
 exact-`max_cells` `WorksheetEditor` session rejects a new-cell `set_cell()`
 insert, records the `CellStore max_cells` diagnostic, leaves sparse/pending
-dirty state unchanged, and still accepts an overwrite of an existing cell. This
-is not row/column insertion, dense range editing, workbook-level budgeting, or
-large-file random editing.
+dirty state unchanged, and still accepts an overwrite of an existing cell. The
+saved recovery output is reopened to verify clean readback and rejected payload
+absence. This is not row/column insertion, dense range editing, workbook-level
+budgeting, or large-file random editing.
 P8.513 closes the next guardrail recovery edge: after exact `max_cells` and
 exact `memory_budget_bytes` sessions reject a new-cell insertion, erasing the
 existing source-backed A2 record releases sparse count/memory budget, clears the

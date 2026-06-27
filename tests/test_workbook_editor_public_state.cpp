@@ -4664,6 +4664,36 @@ void check_reopened_default_data_sheet_output(
         });
 }
 
+void check_reopened_default_data_overwrite_output(
+    const std::filesystem::path& output,
+    std::string_view scenario,
+    std::string_view expected_a1_text)
+{
+    const std::string prefix(scenario);
+    const std::string expected_a1(expected_a1_text);
+    check_reopened_clean_sheet_output(output, "Data", scenario,
+        [prefix, expected_a1](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                prefix + " reopened output should keep source sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                prefix + " reopened output should keep source used range");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == expected_a1,
+                prefix + " reopened output should read overwritten A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                prefix + " reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                prefix + " reopened output should keep source-backed A2");
+            check(!reopened_sheet.try_cell("D4").has_value(),
+                prefix + " reopened output should keep rejected D4 absent");
+        });
+}
+
 void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
 {
     const std::filesystem::path source =
@@ -7346,6 +7376,20 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "after-options-failure",
         "editor should remain usable after failed public WorksheetEditor materialization");
+    check_reopened_clean_sheet_output(output, "Data", "options guard recovery",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "options guard recovery reopened output should expose replacement count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 1,
+                "options guard recovery reopened output should expose replacement range");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "after-options-failure",
+                "options guard recovery reopened output should read replacement A1");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "options guard recovery reopened output should not keep old source cells");
+        });
 }
 
 void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
@@ -7395,6 +7439,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "after-memory-budget-failure",
         "recovered WorksheetEditor session should save after memory-budget failure");
+    check_reopened_default_data_overwrite_output(output, "memory-budget source-load recovery",
+        "after-memory-budget-failure");
 }
 
 void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()
@@ -7469,6 +7515,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "successful in-budget mutation should persist through save_as");
     check_not_contains(worksheet_xml, "mutation-memory-oversized",
         "rejected memory-budget mutation should not leak into saved output");
+    check_reopened_default_data_overwrite_output(output, "mutation memory-budget recovery",
+        "tiny");
 }
 
 void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
@@ -7542,6 +7590,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "successful overwrite under max_cells should persist through save_as");
     check_not_contains(worksheet_xml, "mutation-max-cells-rejected",
         "rejected max_cells mutation should not leak into saved output");
+    check_reopened_default_data_overwrite_output(output, "mutation max-cells recovery",
+        "after-max-cells-overwrite");
 }
 
 void check_reopened_guardrail_budget_release_output(

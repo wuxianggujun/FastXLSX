@@ -94,6 +94,9 @@ survive, and erased source cells stay absent after save.
 The A1-string `sparse_cells("B1:C3")` path is reopened with the same dirty
 projection checks, pinning string-range parsing and saved sparse readback
 without extending the parser boundary.
+The coordinate-batch `sparse_cells(span<WorksheetCellReference>)` snapshot path
+is also reopened to verify duplicates, skipped missing cells, later edits, and
+erased source cells survive saved sparse projection cleanly.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

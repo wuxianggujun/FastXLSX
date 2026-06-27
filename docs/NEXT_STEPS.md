@@ -158,6 +158,9 @@ well, pinning explicit blank readback without admitting the rejected target.
 The single-cell `erase_cell()` auto-flush save now reopens the output to verify
 the erased coordinate stays absent while surviving source-backed cells keep the
 shrunk bounds.
+The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
+output as well, pinning the inserted replacement coordinates without reviving
+erased source cells.
 Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,

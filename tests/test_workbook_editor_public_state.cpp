@@ -6928,6 +6928,25 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "budget-released insertion should not resurrect erased row text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "budget-released insertion should not resurrect erased row numeric cells");
+        check_reopened_clean_sheet_output(output, "Data", "erase_row budget release",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "erase_row budget release reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 2, 1, 3, 1,
+                    "erase_row budget release reopened output should keep compact bounds");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "erase_row budget release reopened output should keep erased A1 absent");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "erase_row budget release reopened output should keep erased B1 absent");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "erase_row budget release reopened output should keep non-target A2");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "after-erase-row-budget",
+                    "erase_row budget release reopened output should read inserted A3");
+            });
     }
 }
 
@@ -7137,6 +7156,25 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "budget-released insertion should not resurrect erased column row-one text cells");
         check_not_contains(worksheet_xml, "placeholder-a2",
             "budget-released insertion should not resurrect erased column row-two text cells");
+        check_reopened_clean_sheet_output(output, "Data", "erase_column budget release",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "erase_column budget release reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                    "erase_column budget release reopened output should keep combined bounds");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "erase_column budget release reopened output should keep erased A1 absent");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "erase_column budget release reopened output should keep erased A2 absent");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "erase_column budget release reopened output should keep non-target B1");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "after-erase-column-budget",
+                    "erase_column budget release reopened output should read inserted A3");
+            });
     }
 }
 

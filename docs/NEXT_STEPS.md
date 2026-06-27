@@ -241,6 +241,11 @@ Delete-column formula option-mismatch hygiene is now pinned after save:
 mismatched `WorksheetEditorOptions` fail without diagnostics or dirty state,
 the matching `RenamedData` reacquire still reads styled `C2`, and a later
 `insert_rows(2, 1)` saves/reopens styled `C3` as `#REF!+A2`.
+Delete-column formula invalid-mutation hygiene is now pinned after save too:
+rejected formula writes and invalid erases set `last_edit_error()` without
+dirtying the saved styled `C2` state or leaking rejected formula payloads, and
+a later valid row shift clears diagnostics and saves/reopens styled `C3` as
+`#REF!+A2`.
 Delete-column formula missing-query hygiene now matches that shape: `Missing`
 and old `Data` lookups fail without diagnostics or dirty state, while matching
 `RenamedData` reacquire still shifts and saves/reopens styled `C3` as

@@ -1861,6 +1861,25 @@ std::filesystem::path write_two_sheet_source_with_styled_shift_formula(
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_shift_memory_formula(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("anchor-a1")});
+        data.append_row({fastxlsx::CellView::formula("A9+A9+A9+A9+A9")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me")});
+    }
+    writer.close();
+
+    return path;
+}
+
 // Writes a source workbook with document properties so patch tests can verify
 // that WorkbookEditor preserves docProps bytes through save_as().
 std::filesystem::path write_two_sheet_source_with_document_properties(std::string_view name)
@@ -6517,6 +6536,64 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     }
 }
 
+void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_shift_memory_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-memory-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-memory-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+    const std::size_t baseline_count = sizing_sheet.cell_count();
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_memory_budget;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+    bool failed = false;
+    try {
+        sheet.insert_rows(2, 1);
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "insert_rows formula translation should expose memory budget diagnostics");
+    }
+    check(failed,
+        "insert_rows should reject formula translation that exceeds memory budget");
+    check(editor.last_edit_error().has_value(),
+        "failed insert_rows memory-budget mutation should update last_edit_error");
+    check_contains(*editor.last_edit_error(), "CellStore memory_budget_bytes guardrail exceeded",
+        "last_edit_error should retain the insert_rows memory-budget diagnostic");
+    check(!sheet.has_pending_changes(),
+        "failed insert_rows memory-budget mutation should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "failed insert_rows memory-budget mutation should not dirty the editor");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed insert_rows memory-budget mutation should not expose dirty materialized cells");
+    check(sheet.cell_count() == baseline_count,
+        "failed insert_rows memory-budget mutation should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "failed insert_rows memory-budget mutation should preserve sparse memory estimate");
+    const fastxlsx::CellValue original_formula = sheet.get_cell("A2");
+    check(original_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            original_formula.text_value() == "A9+A9+A9+A9+A9",
+        "failed insert_rows memory-budget mutation should preserve the original formula");
+    check(!sheet.try_cell("A3").has_value(),
+        "failed insert_rows memory-budget mutation should not leave a shifted formula readable");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "save_as after failed insert_rows memory-budget mutation should copy source entries");
+}
+
 void test_public_worksheet_editor_options_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -7469,6 +7546,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();
+            test_public_worksheet_editor_shift_memory_guard_failure_preserves_state();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();
             test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();

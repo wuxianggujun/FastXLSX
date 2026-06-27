@@ -233,6 +233,10 @@ That delete-column formula path now also covers same-editor post-save
 reacquire: the clean `RenamedData` handle still reads `C2` as `#REF!+A1` with
 the original `StyleId`, the old `Data` name stays unavailable, and a later
 valid `insert_rows(2, 1)` saves/reopens `C3` as `#REF!+A2`.
+That same delete-column formula path now covers failed-save retry hygiene too:
+a rejected exact source overwrite keeps the dirty `C2` formula as `#REF!+A1`
+with the original `StyleId`, leaves the source workbook unchanged under
+`Data`, and a safe retry saves/reopens clean under `RenamedData`.
 The symmetric renamed delete-row formula path is pinned as well:
 `delete_rows(1, 1)` moves the styled formula to `D1`, translates both row-one
 references to `#REF!`, preserves the style id, and saves/reopens only under

@@ -9516,6 +9516,175 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
         "renamed formula delete_columns reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_failed_save_preserves_styled_session()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-failed-save-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-failed-save-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+
+    sheet.delete_columns(1, 1);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
+    const auto check_dirty_styled_formula_session = [&](std::string_view scenario) {
+        const std::string label = std::string(scenario);
+
+        check(!editor.last_edit_error().has_value(),
+            label + " should keep last_edit_error clear");
+        check(editor.has_pending_changes(),
+            label + " should keep the public editor dirty");
+        check(editor.pending_change_count() == 1,
+            label + " should keep only the queued rename before materialized handoff");
+        check(sheet.has_pending_changes(),
+            label + " should keep the styled formula handle dirty");
+        check(sheet.cell_count() == 4,
+            label + " should preserve the delete-column sparse count");
+        check(sheet.estimated_memory_usage() == shifted_memory,
+            label + " should preserve the delete-column materialized memory estimate");
+        check(editor.pending_materialized_worksheet_names()
+                  == std::vector<std::string>{"RenamedData"},
+            label + " should report dirty materialized state under the planned name");
+        check(editor.pending_materialized_cell_count() == 4,
+            label + " should report the delete-column styled formula sparse count");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            label + " should report the delete-column styled formula memory estimate");
+        check(editor.source_worksheet_names() == expected_source_names,
+            label + " should preserve source worksheet names");
+        check(editor.worksheet_names() == expected_planned_names,
+            label + " should preserve planned worksheet names");
+        check(workbook_editor_catalog_entries_equal(
+                  editor.worksheet_catalog(), expected_catalog),
+            label + " should preserve the renamed worksheet catalog");
+        check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+            label + " should expose only the planned sheet name");
+
+        const fastxlsx::CellValue shifted_number = sheet.get_cell("A1");
+        check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_number.number_value() == 1.0,
+            label + " should keep shifted source B1 in memory");
+        const std::optional<fastxlsx::CellValue> shifted_formula =
+            sheet.try_cell("C2");
+        check(shifted_formula.has_value() &&
+                shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula->text_value() == "#REF!+A1" &&
+                shifted_formula->has_style() &&
+                shifted_formula->style_id().value() == styled_formula_style.value(),
+            label + " should keep the delete-column styled formula in memory");
+        check(sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                sheet.get_cell("B2").text_value() == "row2-gap-c2",
+            label + " should keep shifted source row cells in memory");
+        check(!sheet.try_cell("D2").has_value() &&
+                !sheet.try_cell("A3").has_value(),
+            label + " should keep old and deleted coordinates absent");
+    };
+
+    check_dirty_styled_formula_session(
+        "renamed formula delete-column failed save dirty state before rejected source overwrite");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "renamed formula delete-column failed save should reject exact source overwrite");
+    check_dirty_styled_formula_session(
+        "renamed formula delete-column failed save rejected source overwrite");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_workbook_xml = source_entries.at("xl/workbook.xml");
+    const std::string source_worksheet_xml = source_entries.at("xl/worksheets/sheet1.xml");
+    const std::string source_styled_formula_xml =
+        std::string(R"(<c r="D2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A1+B1</f></c>)";
+    check_contains(source_workbook_xml, R"(name="Data")",
+        "renamed formula delete-column failed save should leave the source workbook catalog unchanged");
+    check_not_contains(source_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-column failed save should not write the planned name into the source workbook");
+    check_contains(source_worksheet_xml, R"(<dimension ref="A1:D3"/>)",
+        "renamed formula delete-column failed save should leave the source workbook bounds unchanged");
+    check_contains(source_worksheet_xml, source_styled_formula_xml,
+        "renamed formula delete-column failed save should leave the source styled formula unchanged");
+    check_contains(source_worksheet_xml, R"(<c r="A3" t="inlineStr"><is><t>extra-c3</t></is></c>)",
+        "renamed formula delete-column failed save should leave the source trailing row unchanged");
+    check_not_contains(source_worksheet_xml, "#REF!+A1",
+        "renamed formula delete-column failed save should not write the translated formula into the source workbook");
+    check_not_contains(source_worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "renamed formula delete-column failed save should not write shifted B1 into the source workbook");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-column failed save safe retry should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-column failed save safe retry should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column failed save safe retry should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-column failed save safe retry should keep diagnostics clear");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string output_workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string output_styled_formula_xml =
+        std::string(R"(<c r="C2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+A1</f></c>)";
+    check_contains(output_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-column failed save safe retry should write the planned catalog name");
+    check_not_contains(output_workbook_xml, R"(name="Data")",
+        "renamed formula delete-column failed save safe retry should omit the source catalog name");
+    check_contains(output_worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "renamed formula delete-column failed save safe retry should project delete-column bounds");
+    check_contains(output_worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "renamed formula delete-column failed save safe retry should write shifted B1");
+    check_contains(output_worksheet_xml, R"(<c r="A2")",
+        "renamed formula delete-column failed save safe retry should write shifted B2");
+    check_contains(output_worksheet_xml, R"(<c r="B2")",
+        "renamed formula delete-column failed save safe retry should write shifted C2");
+    check_contains(output_worksheet_xml, output_styled_formula_xml,
+        "renamed formula delete-column failed save safe retry should write translated formula with style id");
+    check_not_contains(output_worksheet_xml, R"(r="D2")",
+        "renamed formula delete-column failed save safe retry should omit the old formula coordinate");
+    check_not_contains(output_worksheet_xml, R"(r="A3")",
+        "renamed formula delete-column failed save safe retry should omit the deleted trailing coordinate");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed formula delete-column failed save reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed formula delete-column failed save reopened output should start clean");
+    check(reopened_sheet.cell_count() == 4,
+        "renamed formula delete-column failed save reopened output should keep shifted sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+        "renamed formula delete-column failed save reopened output should expose shifted bounds");
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_a1.number_value() == 1.0,
+        "renamed formula delete-column failed save reopened output should read shifted B1");
+    const std::optional<fastxlsx::CellValue> reopened_c2 =
+        reopened_sheet.try_cell("C2");
+    check(reopened_c2.has_value() &&
+            reopened_c2->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_c2->text_value() == "#REF!+A1" &&
+            reopened_c2->has_style() &&
+            reopened_c2->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column failed save reopened output should read translated styled formula");
+    check(reopened_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+            reopened_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+        "renamed formula delete-column failed save reopened output should read shifted row cells");
+    check(!reopened_sheet.try_cell("D2").has_value() &&
+            !reopened_sheet.try_cell("A3").has_value(),
+        "renamed formula delete-column failed save reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reacquire_reuses_styled_session()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -15777,6 +15946,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_references();
+            test_public_worksheet_editor_shift_after_rename_delete_columns_formula_failed_save_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reacquire_reuses_styled_session();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_rows();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacquire_reuses_styled_session();

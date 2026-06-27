@@ -253,6 +253,11 @@ The following safe-save retry is pinned as well: after those rejected output
 paths, a later safe `save_as(output)` still writes the shifted qualified
 formula, leaves the source package and rejected path artifacts unchanged, and
 reopens with clean source formula audits over the saved output.
+Delete-side `#REF!` formula audits now have the same retry guard: after
+rejected source/path/output targets, source scans still report the original
+`Data!A1+Data!B2` tokens, the safe save writes only the surviving shifted
+reference plus `Data!#REF!`, and the source package plus rejected artifacts
+remain untouched.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

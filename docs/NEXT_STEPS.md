@@ -56,8 +56,8 @@ zero-count shifts, nonzero no-op insert/delete ranges outside represented
 sparse cells, validation failures, memory-budget guard failures, and shift
 overflow failures clear or preserve diagnostics as specified, do not dirty
 clean sessions, and keep no-op `save_as()` output copy-original. The
-retry/reacquire shard now also covers row and column shifts after a failed
-source-overwrite `save_as()`, safe retry, and matching post-save
+retry/reacquire shard now also covers insert/delete row and column shifts after
+a failed source-overwrite `save_as()`, safe retry, and matching post-save
 `worksheet()` reacquire, including moved source-backed cells, formula text
 translation, dirty borrowed handles, restored-name diagnostics, and saved XML
 projection. The benchmark tool

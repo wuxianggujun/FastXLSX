@@ -8032,6 +8032,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     const std::filesystem::path file_parent =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-file-parent");
     const std::filesystem::path non_directory_output = file_parent / "out.xlsx";
+    const std::filesystem::path directory_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-directory-output");
     const std::filesystem::path first_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-first-output.xlsx");
     const std::filesystem::path second_output =
@@ -8039,6 +8041,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     std::filesystem::remove_all(missing_parent_output.parent_path());
     std::filesystem::remove_all(file_parent);
     fastxlsx::test::write_file(file_parent, "not a directory");
+    std::filesystem::remove_all(directory_output);
+    std::filesystem::create_directories(directory_output);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
@@ -8156,6 +8160,12 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save should preserve the non-directory parent file");
     check_dirty_planned_session(
         "renamed shift failed save rejected non-directory output parent");
+    check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
+        "renamed shift failed save should reject existing directory output");
+    check(std::filesystem::is_directory(directory_output),
+        "renamed shift failed save should preserve the rejected output directory");
+    check_dirty_planned_session(
+        "renamed shift failed save rejected existing directory output");
     check(sheet.get_cell("C1").number_value() == 1.0 &&
             reacquired.get_cell("C1").number_value() == 1.0,
         "renamed shift failed save should preserve shifted numeric cells after rejection");

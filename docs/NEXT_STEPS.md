@@ -190,10 +190,11 @@ shifted coordinates.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,
-empty output path, missing-parent output, and non-directory-parent output
-attempts all preserve dirty diagnostics under `RenamedData`, keep the source
-workbook unchanged under `Data`, leave the first renamed output isolated, and a
-safe retry reopens only as `RenamedData` with the combined shifted coordinates.
+empty output path, missing-parent output, non-directory-parent output, and
+existing-directory output attempts all preserve dirty diagnostics under
+`RenamedData`, keep the source workbook unchanged under `Data`, leave the first
+renamed output isolated, and a safe retry reopens only as `RenamedData` with
+the combined shifted coordinates.
 The renamed planned-name shift path also covers option-mismatch reacquire:
 mismatched `WorksheetEditorOptions` against `RenamedData` fail without updating
 `last_edit_error()`, dirtying materialized diagnostics, restoring the old

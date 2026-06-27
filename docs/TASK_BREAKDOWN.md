@@ -34826,6 +34826,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.786 - Pin post-save WorksheetEditor shift empty-output failed-save retry hygiene
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove empty-output `save_as()` rejection after a dirty post-save
+structural shift has the same no-flush state hygiene as source-overwrite guards.
+
+Output:
+- Added public-state coverage that saves a `Data.insert_rows()` projection,
+  reacquires `Data`, performs a follow-up `insert_columns()`, rejects
+  `save_as(std::filesystem::path())`, then safely saves to a second output.
+- The regression verifies the empty-output failure keeps both borrowed handles
+  dirty, preserves dirty materialized summaries/counts/memory, keeps the prior
+  materialized handoff count stable, and leaves the source workbook plus first
+  output isolated from the rejected later shift.
+- The later safe save writes the combined shifted sparse state and reopens as
+  clean public state.
+
+Non-goals / boundary:
+- No production code change, no path-policy broadening, no rollback/history
+  model, no metadata repair, no sharedStrings/styles migration, no calcChain
+  rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

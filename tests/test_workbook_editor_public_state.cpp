@@ -8375,6 +8375,23 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row should reject old source-name worksheet lookup");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row missing-query source scan");
+    fastxlsx::WorksheetEditorOptions failing_materialization_options;
+    failing_materialization_options.max_cells = 1;
+    const std::optional<std::string> last_error_before_materialization_failure =
+        editor.last_edit_error();
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Untouched", failing_materialization_options);
+    }), "renamed formula audit shifted row should reject guardrail try_worksheet materialization");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Untouched", failing_materialization_options);
+    }), "renamed formula audit shifted row should reject guardrail worksheet materialization");
+    check(editor.last_edit_error() == last_error_before_materialization_failure,
+        "renamed formula audit shifted row materialization failure should preserve last_edit_error");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed formula audit shifted row materialization failure should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row materialization-failure source scan");
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "renamed formula audit shifted row should reject row-zero try_cell");
     check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),
@@ -8498,6 +8515,23 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted should reject old source-name worksheet lookup");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted missing-query source scan");
+    fastxlsx::WorksheetEditorOptions failing_materialization_options;
+    failing_materialization_options.max_cells = 1;
+    const std::optional<std::string> last_error_before_materialization_failure =
+        editor.last_edit_error();
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Untouched", failing_materialization_options);
+    }), "renamed column formula audit shifted should reject guardrail try_worksheet materialization");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Untouched", failing_materialization_options);
+    }), "renamed column formula audit shifted should reject guardrail worksheet materialization");
+    check(editor.last_edit_error() == last_error_before_materialization_failure,
+        "renamed column formula audit shifted materialization failure should preserve last_edit_error");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed column formula audit shifted materialization failure should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted materialization-failure source scan");
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "renamed column formula audit shifted should reject row-zero try_cell");
     check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),

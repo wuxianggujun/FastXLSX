@@ -229,6 +229,10 @@ The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and
 saves/reopens only under `RenamedData` while keeping shifted `B2` at `A2`.
+That delete-column formula path now also covers same-editor post-save
+reacquire: the clean `RenamedData` handle still reads `C2` as `#REF!+A1` with
+the original `StyleId`, the old `Data` name stays unavailable, and a later
+valid `insert_rows(2, 1)` saves/reopens `C3` as `#REF!+A2`.
 The symmetric renamed delete-row formula path is pinned as well:
 `delete_rows(1, 1)` moves the styled formula to `D1`, translates both row-one
 references to `#REF!`, preserves the style id, and saves/reopens only under

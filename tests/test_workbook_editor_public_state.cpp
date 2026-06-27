@@ -2414,6 +2414,44 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
         "materialized auto-flush should not be reported as whole-sheetData replacements");
     check(editor.pending_change_count() == 2,
         "successful save_as should count both materialized Patch handoffs");
+
+    check_reopened_clean_sheet_output(output, "Data", "pending materialized aggregate Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "pending materialized aggregate Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "pending materialized aggregate Data reopened output should expose blank bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "aggregate-dirty-data",
+                "pending materialized aggregate Data reopened output should read dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "pending materialized aggregate Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "pending materialized aggregate Data reopened output should keep source-backed A2");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Blank,
+                "pending materialized aggregate Data reopened output should read explicit C3 blank");
+        });
+    check_reopened_clean_sheet_output(output, "Untouched", "pending materialized aggregate Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "pending materialized aggregate Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "pending materialized aggregate Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "pending materialized aggregate Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "aggregate-dirty-untouched",
+                "pending materialized aggregate Untouched reopened output should read dirty B1");
+        });
 }
 
 void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner()

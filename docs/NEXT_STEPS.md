@@ -88,6 +88,9 @@ text after save.
 The sparse snapshot dirty projection path is also reopened to verify owning
 snapshots do not block later edits and saved output rehydrates the edited,
 source-backed, blank, inserted, and erased sparse cells cleanly.
+The bounded `sparse_cells(range)` snapshot path is also reopened to verify
+range-limited owning snapshots do not block later edits, outside-range cells
+survive, and erased source cells stay absent after save.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

@@ -8407,6 +8407,168 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire invalid mutations first save should clean the borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire invalid mutations first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire invalid mutations first save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire invalid mutations first save should keep diagnostics clear");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "shift reacquire invalid mutations matching reacquire should stay clean before failures");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire invalid mutations matching reacquire should reuse saved shifted state");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-shift-row-zero"));
+    }), "shift reacquire invalid mutations should reject row-zero set_cell on the original handle");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(1, 0, fastxlsx::CellValue::text("invalid-shift-column-zero"));
+    }), "shift reacquire invalid mutations should reject column-zero set_cell on the reacquired handle");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(1048577, 1,
+            fastxlsx::CellValue::text("invalid-shift-row-overflow"));
+    }), "shift reacquire invalid mutations should reject row-overflow set_cell");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(1, 16385,
+            fastxlsx::CellValue::text("invalid-shift-column-overflow"));
+    }), "shift reacquire invalid mutations should reject column-overflow set_cell");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-shift-lowercase-a1"));
+    }), "shift reacquire invalid mutations should reject lowercase A1 set_cell");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("XFE1",
+            fastxlsx::CellValue::text("invalid-shift-a1-column-overflow"));
+    }), "shift reacquire invalid mutations should reject A1 column-overflow set_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell(0, 1); }),
+        "shift reacquire invalid mutations should reject row-zero erase_cell");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell(1, 16385); }),
+        "shift reacquire invalid mutations should reject column-overflow erase_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "shift reacquire invalid mutations should reject range erase_cell references");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell("a1"); }),
+        "shift reacquire invalid mutations should reject lowercase A1 erase_cell");
+
+    check(editor.last_edit_error().has_value(),
+        "shift reacquire invalid mutations should populate last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(), "WorksheetEditor cell reference is invalid",
+            "shift reacquire invalid mutations should expose the latest invalid reference diagnostic");
+    }
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire invalid mutations should keep both handles clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire invalid mutations should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift reacquire invalid mutations should not dirty materialized diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        "shift reacquire invalid mutations should keep worksheet edit summaries empty");
+    check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
+        "shift reacquire invalid mutations should preserve sparse counts");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 3, 2,
+        "shift reacquire invalid mutations should preserve shifted bounds");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire invalid mutations should preserve shifted source cells");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "shift reacquire invalid mutations should keep old row coordinates absent");
+
+    reacquired.insert_columns(2, 1);
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire invalid mutations later valid shift should clear diagnostics");
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "shift reacquire invalid mutations later shift should dirty the shared session");
+    const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 1 && dirty_names[0] == "Data",
+        "shift reacquire invalid mutations later shift should report Data dirty once");
+    check(editor.pending_materialized_cell_count() == 3,
+        "shift reacquire invalid mutations later shift should report the shared sparse count once");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "shift reacquire invalid mutations later shift should be visible through the older handle");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            !reacquired.try_cell("B1").has_value(),
+        "shift reacquire invalid mutations later shift should retain the row shift and move columns");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire invalid mutations second save should clean both handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire invalid mutations second save should clear dirty diagnostics again");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire invalid mutations second save should record the later handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, R"(<dimension ref="A1:B3"/>)",
+        "shift reacquire invalid mutations first output should keep shifted row bounds");
+    check_contains(first_xml, R"(<c r="B1"><v>1</v></c>)",
+        "shift reacquire invalid mutations first output should keep B1 before later shift");
+    check_contains(first_xml, R"(<c r="A3")",
+        "shift reacquire invalid mutations first output should keep the shifted source row");
+    check_not_contains(first_xml, R"(r="C1")",
+        "shift reacquire invalid mutations first output should not include later column shift");
+    check_not_contains(first_xml, R"(r="A2")",
+        "shift reacquire invalid mutations first output should keep old row coordinate absent");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, R"(<dimension ref="A1:C3"/>)",
+        "shift reacquire invalid mutations second output should project combined shifted bounds");
+    check_contains(second_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shift reacquire invalid mutations second output should include shifted B1");
+    check_contains(second_xml, R"(<c r="A3")",
+        "shift reacquire invalid mutations second output should retain the shifted source row");
+    check_not_contains(second_xml, R"(r="B1")",
+        "shift reacquire invalid mutations second output should omit old B1");
+    check_not_contains(second_xml, R"(r="A2")",
+        "shift reacquire invalid mutations second output should keep old row coordinate absent");
+    check_not_contains(second_xml, "invalid-shift-",
+        "shift reacquire invalid mutations second output should not leak rejected payloads");
+
+    check_reopened_shift_output(second_output, "shift reacquire invalid mutations second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire invalid mutations reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire invalid mutations reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire invalid mutations reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire invalid mutations reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire invalid mutations reopened output should keep old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
 {
     const std::filesystem::path source =
@@ -11046,6 +11208,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_session();
+            test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session();
             test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();

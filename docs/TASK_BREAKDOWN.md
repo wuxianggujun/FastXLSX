@@ -34717,6 +34717,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.783 - Pin post-save WorksheetEditor shift invalid-mutation hygiene
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid cell mutation failures after a saved structural-shift
+materialized session do not dirty or reload that saved session, while still
+recording public edit diagnostics.
+
+Output:
+- Added public-state coverage that saves a `Data.insert_rows()` projection,
+  reacquires `Data`, and then rejects invalid row/column and A1
+  `set_cell()` / `erase_cell()` calls across the original and reacquired
+  handles.
+- The regression verifies those mutation failures populate `last_edit_error()`
+  but keep dirty materialized diagnostics and worksheet summaries empty,
+  preserve the saved shifted sparse state, and do not add another
+  materialized handoff.
+- A later valid `insert_columns()` clears the diagnostic, saves successfully,
+  omits rejected payloads, and reopens as combined shifted sparse state.
+
+Non-goals / boundary:
+- No production code change, no mutation diagnostic behavior change, no
+  rollback/history model, no source reload, no metadata repair, no
+  sharedStrings/styles migration, no calcChain rebuild, and no large-file
+  low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

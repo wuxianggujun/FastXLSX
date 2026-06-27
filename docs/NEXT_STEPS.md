@@ -198,6 +198,10 @@ Invalid and missing read failures are pinned for that post-save shift boundary
 too: invalid row/column, A1, sparse-range, row/column snapshot, and missing
 `get_cell()` reads preserve the clean shifted session, leave diagnostics empty,
 and do not block a later matching reacquire shift/save cycle.
+Invalid mutation failures now cover the same saved shifted session: invalid
+row/column and A1 `set_cell()` / `erase_cell()` calls record the public edit
+diagnostic without dirtying materialized state, leaking rejected payloads, or
+blocking a later valid shift from clearing diagnostics and saving.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

@@ -187,6 +187,12 @@ The same renamed shift path now covers same-editor post-save reacquire:
 name stays unavailable, a later `insert_columns()` dirties the shared planned
 session, and the second output reopens only as `RenamedData` with combined
 shifted coordinates.
+The renamed planned-name shift path is also pinned across a rejected
+source-overwrite `save_as()`: after post-save reacquire and a follow-up
+`insert_columns()`, the failed save preserves dirty diagnostics under
+`RenamedData`, keeps the source workbook unchanged under `Data`, leaves the
+first renamed output isolated, and a safe retry reopens only as
+`RenamedData` with the combined shifted coordinates.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

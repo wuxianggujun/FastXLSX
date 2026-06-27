@@ -194,6 +194,10 @@ are both dirty materialized sessions, a row shift on `Data` keeps workbook-level
 dirty names/counts scoped to both sheets, leaves the other dirty handle's
 coordinates unchanged, auto-flushes both sessions on `save_as()`, and reopens
 both saved sheets as clean public state.
+The column-direction cross-handle shape is covered too: a `Data` column shift
+moves only `Data` source-backed and dirty columns while the already-dirty
+`Untouched` handle keeps its own dirty column coordinate, aggregate dirty counts
+still sum both sessions, and both saved sheets reopen cleanly.
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.

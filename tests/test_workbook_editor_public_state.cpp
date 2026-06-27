@@ -8282,6 +8282,148 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
         });
 }
 
+void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell(2, 4, fastxlsx::CellValue::text("data-dirty-column-tail"));
+    untouched.set_cell(2, 3, fastxlsx::CellValue::text("untouched-dirty-column-tail"));
+    const std::size_t data_dirty_count = data.cell_count();
+    const std::size_t untouched_dirty_count = untouched.cell_count();
+    check(data_dirty_count == 4 && untouched_dirty_count == 3,
+        "cross-handle column shift should start with two dirty sparse sessions");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle column shift should dirty both borrowed handles before the shift");
+
+    const std::vector<std::string> dirty_names_before_shift =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_before_shift.size() == 2 &&
+            dirty_names_before_shift[0] == "Data" &&
+            dirty_names_before_shift[1] == "Untouched",
+        "cross-handle column shift should report both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle column shift should aggregate both dirty sparse sessions before the shift");
+
+    data.insert_columns(2, 1);
+
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle insert_columns should keep diagnostics clear");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle insert_columns should keep both dirty handles tracked");
+    check(data.cell_count() == data_dirty_count &&
+            untouched.cell_count() == untouched_dirty_count,
+        "cross-handle insert_columns should keep each dirty sparse count stable");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle insert_columns should keep aggregate dirty sparse count stable");
+    const std::vector<std::string> dirty_names_after_shift =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_shift.size() == 2 &&
+            dirty_names_after_shift[0] == "Data" &&
+            dirty_names_after_shift[1] == "Untouched",
+        "cross-handle insert_columns should preserve dirty materialized sheet ordering");
+
+    const fastxlsx::CellValue shifted_number = data.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "cross-handle insert_columns should move Data source-backed columns");
+    check(data.get_cell("E2").text_value() == "data-dirty-column-tail",
+        "cross-handle insert_columns should move Data dirty columns");
+    check(!data.try_cell("B1").has_value() && !data.try_cell("D2").has_value(),
+        "cross-handle insert_columns should remove Data old shifted coordinates");
+    check(untouched.get_cell("A1").text_value() == "keep-me",
+        "cross-handle insert_columns should leave Untouched source text in place");
+    const fastxlsx::CellValue untouched_number = untouched.get_cell("B1");
+    check(untouched_number.kind() == fastxlsx::CellValueKind::Number &&
+            untouched_number.number_value() == 99.0,
+        "cross-handle insert_columns should leave Untouched source number in place");
+    check(untouched.get_cell("C2").text_value() == "untouched-dirty-column-tail",
+        "cross-handle insert_columns should leave other dirty handle coordinates in place");
+    check(!untouched.try_cell("D2").has_value(),
+        "cross-handle insert_columns should not shift the other handle");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift save_as should clean both materialized handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "cross-handle column shift save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, R"(<dimension ref="A1:E2"/>)",
+        "cross-handle column shift save_as should project Data shifted bounds");
+    check_contains(data_xml, R"(<c r="C1"><v>1</v></c>)",
+        "cross-handle column shift save_as should write shifted Data source number");
+    check_contains(data_xml, R"(<c r="E2")",
+        "cross-handle column shift save_as should write shifted Data dirty column");
+    check_not_contains(data_xml, R"(r="B1")",
+        "cross-handle column shift save_as should omit Data old source coordinate");
+    check_not_contains(data_xml, R"(r="D2")",
+        "cross-handle column shift save_as should omit Data old dirty coordinate");
+    check_contains(untouched_xml, R"(<dimension ref="A1:C2"/>)",
+        "cross-handle column shift save_as should preserve Untouched dirty bounds");
+    check_contains(untouched_xml, "keep-me",
+        "cross-handle column shift save_as should preserve Untouched source text");
+    check_contains(untouched_xml, R"(<c r="B1"><v>99</v></c>)",
+        "cross-handle column shift save_as should preserve Untouched source number");
+    check_contains(untouched_xml, R"(<c r="C2")",
+        "cross-handle column shift save_as should preserve Untouched dirty coordinate");
+    check_not_contains(untouched_xml, R"(r="D2")",
+        "cross-handle column shift save_as should not shift Untouched dirty columns");
+
+    check_reopened_shift_output(output, "cross-handle column shift Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle column shift Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+                "cross-handle column shift Data reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "cross-handle column shift Data reopened output should read shifted source column");
+            const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+            check(reopened_e2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e2.text_value() == "data-dirty-column-tail",
+                "cross-handle column shift Data reopened output should read shifted dirty column");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle column shift Data reopened output should keep old coordinates absent");
+        });
+
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "cross-handle column shift Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle column shift Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "cross-handle column shift Untouched reopened output should keep dirty bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle column shift Untouched reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle column shift Untouched reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-column-tail",
+                "cross-handle column shift Untouched reopened output should keep dirty coordinate");
+            check(!reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle column shift Untouched reopened output should not shift columns");
+        });
+}
+
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
 {
     const std::filesystem::path source =
@@ -10097,6 +10239,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();
+            test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state();
             test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();

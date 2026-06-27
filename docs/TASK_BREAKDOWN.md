@@ -34453,10 +34453,9 @@ Touched files:
 - `docs/NEXT_STEPS.md`
 - `docs/TASK_BREAKDOWN.md`
 
-Goal: prove a materialized row/column shift on one dirty `WorksheetEditor`
-handle stays scoped to that worksheet while another dirty materialized handle
-keeps its own sparse coordinates and workbook-level diagnostics still aggregate
-both sessions.
+Goal: prove a materialized row shift on one dirty `WorksheetEditor` handle stays
+scoped to that worksheet while another dirty materialized handle keeps its own
+sparse coordinates and workbook-level diagnostics still aggregate both sessions.
 
 Output:
 - Added public-state coverage where `Data` and `Untouched` are both dirty
@@ -34467,6 +34466,40 @@ Output:
 - `save_as()` auto-flushes both dirty materialized sessions; saved XML and
   reopened public state verify shifted `Data` cells and unchanged dirty
   `Untouched` cells.
+
+Non-goals / boundary:
+- No production code change, no cross-sheet mutation API, no row/column metadata
+  editing, no metadata repair, no sharedStrings/styles migration, no calcChain
+  rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
+### P8.776 - Pin cross-handle dirty WorksheetEditor column shift state
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove the cross-handle dirty state hygiene covered for row shifts also
+holds for column shifts, without widening the materialized editor boundary.
+
+Output:
+- Added public-state coverage where `Data` and `Untouched` are both dirty
+  materialized sessions before a `Data.insert_columns()` call.
+- The regression verifies the Data source-backed number and dirty tail move to
+  their shifted columns, while the already-dirty `Untouched` handle keeps its
+  source and dirty coordinates unchanged.
+- Workbook-level dirty materialized names remain in catalog order, aggregate
+  dirty cell count remains the sum of both sessions, and `save_as()` auto-flushes
+  both sheets. Saved XML and reopened public state verify the scoped column
+  shift and unchanged other-sheet state.
 
 Non-goals / boundary:
 - No production code change, no cross-sheet mutation API, no row/column metadata

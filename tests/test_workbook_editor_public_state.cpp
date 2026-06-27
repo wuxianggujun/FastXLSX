@@ -3911,6 +3911,32 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         "initializer-list erase_cells should omit erased formula text");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "initializer-list batch overloads should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "initializer-list batch overloads",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "initializer-list reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "initializer-list reopened output should expose final sparse bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "initializer-list reopened output should keep erased A1 absent");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank,
+                "initializer-list reopened output should read explicit B1 blank");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "initializer-list reopened output should keep source-backed A2");
+            check(!reopened_sheet.try_cell("C3").has_value(),
+                "initializer-list reopened output should keep erased C3 absent");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Boolean &&
+                    reopened_d4.boolean_value(),
+                "initializer-list reopened output should read inserted D4 boolean");
+            check(!reopened_sheet.try_cell("F6").has_value(),
+                "initializer-list reopened output should not synthesize clear-only F6");
+            check(!reopened_sheet.try_cell("H8").has_value(),
+                "initializer-list reopened output should not synthesize erase-only H8");
+        });
 }
 
 void check_reopened_clean_sheet_output(

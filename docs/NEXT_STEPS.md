@@ -79,6 +79,9 @@ artifacts stay clean and isolated from later edits.
 The range-erase reacquire path also reopens both saved outputs, pinning the
 empty first projection and the later single-cell C3 projection after handle
 reacquisition.
+The initializer-list batch overload path is also reopened to verify explicit
+blank, source-backed, inserted boolean, erased, and missing-only targets survive
+the saved sparse projection.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

@@ -133,6 +133,9 @@ source-backed row to release budget, pinning the saved appended A2 and rejected
 payload absence.
 The `set_row()` guard paths now reopen both represented-row clearing and
 max-cells recovery saves, verifying compact readback plus rejected row absence.
+The `set_column()` guard paths now reopen both represented-column clearing and
+max-cells recovery saves, verifying compact readback plus rejected column
+absence.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

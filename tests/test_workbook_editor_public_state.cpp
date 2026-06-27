@@ -5153,6 +5153,22 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "column clear should omit cleared row-one text cells");
         check_not_contains(worksheet_xml, "placeholder-a2",
             "column clear should omit cleared row-two text cells");
+
+        check_reopened_clean_sheet_output(output, "Data", "set_column clear",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 1,
+                    "set_column clear reopened output should keep remaining sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 2, 1, 2,
+                    "set_column clear reopened output should shrink to non-target column");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "set_column clear reopened output should keep cleared A1 absent");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "set_column clear reopened output should keep cleared A2 absent");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "set_column clear reopened output should keep non-target B1");
+            });
     }
 
     {
@@ -5268,6 +5284,28 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "in-budget set_column should not resurrect replaced cells");
         check_not_contains(worksheet_xml, "placeholder-a2",
             "in-budget set_column should not persist old target-column tail cells");
+
+        check_reopened_clean_sheet_output(output, "Data", "set_column guardrail recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "set_column guardrail recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "set_column guardrail recovery reopened output should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "replace-column-a1",
+                    "set_column guardrail recovery reopened output should read replacement A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "set_column guardrail recovery reopened output should keep non-target B1");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "set_column guardrail recovery reopened output should keep old A2 absent");
+                check(!reopened_sheet.try_cell("C1").has_value(),
+                    "set_column guardrail recovery reopened output should keep rejected C1 absent");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "set_column guardrail recovery reopened output should keep rejected C2 absent");
+            });
     }
 }
 

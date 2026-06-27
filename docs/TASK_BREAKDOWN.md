@@ -34341,6 +34341,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.772 - Pin WorksheetEditor shift save/reuse handle hygiene
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove row/column structural shifts keep the same borrowed
+`WorksheetEditor` usable across repeated `save_as()` calls without leaking
+later shifts into earlier outputs.
+
+Output:
+- Added a public-state regression that performs `insert_rows()`, saves the
+  first shifted sparse projection, then performs `insert_columns()` on the same
+  borrowed handle and saves a second projection.
+- The regression verifies the handle is cleaned after each save, can still read
+  the current sparse state, and becomes dirty again only after the later shift.
+- Both saved outputs are reopened: the first output keeps the row shift without
+  the later column shift, while the second output keeps both shifts and clean
+  public-state diagnostics.
+
+Non-goals / boundary:
+- No production code change, no handle lifetime extension beyond the existing
+  same-owner borrowed-handle contract, no row/column metadata editing, no
+  metadata repair, no sharedStrings/styles migration, no calcChain rebuild, and
+  no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

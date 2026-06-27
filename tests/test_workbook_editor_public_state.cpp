@@ -7787,6 +7787,96 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         });
 }
 
+void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reuse-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    check(sheet.has_pending_changes(),
+        "shift handle reuse should dirty the borrowed handle before the first save");
+    check(sheet.cell_count() == 3,
+        "shift handle reuse should keep sparse count after the first shift");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 2,
+        "shift handle reuse should expose first-shift bounds before save");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift handle reuse first save should clean the borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift handle reuse first save should record the flushed materialized handoff");
+    check(editor.pending_materialized_cell_count() == 0,
+        "shift handle reuse first save should clear aggregate dirty materialized count");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift handle reuse first save should keep shifted cells readable on the same handle");
+
+    sheet.insert_columns(2, 1);
+    check(sheet.has_pending_changes(),
+        "shift handle reuse should dirty the same borrowed handle after the second shift");
+    check(sheet.cell_count() == 3,
+        "shift handle reuse should keep sparse count after the second shift");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "shift handle reuse should keep cells left of the inserted column");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "shift handle reuse should shift source-backed B1 to C1 after save");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift handle reuse should keep the prior row shift after the column shift");
+    check(!sheet.try_cell("B1").has_value() && !sheet.try_cell("A2").has_value(),
+        "shift handle reuse should keep old sparse coordinates absent after both shifts");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 3,
+        "shift handle reuse should refresh bounds after the second shift");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes(),
+        "shift handle reuse second save should clean the reused borrowed handle");
+    check(editor.pending_change_count() == 2,
+        "shift handle reuse second save should record a second materialized handoff");
+    check(editor.pending_materialized_cell_count() == 0,
+        "shift handle reuse second save should clear aggregate dirty materialized count");
+
+    check_reopened_shift_output(first_output, "shift handle reuse first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift handle reuse first save should reopen with first-shift sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "shift handle reuse first save should reopen with first-shift bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "shift handle reuse first save should keep B1 before the later column shift");
+            check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "shift handle reuse first save should keep shifted A2 at A3");
+            check(!reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift handle reuse first save should not include later or old coordinates");
+        });
+    check_reopened_shift_output(second_output, "shift handle reuse second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift handle reuse second save should reopen with second-shift sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift handle reuse second save should reopen with second-shift bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift handle reuse second save should keep shifted B1 at C1");
+            check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "shift handle reuse second save should keep the prior row shift");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift handle reuse second save should keep old sparse coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
 {
     const std::filesystem::path source =
@@ -9598,6 +9688,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_shift_handle_reuse_after_save_as();
             test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();

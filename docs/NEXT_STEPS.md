@@ -67,7 +67,8 @@ plain/styled insert-shift, delete-shift sparse snapshot state, and row/column
 out-of-bounds `#REF!` formula translations. The retry/guard shard also pins that
 shift no-ops clear stale diagnostics without dirtying reacquired sessions, while
 invalid shift ranges preserve the saved sparse store until a later valid shift
-clears the diagnostic and flushes. Public-state
+clears the diagnostic and flushes; it also reopens that saved guard-recovery
+output to verify clean public state and shifted source-backed cells. Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,
 A1-style ranges, sheet-qualified references, whole-row/whole-column ranges, and

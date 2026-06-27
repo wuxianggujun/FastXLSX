@@ -743,6 +743,37 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
         "second output should not keep the old shifted source-backed coordinate");
+
+    fastxlsx::WorkbookEditor reopened_editor =
+        fastxlsx::WorkbookEditor::open(second_output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        "reopened shift-guard output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        "reopened shift-guard output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        "reopened shift-guard output should keep the saved sparse cell count");
+    check(reopened_sheet.get_cell("A1").text_value() ==
+            "rename-back-shift-guards-first",
+        "reopened shift-guard output should read back preserved row-one text");
+    check(!reopened_sheet.try_cell("A2").has_value(),
+        "reopened shift-guard output should not read back the old source-backed coordinate");
+    const fastxlsx::CellValue reopened_shifted_source =
+        reopened_sheet.get_cell("A3");
+    check(reopened_shifted_source.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_shifted_source.text_value() == "placeholder-a2",
+        "reopened shift-guard output should read back shifted source-backed row");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+        reopened_sheet.row_cells(3);
+    check(reopened_row_three.size() == 1 &&
+            reopened_row_three[0].reference.row == 3 &&
+            reopened_row_three[0].reference.column == 1 &&
+            reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_row_three[0].value.text_value() == "placeholder-a2",
+        "reopened shift-guard row_cells should expose the shifted source-backed cell");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state()

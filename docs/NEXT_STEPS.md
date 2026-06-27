@@ -99,6 +99,9 @@ styles on moved formulas, rich formula-shape translations, out-of-bounds
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.
+The no-op invalid A1 range, invalid cell read, row/column read failure, and
+sparse range read failure save outputs are also reopened to verify copy-original
+Data state stays readable after non-mutating diagnostics.
 The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level

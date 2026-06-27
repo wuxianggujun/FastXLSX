@@ -117,6 +117,10 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+void check_reopened_default_data_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view scenario);
+
 bool workbook_editor_catalog_entries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& rhs)
@@ -2782,6 +2786,7 @@ void test_public_worksheet_editor_a1_range_mutations_invalid_references()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid A1 range mutations should copy source entries");
+    check_reopened_default_data_sheet_output(output, "invalid A1 range mutation no-op");
 }
 
 void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates()
@@ -2948,6 +2953,7 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid cell reads should copy source entries");
+    check_reopened_default_data_sheet_output(output, "invalid cell read no-op");
 }
 
 void test_public_worksheet_editor_sparse_cells_snapshot()
@@ -3529,6 +3535,7 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after row/column read failures should copy source entries");
+    check_reopened_default_data_sheet_output(output, "row/column read failure no-op");
 }
 
 void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic()
@@ -3645,6 +3652,7 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid range reads should copy source entries");
+    check_reopened_default_data_sheet_output(output, "invalid sparse range read no-op");
 }
 
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()

@@ -224,6 +224,9 @@ block the later safe save.
 Missing-sheet and old-source-name lookups now share that boundary: optional
 queries stay empty, throwing lookups fail, source formula scans remain on the
 original source XML tokens, and the dirty shifted session can still be saved.
+Invalid read preflights now follow the same rule: row-zero reads,
+column-overflow A1 reads, and reversed range reads fail without replacing the
+source scan or dirty materialized diagnostics.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

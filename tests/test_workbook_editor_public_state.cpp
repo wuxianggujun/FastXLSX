@@ -8375,6 +8375,14 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row should reject old source-name worksheet lookup");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row missing-query source scan");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
+        "renamed formula audit shifted row should reject row-zero try_cell");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),
+        "renamed formula audit shifted row should reject A1 column overflow get_cell");
+    check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells("B2:A1"); }),
+        "renamed formula audit shifted row should reject reversed sparse_cells range");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row invalid-read source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8464,6 +8472,14 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted should reject old source-name worksheet lookup");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted missing-query source scan");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
+        "renamed column formula audit shifted should reject row-zero try_cell");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell("XFE1"); }),
+        "renamed column formula audit shifted should reject A1 column overflow get_cell");
+    check(threw_fastxlsx_error([&] { (void)sheet.sparse_cells("B2:A1"); }),
+        "renamed column formula audit shifted should reject reversed sparse_cells range");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted invalid-read source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

@@ -18474,6 +18474,30 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "after-max-cells-overwrite");
 }
 
+void check_reopened_editor_clean_public_state(
+    const fastxlsx::WorkbookEditor& reopened_editor,
+    std::string_view scenario,
+    std::string_view stage)
+{
+    const std::string prefix =
+        std::string(scenario) + " reopened " + std::string(stage);
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes(),
+        prefix + " should keep editor state clean");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
+        prefix + " should not expose dirty diagnostics");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " should not expose dirty worksheet names");
+}
+
 void check_reopened_guardrail_budget_release_output(
     const std::filesystem::path& output,
     const fastxlsx::WorksheetEditorOptions& options,
@@ -18485,12 +18509,9 @@ void check_reopened_guardrail_budget_release_output(
         reopened_editor.worksheet("Data", options);
     const std::string prefix(scenario);
 
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        prefix + " reopened output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        prefix + " reopened output should not expose dirty diagnostics");
+    check_reopened_editor_clean_public_state(reopened_editor, prefix, "output");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize a clean sheet");
     check(reopened_sheet.cell_count() == 3,
         prefix + " reopened output should keep the replacement sparse cell count");
     check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
@@ -18527,6 +18548,9 @@ void check_reopened_guardrail_budget_release_output(
             reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
             reopened_column_four[0].value.text_value() == expected_inserted_text,
         prefix + " reopened column_cells should expose the replacement insertion");
+    check_reopened_editor_clean_public_state(reopened_editor, prefix, "readback");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " reopened readback should keep sheet state clean");
 }
 
 void check_reopened_missing_erase_guardrail_clean_output(
@@ -18539,12 +18563,10 @@ void check_reopened_missing_erase_guardrail_clean_output(
         reopened_editor.worksheet("Data", options);
     const std::string prefix(scenario);
 
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        prefix + " reopened clean output should not expose pending state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        prefix + " reopened clean output should not expose dirty diagnostics");
+    check_reopened_editor_clean_public_state(
+        reopened_editor, prefix, "clean output");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " reopened clean output should materialize a clean sheet");
     check(reopened_sheet.cell_count() == 3,
         prefix + " reopened clean output should keep the source sparse count");
     check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
@@ -18575,6 +18597,10 @@ void check_reopened_missing_erase_guardrail_clean_output(
         prefix + " reopened row_cells should expose only source-backed A2");
     check(reopened_sheet.column_cells(4).empty(),
         prefix + " reopened column_cells should keep rejected column empty");
+    check_reopened_editor_clean_public_state(
+        reopened_editor, prefix, "clean readback");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " reopened clean readback should keep sheet state clean");
 }
 
 void check_reopened_blank_guardrail_overwrite_output(
@@ -18587,12 +18613,9 @@ void check_reopened_blank_guardrail_overwrite_output(
         reopened_editor.worksheet("Data", options);
     const std::string prefix(scenario);
 
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        prefix + " reopened output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        prefix + " reopened output should not expose dirty diagnostics");
+    check_reopened_editor_clean_public_state(reopened_editor, prefix, "output");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize a clean sheet");
     check(reopened_sheet.cell_count() == 3,
         prefix + " reopened output should keep the source sparse count");
     check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
@@ -18625,6 +18648,9 @@ void check_reopened_blank_guardrail_overwrite_output(
         prefix + " reopened row_cells should expose blank A1 and source B1");
     check(reopened_sheet.column_cells(4).empty(),
         prefix + " reopened column_cells should keep rejected blank column empty");
+    check_reopened_editor_clean_public_state(reopened_editor, prefix, "readback");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " reopened readback should keep sheet state clean");
 }
 
 void check_reopened_last_error_recovery_output(
@@ -18635,14 +18661,10 @@ void check_reopened_last_error_recovery_output(
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
 
-    check(!reopened_editor.last_edit_error().has_value(),
-        "last-error recovery reopened output should not expose stale diagnostics");
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "last-error recovery reopened output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "last-error recovery reopened output should not expose dirty diagnostics");
+    check_reopened_editor_clean_public_state(
+        reopened_editor, "last-error recovery", "output");
+    check(!reopened_sheet.has_pending_changes(),
+        "last-error recovery reopened output should materialize a clean sheet");
     check(reopened_sheet.cell_count() == 3,
         "last-error recovery reopened output should keep the source sparse count");
     check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
@@ -18677,6 +18699,10 @@ void check_reopened_last_error_recovery_output(
         "last-error recovery reopened row_cells should expose fixed A1 and source B1");
     check(reopened_sheet.column_cells(4).empty(),
         "last-error recovery reopened column_cells should keep rejected column empty");
+    check_reopened_editor_clean_public_state(
+        reopened_editor, "last-error recovery", "readback");
+    check(!reopened_sheet.has_pending_changes(),
+        "last-error recovery reopened readback should keep sheet state clean");
 }
 
 void check_reopened_mixed_last_error_recovery_output(
@@ -18687,19 +18713,11 @@ void check_reopened_mixed_last_error_recovery_output(
     fastxlsx::WorksheetEditor reopened_untouched =
         reopened_editor.worksheet("Untouched");
 
-    check(!reopened_editor.last_edit_error().has_value(),
-        "mixed diagnostic recovery reopened output should not expose stale diagnostics");
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_data.has_pending_changes() &&
+    check_reopened_editor_clean_public_state(
+        reopened_editor, "mixed diagnostic recovery", "output");
+    check(!reopened_data.has_pending_changes() &&
             !reopened_untouched.has_pending_changes(),
-        "mixed diagnostic recovery reopened output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0 &&
-            reopened_editor.pending_replacement_cell_count() == 0,
-        "mixed diagnostic recovery reopened output should not expose dirty diagnostics");
-    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
-            reopened_editor.pending_replacement_worksheet_names().empty(),
-        "mixed diagnostic recovery reopened output should not expose dirty sheet names");
+        "mixed diagnostic recovery reopened output should materialize clean sheets");
 
     check(reopened_data.cell_count() == 3,
         "mixed diagnostic recovery reopened Data should keep source sparse count");
@@ -18739,6 +18757,11 @@ void check_reopened_mixed_last_error_recovery_output(
             reopened_untouched_row_one[0].value.text_value() ==
                 "mixed-diagnostic-recovered",
         "mixed diagnostic recovery reopened row_cells should expose replacement A1 only");
+    check_reopened_editor_clean_public_state(
+        reopened_editor, "mixed diagnostic recovery", "readback");
+    check(!reopened_data.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes(),
+        "mixed diagnostic recovery reopened readback should keep sheet states clean");
 }
 
 void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()

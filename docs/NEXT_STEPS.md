@@ -302,6 +302,11 @@ diagnostic surface: reopened saved outputs must keep aggregate
 materialized/replacement memory, pending edit summaries, dirty worksheet-name
 diagnostics, and `last_edit_error` empty both after materialization and after
 valid readback inspections.
+The guardrail and diagnostic-recovery reopen helpers now use the same clean
+diagnostic shape around readback: budget-release saves, missing-erase no-op
+saves, rejected blank-insertion overwrite saves, last-error recovery, and mixed
+public-edit recovery all keep widened editor diagnostics empty before and after
+valid saved-output inspections.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

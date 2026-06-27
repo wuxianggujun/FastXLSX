@@ -35108,6 +35108,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.795 - Pin renamed WorksheetEditor shift option mismatch
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a saved renamed planned-name materialized shift session rejects
+mismatched reacquire options without falling back to the source sheet name or
+dirtying diagnostics.
+
+Output:
+- Added public-state coverage for `rename_sheet("Data", "RenamedData")`,
+  `worksheet("RenamedData").insert_rows(2, 1)`, first `save_as()`, then
+  mismatched `try_worksheet("RenamedData", options)` / `worksheet(...)`
+  reacquire attempts.
+- The regression verifies the mismatch keeps `last_edit_error()` clear, leaves
+  dirty materialized diagnostics empty, preserves the planned workbook catalog,
+  and keeps old `Data` unavailable.
+- A later matching `worksheet("RenamedData")` reacquire can still perform
+  `insert_columns(2, 1)`, save, and reopen only as `RenamedData` with combined
+  shifted coordinates.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no workbook catalog repair beyond
+  the existing planned-name helper, no formula/definedName rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.793 - Pin renamed WorksheetEditor shift reacquire reuse
 
 Status: completed.

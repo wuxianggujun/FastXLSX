@@ -193,6 +193,11 @@ source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `RenamedData`, keeps the source workbook unchanged under `Data`, leaves the
 first renamed output isolated, and a safe retry reopens only as
 `RenamedData` with the combined shifted coordinates.
+The renamed planned-name shift path also covers option-mismatch reacquire:
+mismatched `WorksheetEditorOptions` against `RenamedData` fail without updating
+`last_edit_error()`, dirtying materialized diagnostics, restoring the old
+`Data` name, or blocking a later matching reacquire + shift save that reopens
+only as `RenamedData` with combined shifted coordinates.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

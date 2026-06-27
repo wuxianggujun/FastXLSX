@@ -8219,6 +8219,172 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_planned_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "renamed shift option mismatch first save should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed shift option mismatch first save should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift option mismatch first save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift option mismatch first save should keep diagnostics clear");
+
+    fastxlsx::WorksheetEditorOptions mismatched_options;
+    mismatched_options.max_cells = 2;
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("RenamedData", mismatched_options);
+    }), "renamed shift option mismatch try_worksheet should reject different options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("RenamedData", mismatched_options);
+    }), "renamed shift option mismatch worksheet should reject different options");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed shift option mismatch should keep the old source name unavailable");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift option mismatch should not update last_edit_error");
+    check(!sheet.has_pending_changes(),
+        "renamed shift option mismatch should leave the saved planned-name handle clean");
+    check(editor.pending_change_count() == 2,
+        "renamed shift option mismatch should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift option mismatch should not dirty materialized diagnostics");
+    check(editor.source_worksheet_names() == expected_source_names &&
+            editor.worksheet_names() == expected_planned_names,
+        "renamed shift option mismatch should preserve source and planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
+        "renamed shift option mismatch should preserve the planned workbook catalog");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "renamed shift option mismatch should preserve the saved shifted row");
+    check(!sheet.try_cell("A2").has_value(),
+        "renamed shift option mismatch should keep old shifted rows absent");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed shift option mismatch matching reacquire should stay clean");
+    check(reacquired.name() == "RenamedData",
+        "renamed shift option mismatch matching reacquire should expose the planned name");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "renamed shift option mismatch matching reacquire should reuse saved shifted state");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "renamed shift option mismatch matching reacquire should keep old row absent");
+
+    reacquired.insert_columns(2, 1);
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "renamed shift option mismatch later shift should dirty the shared planned-name session");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed shift option mismatch later shift should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 3,
+        "renamed shift option mismatch later shift should report the shared sparse count once");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "renamed shift option mismatch later shift should expose one renamed dirty summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "RenamedData" &&
+                    summaries[0].renamed &&
+                    summaries[0].materialized_dirty,
+                "renamed shift option mismatch later shift summary should retain planned state");
+            check(summaries[0].materialized_cell_count == 3,
+                "renamed shift option mismatch later shift summary should report sparse count");
+        }
+    }
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "renamed shift option mismatch later shift should be visible through the older handle");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            !reacquired.try_cell("B1").has_value(),
+        "renamed shift option mismatch later shift should retain the row shift and move columns");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift option mismatch second save should clean both planned-name handles");
+    check(editor.pending_change_count() == 3,
+        "renamed shift option mismatch second save should record the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift option mismatch second save should clear dirty diagnostics again");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_workbook_xml, R"(name="RenamedData")",
+        "renamed shift option mismatch first output should keep the planned catalog name");
+    check_not_contains(first_workbook_xml, R"(name="Data")",
+        "renamed shift option mismatch first output should omit the source catalog name");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+        "renamed shift option mismatch first output should keep shifted row bounds");
+    check_contains(first_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "renamed shift option mismatch first output should keep B1 before later shift");
+    check_contains(first_worksheet_xml, R"(<c r="A3")",
+        "renamed shift option mismatch first output should contain shifted A2");
+    check_not_contains(first_worksheet_xml, R"(r="C1")",
+        "renamed shift option mismatch first output should not include later column shift");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="RenamedData")",
+        "renamed shift option mismatch second output should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "renamed shift option mismatch second output should omit the source catalog name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "renamed shift option mismatch second output should project combined shifted bounds");
+    check_contains(second_worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "renamed shift option mismatch second output should include shifted B1");
+    check_contains(second_worksheet_xml, R"(<c r="A3")",
+        "renamed shift option mismatch second output should keep shifted A2");
+    check_not_contains(second_worksheet_xml, R"(r="B1")",
+        "renamed shift option mismatch second output should omit old B1");
+    check_not_contains(second_worksheet_xml, R"(r="A2")",
+        "renamed shift option mismatch second output should keep old row coordinate absent");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed shift option mismatch reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed shift option mismatch reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "renamed shift option mismatch reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        "renamed shift option mismatch reopened output should keep sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+        "renamed shift option mismatch reopened output should expose combined bounds");
+    check(reopened_sheet.get_cell("C1").number_value() == 1.0,
+        "renamed shift option mismatch reopened output should read shifted B1");
+    check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "renamed shift option mismatch reopened output should keep shifted A2");
+    check(!reopened_sheet.try_cell("B1").has_value() &&
+            !reopened_sheet.try_cell("A2").has_value(),
+        "renamed shift option mismatch reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
 {
     const std::filesystem::path source =
@@ -12815,6 +12981,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session();
             test_public_worksheet_editor_shift_after_rename_failed_save_preserves_planned_session();
+            test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_planned_session();
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
             test_public_worksheet_editor_shift_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session();

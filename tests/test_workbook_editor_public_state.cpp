@@ -144,6 +144,21 @@ bool workbook_editor_catalog_entries_equal(
     return true;
 }
 
+const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_public_state_formula_audit(
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view qualified_reference_text)
+{
+    for (const fastxlsx::WorkbookEditorFormulaReferenceAudit& audit : audits) {
+        if (audit.formula_cell.row == row && audit.formula_cell.column == column &&
+            audit.qualified_reference_text == qualified_reference_text) {
+            return &audit;
+        }
+    }
+    return nullptr;
+}
+
 bool workbook_editor_edit_summaries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
@@ -1859,6 +1874,33 @@ std::filesystem::path write_two_sheet_source_with_styled_shift_formula(
             fastxlsx::CellView::text("row2-gap-b2"),
             fastxlsx::CellView::text("row2-gap-c2"),
             fastxlsx::CellView::formula("A1+B1").with_style(formula_style)});
+        data.append_row({fastxlsx::CellView::text("extra-c3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_qualified_shift_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2"),
+            fastxlsx::CellView::text("row2-gap-b2"),
+            fastxlsx::CellView::text("row2-gap-c2"),
+            fastxlsx::CellView::formula("Data!A1+Data!B1").with_style(formula_style)});
         data.append_row({fastxlsx::CellView::text("extra-c3")});
     }
     {
@@ -7974,6 +8016,110 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
     check(!reopened_sheet.try_cell("D2").has_value() &&
             !reopened_sheet.try_cell("A2").has_value(),
         "renamed formula shift reopened output should keep old coordinates absent");
+}
+
+void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_qualified_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_rows(2, 2);
+
+    constexpr std::string_view expected_formula = "Data!A3+Data!B3";
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == expected_formula &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula audit shift should expose the translated styled formula");
+
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t materialized_count_before_audit =
+        editor.pending_materialized_cell_count();
+    const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
+    const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        "renamed formula audit shift should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        "renamed formula audit shift should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
+        "renamed formula audit shift should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
+        "renamed formula audit shift should preserve dirty materialized diagnostics");
+    check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed formula audit shift should preserve dirty materialized cell count");
+    check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
+        "renamed formula audit shift should not create pending edit summaries");
+    check(editor.last_edit_error() == last_error_before_audit,
+        "renamed formula audit shift should not update last_edit_error");
+    check(audits.size() == 2,
+        "renamed formula audit shift should report both shifted sheet-qualified references");
+
+    const auto check_shifted_audit =
+        [&](std::string_view qualified_reference_text,
+            std::string_view reference_text,
+            std::string_view message_prefix) {
+            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+                find_public_state_formula_audit(
+                    audits, 4, 4, qualified_reference_text);
+            check(audit != nullptr,
+                std::string(message_prefix) + " should expose the shifted audit entry");
+            if (audit == nullptr) {
+                return;
+            }
+
+            check(audit->formula_sheet_source_name == "Data" &&
+                    audit->formula_sheet_planned_name == "RenamedData",
+                std::string(message_prefix) + " should report the renamed formula sheet");
+            check(audit->formula_text == expected_formula &&
+                    audit->sheet_qualifier_text == "Data!" &&
+                    audit->reference_text == reference_text &&
+                    audit->referenced_sheet_name == "Data",
+                std::string(message_prefix) + " should report shifted formula tokens");
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "RenamedData",
+                std::string(message_prefix) + " should match the renamed workbook catalog");
+            check(audit->references_renamed_source_name &&
+                    !audit->references_planned_sheet_name &&
+                    !audit->external_workbook_qualifier &&
+                    !audit->sheet_range_qualifier,
+                std::string(message_prefix) + " should flag the stale source-name reference");
+        };
+
+    check_shifted_audit("Data!A3", "A3", "renamed formula audit shifted A reference");
+    check_shifted_audit("Data!B3", "B3", "renamed formula audit shifted B reference");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula audit shift save_as should clean the planned-name handle");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>Data!A3+Data!B3</f></c>)";
+    check_contains(worksheet_xml, styled_formula_xml,
+        "renamed formula audit shift save_as should write the shifted qualified formula");
 }
 
 void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style()
@@ -18263,6 +18409,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
+            test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula();
             test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session();
             test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserves_styled_session();

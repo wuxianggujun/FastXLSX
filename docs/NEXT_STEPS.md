@@ -62,7 +62,8 @@ a failed source-overwrite `save_as()`, safe retry, and matching post-save
 translation, row/column out-of-bounds `#REF!` translation, dirty borrowed
 handles, restored-name diagnostics, insert/delete row/column owning snapshot
 views, sparse used-range refresh, source-backed styled formula `StyleId`
-preservation, and saved XML projection. The retry/guard shard also pins that
+preservation, saved XML projection, and saved-file reopen readback for the
+shifted styled formula/style state. The retry/guard shard also pins that
 shift no-ops clear stale diagnostics without dirtying reacquired sessions, while
 invalid shift ranges preserve the saved sparse store until a later valid shift
 clears the diagnostic and flushes. Public-state

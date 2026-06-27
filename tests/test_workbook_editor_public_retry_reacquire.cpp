@@ -1186,6 +1186,45 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
         "second output should not keep the old styled formula coordinate");
     check_contains(second_entries.at("xl/styles.xml"), R"(numFmtId=")",
         "second output should preserve the source workbook styles part");
+
+    fastxlsx::WorkbookEditor reopened_editor =
+        fastxlsx::WorkbookEditor::open(second_output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        "reopened styled shift output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        "reopened styled shift output should not expose dirty diagnostics");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D4");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == "A3+B3" &&
+            reopened_formula.has_style() &&
+            reopened_formula.style_id().value() == styled_formula_style.value(),
+        "reopened styled shift output should read back shifted formula style");
+    check_retry_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+        "reopened styled shift output should read back the shifted sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_four =
+        reopened_sheet.row_cells(4);
+    check(reopened_row_four.size() == 4 &&
+            reopened_row_four[3].reference.row == 4 &&
+            reopened_row_four[3].reference.column == 4 &&
+            reopened_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_row_four[3].value.text_value() == "A3+B3" &&
+            reopened_row_four[3].value.has_style() &&
+            reopened_row_four[3].value.style_id().value() == styled_formula_style.value(),
+        "reopened styled shift row_cells should expose shifted formula style");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+        reopened_sheet.column_cells(4);
+    check(reopened_column_four.size() == 1 &&
+            reopened_column_four[0].reference.row == 4 &&
+            reopened_column_four[0].reference.column == 4 &&
+            reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_column_four[0].value.text_value() == "A3+B3" &&
+            reopened_column_four[0].value.has_style() &&
+            reopened_column_four[0].value.style_id().value() == styled_formula_style.value(),
+        "reopened styled shift column_cells should expose shifted formula style");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_preserve_reacquired_state()

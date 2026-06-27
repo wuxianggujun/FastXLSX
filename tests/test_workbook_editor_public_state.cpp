@@ -3164,6 +3164,28 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
         "invalid row/column set_cell payload should not leak into saved XML");
     check_not_contains(worksheet_xml, "invalid-column-overflow",
         "invalid overflow-column set_cell payload should not leak into saved XML");
+
+    check_reopened_clean_sheet_output(output, "Data", "row column recovery",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "row/column recovery reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "row/column recovery reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell(1, 1);
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "row-column-recovered",
+                "row/column recovery reopened output should read recovered A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell(1, 2);
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "row/column recovery reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell(2, 1);
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "row/column recovery reopened output should keep source-backed A2");
+            check(!reopened_sheet.try_cell(1, 3).has_value(),
+                "row/column recovery reopened output should keep rejected C1 absent");
+        });
 }
 
 void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()

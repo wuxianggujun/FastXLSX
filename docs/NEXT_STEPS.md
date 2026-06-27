@@ -125,6 +125,9 @@ The A1 single-cell overload save path is reopened to verify inserted D4 text,
 source-backed cells, refreshed bounds, and erased A2 after save.
 The `get_cell()` / `try_cell()` explicit-blank path now saves and reopens D4,
 pinning blank persistence while unrelated missing cells remain absent.
+The row/column coordinate overload recovery path is reopened after invalid
+mutations, verifying the later valid A1 overwrite persists without rejected
+payloads.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

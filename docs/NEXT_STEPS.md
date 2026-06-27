@@ -198,6 +198,10 @@ mismatched `WorksheetEditorOptions` against `RenamedData` fail without updating
 `last_edit_error()`, dirtying materialized diagnostics, restoring the old
 `Data` name, or blocking a later matching reacquire + shift save that reopens
 only as `RenamedData` with combined shifted coordinates.
+Missing-sheet queries now cover the same renamed shift boundary: `Missing` and
+old `Data` lookups fail cleanly after the first saved `RenamedData` shift,
+leave diagnostics and materialized dirty state empty, and a later matching
+`RenamedData` reacquire can still save combined shifted coordinates.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

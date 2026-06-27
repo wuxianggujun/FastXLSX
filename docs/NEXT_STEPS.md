@@ -55,7 +55,12 @@ coverage now also pins that small-file lane's row/column shift state hygiene:
 zero-count shifts, nonzero no-op insert/delete ranges outside represented
 sparse cells, validation failures, memory-budget guard failures, and shift
 overflow failures clear or preserve diagnostics as specified, do not dirty
-clean sessions, and keep no-op `save_as()` output copy-original. The benchmark tool
+clean sessions, and keep no-op `save_as()` output copy-original. The
+retry/reacquire shard now also covers row and column shifts after a failed
+source-overwrite `save_as()`, safe retry, and matching post-save
+`worksheet()` reacquire, including moved source-backed cells, formula text
+translation, dirty borrowed handles, restored-name diagnostics, and saved XML
+projection. The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level
 `fastxlsx_bench_package_editor_cell_replacement` remains useful for transformer

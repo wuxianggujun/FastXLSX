@@ -879,6 +879,145 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         "second shift worksheet output should not leak the transient planned name");
 }
 
+void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preserves_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-column-shift-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-column-shift-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-column-shift-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientColumnShift");
+    editor.rename_sheet("TransientColumnShift", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("rename-back-column-shift-first"));
+    sheet.set_cell(2, 3, fastxlsx::CellValue::formula("A1+B2"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before column-shift recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before column shift should keep both handles clean");
+    const fastxlsx::CellValue saved_text = reacquired.get_cell(1, 1);
+    check(saved_text.kind() == fastxlsx::CellValueKind::Text &&
+            saved_text.text_value() == "rename-back-column-shift-first",
+        "matching reacquire before column shift should reuse saved text state");
+    const fastxlsx::CellValue saved_formula = reacquired.get_cell(2, 3);
+    check(saved_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            saved_formula.text_value() == "A1+B2",
+        "matching reacquire before column shift should reuse saved formula state");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back column shift recovery should not create last_edit_error");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire before column shift should remain clean");
+    matching.insert_columns(2, 1);
+
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "post-reacquire column shift should dirty all shared handles");
+    check(matching.get_cell("A1").text_value() == "rename-back-column-shift-first",
+        "post-reacquire column shift should preserve columns before the insertion point");
+    check(!matching.try_cell("B1").has_value(),
+        "post-reacquire column shift should remove the old source-backed number coordinate");
+    const fastxlsx::CellValue shifted_number = matching.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "post-reacquire column shift should move source-backed number cells");
+    check(!matching.try_cell("C2").has_value(),
+        "post-reacquire column shift should remove the old formula coordinate");
+    const fastxlsx::CellValue shifted_formula = matching.get_cell("D2");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "B1+C2",
+        "post-reacquire column shift should translate the moved formula text");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "post-reacquire column shift dirty diagnostics should use restored source name");
+    }
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "post-reacquire column shift should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "post-reacquire column shift summary should use restored names");
+            check(!summary.renamed,
+                "post-reacquire column shift summary should not be marked renamed");
+            check(summary.materialized_dirty,
+                "post-reacquire column shift summary should report dirty materialized state");
+            check(!summary.sheet_data_replaced,
+                "post-reacquire column shift summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all column-shift recovery handles");
+    check(editor.pending_change_count() == 4,
+        "second safe save_as should count the later column-shifted materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear column-shifted dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear column-shifted dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear column-shifted dirty summaries");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first column-shift recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientColumnShift",
+        "first column-shift recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-column-shift-first",
+        "first output should contain the saved text before the column shift");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="B1"><v>1</v></c>)",
+        "first output should contain the source-backed number before the column shift");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="C2"><f>A1+B2</f></c>)",
+        "first output should contain the saved formula before the column shift");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="D2"><f>B1+C2</f></c>)",
+        "first output should not contain the later column-shifted formula");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second column-shift recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientColumnShift",
+        "second column-shift recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-column-shift-first",
+        "second output should preserve the saved text after the column shift");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="C1"><v>1</v></c>)",
+        "second output should persist the shifted source-backed number");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="D2"><f>B1+C2</f></c>)",
+        "second output should persist the column-shifted translated formula");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="B1"><v>1</v></c>)",
+        "second output should not keep the old number coordinate");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="C2"><f>A1+B2</f></c>)",
+        "second output should not keep the old formula coordinate");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "TransientColumnShift",
+        "second column-shift worksheet output should not leak the transient planned name");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -895,6 +1034,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_reacquired_state();
+            test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preserves_reacquired_state();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

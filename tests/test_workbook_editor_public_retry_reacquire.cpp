@@ -1785,6 +1785,44 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
         check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
             R"(<c r="C4"><f>A1+A:A+1:1+B4</f></c>)",
             "second output should not keep the old delete-row ref formula coordinate");
+
+        fastxlsx::WorkbookEditor reopened_editor =
+            fastxlsx::WorkbookEditor::open(second_output);
+        fastxlsx::WorksheetEditor reopened_sheet =
+            reopened_editor.worksheet("Data", options);
+        check(!reopened_editor.has_pending_changes() &&
+                !reopened_sheet.has_pending_changes(),
+            "reopened delete-row ref formula output should materialize as clean public state");
+        check(reopened_editor.pending_change_count() == 0 &&
+                reopened_editor.pending_materialized_cell_count() == 0,
+            "reopened delete-row ref formula output should not expose dirty diagnostics");
+        check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2",
+            "reopened delete-row ref formula output should read back shifted source row");
+        check(!reopened_sheet.try_cell("C4").has_value(),
+            "reopened delete-row ref formula output should not read back old formula coordinate");
+        const fastxlsx::CellValue reopened_formula =
+            reopened_sheet.get_cell("C3");
+        check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_formula.text_value() == "#REF!+A:A+#REF!+B3",
+            "reopened delete-row ref formula output should read back #REF! translation");
+        check_retry_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+            "reopened delete-row ref formula output should read back shifted sparse used range");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+            reopened_sheet.row_cells(3);
+        check(reopened_row_three.size() == 1 &&
+                reopened_row_three[0].reference.row == 3 &&
+                reopened_row_three[0].reference.column == 3 &&
+                reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_row_three[0].value.text_value() == "#REF!+A:A+#REF!+B3",
+            "reopened delete-row ref formula row_cells should expose shifted formula");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+            reopened_sheet.column_cells(3);
+        check(reopened_column_three.size() == 1 &&
+                reopened_column_three[0].reference.row == 3 &&
+                reopened_column_three[0].reference.column == 3 &&
+                reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_column_three[0].value.text_value() == "#REF!+A:A+#REF!+B3",
+            "reopened delete-row ref formula column_cells should expose shifted formula");
     }
 
     {
@@ -1865,6 +1903,51 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
         check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
             R"(<c r="D1"><f>A1+A:A+1:1+D2</f></c>)",
             "second output should not keep the old delete-column ref formula coordinate");
+
+        fastxlsx::WorkbookEditor reopened_editor =
+            fastxlsx::WorkbookEditor::open(second_output);
+        fastxlsx::WorksheetEditor reopened_sheet =
+            reopened_editor.worksheet("Data", options);
+        check(!reopened_editor.has_pending_changes() &&
+                !reopened_sheet.has_pending_changes(),
+            "reopened delete-column ref formula output should materialize as clean public state");
+        check(reopened_editor.pending_change_count() == 0 &&
+                reopened_editor.pending_materialized_cell_count() == 0,
+            "reopened delete-column ref formula output should not expose dirty diagnostics");
+        const fastxlsx::CellValue reopened_number =
+            reopened_sheet.get_cell("A1");
+        check(reopened_number.kind() == fastxlsx::CellValueKind::Number &&
+                reopened_number.number_value() == 1.0,
+            "reopened delete-column ref formula output should read back shifted source number");
+        check(!reopened_sheet.try_cell("D1").has_value(),
+            "reopened delete-column ref formula output should not read back old formula coordinate");
+        const fastxlsx::CellValue reopened_formula =
+            reopened_sheet.get_cell("C1");
+        check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_formula.text_value() == "#REF!+#REF!+1:1+C2",
+            "reopened delete-column ref formula output should read back #REF! translation");
+        check_retry_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+            "reopened delete-column ref formula output should read back shifted sparse used range");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
+            reopened_sheet.row_cells(1);
+        check(reopened_row_one.size() == 2 &&
+                reopened_row_one[0].reference.row == 1 &&
+                reopened_row_one[0].reference.column == 1 &&
+                reopened_row_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                reopened_row_one[0].value.number_value() == 1.0 &&
+                reopened_row_one[1].reference.row == 1 &&
+                reopened_row_one[1].reference.column == 3 &&
+                reopened_row_one[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_row_one[1].value.text_value() == "#REF!+#REF!+1:1+C2",
+            "reopened delete-column ref formula row_cells should expose shifted cells");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+            reopened_sheet.column_cells(3);
+        check(reopened_column_three.size() == 1 &&
+                reopened_column_three[0].reference.row == 1 &&
+                reopened_column_three[0].reference.column == 3 &&
+                reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_column_three[0].value.text_value() == "#REF!+#REF!+1:1+C2",
+            "reopened delete-column ref formula column_cells should expose shifted formula");
     }
 }
 

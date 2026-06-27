@@ -240,6 +240,10 @@ Source-backed materialization guardrail failures now share the same isolation:
 failing to materialize an untouched worksheet with a tighter `max_cells` option
 does not replace `last_edit_error()`, does not register a partial materialized
 session, and still leaves source formula scans on the original source XML tokens.
+The recovery path is pinned too: after that guardrail failure, default-options
+materialization of the untouched worksheet can still create a clean read-only
+session without adding dirty materialized diagnostics or changing the source
+formula scan.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

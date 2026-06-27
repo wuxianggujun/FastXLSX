@@ -205,6 +205,10 @@ The same insert-side audit is now pinned after a fresh output reopen:
 both shifted `Data!A3` / `Data!B3` or `Data!B1` / `Data!C1` tokens, and marks
 the stale `Data!` qualifier unmatched because the saved workbook catalog only
 contains `RenamedData`.
+The insert-side audit now also extends through same-editor post-save matching
+reacquire: after `save_as()`, `worksheet("RenamedData")` reuses the clean saved
+session, pending materialized diagnostics remain empty, and
+`formula_reference_audits()` still reports both shifted qualified tokens.
 Fresh output source scans are pinned too: before any worksheet is materialized,
 `source_formula_reference_audits()` reads the saved worksheet XML, reports the
 same shifted formula tokens for insert-side outputs, reports only the surviving

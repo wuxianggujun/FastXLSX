@@ -35216,6 +35216,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.809 - Pin renamed WorksheetEditor formula shift reacquire reuse
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a renamed planned-name materialized session keeps translated
+styled formulas across post-save reacquire and a later structural shift.
+
+Output:
+- Added public-state coverage for a styled `Data!D2` formula followed by
+  `rename_sheet("Data", "RenamedData")`, `insert_rows(2, 2)`, `save_as()`,
+  same-editor `try_worksheet("RenamedData")`, and a later `insert_columns(2, 1)`.
+- The regression verifies the reacquired clean session reads `D4` as `A3+B3`
+  with the source `StyleId`, old `Data` stays unavailable, the later column
+  shift dirties the shared planned-name session, and the formula moves to `E4`
+  as `B3+C3` with the style id still preserved.
+- First-output XML remains row-shift-only, second-output XML contains the
+  combined row/column shift, and reopened readback exposes only `RenamedData`
+  with the translated styled formula and shifted source-backed cells.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.808 - Pin renamed WorksheetEditor shift column formula preservation
 
 Status: completed.

@@ -220,6 +220,11 @@ Invalid reads now cover the same saved styled formula state: invalid cell/range
 snapshots and valid-missing `get_cell()` calls leave diagnostics empty, keep
 `D4` as `A3+B3`, and a later valid shift still saves `E4` as `B3+C3` with the
 original `StyleId`.
+Valid snapshot reads now pin that same saved styled formula state: full sparse
+snapshots, A1-range snapshots, coordinate-batch snapshots, `row_cells()`, and
+`column_cells()` expose `D4` with its `StyleId`, stay diagnostic-clean and
+non-dirty, and their owning snapshots remain stable after a later valid column
+shift saves `E4` as `B3+C3`.
 The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and

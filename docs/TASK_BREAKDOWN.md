@@ -35216,6 +35216,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.815 - Pin renamed WorksheetEditor formula snapshot reads
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove valid snapshot reads do not pollute a saved renamed planned-name
+styled formula shift session.
+
+Output:
+- Added public-state coverage for a saved `RenamedData` styled formula row
+  shift, followed by full sparse snapshots, A1-range sparse snapshots,
+  coordinate-batch sparse snapshots, `row_cells()`, and `column_cells()`.
+- The regression verifies those reads expose the row-shifted formula as `D4`
+  / `A3+B3` with the original `StyleId`, leave diagnostics empty, keep both
+  handles clean, preserve source/planned names and catalog state, and keep
+  pending materialized diagnostics empty.
+- A later valid `insert_columns(2, 1)` proves the earlier snapshots are owning
+  copies while the live session moves the formula to `E4` as `B3+C3`, preserves
+  the style id, saves, and reopens clean under `RenamedData`.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.814 - Pin renamed WorksheetEditor formula invalid reads
 
 Status: completed.

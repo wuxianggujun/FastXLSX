@@ -85,6 +85,9 @@ the saved sparse projection.
 The A1 range clear/erase sparse mutation path is also reopened to pin explicit
 blank projection, erased source cells, missing-only no-ops, and outside-range
 text after save.
+The sparse snapshot dirty projection path is also reopened to verify owning
+snapshots do not block later edits and saved output rehydrates the edited,
+source-backed, blank, inserted, and erased sparse cells cleanly.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

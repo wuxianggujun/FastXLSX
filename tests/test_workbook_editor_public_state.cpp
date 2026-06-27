@@ -3076,6 +3076,30 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
         "subsequent edits after sparse_cells should still persist");
     check_not_contains(worksheet_xml, "placeholder-a2",
         "sparse_cells should not revive erased source cells");
+    check_reopened_clean_sheet_output(output, "Data", "sparse_cells snapshot",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "sparse_cells reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "sparse_cells reopened output should expose dirty-session bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "changed-after-snapshot",
+                "sparse_cells reopened output should read post-snapshot A1 edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "sparse_cells reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "sparse_cells reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Blank,
+                "sparse_cells reopened output should read explicit B3 blank");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "snapshot-new",
+                "sparse_cells reopened output should read inserted D4 text");
+        });
 }
 
 void test_public_worksheet_editor_sparse_cells_range_snapshot()

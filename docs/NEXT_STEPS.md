@@ -213,6 +213,10 @@ The read-only source XML formula audit remains isolated from those dirty
 materialized shifts: in the same renamed editor, `source_formula_reference_audits()`
 still reports the source `D2` formula text `Data!A1+Data!B1` and the original
 `Data!A1` / `Data!B1` tokens while preserving dirty materialized diagnostics.
+That isolation now also survives a rejected source-overwrite save: after
+`save_as(source)` is rejected, the same source scan still reports the original
+source formula tokens, keeps the shifted materialized session dirty, and leaves
+the later safe `save_as(output)` path intact.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

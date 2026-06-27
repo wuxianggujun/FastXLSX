@@ -8365,6 +8365,16 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     }), "renamed formula audit shifted row should reject mismatched worksheet options");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row option-mismatch source scan");
+    check(!editor.try_worksheet("Missing").has_value(),
+        "renamed formula audit shifted row should keep missing optional lookup empty");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed formula audit shifted row should keep old source-name optional lookup empty");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Missing"); }),
+        "renamed formula audit shifted row should reject missing worksheet lookup");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Data"); }),
+        "renamed formula audit shifted row should reject old source-name worksheet lookup");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row missing-query source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8444,6 +8454,16 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     }), "renamed column formula audit shifted should reject mismatched worksheet options");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted option-mismatch source scan");
+    check(!editor.try_worksheet("Missing").has_value(),
+        "renamed column formula audit shifted should keep missing optional lookup empty");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed column formula audit shifted should keep old source-name optional lookup empty");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Missing"); }),
+        "renamed column formula audit shifted should reject missing worksheet lookup");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Data"); }),
+        "renamed column formula audit shifted should reject old source-name worksheet lookup");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted missing-query source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

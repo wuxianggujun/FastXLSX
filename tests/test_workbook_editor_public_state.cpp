@@ -6858,6 +6858,27 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows save_as should persist translated rich formula references");
         check_not_contains(worksheet_xml, R"(r="C2")",
             "insert_rows rich formula save_as should not keep the old coordinate");
+        check_reopened_shift_output(output, "insert_rows rich formula",
+            [&expected](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "insert_rows rich formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                    "insert_rows rich formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == expected,
+                    "insert_rows rich formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_a3 =
+                    reopened_sheet.try_cell("A3");
+                check(reopened_a3.has_value() &&
+                        reopened_a3->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3->text_value() == "placeholder-a2",
+                    "insert_rows rich formula reopened output should read shifted source rows");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_rows rich formula reopened output should keep old coordinate absent");
+            });
     }
 
     {
@@ -6886,6 +6907,27 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns save_as should persist translated rich formula references");
         check_not_contains(worksheet_xml, R"(r="C2")",
             "insert_columns rich formula save_as should not keep the old coordinate");
+        check_reopened_shift_output(output, "insert_columns rich formula",
+            [&expected](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "insert_columns rich formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+                    "insert_columns rich formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_e2 =
+                    reopened_sheet.try_cell("E2");
+                check(reopened_e2.has_value() &&
+                        reopened_e2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_e2->text_value() == expected,
+                    "insert_columns rich formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_d1 =
+                    reopened_sheet.try_cell("D1");
+                check(reopened_d1.has_value() &&
+                        reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_d1->number_value() == 1.0,
+                    "insert_columns rich formula reopened output should read shifted source columns");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_columns rich formula reopened output should keep old coordinate absent");
+            });
     }
 }
 
@@ -6916,6 +6958,27 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_contains(worksheet_xml,
             R"(<c r="C3"><f>#REF!+A:A+#REF!+B3</f></c>)",
             "delete_rows save_as should persist row-out-of-bounds formula references as #REF!");
+        check_reopened_shift_output(output, "delete_rows #REF formula",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "delete_rows #REF formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                    "delete_rows #REF formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == "#REF!+A:A+#REF!+B3",
+                    "delete_rows #REF formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_a1 =
+                    reopened_sheet.try_cell("A1");
+                check(reopened_a1.has_value() &&
+                        reopened_a1->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1->text_value() == "placeholder-a2",
+                    "delete_rows #REF formula reopened output should read shifted source rows");
+                check(!reopened_sheet.try_cell("C4").has_value(),
+                    "delete_rows #REF formula reopened output should keep old coordinate absent");
+            });
     }
 
     {
@@ -6940,6 +7003,27 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_contains(worksheet_xml,
             R"(<c r="C1"><f>#REF!+#REF!+1:1+C2</f></c>)",
             "delete_columns save_as should persist column-out-of-bounds formula references as #REF!");
+        check_reopened_shift_output(output, "delete_columns #REF formula",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "delete_columns #REF formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                    "delete_columns #REF formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c1 =
+                    reopened_sheet.try_cell("C1");
+                check(reopened_c1.has_value() &&
+                        reopened_c1->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c1->text_value() == "#REF!+#REF!+1:1+C2",
+                    "delete_columns #REF formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_a1 =
+                    reopened_sheet.try_cell("A1");
+                check(reopened_a1.has_value() &&
+                        reopened_a1->kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_a1->number_value() == 1.0,
+                    "delete_columns #REF formula reopened output should read shifted source columns");
+                check(!reopened_sheet.try_cell("D1").has_value(),
+                    "delete_columns #REF formula reopened output should keep old coordinate absent");
+            });
     }
 }
 

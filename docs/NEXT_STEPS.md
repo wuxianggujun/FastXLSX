@@ -94,7 +94,8 @@ quoted / structured-reference skip cases while preserving the existing
 non-parser / non-evaluator boundary.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
-styles on moved formulas, and removed old sparse coordinates.
+styles on moved formulas, rich formula-shape translations, out-of-bounds
+`#REF!` translations, and removed old sparse coordinates.
 The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level

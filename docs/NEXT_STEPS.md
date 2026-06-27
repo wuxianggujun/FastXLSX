@@ -207,6 +207,10 @@ row/column, A1, sparse-range, row/column snapshot, coordinate-batch, and valid
 missing `get_cell()` reads leave both `RenamedData` handles clean, keep
 diagnostics empty, preserve the planned catalog, and still allow a later
 matching shift/save cycle.
+Invalid mutations now cover the same renamed shift path: invalid `set_cell()`
+and `erase_cell()` calls set the public diagnostic without dirtying either
+`RenamedData` handle, leaking rejected payloads, restoring old `Data`, or
+blocking a later valid shift that clears diagnostics and saves cleanly.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

@@ -35216,6 +35216,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.798 - Pin renamed WorksheetEditor shift invalid mutations
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid mutations after a saved renamed planned-name shift report a
+diagnostic without dirtying or otherwise polluting the clean materialized
+session.
+
+Output:
+- Added public-state coverage for `rename_sheet("Data", "RenamedData")`,
+  `worksheet("RenamedData").insert_rows(2, 1)`, first `save_as()`, matching
+  reacquire, and invalid mutation attempts across both handles.
+- The regression verifies invalid row/column/A1 `set_cell()` and `erase_cell()`
+  calls populate `last_edit_error()`, keep dirty materialized diagnostics empty,
+  preserve source/planned worksheet names and catalog entries, and keep old
+  `Data` unavailable.
+- A later valid `insert_columns(2, 1)` clears diagnostics, saves only
+  `RenamedData`, reopens with combined shifted coordinates, and does not leak
+  rejected payload text.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no workbook catalog repair beyond
+  the existing planned-name helper, no formula/definedName rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.793 - Pin renamed WorksheetEditor shift reacquire reuse
 
 Status: completed.

@@ -5645,6 +5645,27 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "in-budget set_row_values should persist row tail cells");
         check_not_contains(worksheet_xml, "max-cells-rejected",
             "rejected set_row_values payload should not leak into saved output");
+        check_reopened_clean_sheet_output(output, "Data", "set_row_values guardrail recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "set_row_values guardrail recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    "set_row_values guardrail recovery reopened output should keep source bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "in-budget-row-value",
+                    "set_row_values guardrail recovery reopened output should read replacement A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "set_row_values guardrail recovery reopened output should keep row tail B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "set_row_values guardrail recovery reopened output should keep non-target A2");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    "set_row_values guardrail recovery reopened output should keep rejected A3 absent");
+            });
     }
 }
 
@@ -5896,6 +5917,28 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "in-budget set_column_values should persist column tail cells");
         check_not_contains(worksheet_xml, "max-cells-rejected",
             "rejected set_column_values payload should not leak into saved output");
+        check_reopened_clean_sheet_output(output, "Data",
+            "set_column_values guardrail recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "set_column_values guardrail recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    "set_column_values guardrail recovery reopened output should keep source bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "in-budget-column-value",
+                    "set_column_values guardrail recovery reopened output should read replacement A1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "set_column_values guardrail recovery reopened output should keep column tail A2");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "set_column_values guardrail recovery reopened output should keep non-target B1");
+                check(!reopened_sheet.try_cell("C1").has_value(),
+                    "set_column_values guardrail recovery reopened output should keep rejected C1 absent");
+            });
     }
 }
 

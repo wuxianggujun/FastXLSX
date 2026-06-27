@@ -136,6 +136,9 @@ max-cells recovery saves, verifying compact readback plus rejected row absence.
 The `set_column()` guard paths now reopen both represented-column clearing and
 max-cells recovery saves, verifying compact readback plus rejected column
 absence.
+The `set_row_values()` / `set_column_values()` max-cells recovery saves are
+also reopened, pinning value-prefix overwrites, preserved sparse tails, and
+rejected prefix targets.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

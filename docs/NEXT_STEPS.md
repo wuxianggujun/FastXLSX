@@ -204,6 +204,10 @@ The same styled formula shift is now pinned across a rejected source-overwrite
 save: a failed `save_as(source)` keeps the dirty `D4` formula as `A3+B3` with
 its `StyleId` under `RenamedData`, leaves the source package unchanged under
 `Data`, and a safe retry reopens clean under `RenamedData`.
+The saved styled formula session now also covers option-mismatch reacquire:
+mismatched `WorksheetEditorOptions` fail without updating diagnostics or
+dirtying the clean `RenamedData` session, and a later matching reacquire can
+still shift the formula to `E4` as `B3+C3` with the same `StyleId`.
 The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and

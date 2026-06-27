@@ -161,6 +161,9 @@ shrunk bounds.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.
+The dirty-state save/reuse path now reopens both the first erased-cell save and
+the later post-save mutation output, verifying clean readback across repeated
+`save_as()` calls on the same materialized handle.
 Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,

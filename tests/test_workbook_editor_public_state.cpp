@@ -2084,6 +2084,23 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
     check_not_contains(first_xml, "placeholder-a2",
         "flushed dirty WorksheetEditor state should persist erased source cells");
+    check_reopened_clean_sheet_output(first_output, "Data", "dirty state first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "dirty state first save reopened output should keep remaining sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "dirty state first save reopened output should expose shrunk bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "dirty state first save reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "dirty state first save reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "dirty state first save reopened output should keep erased A2 absent");
+        });
 
     sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-again"));
     check(sheet.has_pending_changes(),
@@ -2093,6 +2110,27 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "dirty-again",
         "post-save dirty WorksheetEditor mutation should persist on a later save_as");
+    check_reopened_clean_sheet_output(second_output, "Data", "dirty state second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "dirty state second save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "dirty state second save reopened output should include later C3 edit");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "dirty state second save reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "dirty state second save reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "dirty state second save reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "dirty-again",
+                "dirty state second save reopened output should read later C3 edit");
+        });
 }
 
 void test_public_worksheet_editor_handle_remains_valid_after_save_as()

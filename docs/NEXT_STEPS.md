@@ -106,6 +106,9 @@ and outside-coordinate sparse cells.
 The `contains_cell()` inspection path now also saves and reopens the dirty
 projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.
+The `pending_materialized_worksheet_names()` dirty-session save path now
+reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
+diagnostic and failed-save inspections.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

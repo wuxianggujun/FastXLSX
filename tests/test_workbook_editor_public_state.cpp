@@ -2249,6 +2249,41 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
         "first dirty materialized worksheet should persist through save_as");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "dirty-untouched",
         "second dirty materialized worksheet should persist through save_as");
+
+    check_reopened_clean_sheet_output(output, "Data", "pending materialized names Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "pending materialized names Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "pending materialized names Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "dirty-data",
+                "pending materialized names Data reopened output should read dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "pending materialized names Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "pending materialized names Data reopened output should keep source-backed A2");
+        });
+    check_reopened_clean_sheet_output(output, "Untouched", "pending materialized names Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "pending materialized names Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "pending materialized names Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "pending materialized names Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "dirty-untouched",
+                "pending materialized names Untouched reopened output should read dirty B1");
+        });
 }
 
 void test_public_workbook_editor_pending_materialized_names_move_with_owner()

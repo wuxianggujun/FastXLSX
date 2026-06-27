@@ -112,6 +112,9 @@ diagnostic and failed-save inspections.
 The aggregate materialized cell/memory diagnostics save path now reopens both
 auto-flushed worksheets as well, covering explicit blank bounds plus source and
 dirty cells after failed-save recovery.
+The materialized-name move-owner save path is reopened too, verifying the moved
+dirty session persists while the discarded target session does not leak into the
+clean saved workbook.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

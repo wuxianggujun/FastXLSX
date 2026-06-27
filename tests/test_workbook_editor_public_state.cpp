@@ -2335,6 +2335,41 @@ void test_public_workbook_editor_pending_materialized_names_move_with_owner()
         "move-assigned editor should save assigned dirty materialized payload");
     check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-target-dirty",
         "move assignment should not leak discarded target dirty materialized payload");
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized names move Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "materialized names move Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "materialized names move Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "moved-dirty-data",
+                "materialized names move Data reopened output should read moved dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "materialized names move Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "materialized names move Data reopened output should keep source-backed A2");
+        });
+    check_reopened_clean_sheet_output(output, "Untouched", "materialized names move Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "materialized names move Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "materialized names move Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "materialized names move Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "materialized names move Untouched reopened output should keep source-backed B1");
+        });
 }
 
 void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()

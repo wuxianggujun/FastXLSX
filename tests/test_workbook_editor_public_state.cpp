@@ -4827,6 +4827,22 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "row clear should omit cleared text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "row clear should omit cleared numeric cells");
+
+        check_reopened_clean_sheet_output(output, "Data", "set_row clear",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 1,
+                    "set_row clear reopened output should keep remaining sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 2, 1, 2, 1,
+                    "set_row clear reopened output should shrink to non-target row");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "set_row clear reopened output should keep cleared A1 absent");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "set_row clear reopened output should keep cleared B1 absent");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "set_row clear reopened output should keep non-target A2");
+            });
     }
 
     {
@@ -4962,6 +4978,26 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "in-budget set_row should not resurrect replaced cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "in-budget set_row should not persist old target-row tail cells");
+
+        check_reopened_clean_sheet_output(output, "Data", "set_row guardrail recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "set_row guardrail recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 1,
+                    "set_row guardrail recovery reopened output should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "replace-row-a1",
+                    "set_row guardrail recovery reopened output should read replacement A1");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "set_row guardrail recovery reopened output should keep old B1 absent");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "set_row guardrail recovery reopened output should keep non-target A2");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    "set_row guardrail recovery reopened output should keep rejected A3 absent");
+            });
     }
 }
 

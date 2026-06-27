@@ -35216,6 +35216,39 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.801 - Pin renamed WorksheetEditor shift missing-parent failed save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a missing output parent rejection preserves a dirty renamed
+planned-name materialized shift session after post-save reacquire.
+
+Output:
+- Extended the renamed shift failed-save regression with a unique missing-parent
+  output path and removed that parent before the save attempt.
+- The rejected `save_as(missing_parent_output)` verifies no output file is
+  created and the dirty planned-session diagnostics, catalog, pending summary,
+  and both handles remain stable under `RenamedData`.
+- The existing source/first-output/safe-retry XML checks now also cover the
+  missing-parent failure before the renamed dirty session is safely flushed.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no workbook catalog repair beyond
+  the existing planned-name helper, no formula/definedName rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.800 - Pin renamed WorksheetEditor shift empty-output failed save
 
 Status: completed.

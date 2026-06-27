@@ -8026,10 +8026,14 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-source.xlsx");
     const std::filesystem::path equivalent_source =
         source.parent_path() / "." / source.filename();
+    const std::filesystem::path missing_parent_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-missing-parent") /
+        "out.xlsx";
     const std::filesystem::path first_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-second-output.xlsx");
+    std::filesystem::remove_all(missing_parent_output.parent_path());
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
@@ -8134,6 +8138,12 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save should reject empty output path");
     check_dirty_planned_session(
         "renamed shift failed save rejected empty output path");
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+        "renamed shift failed save should reject missing output parent");
+    check(!std::filesystem::exists(missing_parent_output),
+        "renamed shift failed save should not create the rejected missing-parent output");
+    check_dirty_planned_session(
+        "renamed shift failed save rejected missing output parent");
     check(sheet.get_cell("C1").number_value() == 1.0 &&
             reacquired.get_cell("C1").number_value() == 1.0,
         "renamed shift failed save should preserve shifted numeric cells after rejection");

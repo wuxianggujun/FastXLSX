@@ -97,6 +97,9 @@ without extending the parser boundary.
 The coordinate-batch `sparse_cells(span<WorksheetCellReference>)` snapshot path
 is also reopened to verify duplicates, skipped missing cells, later edits, and
 erased source cells survive saved sparse projection cleanly.
+The `used_range()` dirty/empty inspection path is reopened as well, pinning
+clean readback for a saved worksheet whose sparse cells were fully erased after
+diagnostic-preserving reads.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

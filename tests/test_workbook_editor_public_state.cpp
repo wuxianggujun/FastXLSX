@@ -3498,6 +3498,20 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
         "used_range should not revive erased B1 numeric cell");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "used_range should preserve untouched worksheets");
+
+    check_reopened_clean_sheet_output(output, "Data", "used_range empty projection",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 0,
+                "used_range reopened output should keep the cleared sheet empty");
+            check(!reopened_sheet.used_range().has_value(),
+                "used_range reopened output should expose no sparse bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "used_range reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "used_range reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "used_range reopened output should keep erased A2 absent");
+        });
 }
 
 void test_public_worksheet_editor_contains_cell_tracks_represented_state()

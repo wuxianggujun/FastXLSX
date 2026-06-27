@@ -4638,6 +4638,32 @@ void check_reopened_clean_sheet_output(
         prefix + " reopened readback should keep dirty diagnostics empty");
 }
 
+void check_reopened_default_data_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    check_reopened_clean_sheet_output(output, "Data", scenario,
+        [prefix](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                prefix + " reopened output should keep default source sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                prefix + " reopened output should keep default source used range");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                prefix + " reopened output should read source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                prefix + " reopened output should read source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                prefix + " reopened output should read source-backed A2");
+        });
+}
+
 void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
 {
     const std::filesystem::path source =
@@ -7087,6 +7113,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "save_as after nonzero row/column shift no-ops should copy source entries");
+        check_reopened_default_data_sheet_output(output, "shift nonzero no-op");
     }
 
     {
@@ -7162,6 +7189,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "save_as after shift validation failures should copy source entries");
+        check_reopened_default_data_sheet_output(output, "shift validation failure");
     }
 
     {
@@ -7273,6 +7301,23 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "save_as after failed insert_rows memory-budget mutation should copy source entries");
+    check_reopened_clean_sheet_output(output, "Data", "shift memory guard failure",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "shift memory guard failure reopened output should keep source sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 1,
+                "shift memory guard failure reopened output should keep source used range");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "anchor-a1",
+                "shift memory guard failure reopened output should read source-backed A1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_a2.text_value() == "A9+A9+A9+A9+A9",
+                "shift memory guard failure reopened output should read original formula");
+            check(!reopened_sheet.try_cell("A3").has_value(),
+                "shift memory guard failure reopened output should keep rejected shift absent");
+        });
 }
 
 void test_public_worksheet_editor_options_guard_failure_preserves_state()

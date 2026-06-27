@@ -96,6 +96,9 @@ The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds
 `#REF!` translations, and removed old sparse coordinates.
+The no-op, validation-failure, and memory-guard copy-original shift outputs are
+also reopened in public-state coverage to verify the clean source-backed Data
+sheet remains readable after failed or non-mutating shift attempts.
 The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level

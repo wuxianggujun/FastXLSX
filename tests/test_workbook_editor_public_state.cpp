@@ -6370,6 +6370,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         sheet.insert_rows(10, 1);
         sheet.insert_columns(10, 1);
+        sheet.delete_rows(10, 1);
+        sheet.delete_columns(10, 1);
         check(!editor.last_edit_error().has_value(),
             "nonzero row/column shift no-ops should clear prior public edit diagnostics");
         check(!sheet.has_pending_changes(),

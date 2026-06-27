@@ -3772,6 +3772,19 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "range erase save_as should omit erased B1 numeric cell");
     check_contains(first_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "range erase save_as should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(first_output, "Data", "range erase first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 0,
+                "range erase first save reopened output should stay empty");
+            check(!reopened_sheet.used_range().has_value(),
+                "range erase first save reopened output should expose no sparse bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "range erase first save reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "range erase first save reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "range erase first save reopened output should keep erased A2 absent");
+        });
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
     check(!reacquired.has_pending_changes(),
@@ -3806,6 +3819,23 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "erased A2 text should not reappear after post-reacquire mutation");
     check_not_contains(second_worksheet_xml, R"(r="B1")",
         "erased B1 numeric cell should not reappear after post-reacquire mutation");
+    check_reopened_clean_sheet_output(second_output, "Data", "range erase reacquired save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "range erase reacquired save reopened output should contain one sparse cell");
+            check_cell_range_equals(reopened_sheet.used_range(), 3, 3, 3, 3,
+                "range erase reacquired save reopened output should expose C3 bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "range erase reacquired save reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "range erase reacquired save reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "range erase reacquired save reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "range-erase-reacquired",
+                "range erase reacquired save reopened output should read post-reacquire C3");
+        });
 }
 
 void test_public_worksheet_editor_initializer_list_batch_overloads()

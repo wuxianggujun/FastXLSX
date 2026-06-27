@@ -76,6 +76,9 @@ readback after the saved XML projection.
 The same-handle materialized save path now also reopens the first and second
 outputs, verifying the borrowed handle remains reusable while earlier output
 artifacts stay clean and isolated from later edits.
+The range-erase reacquire path also reopens both saved outputs, pinning the
+empty first projection and the later single-cell C3 projection after handle
+reacquisition.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

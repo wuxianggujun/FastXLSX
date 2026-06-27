@@ -155,6 +155,9 @@ verify copy-original `Data` state and replacement-only `Untouched` state after
 failed replacement, rename, and materialized mutation attempts.
 Existing-cell blank overwrite after rejected blank insertions is reopened as
 well, pinning explicit blank readback without admitting the rejected target.
+The single-cell `erase_cell()` auto-flush save now reopens the output to verify
+the erased coordinate stays absent while surviving source-backed cells keep the
+shrunk bounds.
 Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,

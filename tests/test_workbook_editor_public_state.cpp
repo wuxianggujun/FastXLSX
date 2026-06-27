@@ -490,6 +490,50 @@ bool workbook_editor_edit_summaries_equal(
     return true;
 }
 
+std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>
+check_public_state_formula_audits_preserve_editor_diagnostics(
+    const fastxlsx::WorkbookEditor& editor,
+    std::string_view message_prefix)
+{
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t materialized_count_before_audit =
+        editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
+        editor.pending_worksheet_edits();
+    const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
+
+    std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        std::string(message_prefix) + " should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        std::string(message_prefix) + " should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
+        std::string(message_prefix) + " should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
+        std::string(message_prefix) + " should preserve materialized diagnostics");
+    check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        std::string(message_prefix) + " should preserve materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == materialized_memory_before_audit,
+        std::string(message_prefix) + " should preserve materialized memory");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_audit),
+        std::string(message_prefix) + " should preserve pending edit summaries");
+    check(editor.last_edit_error() == last_error_before_audit,
+        std::string(message_prefix) + " should not update last_edit_error");
+
+    return audits;
+}
+
 struct WorkbookEditorPublicSaveStateSnapshot {
     std::size_t pending_change_count{};
     std::size_t pending_replacement_cell_count{};
@@ -8896,7 +8940,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             "renamed delete-row formula audit should expose the translated styled formula");
 
         const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
-            editor.formula_reference_audits();
+            check_public_state_formula_audits_preserve_editor_diagnostics(
+                editor, "renamed delete-row formula audit");
         check(audits.size() == 1,
             "renamed delete-row formula audit should skip the translated #REF! token");
         check(find_public_state_formula_audit(audits, 1, 4, "Data!#REF!") == nullptr,
@@ -8950,9 +8995,11 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
             "renamed delete-row formula audit reacquire should reuse a clean saved session");
         const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
-            editor.formula_reference_audits();
+            check_public_state_formula_audits_preserve_editor_diagnostics(
+                editor, "renamed delete-row formula audit reacquire");
         check(editor.pending_materialized_worksheet_names().empty() &&
-                editor.pending_materialized_cell_count() == 0,
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
             "renamed delete-row formula audit reacquire should keep diagnostics clean");
         check(reacquired_audits.size() == 1,
             "renamed delete-row formula audit reacquire should keep only the surviving reference");
@@ -9032,7 +9079,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             "renamed delete-column formula audit should expose the translated styled formula");
 
         const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
-            editor.formula_reference_audits();
+            check_public_state_formula_audits_preserve_editor_diagnostics(
+                editor, "renamed delete-column formula audit");
         check(audits.size() == 1,
             "renamed delete-column formula audit should skip the translated #REF! token");
         check(find_public_state_formula_audit(audits, 2, 3, "Data!#REF!") == nullptr,
@@ -9086,9 +9134,11 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
             "renamed delete-column formula audit reacquire should reuse a clean saved session");
         const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
-            editor.formula_reference_audits();
+            check_public_state_formula_audits_preserve_editor_diagnostics(
+                editor, "renamed delete-column formula audit reacquire");
         check(editor.pending_materialized_worksheet_names().empty() &&
-                editor.pending_materialized_cell_count() == 0,
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
             "renamed delete-column formula audit reacquire should keep diagnostics clean");
         check(reacquired_audits.size() == 1,
             "renamed delete-column formula audit reacquire should keep only the surviving reference");

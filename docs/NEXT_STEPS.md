@@ -276,6 +276,9 @@ boundary too: insert-side clean saved sessions still leave
 `source_formula_reference_audits()` on the original source `Data!A1+Data!B1`
 tokens, while delete-side `#REF!` sessions still report the original
 `Data!A1+Data!B2` tokens and keep materialized diagnostics empty.
+Those source-scan isolation checks now also snapshot the aggregate
+`estimated_pending_materialized_memory_usage()` value, so read-only source
+formula audits cannot silently alter materialized memory diagnostics.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

@@ -567,6 +567,9 @@ and stage deletion before replacing the active sparse store. They do not add
 column deletion, column shifting, column metadata editing, dense range deletion,
 tombstone output, table/range metadata recalculation, relationship repair, or
 large-file low-memory random editing.
+The saved erase outputs are reopened in public-state coverage to verify clean
+readback for removed coordinates, remaining source-backed cells, and remaining
+dirty sparse cells after row and column erases.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

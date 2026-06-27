@@ -5875,6 +5875,21 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
         "erase_row should omit erased row numeric cells");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "erase_row should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "erase_row",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "erase_row reopened output should keep remaining sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 2, 1, 2, 1,
+                "erase_row reopened output should shrink to the remaining row");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "erase_row reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "erase_row reopened output should keep erased B1 absent");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "erase_row reopened output should keep non-target rows");
+        });
 }
 
 void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
@@ -5940,6 +5955,23 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "erase_rows should omit erased row-two text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "erase_rows should omit erased row-one numeric cells");
+        check_reopened_clean_sheet_output(output, "Data", "erase_rows",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 1,
+                    "erase_rows reopened output should keep remaining sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 4, 4, 4, 4,
+                    "erase_rows reopened output should shrink to the remaining sparse cell");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "erase_rows reopened output should keep erased A1 absent");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "erase_rows reopened output should keep erased B1 absent");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "erase_rows reopened output should keep erased A2 absent");
+                const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+                check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_d4.text_value() == "range-extra",
+                    "erase_rows reopened output should keep non-target row edits");
+            });
     }
 
     {
@@ -6052,6 +6084,21 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
         "erase_column should omit erased column row-two text cells");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "erase_column should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "erase_column",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "erase_column reopened output should keep remaining sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 2, 1, 2,
+                "erase_column reopened output should shrink to the remaining column");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "erase_column reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "erase_column reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "erase_column reopened output should keep non-target columns");
+        });
 }
 
 void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
@@ -6117,6 +6164,23 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "erase_columns should omit erased column row-two text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "erase_columns should omit erased second-column numeric cells");
+        check_reopened_clean_sheet_output(output, "Data", "erase_columns",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 1,
+                    "erase_columns reopened output should keep remaining sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 4, 4, 4, 4,
+                    "erase_columns reopened output should shrink to the remaining sparse cell");
+                check(!reopened_sheet.try_cell("A1").has_value(),
+                    "erase_columns reopened output should keep erased A1 absent");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "erase_columns reopened output should keep erased A2 absent");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "erase_columns reopened output should keep erased B1 absent");
+                const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+                check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_d4.text_value() == "column-range-extra",
+                    "erase_columns reopened output should keep non-target column edits");
+            });
     }
 
     {

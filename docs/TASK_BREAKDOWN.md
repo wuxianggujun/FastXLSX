@@ -35037,6 +35037,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.792 - Pin planned-name WorksheetEditor shift after rename
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a catalog rename queued before materialization lets the planned
+sheet name materialize, shift sparse records, save, and reopen through the
+planned name.
+
+Output:
+- Added public-state coverage for `rename_sheet("Data", "RenamedData")`
+  followed by `worksheet("RenamedData")` and `insert_rows(2, 1)`.
+- The regression verifies dirty materialized names and edit summaries report
+  `RenamedData`, while the summary still records source `Data` plus renamed and
+  materialized-dirty state.
+- The saved workbook catalog contains only `RenamedData`; the worksheet XML
+  projects shifted sparse records; reopening the output exposes only the
+  planned sheet name and reads the shifted cells as clean public state.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no formula/definedName rewrite,
+  no metadata synchronization, no relationship repair, no sharedStrings/styles
+  migration, no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

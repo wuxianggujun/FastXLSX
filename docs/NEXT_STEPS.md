@@ -177,6 +177,11 @@ The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds
 `#REF!` translations, and removed old sparse coordinates.
+The planned-name rename boundary is pinned for shifts too: after
+`rename_sheet("Data", "RenamedData")`, materializing `worksheet("RenamedData")`
+and applying `insert_rows()` reports dirty materialized diagnostics under the
+planned name, saves the renamed workbook catalog, and reopens only by
+`RenamedData` with the shifted sparse cells.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

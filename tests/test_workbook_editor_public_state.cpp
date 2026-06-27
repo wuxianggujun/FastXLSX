@@ -7787,6 +7787,100 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         });
 }
 
+void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+        "shift after rename should expose only the planned sheet name");
+    check(editor.pending_change_count() == 1,
+        "shift after rename should count the catalog rename before materialized edits");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift after rename should not dirty materialized diagnostics before materialization");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    check(sheet.name() == "RenamedData",
+        "shift after rename materialized handle should expose the planned name");
+    sheet.insert_rows(2, 1);
+
+    check(sheet.has_pending_changes(),
+        "shift after rename insert_rows should dirty the planned-name materialized handle");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "shift after rename should report dirty materialized state under the planned name");
+    check(editor.pending_materialized_cell_count() == 3,
+        "shift after rename should expose the shifted sparse count");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "shift after rename should expose one combined summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "RenamedData" &&
+                    summaries[0].renamed &&
+                    summaries[0].materialized_dirty,
+                "shift after rename summary should combine rename and materialized dirty state");
+            check(summaries[0].materialized_cell_count == 3,
+                "shift after rename summary should report shifted sparse count");
+        }
+    }
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift after rename should shift source-backed cells through the planned-name handle");
+    check(!sheet.try_cell("A2").has_value(),
+        "shift after rename should remove old source coordinates");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "shift after rename save_as should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "shift after rename save_as should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift after rename save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "shift after rename save_as should write the planned catalog name");
+    check_not_contains(workbook_xml, R"(name="Data")",
+        "shift after rename save_as should not restore the source catalog name");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+        "shift after rename save_as should project shifted sparse bounds");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "shift after rename save_as should preserve B1");
+    check_contains(worksheet_xml, R"(<c r="A3")",
+        "shift after rename save_as should write shifted source A2");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "shift after rename save_as should omit old A2");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "shift after rename reopened output should expose the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "shift after rename reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "shift after rename reopened output should not expose pending diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        "shift after rename reopened output should keep sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+        "shift after rename reopened output should expose shifted bounds");
+    check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift after rename reopened output should read shifted source A2");
+    check(!reopened_sheet.try_cell("A2").has_value(),
+        "shift after rename reopened output should keep old source coordinate absent");
+}
+
 void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
 {
     const std::filesystem::path source =
@@ -12380,6 +12474,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
             test_public_worksheet_editor_shift_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session();

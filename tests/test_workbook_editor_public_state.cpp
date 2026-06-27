@@ -391,6 +391,12 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
         editor.estimated_pending_materialized_memory_usage();
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
         editor.pending_worksheet_edits();
+    const std::vector<std::string> source_names_before_audit =
+        editor.source_worksheet_names();
+    const std::vector<std::string> planned_names_before_audit =
+        editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_audit =
+        editor.worksheet_catalog();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
@@ -416,6 +422,13 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
     check(workbook_editor_edit_summaries_equal(
               editor.pending_worksheet_edits(), summaries_before_audit),
         std::string(message_prefix) + " should preserve pending edit summaries");
+    check(editor.source_worksheet_names() == source_names_before_audit,
+        std::string(message_prefix) + " should preserve source worksheet names");
+    check(editor.worksheet_names() == planned_names_before_audit,
+        std::string(message_prefix) + " should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before_audit),
+        std::string(message_prefix) + " should preserve worksheet catalog");
     check(editor.last_edit_error() == last_error_before_audit,
         std::string(message_prefix) + " should not update last_edit_error");
 
@@ -450,6 +463,12 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
         editor.estimated_pending_materialized_memory_usage();
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
         editor.pending_worksheet_edits();
+    const std::vector<std::string> source_names_before_audit =
+        editor.source_worksheet_names();
+    const std::vector<std::string> planned_names_before_audit =
+        editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_audit =
+        editor.worksheet_catalog();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
@@ -475,6 +494,13 @@ void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
     check(workbook_editor_edit_summaries_equal(
               editor.pending_worksheet_edits(), summaries_before_audit),
         std::string(message_prefix) + " should preserve pending edit summaries");
+    check(editor.source_worksheet_names() == source_names_before_audit,
+        std::string(message_prefix) + " should preserve source worksheet names");
+    check(editor.worksheet_names() == planned_names_before_audit,
+        std::string(message_prefix) + " should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before_audit),
+        std::string(message_prefix) + " should preserve worksheet catalog");
     check(editor.last_edit_error() == last_error_before_audit,
         std::string(message_prefix) + " should not update last_edit_error");
 
@@ -537,6 +563,12 @@ check_public_state_formula_audits_preserve_editor_diagnostics(
         editor.estimated_pending_materialized_memory_usage();
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
         editor.pending_worksheet_edits();
+    const std::vector<std::string> source_names_before_audit =
+        editor.source_worksheet_names();
+    const std::vector<std::string> planned_names_before_audit =
+        editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_audit =
+        editor.worksheet_catalog();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
@@ -563,6 +595,13 @@ check_public_state_formula_audits_preserve_editor_diagnostics(
     check(workbook_editor_edit_summaries_equal(
               editor.pending_worksheet_edits(), summaries_before_audit),
         std::string(message_prefix) + " should preserve pending edit summaries");
+    check(editor.source_worksheet_names() == source_names_before_audit,
+        std::string(message_prefix) + " should preserve source worksheet names");
+    check(editor.worksheet_names() == planned_names_before_audit,
+        std::string(message_prefix) + " should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before_audit),
+        std::string(message_prefix) + " should preserve worksheet catalog");
     check(editor.last_edit_error() == last_error_before_audit,
         std::string(message_prefix) + " should not update last_edit_error");
 

@@ -316,6 +316,10 @@ replacement-memory preservation as well. The fresh reopened formula-audit
 helpers also assert empty replacement dirty-name diagnostics around source and
 materialized audit calls, keeping the read-only audit path from mutating either
 replacement or materialized public-state surfaces.
+Those formula-audit snapshots now also pin source worksheet names, planned
+worksheet names, and workbook sheet catalog entries across both source and
+materialized audit calls, so formula scanning cannot silently mutate catalog
+views while reporting shifted tokens.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

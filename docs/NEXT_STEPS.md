@@ -194,6 +194,10 @@ Missing-sheet query failures now cover the same post-save shift boundary:
 missing `try_worksheet()` / `worksheet()` calls leave the saved shifted session
 clean, keep diagnostics empty, add no materialized handoff, and a later matching
 reacquire can still perform and save a follow-up shift.
+Invalid and missing read failures are pinned for that post-save shift boundary
+too: invalid row/column, A1, sparse-range, row/column snapshot, and missing
+`get_cell()` reads preserve the clean shifted session, leave diagnostics empty,
+and do not block a later matching reacquire shift/save cycle.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

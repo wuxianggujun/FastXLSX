@@ -202,6 +202,11 @@ Missing-sheet queries now cover the same renamed shift boundary: `Missing` and
 old `Data` lookups fail cleanly after the first saved `RenamedData` shift,
 leave diagnostics and materialized dirty state empty, and a later matching
 `RenamedData` reacquire can still save combined shifted coordinates.
+Invalid reads now cover that renamed planned-name boundary as well: invalid
+row/column, A1, sparse-range, row/column snapshot, coordinate-batch, and valid
+missing `get_cell()` reads leave both `RenamedData` handles clean, keep
+diagnostics empty, preserve the planned catalog, and still allow a later
+matching shift/save cycle.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

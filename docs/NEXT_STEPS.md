@@ -232,6 +232,10 @@ column-overflow formula `set_cell()` calls, plus range-form `erase_cell()`
 failures, may update `last_edit_error()` but still keep source formula scans on
 the original source XML tokens and preserve the dirty shifted materialized
 session for a later safe save.
+Invalid row/column shift preflights now share that dirty-session boundary:
+invalid start coordinates and count ranges fail after a renamed formula shift,
+but source formula scans still report the original source XML tokens and the
+dirty materialized session remains saveable.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

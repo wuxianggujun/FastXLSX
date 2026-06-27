@@ -289,6 +289,10 @@ coordinates/ranges, invalid row/column snapshots, and a valid-missing
 `get_cell("D2")` leave the saved styled `D1` state clean and diagnostic-free,
 and matching `RenamedData` reacquire can still save/reopen styled `E1` as
 `#REF!+#REF!`.
+Delete-row formula snapshot reads now close that symmetric state-hygiene shape:
+full sparse, A1-range, row/column, and coordinate-batch snapshots expose `D1`
+with its `StyleId`, stay diagnostic-clean and non-dirty, and remain stable
+after a later column shift saves/reopens styled `E1` as `#REF!+#REF!`.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

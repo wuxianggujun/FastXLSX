@@ -8399,7 +8399,10 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
         editor.pending_materialized_cell_count();
-    const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
+        editor.pending_worksheet_edits();
     const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
@@ -8414,8 +8417,12 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shift should preserve dirty materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
         "renamed formula audit shift should preserve dirty materialized cell count");
-    check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
-        "renamed formula audit shift should not create pending edit summaries");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == materialized_memory_before_audit,
+        "renamed formula audit shift should preserve dirty materialized memory");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_audit),
+        "renamed formula audit shift should preserve pending edit summaries");
     check(editor.last_edit_error() == last_error_before_audit,
         "renamed formula audit shift should not update last_edit_error");
     check(audits.size() == 2,
@@ -8636,17 +8643,40 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
             shifted_formula->style_id().value() == styled_formula_style.value(),
         "renamed column formula audit shift should expose the translated styled formula");
 
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
     const std::vector<std::string> materialized_names_before_audit =
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
         editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
+        editor.pending_worksheet_edits();
+    const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
         editor.formula_reference_audits();
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        "renamed column formula audit shift should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        "renamed column formula audit shift should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
+        "renamed column formula audit shift should not create replacement diagnostics");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
         "renamed column formula audit shift should preserve dirty materialized diagnostics");
     check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
         "renamed column formula audit shift should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == materialized_memory_before_audit,
+        "renamed column formula audit shift should preserve dirty materialized memory");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_audit),
+        "renamed column formula audit shift should preserve pending edit summaries");
+    check(editor.last_edit_error() == last_error_before_audit,
+        "renamed column formula audit shift should not update last_edit_error");
     check(audits.size() == 2,
         "renamed column formula audit shift should report both shifted sheet-qualified references");
     check_public_state_renamed_shift_formula_audit(

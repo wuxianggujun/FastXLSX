@@ -50,7 +50,12 @@ request recalculation, and these APIs do not migrate sharedStrings/styles,
 resize or recalculate tables/filters/drawings/defined names, prune/repair
 relationships, or provide arbitrary indexed random editing. Row/column shift
 semantics belong to the small-file materialized `WorksheetEditor` lane, not
-these large-worksheet targeted Patch calls. The benchmark tool
+these large-worksheet targeted Patch calls. The current public-state regression
+coverage now also pins that small-file lane's row/column shift state hygiene:
+zero-count shifts, nonzero no-op insert/delete ranges outside represented
+sparse cells, validation failures, and shift overflow failures clear or preserve
+diagnostics as specified, do not dirty clean sessions, and keep no-op
+`save_as()` output copy-original. The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level
 `fastxlsx_bench_package_editor_cell_replacement` remains useful for transformer

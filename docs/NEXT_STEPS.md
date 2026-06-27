@@ -191,6 +191,10 @@ Renamed planned-name shifts now also cover source-backed styled formulas:
 `insert_rows(2, 2)` translates the moved formula from `A1+B1` to `A3+B3`,
 preserves its source `StyleId`, saves the formula cell under `RenamedData`, and
 reopens clean with the old `Data` name unavailable.
+The matching renamed column-insertion formula path is covered too:
+`insert_columns(2, 1)` moves the styled formula to `E2`, translates `A1+B1` by
+the moved cell's column delta to `B1+C1`, preserves the style id, and
+saves/reopens only under `RenamedData` with the shifted source-backed columns.
 The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and

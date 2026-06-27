@@ -7976,6 +7976,120 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
         "renamed formula shift reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_columns(2, 1);
+
+    check(sheet.cell_count() == 7,
+        "renamed column formula shift should preserve sparse count while shifting records");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 5,
+        "renamed column formula shift should expose shifted bounds");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("E2");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "B1+C1" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "renamed column formula shift should translate formula text and preserve style id");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "renamed column formula shift should move source B1 to C1");
+    check(sheet.get_cell("C2").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("D2").text_value() == "row2-gap-c2" &&
+            sheet.get_cell("A3").text_value() == "extra-c3",
+        "renamed column formula shift should move source-backed columns through the planned name");
+    check(!sheet.try_cell("B1").has_value() && !sheet.try_cell("B2").has_value(),
+        "renamed column formula shift should keep inserted blank column coordinates absent");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed column formula shift should report dirty materialized state under the planned name");
+    check(editor.pending_materialized_cell_count() == 7,
+        "renamed column formula shift should report shifted sparse count");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "renamed column formula shift save_as should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed column formula shift save_as should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed column formula shift save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="E2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>B1+C1</f></c>)";
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "renamed column formula shift save_as should write the planned catalog name");
+    check_not_contains(workbook_xml, R"(name="Data")",
+        "renamed column formula shift save_as should omit the source catalog name");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E3"/>)",
+        "renamed column formula shift save_as should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "renamed column formula shift save_as should write shifted B1");
+    check_contains(worksheet_xml, R"(<c r="C2")",
+        "renamed column formula shift save_as should write shifted B2");
+    check_contains(worksheet_xml, R"(<c r="D2")",
+        "renamed column formula shift save_as should write shifted C2");
+    check_contains(worksheet_xml, R"(<c r="A3")",
+        "renamed column formula shift save_as should keep trailing source row");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "renamed column formula shift save_as should write translated formula with style id");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "renamed column formula shift save_as should omit inserted blank B1");
+    check_not_contains(worksheet_xml, R"(r="B2")",
+        "renamed column formula shift save_as should omit inserted blank B2");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed column formula shift reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed column formula shift reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "renamed column formula shift reopened output should not expose pending diagnostics");
+    check(reopened_sheet.cell_count() == 7,
+        "renamed column formula shift reopened output should keep shifted sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 5,
+        "renamed column formula shift reopened output should expose shifted bounds");
+    const std::optional<fastxlsx::CellValue> reopened_e2 =
+        reopened_sheet.try_cell("E2");
+    check(reopened_e2.has_value() &&
+            reopened_e2->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_e2->text_value() == "B1+C1" &&
+            reopened_e2->has_style() &&
+            reopened_e2->style_id().value() == styled_formula_style.value(),
+        "renamed column formula shift reopened output should read translated styled formula");
+    const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+    check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_c1.number_value() == 1.0,
+        "renamed column formula shift reopened output should read shifted B1");
+    check(reopened_sheet.get_cell("C2").text_value() == "row2-gap-b2" &&
+            reopened_sheet.get_cell("D2").text_value() == "row2-gap-c2" &&
+            reopened_sheet.get_cell("A3").text_value() == "extra-c3",
+        "renamed column formula shift reopened output should read shifted source columns");
+    check(!reopened_sheet.try_cell("B1").has_value() &&
+            !reopened_sheet.try_cell("B2").has_value(),
+        "renamed column formula shift reopened output should keep inserted blank column absent");
+}
+
 void test_public_worksheet_editor_shift_after_rename_deletes_formula_references()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -13952,6 +14066,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
+            test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_references();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_rows();
             test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session();

@@ -35216,6 +35216,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.808 - Pin renamed WorksheetEditor shift column formula preservation
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove renamed planned-name column insertion preserves moved source-backed
+formula style ids while translating affected column references.
+
+Output:
+- Added public-state coverage for a styled `Data!D2` formula followed by
+  `rename_sheet("Data", "RenamedData")` and `insert_columns(2, 1)`.
+- The regression verifies the formula moves to `E2`, becomes `B1+C1`, keeps the
+  source `StyleId`, reports dirty materialized diagnostics under `RenamedData`,
+  shifts `B1` to `C1`, shifts row-two gap cells to `C2:D2`, and keeps the
+  inserted `B` column absent.
+- Saved XML and reopened readback both expose only `RenamedData`, preserve the
+  translated styled formula, and keep shifted source columns at their
+  planned-name coordinates.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.807 - Pin renamed WorksheetEditor shift row formula #REF preservation
 
 Status: completed.

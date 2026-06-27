@@ -35216,6 +35216,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.822 - Pin renamed WorksheetEditor delete-column formula missing query
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove missing-sheet and old-source-name lookups do not pollute a saved
+renamed delete-column formula materialized session.
+
+Output:
+- Added public-state coverage for a saved `delete_columns(1, 1)` styled formula
+  session under `RenamedData`, followed by `Missing` and old `Data` worksheet
+  lookup attempts.
+- The regression verifies optional and throwing missing lookups leave
+  diagnostics clear, keep the saved handle clean, preserve catalog/source
+  state, keep dirty materialized diagnostics empty, and preserve `C2` as
+  `#REF!+A1` with the source `StyleId`.
+- A matching reacquire can still apply `insert_rows(2, 1)`, save, and reopen
+  clean with the formula moved to `C3` as `#REF!+A2` while preserving style.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.821 - Pin renamed WorksheetEditor delete-row formula option mismatch
 
 Status: completed.

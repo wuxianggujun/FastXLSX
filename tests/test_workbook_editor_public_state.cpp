@@ -9878,6 +9878,199 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
         "renamed formula delete-column option mismatch reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_missing_query_preserves_styled_session()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-missing-query-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-missing-query-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-missing-query-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.delete_columns(1, 1);
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-column missing query first save should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-column missing query first save should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column missing query first save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-column missing query first save should keep diagnostics clear");
+
+    const std::optional<fastxlsx::WorksheetEditor> missing =
+        editor.try_worksheet("Missing");
+    check(!missing.has_value(),
+        "renamed formula delete-column missing query try_worksheet should report a missing sheet");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed formula delete-column missing query should keep the old source name unavailable");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Missing"); }),
+        "renamed formula delete-column missing query worksheet should reject a missing sheet");
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Data"); }),
+        "renamed formula delete-column missing query worksheet should reject the old source name");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-column missing query should not update last_edit_error");
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-column missing query should leave the saved planned-name handle clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-column missing query should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column missing query should not dirty materialized diagnostics");
+    check(editor.source_worksheet_names() == expected_source_names &&
+            editor.worksheet_names() == expected_planned_names,
+        "renamed formula delete-column missing query should preserve source and planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
+        "renamed formula delete-column missing query should preserve the planned workbook catalog");
+    check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+        "renamed formula delete-column missing query should preserve planned-name lookup state");
+    const std::optional<fastxlsx::CellValue> saved_formula = sheet.try_cell("C2");
+    check(saved_formula.has_value() &&
+            saved_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            saved_formula->text_value() == "#REF!+A1" &&
+            saved_formula->has_style() &&
+            saved_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column missing query should preserve the saved styled formula");
+    check(sheet.get_cell("A1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("B2").text_value() == "row2-gap-c2",
+        "renamed formula delete-column missing query should preserve shifted source cells");
+    check(!sheet.try_cell("D2").has_value() && !sheet.try_cell("A3").has_value(),
+        "renamed formula delete-column missing query should keep old shifted coordinates absent");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed formula delete-column missing query matching reacquire should stay clean");
+    const std::optional<fastxlsx::CellValue> reacquired_formula =
+        reacquired.try_cell("C2");
+    check(reacquired_formula.has_value() &&
+            reacquired_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reacquired_formula->text_value() == "#REF!+A1" &&
+            reacquired_formula->has_style() &&
+            reacquired_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column missing query matching reacquire should reuse the saved styled formula");
+
+    reacquired.insert_rows(2, 1);
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "renamed formula delete-column missing query later shift should dirty the shared styled session");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed formula delete-column missing query later shift should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 4,
+        "renamed formula delete-column missing query later shift should keep the styled sparse count");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C3");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "#REF!+A2" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column missing query later shift should translate and preserve style id");
+    check(sheet.get_cell("A1").number_value() == 1.0 &&
+            sheet.get_cell("A3").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("B3").text_value() == "row2-gap-c2",
+        "renamed formula delete-column missing query later shift should move source-backed cells");
+    check(!reacquired.try_cell("A2").has_value() &&
+            !reacquired.try_cell("C2").has_value() &&
+            !reacquired.try_cell("D2").has_value(),
+        "renamed formula delete-column missing query later shift should keep old coordinates absent");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-column missing query second save should clean both styled handles");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-column missing query second save should record the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column missing query second save should clear dirty diagnostics again");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    const std::string first_styled_formula_xml =
+        std::string(R"(<c r="C2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+A1</f></c>)";
+    check_contains(first_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-column missing query first output should keep the planned catalog name");
+    check_not_contains(first_workbook_xml, R"(name="Data")",
+        "renamed formula delete-column missing query first output should omit the source catalog name");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "renamed formula delete-column missing query first output should keep delete-column bounds");
+    check_contains(first_worksheet_xml, first_styled_formula_xml,
+        "renamed formula delete-column missing query first output should keep the delete-column styled formula");
+    check_not_contains(first_worksheet_xml, R"(r="C3")",
+        "renamed formula delete-column missing query first output should not include the later row shift");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    const std::string second_styled_formula_xml =
+        std::string(R"(<c r="C3" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+A2</f></c>)";
+    check_contains(second_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-column missing query second output should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "renamed formula delete-column missing query second output should omit the source catalog name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "renamed formula delete-column missing query second output should project combined shifted bounds");
+    check_contains(second_worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "renamed formula delete-column missing query second output should keep shifted B1");
+    check_contains(second_worksheet_xml, R"(<c r="A3")",
+        "renamed formula delete-column missing query second output should write shifted B2");
+    check_contains(second_worksheet_xml, R"(<c r="B3")",
+        "renamed formula delete-column missing query second output should write shifted C2");
+    check_contains(second_worksheet_xml, second_styled_formula_xml,
+        "renamed formula delete-column missing query second output should write translated formula with style id");
+    check_not_contains(second_worksheet_xml, R"(r="C2")",
+        "renamed formula delete-column missing query second output should omit the old formula coordinate");
+    check_not_contains(second_worksheet_xml, R"(r="A2")",
+        "renamed formula delete-column missing query second output should omit inserted blank A2");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed formula delete-column missing query reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed formula delete-column missing query reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column missing query reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 4,
+        "renamed formula delete-column missing query reopened output should keep shifted sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+        "renamed formula delete-column missing query reopened output should expose combined shifted bounds");
+    const std::optional<fastxlsx::CellValue> reopened_c3 =
+        reopened_sheet.try_cell("C3");
+    check(reopened_c3.has_value() &&
+            reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_c3->text_value() == "#REF!+A2" &&
+            reopened_c3->has_style() &&
+            reopened_c3->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column missing query reopened output should read translated styled formula");
+    check(reopened_sheet.get_cell("A1").number_value() == 1.0 &&
+            reopened_sheet.get_cell("A3").text_value() == "row2-gap-b2" &&
+            reopened_sheet.get_cell("B3").text_value() == "row2-gap-c2",
+        "renamed formula delete-column missing query reopened output should read shifted source cells");
+    check(!reopened_sheet.try_cell("A2").has_value() &&
+            !reopened_sheet.try_cell("C2").has_value() &&
+            !reopened_sheet.try_cell("D2").has_value(),
+        "renamed formula delete-column missing query reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reacquire_reuses_styled_session()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -16506,6 +16699,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_deletes_formula_references();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_failed_save_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_option_mismatch_preserves_styled_session();
+            test_public_worksheet_editor_shift_after_rename_delete_columns_formula_missing_query_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reacquire_reuses_styled_session();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_rows();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_save_preserves_styled_session();

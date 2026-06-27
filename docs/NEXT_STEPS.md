@@ -323,6 +323,12 @@ views while reporting shifted tokens.
 Fresh reopened formula-audit outputs now reuse that catalog-view snapshot too:
 the saved shifted workbook keeps source/planned names and catalog entries stable
 around both source scans and post-materialization formula scans.
+The shared failure-diagnostic inspection helper now uses the same catalog-view
+snapshot across all public read-only inspections as well. Invalid references,
+guardrail failures, failed replacements, failed renames, and failed
+materialized mutations keep source/planned names and workbook catalog entries
+stable while preserving the prior `last_edit_error()`, including across
+source/materialized/defined-name formula audit calls.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

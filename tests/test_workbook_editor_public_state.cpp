@@ -748,77 +748,69 @@ void check_workbook_editor_public_clean_state(
 void check_public_inspection_preserves_last_edit_error(
     fastxlsx::WorkbookEditor& editor, const std::optional<std::string>& expected)
 {
+    const WorkbookEditorPublicCatalogSnapshot catalog_before =
+        workbook_editor_public_catalog_snapshot(editor);
+    auto check_inspection_state = [&](std::string_view api_name) {
+        const std::string prefix(api_name);
+        check(editor.last_edit_error() == expected,
+            prefix + " should not update last_edit_error");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before, prefix);
+    };
+
     (void)editor.worksheet_names();
-    check(editor.last_edit_error() == expected,
-        "worksheet_names should not update last_edit_error");
+    check_inspection_state("worksheet_names");
 
     (void)editor.has_worksheet("Data");
-    check(editor.last_edit_error() == expected,
-        "has_worksheet should not update last_edit_error");
+    check_inspection_state("has_worksheet");
 
     (void)editor.source_worksheet_names();
-    check(editor.last_edit_error() == expected,
-        "source_worksheet_names should not update last_edit_error");
+    check_inspection_state("source_worksheet_names");
 
     (void)editor.has_source_worksheet("Data");
-    check(editor.last_edit_error() == expected,
-        "has_source_worksheet should not update last_edit_error");
+    check_inspection_state("has_source_worksheet");
 
     (void)editor.has_pending_changes();
-    check(editor.last_edit_error() == expected,
-        "has_pending_changes should not update last_edit_error");
+    check_inspection_state("has_pending_changes");
 
     (void)editor.pending_change_count();
-    check(editor.last_edit_error() == expected,
-        "pending_change_count should not update last_edit_error");
+    check_inspection_state("pending_change_count");
 
     (void)editor.pending_replacement_cell_count();
-    check(editor.last_edit_error() == expected,
-        "pending_replacement_cell_count should not update last_edit_error");
+    check_inspection_state("pending_replacement_cell_count");
 
     (void)editor.pending_replacement_worksheet_names();
-    check(editor.last_edit_error() == expected,
-        "pending_replacement_worksheet_names should not update last_edit_error");
+    check_inspection_state("pending_replacement_worksheet_names");
 
     (void)editor.pending_materialized_worksheet_names();
-    check(editor.last_edit_error() == expected,
-        "pending_materialized_worksheet_names should not update last_edit_error");
+    check_inspection_state("pending_materialized_worksheet_names");
 
     (void)editor.pending_materialized_cell_count();
-    check(editor.last_edit_error() == expected,
-        "pending_materialized_cell_count should not update last_edit_error");
+    check_inspection_state("pending_materialized_cell_count");
 
     (void)editor.estimated_pending_materialized_memory_usage();
-    check(editor.last_edit_error() == expected,
-        "estimated_pending_materialized_memory_usage should not update last_edit_error");
+    check_inspection_state("estimated_pending_materialized_memory_usage");
 
     (void)editor.has_pending_replacement("Data");
-    check(editor.last_edit_error() == expected,
-        "has_pending_replacement should not update last_edit_error");
+    check_inspection_state("has_pending_replacement");
 
     (void)editor.estimated_pending_replacement_memory_usage();
-    check(editor.last_edit_error() == expected,
-        "estimated_pending_replacement_memory_usage should not update last_edit_error");
+    check_inspection_state("estimated_pending_replacement_memory_usage");
 
     (void)editor.pending_worksheet_edits();
-    check(editor.last_edit_error() == expected,
-        "pending_worksheet_edits should not update last_edit_error");
+    check_inspection_state("pending_worksheet_edits");
 
     (void)editor.worksheet_catalog();
-    check(editor.last_edit_error() == expected,
-        "worksheet_catalog should not update last_edit_error");
+    check_inspection_state("worksheet_catalog");
 
     (void)editor.formula_reference_audits();
-    check(editor.last_edit_error() == expected,
-        "formula_reference_audits should not update last_edit_error");
+    check_inspection_state("formula_reference_audits");
 
     (void)editor.source_formula_reference_audits();
-    check(editor.last_edit_error() == expected,
-        "source_formula_reference_audits should not update last_edit_error");
+    check_inspection_state("source_formula_reference_audits");
 
     (void)editor.defined_name_formula_reference_audits();
-    check(editor.last_edit_error() == expected,
-        "defined_name_formula_reference_audits should not update last_edit_error");
+    check_inspection_state("defined_name_formula_reference_audits");
 }
 
 void check_public_materialization_failure_clean_state(

@@ -297,6 +297,11 @@ are saved and `RenamedData` is reacquired as a clean session,
 `formula_reference_audits()` preserves aggregate memory, full edit summaries,
 pending-state, and `last_edit_error` while still reporting both shifted
 qualified tokens from the materialized store.
+The shared fresh-output clean readback helper now pins the same wider public
+diagnostic surface: reopened saved outputs must keep aggregate
+materialized/replacement memory, pending edit summaries, dirty worksheet-name
+diagnostics, and `last_edit_error` empty both after materialization and after
+valid readback inspections.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

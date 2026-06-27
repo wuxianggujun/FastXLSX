@@ -5814,7 +5814,10 @@ void check_reopened_clean_sheet_output(
         prefix + " reopened output should materialize as clean public state");
     check(reopened_editor.pending_change_count() == 0 &&
             reopened_editor.pending_materialized_cell_count() == 0 &&
-            reopened_editor.pending_replacement_cell_count() == 0,
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
         prefix + " reopened output should not expose dirty diagnostics");
     check(reopened_editor.pending_materialized_worksheet_names().empty() &&
             reopened_editor.pending_replacement_worksheet_names().empty(),
@@ -5827,8 +5830,16 @@ void check_reopened_clean_sheet_output(
         prefix + " reopened readback should keep public state clean");
     check(reopened_editor.pending_change_count() == 0 &&
             reopened_editor.pending_materialized_cell_count() == 0 &&
-            reopened_editor.pending_replacement_cell_count() == 0,
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
         prefix + " reopened readback should keep dirty diagnostics empty");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " reopened readback should keep dirty worksheet names empty");
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened readback should keep last_edit_error empty");
 }
 
 void check_reopened_default_data_sheet_output(

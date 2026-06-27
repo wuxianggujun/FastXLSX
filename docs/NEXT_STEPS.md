@@ -245,6 +245,10 @@ Delete-column formula missing-query hygiene now matches that shape: `Missing`
 and old `Data` lookups fail without diagnostics or dirty state, while matching
 `RenamedData` reacquire still shifts and saves/reopens styled `C3` as
 `#REF!+A2`.
+Delete-column formula invalid-read hygiene is now covered after save too:
+invalid coordinates/ranges, invalid row/column snapshots, and a valid-missing
+`get_cell("D2")` all leave the saved styled `C2` session clean, and matching
+reacquire can still save/reopen styled `C3` as `#REF!+A2`.
 The symmetric renamed delete-row formula path is pinned as well:
 `delete_rows(1, 1)` moves the styled formula to `D1`, translates both row-one
 references to `#REF!`, preserves the style id, and saves/reopens only under

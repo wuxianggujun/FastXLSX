@@ -198,6 +198,10 @@ The column-direction cross-handle shape is covered too: a `Data` column shift
 moves only `Data` source-backed and dirty columns while the already-dirty
 `Untouched` handle keeps its own dirty column coordinate, aggregate dirty counts
 still sum both sessions, and both saved sheets reopen cleanly.
+The delete-row cross-handle path now covers the aggregate-count shrink case:
+`Data.delete_rows()` removes represented records from the deleted row, shifts
+later Data records upward, keeps the other dirty `Untouched` handle unchanged,
+and saves/reopens both sheets with the updated scoped dirty counts.
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.

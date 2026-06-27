@@ -34512,6 +34512,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.777 - Pin cross-handle dirty WorksheetEditor delete-row state
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: cover the cross-handle dirty state path where a row deletion changes the
+shifted sheet's sparse cell count while another dirty materialized handle
+remains unchanged.
+
+Output:
+- Added public-state coverage where `Data` and `Untouched` are dirty before
+  `Data.delete_rows(1, 1)`.
+- The regression verifies deleted Data row records disappear, later Data
+  source-backed and dirty cells shift upward, and the already-dirty `Untouched`
+  handle keeps its source and dirty row coordinates unchanged.
+- Workbook-level dirty materialized names remain scoped to both sheets while
+  aggregate dirty cell count shrinks only by the removed Data records; saved XML
+  and reopened public state verify both sheets after `save_as()`.
+
+Non-goals / boundary:
+- No production code change, no cross-sheet mutation API, no row/column metadata
+  editing, no metadata repair, no sharedStrings/styles migration, no calcChain
+  rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

@@ -159,6 +159,43 @@ const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_public_state_formula_a
     return nullptr;
 }
 
+void check_public_state_renamed_shift_formula_audit(
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    std::string_view qualified_reference_text,
+    std::string_view reference_text,
+    std::string_view message_prefix)
+{
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+        find_public_state_formula_audit(
+            audits, row, column, qualified_reference_text);
+    check(audit != nullptr,
+        std::string(message_prefix) + " should expose the shifted audit entry");
+    if (audit == nullptr) {
+        return;
+    }
+
+    check(audit->formula_sheet_source_name == "Data" &&
+            audit->formula_sheet_planned_name == "RenamedData",
+        std::string(message_prefix) + " should report the renamed formula sheet");
+    check(audit->formula_text == expected_formula &&
+            audit->sheet_qualifier_text == "Data!" &&
+            audit->reference_text == reference_text &&
+            audit->referenced_sheet_name == "Data",
+        std::string(message_prefix) + " should report shifted formula tokens");
+    check(audit->matched_current_workbook_sheet &&
+            audit->matched_source_sheet_name == "Data" &&
+            audit->matched_planned_sheet_name == "RenamedData",
+        std::string(message_prefix) + " should match the renamed workbook catalog");
+    check(audit->references_renamed_source_name &&
+            !audit->references_planned_sheet_name &&
+            !audit->external_workbook_qualifier &&
+            !audit->sheet_range_qualifier,
+        std::string(message_prefix) + " should flag the stale source-name reference");
+}
+
 bool workbook_editor_edit_summaries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
@@ -8073,40 +8110,12 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(audits.size() == 2,
         "renamed formula audit shift should report both shifted sheet-qualified references");
 
-    const auto check_shifted_audit =
-        [&](std::string_view qualified_reference_text,
-            std::string_view reference_text,
-            std::string_view message_prefix) {
-            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
-                find_public_state_formula_audit(
-                    audits, 4, 4, qualified_reference_text);
-            check(audit != nullptr,
-                std::string(message_prefix) + " should expose the shifted audit entry");
-            if (audit == nullptr) {
-                return;
-            }
-
-            check(audit->formula_sheet_source_name == "Data" &&
-                    audit->formula_sheet_planned_name == "RenamedData",
-                std::string(message_prefix) + " should report the renamed formula sheet");
-            check(audit->formula_text == expected_formula &&
-                    audit->sheet_qualifier_text == "Data!" &&
-                    audit->reference_text == reference_text &&
-                    audit->referenced_sheet_name == "Data",
-                std::string(message_prefix) + " should report shifted formula tokens");
-            check(audit->matched_current_workbook_sheet &&
-                    audit->matched_source_sheet_name == "Data" &&
-                    audit->matched_planned_sheet_name == "RenamedData",
-                std::string(message_prefix) + " should match the renamed workbook catalog");
-            check(audit->references_renamed_source_name &&
-                    !audit->references_planned_sheet_name &&
-                    !audit->external_workbook_qualifier &&
-                    !audit->sheet_range_qualifier,
-                std::string(message_prefix) + " should flag the stale source-name reference");
-        };
-
-    check_shifted_audit("Data!A3", "A3", "renamed formula audit shifted A reference");
-    check_shifted_audit("Data!B3", "B3", "renamed formula audit shifted B reference");
+    check_public_state_renamed_shift_formula_audit(
+        audits, 4, 4, expected_formula, "Data!A3", "A3",
+        "renamed formula audit shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        audits, 4, 4, expected_formula, "Data!B3", "B3",
+        "renamed formula audit shifted B reference");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8120,6 +8129,65 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         + R"("><f>Data!A3+Data!B3</f></c>)";
     check_contains(worksheet_xml, styled_formula_xml,
         "renamed formula audit shift save_as should write the shifted qualified formula");
+}
+
+void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_shifted_formula()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_qualified_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_columns(2, 1);
+
+    constexpr std::string_view expected_formula = "Data!B1+Data!C1";
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("E2");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == expected_formula &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "renamed column formula audit shift should expose the translated styled formula");
+
+    const std::vector<std::string> materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t materialized_count_before_audit =
+        editor.pending_materialized_cell_count();
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
+        "renamed column formula audit shift should preserve dirty materialized diagnostics");
+    check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed column formula audit shift should preserve dirty materialized cell count");
+    check(audits.size() == 2,
+        "renamed column formula audit shift should report both shifted sheet-qualified references");
+    check_public_state_renamed_shift_formula_audit(
+        audits, 2, 5, expected_formula, "Data!B1", "B1",
+        "renamed column formula audit shifted B reference");
+    check_public_state_renamed_shift_formula_audit(
+        audits, 2, 5, expected_formula, "Data!C1", "C1",
+        "renamed column formula audit shifted C reference");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "renamed column formula audit shift save_as should clean the planned-name handle");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="E2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>Data!B1+Data!C1</f></c>)";
+    check_contains(worksheet_xml, styled_formula_xml,
+        "renamed column formula audit shift save_as should write the shifted qualified formula");
 }
 
 void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style()
@@ -18410,6 +18478,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula();
+            test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_shifted_formula();
             test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session();
             test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserves_styled_session();

@@ -270,6 +270,9 @@ after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit
 reports only the surviving shifted sheet-qualified A1 token instead of treating
 `Data!#REF!` as a reference.
+Those delete-side materialized audits now reuse the same public-state diagnostic
+snapshot helper across dirty sessions and post-save clean reacquire, preserving
+aggregate memory, full edit summaries, pending-state, and `last_edit_error`.
 The same delete-side audit now extends through post-save matching reacquire:
 after `save_as()`, `worksheet("RenamedData")` reuses the clean saved session,
 pending materialized diagnostics remain empty, and `formula_reference_audits()`

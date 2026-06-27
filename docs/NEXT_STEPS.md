@@ -329,6 +329,10 @@ guardrail failures, failed replacements, failed renames, and failed
 materialized mutations keep source/planned names and workbook catalog entries
 stable while preserving the prior `last_edit_error()`, including across
 source/materialized/defined-name formula audit calls.
+The formula/definedName rewrite shard now mirrors that helper contract: its
+shared inspection helper snapshots source/planned worksheet names and full
+catalog entries around formula, source-formula, and definedName audit calls,
+without broadening default rename behavior or adding definedName repair.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

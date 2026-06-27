@@ -35216,6 +35216,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.799 - Pin renamed WorksheetEditor shift path-equivalent failed save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a renamed planned-name materialized shift session treats
+path-equivalent source overwrite outputs like exact source overwrites after
+post-save reacquire.
+
+Output:
+- Extended the renamed shift failed-save public-state regression to reject
+  `save_as(source.parent_path() / "." / source.filename())` after the exact
+  source overwrite rejection.
+- The added branch reuses the dirty planned-session checks, so source names,
+  planned names, catalog entries, pending edit summaries, dirty materialized
+  diagnostics, and both handles stay under `RenamedData`.
+- The following source/first-output/safe-retry XML checks now prove both
+  source-overwrite spellings preserve the source workbook and still allow the
+  dirty renamed session to flush safely.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no workbook catalog repair beyond
+  the existing planned-name helper, no formula/definedName rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.798 - Pin renamed WorksheetEditor shift invalid mutations
 
 Status: completed.

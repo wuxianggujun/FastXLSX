@@ -8024,6 +8024,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
 {
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-source.xlsx");
+    const std::filesystem::path equivalent_source =
+        source.parent_path() / "." / source.filename();
     const std::filesystem::path first_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-first-output.xlsx");
     const std::filesystem::path second_output =
@@ -8124,6 +8126,10 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save should reject exact source overwrite");
     check_dirty_planned_session(
         "renamed shift failed save rejected source overwrite");
+    check(threw_fastxlsx_error([&] { editor.save_as(equivalent_source); }),
+        "renamed shift failed save should reject path-equivalent source overwrite");
+    check_dirty_planned_session(
+        "renamed shift failed save rejected path-equivalent source overwrite");
     check(sheet.get_cell("C1").number_value() == 1.0 &&
             reacquired.get_cell("C1").number_value() == 1.0,
         "renamed shift failed save should preserve shifted numeric cells after rejection");

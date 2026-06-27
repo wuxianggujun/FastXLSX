@@ -144,6 +144,36 @@ bool workbook_editor_catalog_entries_equal(
     return true;
 }
 
+struct WorkbookEditorPublicCatalogSnapshot {
+    std::vector<std::string> source_names;
+    std::vector<std::string> planned_names;
+    std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog;
+};
+
+WorkbookEditorPublicCatalogSnapshot workbook_editor_public_catalog_snapshot(
+    const fastxlsx::WorkbookEditor& editor)
+{
+    return {
+        editor.source_worksheet_names(),
+        editor.worksheet_names(),
+        editor.worksheet_catalog(),
+    };
+}
+
+void check_workbook_editor_public_catalog_preserved(
+    const fastxlsx::WorkbookEditor& editor,
+    const WorkbookEditorPublicCatalogSnapshot& before,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    check(editor.source_worksheet_names() == before.source_names,
+        prefix + " should preserve source worksheet names");
+    check(editor.worksheet_names() == before.planned_names,
+        prefix + " should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), before.catalog),
+        prefix + " should preserve worksheet catalog");
+}
+
 const fastxlsx::WorkbookEditorFormulaReferenceAudit* find_public_state_formula_audit(
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
     std::uint32_t row,
@@ -264,8 +294,13 @@ void check_public_state_reopened_delete_formula_audit_output(
     check(reopened.has_worksheet("RenamedData") &&
             !reopened.has_worksheet("Data"),
         std::string(message_prefix) + " should expose only the saved planned sheet name");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_source_audit =
+        workbook_editor_public_catalog_snapshot(reopened);
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
         reopened.source_formula_reference_audits();
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_source_audit,
+        std::string(message_prefix) + " source audit");
     check_public_state_reopened_formula_audit_clean_editor(
         reopened, std::string(message_prefix) + " source audit");
     check(source_audits.size() == 1,
@@ -292,8 +327,13 @@ void check_public_state_reopened_delete_formula_audit_output(
             reopened_formula->style_id().value() == expected_style.value(),
         std::string(message_prefix) + " should rematerialize the styled formula");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_materialized_audit =
+        workbook_editor_public_catalog_snapshot(reopened);
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
         reopened.formula_reference_audits();
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_materialized_audit,
+        std::string(message_prefix) + " materialized audit");
     check_public_state_reopened_formula_audit_clean_editor(
         reopened, std::string(message_prefix) + " after materialized audit");
     check(reopened_audits.size() == 1,
@@ -323,8 +363,13 @@ void check_public_state_reopened_shift_formula_audit_output(
     check(reopened.has_worksheet("RenamedData") &&
             !reopened.has_worksheet("Data"),
         std::string(message_prefix) + " should expose only the saved planned sheet name");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_source_audit =
+        workbook_editor_public_catalog_snapshot(reopened);
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
         reopened.source_formula_reference_audits();
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_source_audit,
+        std::string(message_prefix) + " source audit");
     check_public_state_reopened_formula_audit_clean_editor(
         reopened, std::string(message_prefix) + " source audit");
     check(source_audits.size() == 2,
@@ -353,8 +398,13 @@ void check_public_state_reopened_shift_formula_audit_output(
             reopened_formula->style_id().value() == expected_style.value(),
         std::string(message_prefix) + " should rematerialize the styled formula");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_materialized_audit =
+        workbook_editor_public_catalog_snapshot(reopened);
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
         reopened.formula_reference_audits();
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_materialized_audit,
+        std::string(message_prefix) + " materialized audit");
     check_public_state_reopened_formula_audit_clean_editor(
         reopened, std::string(message_prefix) + " after materialized audit");
     check(reopened_audits.size() == 2,

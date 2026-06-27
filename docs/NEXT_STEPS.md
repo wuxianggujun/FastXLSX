@@ -320,6 +320,9 @@ Those formula-audit snapshots now also pin source worksheet names, planned
 worksheet names, and workbook sheet catalog entries across both source and
 materialized audit calls, so formula scanning cannot silently mutate catalog
 views while reporting shifted tokens.
+Fresh reopened formula-audit outputs now reuse that catalog-view snapshot too:
+the saved shifted workbook keeps source/planned names and catalog entries stable
+around both source scans and post-materialization formula scans.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

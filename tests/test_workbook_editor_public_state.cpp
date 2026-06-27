@@ -8312,6 +8312,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     fastxlsx::test::write_file(file_parent, "not a directory");
     std::filesystem::remove_all(directory_output);
     std::filesystem::create_directories(directory_output);
+    const auto source_entries_before_save_preflights =
+        fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -8492,6 +8494,17 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         + R"("><f>Data!A3+Data!B3</f></c>)";
     check_contains(worksheet_xml, styled_formula_xml,
         "renamed formula audit shift save_as should write the shifted qualified formula");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_save_preflights,
+        "renamed formula audit shift safe save should leave source package bytes unchanged");
+    check(!std::filesystem::exists(missing_parent_output),
+        "renamed formula audit shift safe save should keep rejected missing-parent output absent");
+    check(std::filesystem::is_regular_file(file_parent) &&
+            fastxlsx::test::read_file(file_parent) == "not a directory",
+        "renamed formula audit shift safe save should preserve non-directory parent file");
+    check(!std::filesystem::exists(non_directory_output),
+        "renamed formula audit shift safe save should not create non-directory child output");
+    check(std::filesystem::is_directory(directory_output),
+        "renamed formula audit shift safe save should preserve rejected output directory");
     check_public_state_reopened_shift_formula_audit_output(
         output, "D4", 4, 4, expected_formula, styled_formula_style,
         "Data!A3", "A3", "Data!B3", "B3",
@@ -8522,6 +8535,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     fastxlsx::test::write_file(file_parent, "not a directory");
     std::filesystem::remove_all(directory_output);
     std::filesystem::create_directories(directory_output);
+    const auto source_entries_before_save_preflights =
+        fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -8685,6 +8700,17 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         + R"("><f>Data!B1+Data!C1</f></c>)";
     check_contains(worksheet_xml, styled_formula_xml,
         "renamed column formula audit shift save_as should write the shifted qualified formula");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_save_preflights,
+        "renamed column formula audit shift safe save should leave source package bytes unchanged");
+    check(!std::filesystem::exists(missing_parent_output),
+        "renamed column formula audit shift safe save should keep rejected missing-parent output absent");
+    check(std::filesystem::is_regular_file(file_parent) &&
+            fastxlsx::test::read_file(file_parent) == "not a directory",
+        "renamed column formula audit shift safe save should preserve non-directory parent file");
+    check(!std::filesystem::exists(non_directory_output),
+        "renamed column formula audit shift safe save should not create non-directory child output");
+    check(std::filesystem::is_directory(directory_output),
+        "renamed column formula audit shift safe save should preserve rejected output directory");
     check_public_state_reopened_shift_formula_audit_output(
         output, "E2", 2, 5, expected_formula, styled_formula_style,
         "Data!B1", "B1", "Data!C1", "C1",

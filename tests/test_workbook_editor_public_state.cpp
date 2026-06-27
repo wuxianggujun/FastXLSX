@@ -8529,6 +8529,15 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(!sheet.has_pending_changes(),
         "renamed formula audit shift save_as should clean the planned-name handle");
 
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed formula audit shift post-save reacquire should reuse a clean saved session");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula audit shift post-save reacquire should keep materialized diagnostics clean");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shift post-save reacquire source scan");
+
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -8735,6 +8744,15 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check(!sheet.has_pending_changes(),
         "renamed column formula audit shift save_as should clean the planned-name handle");
 
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed column formula audit shift post-save reacquire should reuse a clean saved session");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed column formula audit shift post-save reacquire should keep materialized diagnostics clean");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shift post-save reacquire source scan");
+
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -8870,6 +8888,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         check_public_state_renamed_shift_formula_audit(
             reacquired_audits, 1, 4, expected_formula, "Data!B1", "B1",
             "renamed delete-row formula audit reacquire surviving B reference");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit post-save reacquire source scan");
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -9004,6 +9024,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         check_public_state_renamed_shift_formula_audit(
             reacquired_audits, 2, 3, expected_formula, "Data!A2", "A2",
             "renamed delete-column formula audit reacquire surviving A reference");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit post-save reacquire source scan");
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");

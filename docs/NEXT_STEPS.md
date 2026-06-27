@@ -337,6 +337,9 @@ The facade, public-retry, and source-success common helpers now share that
 catalog-view inspection contract too, so their public read-only inspection
 paths preserve source/planned names and catalog entries while leaving
 `last_edit_error()` untouched.
+The remaining standalone public WorkbookEditor shards now use the same helper
+contract, completing catalog-view preservation coverage for read-only
+inspection APIs without changing production semantics.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

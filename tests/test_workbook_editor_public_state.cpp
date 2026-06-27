@@ -329,6 +329,49 @@ void check_public_state_reopened_shift_formula_audit_output(
         second_qualified_reference_text, second_reference_text, message_prefix);
 }
 
+void check_public_state_source_formula_audit_preserves_shift_fixture(
+    const fastxlsx::WorkbookEditor& editor,
+    std::string_view message_prefix)
+{
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t materialized_count_before_audit =
+        editor.pending_materialized_cell_count();
+    const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
+    const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        editor.source_formula_reference_audits();
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        std::string(message_prefix) + " should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        std::string(message_prefix) + " should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
+        std::string(message_prefix) + " should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
+        std::string(message_prefix) + " should preserve dirty materialized diagnostics");
+    check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        std::string(message_prefix) + " should preserve dirty materialized cell count");
+    check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
+        std::string(message_prefix) + " should not create pending edit summaries");
+    check(editor.last_edit_error() == last_error_before_audit,
+        std::string(message_prefix) + " should not update last_edit_error");
+
+    constexpr std::string_view source_formula = "Data!A1+Data!B1";
+    check(source_audits.size() == 2,
+        std::string(message_prefix) + " should report only the source formula references");
+    check_public_state_renamed_shift_formula_audit(
+        source_audits, 2, 4, source_formula, "Data!A1", "A1",
+        std::string(message_prefix) + " source A reference");
+    check_public_state_renamed_shift_formula_audit(
+        source_audits, 2, 4, source_formula, "Data!B1", "B1",
+        std::string(message_prefix) + " source B reference");
+}
+
 bool workbook_editor_edit_summaries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
@@ -8276,6 +8319,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check_public_state_renamed_shift_formula_audit(
         audits, 4, 4, expected_formula, "Data!B3", "B3",
         "renamed formula audit shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8339,6 +8384,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check_public_state_renamed_shift_formula_audit(
         audits, 2, 5, expected_formula, "Data!C1", "C1",
         "renamed column formula audit shifted C reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

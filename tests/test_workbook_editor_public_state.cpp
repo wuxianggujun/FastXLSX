@@ -196,6 +196,90 @@ void check_public_state_renamed_shift_formula_audit(
         std::string(message_prefix) + " should flag the stale source-name reference");
 }
 
+void check_public_state_reopened_unmatched_formula_audit(
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    std::string_view qualified_reference_text,
+    std::string_view reference_text,
+    std::string_view message_prefix)
+{
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+        find_public_state_formula_audit(
+            audits, row, column, qualified_reference_text);
+    check(audit != nullptr,
+        std::string(message_prefix) + " should expose the reopened audit entry");
+    if (audit == nullptr) {
+        return;
+    }
+
+    check(audit->formula_sheet_source_name == "RenamedData" &&
+            audit->formula_sheet_planned_name == "RenamedData",
+        std::string(message_prefix) + " should report the reopened formula sheet");
+    check(audit->formula_text == expected_formula &&
+            audit->sheet_qualifier_text == "Data!" &&
+            audit->reference_text == reference_text &&
+            audit->referenced_sheet_name == "Data",
+        std::string(message_prefix) + " should report the reopened formula tokens");
+    check(!audit->matched_current_workbook_sheet &&
+            audit->matched_source_sheet_name.empty() &&
+            audit->matched_planned_sheet_name.empty(),
+        std::string(message_prefix) + " should leave the stale qualifier unmatched");
+    check(!audit->references_renamed_source_name &&
+            !audit->references_planned_sheet_name &&
+            !audit->external_workbook_qualifier &&
+            !audit->sheet_range_qualifier,
+        std::string(message_prefix) + " should not reconstruct rename risk after reopen");
+}
+
+void check_public_state_reopened_delete_formula_audit_output(
+    const std::filesystem::path& output,
+    std::string_view cell_reference,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    fastxlsx::StyleId expected_style,
+    std::string_view qualified_reference_text,
+    std::string_view reference_text,
+    std::string_view message_prefix)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("RenamedData") &&
+            !reopened.has_worksheet("Data"),
+        std::string(message_prefix) + " should expose only the saved planned sheet name");
+
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        std::string(message_prefix) + " should reopen into a clean materialized session");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0,
+        std::string(message_prefix) + " should keep materialized diagnostics clean before audit");
+
+    const std::optional<fastxlsx::CellValue> reopened_formula =
+        reopened_sheet.try_cell(cell_reference);
+    check(reopened_formula.has_value() &&
+            reopened_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula->text_value() == expected_formula &&
+            reopened_formula->has_style() &&
+            reopened_formula->style_id().value() == expected_style.value(),
+        std::string(message_prefix) + " should rematerialize the styled formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
+        reopened.formula_reference_audits();
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0,
+        std::string(message_prefix) + " should keep materialized diagnostics clean after audit");
+    check(reopened_audits.size() == 1,
+        std::string(message_prefix) + " should keep only the surviving reference after reopen");
+    check(find_public_state_formula_audit(
+              reopened_audits, row, column, "Data!#REF!") == nullptr,
+        std::string(message_prefix) + " should still skip Data!#REF! after reopen");
+    check_public_state_reopened_unmatched_formula_audit(
+        reopened_audits, row, column, expected_formula,
+        qualified_reference_text, reference_text, message_prefix);
+}
+
 bool workbook_editor_edit_summaries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
@@ -8285,6 +8369,10 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             + R"("><f>Data!#REF!+Data!B1</f></c>)";
         check_contains(worksheet_xml, styled_formula_xml,
             "renamed delete-row formula audit save_as should write the #REF! formula");
+        check_public_state_reopened_delete_formula_audit_output(
+            output, "D1", 1, 4, expected_formula, styled_formula_style,
+            "Data!B1", "B1",
+            "renamed delete-row formula audit reopened output surviving B reference");
     }
 
     {
@@ -8353,6 +8441,10 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             + R"("><f>Data!#REF!+Data!A2</f></c>)";
         check_contains(worksheet_xml, styled_formula_xml,
             "renamed delete-column formula audit save_as should write the #REF! formula");
+        check_public_state_reopened_delete_formula_audit_output(
+            output, "C2", 2, 3, expected_formula, styled_formula_style,
+            "Data!A2", "A2",
+            "renamed delete-column formula audit reopened output surviving A reference");
     }
 }
 

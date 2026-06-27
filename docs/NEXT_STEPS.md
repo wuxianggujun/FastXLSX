@@ -209,6 +209,11 @@ The same delete-side audit now extends through post-save matching reacquire:
 after `save_as()`, `worksheet("RenamedData")` reuses the clean saved session,
 pending materialized diagnostics remain empty, and `formula_reference_audits()`
 still reports only the surviving shifted reference.
+A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
+the same styled `#REF!` formulas and keeps audit state lexical-only: the
+surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,
+and the stale `Data!` qualifier is unmatched because the reopened workbook
+catalog contains only `RenamedData`.
 Renamed formula shifts are now pinned across same-editor post-save reacquire:
 after saving the `insert_rows(2, 2)` styled formula shift, `try_worksheet("RenamedData")`
 reuses the clean formula/style session, old `Data` stays unavailable, a later

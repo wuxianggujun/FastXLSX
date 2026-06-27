@@ -5472,6 +5472,23 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_row should omit the old target-row numeric payload");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
             "clear_row should preserve untouched worksheets");
+        check_reopened_clean_sheet_output(output, "Data", "clear_row",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "clear_row reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    "clear_row reopened output should keep explicit blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_row reopened output should read A1 as an explicit blank");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_row reopened output should read B1 as an explicit blank");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "clear_row reopened output should keep non-target rows");
+            });
     }
 
     {
@@ -5515,6 +5532,26 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_rows should omit old row-two text payload");
         check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
             "clear_rows should omit old row-one numeric payload");
+        check_reopened_clean_sheet_output(output, "Data", "clear_rows",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "clear_rows reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                    "clear_rows reopened output should keep explicit blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_rows reopened output should read A1 as an explicit blank");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_rows reopened output should read B1 as an explicit blank");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_rows reopened output should read A2 as an explicit blank");
+                const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+                check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_d4.text_value() == "clear-row-range-extra",
+                    "clear_rows reopened output should keep non-target row edits");
+            });
     }
 
     {
@@ -5557,6 +5594,22 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_row should persist styled blanks with the source style id");
         check_contains(worksheet_xml, R"(<c r="B1"/>)",
             "clear_row should persist unstyled source cells as unstyled blanks");
+        check_reopened_clean_sheet_output(output, "Styled", "styled clear_row",
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "styled clear_row reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "styled clear_row reopened output should keep cleared row bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "styled clear_row reopened output should preserve blank source style id");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank &&
+                        !reopened_b1.has_style(),
+                    "styled clear_row reopened output should keep unstyled blank unstyled");
+            });
     }
 
     {
@@ -5663,6 +5716,23 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "clear_column should omit old row-two text payload");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
             "clear_column should preserve untouched worksheets");
+        check_reopened_clean_sheet_output(output, "Data", "clear_column",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "clear_column reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    "clear_column reopened output should keep explicit blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_column reopened output should read A1 as an explicit blank");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_column reopened output should read A2 as an explicit blank");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "clear_column reopened output should keep non-target columns");
+            });
     }
 
     {
@@ -5706,6 +5776,26 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "clear_columns should omit old first-column row-two text payload");
         check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
             "clear_columns should omit old second-column numeric payload");
+        check_reopened_clean_sheet_output(output, "Data", "clear_columns",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "clear_columns reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                    "clear_columns reopened output should keep explicit blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_columns reopened output should read A1 as an explicit blank");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_columns reopened output should read A2 as an explicit blank");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_columns reopened output should read B1 as an explicit blank");
+                const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+                check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_d4.text_value() == "clear-column-range-extra",
+                    "clear_columns reopened output should keep non-target column edits");
+            });
     }
 
     {

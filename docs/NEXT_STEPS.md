@@ -548,6 +548,9 @@ store. They do not add row/column deletion, row/column shifting, row/column
 metadata editing, dense range editing, tombstone output, style
 migration/merge/creation, relationship repair, or large-file low-memory random
 editing.
+The saved clear outputs are reopened in public-state coverage to verify clean
+readback for explicit blanks, preserved source style ids, and non-target sparse
+cells after row and column clears.
 `WorksheetEditor::erase_row()` and `WorksheetEditor::erase_rows()` now cover
 the sparse row delete convenience for small files: they delete only represented
 active sparse records from a single row or inclusive row range, treat missing

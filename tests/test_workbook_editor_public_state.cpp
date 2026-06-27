@@ -4652,6 +4652,28 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
             "rejected append_row value should not leak into saved output");
         check_not_contains(worksheet_xml, "placeholder-a2",
             "append_row after erase should not resurrect erased source cells");
+
+        check_reopened_clean_sheet_output(output, "Data", "append_row guardrail recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "append_row guardrail recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    "append_row guardrail recovery reopened output should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "append_row guardrail recovery reopened output should keep source-backed A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "append_row guardrail recovery reopened output should keep source-backed B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "append-after-erase",
+                    "append_row guardrail recovery reopened output should read appended A2");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    "append_row guardrail recovery reopened output should keep rejected A3 absent");
+            });
     }
 }
 

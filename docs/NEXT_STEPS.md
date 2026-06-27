@@ -128,6 +128,9 @@ pinning blank persistence while unrelated missing cells remain absent.
 The row/column coordinate overload recovery path is reopened after invalid
 mutations, verifying the later valid A1 overwrite persists without rejected
 payloads.
+The `append_row()` max-cells guardrail recovery path is reopened after erasing a
+source-backed row to release budget, pinning the saved appended A2 and rejected
+payload absence.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

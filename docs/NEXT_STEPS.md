@@ -59,8 +59,9 @@ clean sessions, and keep no-op `save_as()` output copy-original. The
 retry/reacquire shard now also covers insert/delete row and column shifts after
 a failed source-overwrite `save_as()`, safe retry, and matching post-save
 `worksheet()` reacquire, including moved source-backed cells, formula text
-translation, dirty borrowed handles, restored-name diagnostics, and saved XML
-projection. Public-state coverage now also verifies that materialized row/column
+translation, row/column out-of-bounds `#REF!` translation, dirty borrowed
+handles, restored-name diagnostics, and saved XML projection. Public-state
+coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,
 A1-style ranges, sheet-qualified references, whole-row/whole-column ranges, and
 quoted / structured-reference skip cases while preserving the existing

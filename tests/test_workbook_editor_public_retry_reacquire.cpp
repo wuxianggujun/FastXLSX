@@ -1275,6 +1275,167 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
     }
 }
 
+void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_shifts_preserve_reacquired_state()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-row-ref-formula-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-row-ref-formula-first.xlsx");
+        const std::filesystem::path second_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-row-ref-formula-second.xlsx");
+
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 8;
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.rename_sheet("Data", "TransientDeleteRowRefFormula");
+        editor.rename_sheet("TransientDeleteRowRefFormula", "Data");
+
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        sheet.set_cell(4, 3, fastxlsx::CellValue::formula("A1+A:A+1:1+B4"));
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "source-overwrite save_as should reject before delete-row ref formula recovery setup flushes");
+        editor.save_as(first_output);
+
+        fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+            "matching reacquire before delete_rows ref formula shift should keep both handles clean");
+        const fastxlsx::CellValue saved_formula = reacquired.get_cell("C4");
+        check(saved_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                saved_formula.text_value() == "A1+A:A+1:1+B4",
+            "matching reacquire before delete_rows ref formula shift should reuse saved formula text");
+        check(!editor.last_edit_error().has_value(),
+            "delete-row ref formula recovery should not create last_edit_error");
+
+        fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+        matching.delete_rows(1, 1);
+
+        check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+                matching.has_pending_changes(),
+            "post-reacquire delete_rows ref formula shift should dirty all shared handles");
+        check(matching.get_cell("A1").text_value() == "placeholder-a2",
+            "post-reacquire delete_rows ref formula shift should move source-backed rows");
+        check(!matching.try_cell("C4").has_value(),
+            "post-reacquire delete_rows ref formula shift should remove the old formula coordinate");
+        const fastxlsx::CellValue shifted_formula = matching.get_cell("C3");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == "#REF!+A:A+#REF!+B3",
+            "post-reacquire delete_rows should translate row-out-of-bounds formula references to #REF!");
+
+        editor.save_as(second_output);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+                !matching.has_pending_changes(),
+            "second safe save_as should clean delete-row ref formula recovery handles");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "second safe save_as should clear delete-row ref formula dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "second safe save_as should clear delete-row ref formula dirty cell count");
+
+        const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+        check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "first delete-row ref formula recovery output should use the restored source name");
+        check_not_contains(first_entries.at("xl/workbook.xml"), "TransientDeleteRowRefFormula",
+            "first delete-row ref formula recovery output should not leak the transient planned name");
+        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+            R"(<c r="C4"><f>A1+A:A+1:1+B4</f></c>)",
+            "first output should contain the saved formula before delete_rows ref formula shift");
+
+        const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "second delete-row ref formula recovery output should keep the restored source name");
+        check_not_contains(second_entries.at("xl/workbook.xml"), "TransientDeleteRowRefFormula",
+            "second delete-row ref formula recovery output should not leak the transient planned name");
+        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            R"(<c r="C3"><f>#REF!+A:A+#REF!+B3</f></c>)",
+            "second output should persist delete-row #REF formula translation");
+        check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            R"(<c r="C4"><f>A1+A:A+1:1+B4</f></c>)",
+            "second output should not keep the old delete-row ref formula coordinate");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-column-ref-formula-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-column-ref-formula-first.xlsx");
+        const std::filesystem::path second_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-column-ref-formula-second.xlsx");
+
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 8;
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.rename_sheet("Data", "TransientDeleteColumnRefFormula");
+        editor.rename_sheet("TransientDeleteColumnRefFormula", "Data");
+
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        sheet.set_cell(1, 4, fastxlsx::CellValue::formula("A1+A:A+1:1+D2"));
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "source-overwrite save_as should reject before delete-column ref formula recovery setup flushes");
+        editor.save_as(first_output);
+
+        fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+            "matching reacquire before delete_columns ref formula shift should keep both handles clean");
+        const fastxlsx::CellValue saved_formula = reacquired.get_cell("D1");
+        check(saved_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                saved_formula.text_value() == "A1+A:A+1:1+D2",
+            "matching reacquire before delete_columns ref formula shift should reuse saved formula text");
+        check(!editor.last_edit_error().has_value(),
+            "delete-column ref formula recovery should not create last_edit_error");
+
+        fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+        matching.delete_columns(1, 1);
+
+        check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+                matching.has_pending_changes(),
+            "post-reacquire delete_columns ref formula shift should dirty all shared handles");
+        const fastxlsx::CellValue shifted_number = matching.get_cell("A1");
+        check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_number.number_value() == 1.0,
+            "post-reacquire delete_columns ref formula shift should move source-backed columns");
+        check(!matching.try_cell("D1").has_value(),
+            "post-reacquire delete_columns ref formula shift should remove the old formula coordinate");
+        const fastxlsx::CellValue shifted_formula = matching.get_cell("C1");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == "#REF!+#REF!+1:1+C2",
+            "post-reacquire delete_columns should translate column-out-of-bounds formula references to #REF!");
+
+        editor.save_as(second_output);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+                !matching.has_pending_changes(),
+            "second safe save_as should clean delete-column ref formula recovery handles");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "second safe save_as should clear delete-column ref formula dirty names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "second safe save_as should clear delete-column ref formula dirty cell count");
+
+        const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+        check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "first delete-column ref formula recovery output should use the restored source name");
+        check_not_contains(first_entries.at("xl/workbook.xml"), "TransientDeleteColumnRefFormula",
+            "first delete-column ref formula recovery output should not leak the transient planned name");
+        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+            R"(<c r="D1"><f>A1+A:A+1:1+D2</f></c>)",
+            "first output should contain the saved formula before delete_columns ref formula shift");
+
+        const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+        check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "second delete-column ref formula recovery output should keep the restored source name");
+        check_not_contains(second_entries.at("xl/workbook.xml"), "TransientDeleteColumnRefFormula",
+            "second delete-column ref formula recovery output should not leak the transient planned name");
+        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            R"(<c r="C1"><f>#REF!+#REF!+1:1+C2</f></c>)",
+            "second output should persist delete-column #REF formula translation");
+        check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            R"(<c r="D1"><f>A1+A:A+1:1+D2</f></c>)",
+            "second output should not keep the old delete-column ref formula coordinate");
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1293,6 +1454,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preserves_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_preserve_reacquired_state();
+            test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_shifts_preserve_reacquired_state();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

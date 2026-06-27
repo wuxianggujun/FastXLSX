@@ -6882,6 +6882,61 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "rejected max_cells mutation should not leak into saved output");
 }
 
+void check_reopened_guardrail_budget_release_output(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options,
+    std::string_view scenario,
+    std::string_view expected_inserted_text)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        prefix + " reopened output should keep the replacement sparse cell count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+        prefix + " reopened output should refresh the sparse used range");
+
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a1.text_value() == "placeholder-a1",
+        prefix + " reopened output should keep source-backed A1");
+    const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+    check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_b1.number_value() == 1.0,
+        prefix + " reopened output should keep source-backed B1");
+    check(!reopened_sheet.try_cell("A2").has_value(),
+        prefix + " reopened output should keep erased source-backed A2 absent");
+    const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+    check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_d4.text_value() == expected_inserted_text,
+        prefix + " reopened output should read back the replacement insertion");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_four =
+        reopened_sheet.row_cells(4);
+    check(reopened_row_four.size() == 1 &&
+            reopened_row_four[0].reference.row == 4 &&
+            reopened_row_four[0].reference.column == 4 &&
+            reopened_row_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_row_four[0].value.text_value() == expected_inserted_text,
+        prefix + " reopened row_cells should expose the replacement insertion");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+        reopened_sheet.column_cells(4);
+    check(reopened_column_four.size() == 1 &&
+            reopened_column_four[0].reference.row == 4 &&
+            reopened_column_four[0].reference.column == 4 &&
+            reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_column_four[0].value.text_value() == expected_inserted_text,
+        prefix + " reopened column_cells should expose the replacement insertion");
+}
+
 void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()
 {
     const std::filesystem::path max_source =
@@ -6951,6 +7006,11 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "rejected max_cells insertion before erase should not leak into output");
     check_not_contains(max_worksheet_xml, "placeholder-a2",
         "erased source-backed A2 should not leak into max_cells output");
+    check_reopened_guardrail_budget_release_output(
+        max_output,
+        max_options,
+        "max_cells budget-release insertion",
+        "after-erase-max-cells");
 
     const std::filesystem::path memory_source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-source.xlsx");
@@ -7017,6 +7077,11 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "rejected memory-budget insertion before erase should not leak into output");
     check_not_contains(memory_worksheet_xml, "placeholder-a2",
         "erased source-backed A2 should not leak into memory-budget output");
+    check_reopened_guardrail_budget_release_output(
+        memory_output,
+        memory_options,
+        "memory-budget budget-release insertion",
+        "mem-ok");
 }
 
 void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_clean()

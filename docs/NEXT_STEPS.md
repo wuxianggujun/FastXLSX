@@ -91,7 +91,11 @@ coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,
 A1-style ranges, sheet-qualified references, whole-row/whole-column ranges, and
 quoted / structured-reference skip cases while preserving the existing
-non-parser / non-evaluator boundary. The benchmark tool
+non-parser / non-evaluator boundary.
+The direct public-state row/column shift saves are also reopened, pinning clean
+readback for shifted sparse coordinates, translated formulas, preserved source
+styles on moved formulas, and removed old sparse coordinates.
+The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level
 `fastxlsx_bench_package_editor_cell_replacement` remains useful for transformer

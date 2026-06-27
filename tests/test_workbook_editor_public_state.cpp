@@ -5892,6 +5892,34 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
     }
 }
 
+void check_reopened_shift_output(
+    const std::filesystem::path& output,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened output should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " reopened output should not expose dirty diagnostics");
+
+    inspect(reopened_sheet);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened readback should keep public state clean");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " reopened readback should keep dirty diagnostics empty");
+}
+
 void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -6009,6 +6037,55 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         "insert_rows save_as should not keep the old dirty row coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "insert_rows should preserve untouched worksheets");
+    check_reopened_shift_output(output, "insert_rows",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "insert_rows reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+                "insert_rows reopened output should expose shifted used range");
+            const std::optional<fastxlsx::CellValue> reopened_a1 =
+                reopened_sheet.try_cell("A1");
+            check(reopened_a1.has_value() &&
+                    reopened_a1->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1->text_value() == "placeholder-a1",
+                "insert_rows reopened output should keep A1 above the insertion point");
+            const std::optional<fastxlsx::CellValue> reopened_b1 =
+                reopened_sheet.try_cell("B1");
+            check(reopened_b1.has_value() &&
+                    reopened_b1->kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1->number_value() == 1.0,
+                "insert_rows reopened output should keep B1 above the insertion point");
+            const std::optional<fastxlsx::CellValue> reopened_a4 =
+                reopened_sheet.try_cell("A4");
+            check(reopened_a4.has_value() &&
+                    reopened_a4->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a4->text_value() == "placeholder-a2",
+                "insert_rows reopened output should read shifted source A2 at A4");
+            const std::optional<fastxlsx::CellValue> reopened_d4 =
+                reopened_sheet.try_cell("D4");
+            check(reopened_d4.has_value() &&
+                    reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d4->text_value() == "A3+B3" &&
+                    reopened_d4->has_style() &&
+                    reopened_d4->style_id().value() == styled_formula_style.value(),
+                "insert_rows reopened output should read translated styled formula at D4");
+            const std::optional<fastxlsx::CellValue> reopened_a5 =
+                reopened_sheet.try_cell("A5");
+            check(reopened_a5.has_value() &&
+                    reopened_a5->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a5->text_value() == "extra-c3",
+                "insert_rows reopened output should read shifted source trailing cell at A5");
+            const std::optional<fastxlsx::CellValue> reopened_c5 =
+                reopened_sheet.try_cell("C5");
+            check(reopened_c5.has_value() &&
+                    reopened_c5->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c5->text_value() == "extra-c3",
+                "insert_rows reopened output should read shifted dirty trailing cell at C5");
+            check(!reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "insert_rows reopened output should keep old sparse coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
@@ -6133,6 +6210,36 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         "delete_rows save_as should omit deleted row text cells");
     check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
         "delete_rows save_as should omit deleted row numeric cells");
+    check_reopened_shift_output(output, "delete_rows",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "delete_rows reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "delete_rows reopened output should expose shifted used range");
+            const std::optional<fastxlsx::CellValue> reopened_a1 =
+                reopened_sheet.try_cell("A1");
+            check(reopened_a1.has_value() &&
+                    reopened_a1->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1->text_value() == "placeholder-a2",
+                "delete_rows reopened output should read shifted source A2 at A1");
+            const std::optional<fastxlsx::CellValue> reopened_b3 =
+                reopened_sheet.try_cell("B3");
+            check(reopened_b3.has_value() &&
+                    reopened_b3->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b3->text_value() == "tail-b4",
+                "delete_rows reopened output should read shifted dirty text at B3");
+            const std::optional<fastxlsx::CellValue> reopened_c3 =
+                reopened_sheet.try_cell("C3");
+            check(reopened_c3.has_value() &&
+                    reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3->text_value() == "A1+B3",
+                "delete_rows reopened output should read translated formula at C3");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("C4").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value(),
+                "delete_rows reopened output should keep deleted and old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
@@ -6216,6 +6323,41 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         "insert_columns save_as should not keep the old shifted source coordinate");
     check_not_contains(worksheet_xml, R"(r="C3")",
         "insert_columns save_as should not keep the old shifted dirty coordinate");
+    check_reopened_shift_output(output, "insert_columns",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "insert_columns reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 5,
+                "insert_columns reopened output should expose shifted used range");
+            const std::optional<fastxlsx::CellValue> reopened_a1 =
+                reopened_sheet.try_cell("A1");
+            check(reopened_a1.has_value() &&
+                    reopened_a1->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1->text_value() == "placeholder-a1",
+                "insert_columns reopened output should keep A1 left of insertion point");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_d1->number_value() == 1.0,
+                "insert_columns reopened output should read shifted source B1 at D1");
+            const std::optional<fastxlsx::CellValue> reopened_e2 =
+                reopened_sheet.try_cell("E2");
+            check(reopened_e2.has_value() &&
+                    reopened_e2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_e2->text_value() == "C1+D1",
+                "insert_columns reopened output should read translated formula at E2");
+            const std::optional<fastxlsx::CellValue> reopened_e3 =
+                reopened_sheet.try_cell("E3");
+            check(reopened_e3.has_value() &&
+                    reopened_e3->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e3->text_value() == "extra-c3",
+                "insert_columns reopened output should read shifted dirty cell at E3");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "insert_columns reopened output should keep old sparse coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
@@ -6290,6 +6432,35 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         "delete_columns save_as should omit deleted column row-one text cells");
     check_not_contains(worksheet_xml, "placeholder-a2",
         "delete_columns save_as should omit deleted column row-two text cells");
+    check_reopened_shift_output(output, "delete_columns",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "delete_columns reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "delete_columns reopened output should expose shifted used range");
+            const std::optional<fastxlsx::CellValue> reopened_a1 =
+                reopened_sheet.try_cell("A1");
+            check(reopened_a1.has_value() &&
+                    reopened_a1->kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1->number_value() == 1.0,
+                "delete_columns reopened output should read shifted source B1 at A1");
+            const std::optional<fastxlsx::CellValue> reopened_b1 =
+                reopened_sheet.try_cell("B1");
+            check(reopened_b1.has_value() &&
+                    reopened_b1->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_b1->text_value() == "A2+C1",
+                "delete_columns reopened output should read translated formula at B1");
+            const std::optional<fastxlsx::CellValue> reopened_c2 =
+                reopened_sheet.try_cell("C2");
+            check(reopened_c2.has_value() &&
+                    reopened_c2->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2->text_value() == "tail-d2",
+                "delete_columns reopened output should read shifted dirty text at C2");
+            check(!reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "delete_columns reopened output should keep deleted and old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()

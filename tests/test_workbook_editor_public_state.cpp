@@ -6388,6 +6388,10 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-invalid-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -6405,6 +6409,36 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         check(sheet.cell_count() == 3,
             "insert_rows invalid-row failure should preserve sparse cell count");
 
+        bool invalid_delete_rows_count_failed = false;
+        try {
+            sheet.delete_rows(1048576, 2);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            invalid_delete_rows_count_failed = true;
+            check_contains(error.what(), "1048576",
+                "delete_rows invalid count should expose the Excel row limit");
+        }
+        check(invalid_delete_rows_count_failed,
+            "delete_rows should reject count ranges past the Excel row limit");
+        check(!sheet.has_pending_changes(),
+            "delete_rows invalid-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "delete_rows invalid-count failure should preserve sparse cell count");
+
+        bool invalid_column_failed = false;
+        try {
+            sheet.insert_columns(0, 1);
+        } catch (const fastxlsx::FastXlsxError&) {
+            invalid_column_failed = true;
+        }
+        check(invalid_column_failed,
+            "insert_columns should reject invalid column numbers");
+        check(editor.last_edit_error().has_value(),
+            "failed insert_columns invalid-column mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "insert_columns invalid-column failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "insert_columns invalid-column failure should preserve sparse cell count");
+
         bool invalid_count_failed = false;
         try {
             sheet.delete_columns(16384, 2);
@@ -6419,6 +6453,13 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "delete_columns invalid-count failure should not dirty the materialized worksheet");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "delete_columns invalid-count failure should preserve source cells");
+        check(editor.pending_materialized_cell_count() == 0,
+            "shift validation failures should not contribute pending materialized cells");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "save_as after shift validation failures should copy source entries");
     }
 
     {

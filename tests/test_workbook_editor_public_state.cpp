@@ -8561,6 +8561,145 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         });
 }
 
+void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell(2, 4, fastxlsx::CellValue::text("data-dirty-delete-column-tail"));
+    untouched.set_cell(2, 3, fastxlsx::CellValue::text("untouched-dirty-delete-column-tail"));
+    const std::size_t data_dirty_count = data.cell_count();
+    const std::size_t untouched_dirty_count = untouched.cell_count();
+    check(data_dirty_count == 4 && untouched_dirty_count == 3,
+        "cross-handle delete_columns should start with two dirty sparse sessions");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle delete_columns should aggregate both dirty sessions before deletion");
+
+    data.delete_columns(1, 1);
+
+    const std::size_t data_after_delete_count = data.cell_count();
+    check(data_after_delete_count == 2,
+        "cross-handle delete_columns should remove Data records from deleted columns");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle delete_columns should keep both dirty handles tracked");
+    check(untouched.cell_count() == untouched_dirty_count,
+        "cross-handle delete_columns should keep the other dirty sparse count stable");
+    check(editor.pending_materialized_cell_count() ==
+            data_after_delete_count + untouched_dirty_count,
+        "cross-handle delete_columns should update aggregate count for the shifted sheet only");
+    const std::vector<std::string> dirty_names_after_delete =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_delete.size() == 2 &&
+            dirty_names_after_delete[0] == "Data" &&
+            dirty_names_after_delete[1] == "Untouched",
+        "cross-handle delete_columns should keep both dirty sheets in catalog order");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_columns should keep diagnostics clear");
+
+    const fastxlsx::CellValue shifted_number = data.get_cell("A1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "cross-handle delete_columns should shift later Data source-backed columns left");
+    check(data.get_cell("C2").text_value() == "data-dirty-delete-column-tail",
+        "cross-handle delete_columns should shift later Data dirty columns left");
+    check(!data.try_cell("B1").has_value() && !data.try_cell("A2").has_value() &&
+            !data.try_cell("D2").has_value(),
+        "cross-handle delete_columns should remove deleted and old shifted Data coordinates");
+    check(untouched.get_cell("A1").text_value() == "keep-me",
+        "cross-handle delete_columns should leave Untouched source text in place");
+    const fastxlsx::CellValue untouched_number = untouched.get_cell("B1");
+    check(untouched_number.kind() == fastxlsx::CellValueKind::Number &&
+            untouched_number.number_value() == 99.0,
+        "cross-handle delete_columns should leave Untouched source number in place");
+    check(untouched.get_cell("C2").text_value() == "untouched-dirty-delete-column-tail",
+        "cross-handle delete_columns should leave other dirty column coordinates in place");
+    check(!untouched.try_cell("D2").has_value(),
+        "cross-handle delete_columns should not shift the other handle");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns save_as should clean both materialized handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "cross-handle delete_columns save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, R"(<dimension ref="A1:C2"/>)",
+        "cross-handle delete_columns save_as should project Data shifted bounds");
+    check_contains(data_xml, R"(<c r="A1"><v>1</v></c>)",
+        "cross-handle delete_columns save_as should write shifted Data source number");
+    check_contains(data_xml, R"(<c r="C2")",
+        "cross-handle delete_columns save_as should write shifted Data dirty column");
+    check_not_contains(data_xml, "placeholder-a1",
+        "cross-handle delete_columns save_as should omit deleted Data row-one text");
+    check_not_contains(data_xml, "placeholder-a2",
+        "cross-handle delete_columns save_as should omit deleted Data row-two text");
+    check_not_contains(data_xml, R"(r="D2")",
+        "cross-handle delete_columns save_as should omit old Data dirty coordinate");
+    check_contains(untouched_xml, R"(<dimension ref="A1:C2"/>)",
+        "cross-handle delete_columns save_as should preserve Untouched dirty bounds");
+    check_contains(untouched_xml, "keep-me",
+        "cross-handle delete_columns save_as should preserve Untouched source text");
+    check_contains(untouched_xml, R"(<c r="B1"><v>99</v></c>)",
+        "cross-handle delete_columns save_as should preserve Untouched source number");
+    check_contains(untouched_xml, R"(<c r="C2")",
+        "cross-handle delete_columns save_as should preserve Untouched dirty coordinate");
+    check_not_contains(untouched_xml, R"(r="D2")",
+        "cross-handle delete_columns save_as should not shift Untouched dirty columns");
+
+    check_reopened_shift_output(output, "cross-handle delete_columns Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "cross-handle delete_columns Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "cross-handle delete_columns Data reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "cross-handle delete_columns Data reopened output should read shifted source column");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "data-dirty-delete-column-tail",
+                "cross-handle delete_columns Data reopened output should read shifted dirty column");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle delete_columns Data reopened output should keep old coordinates absent");
+        });
+
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "cross-handle delete_columns Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle delete_columns Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "cross-handle delete_columns Untouched reopened output should keep dirty bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle delete_columns Untouched reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle delete_columns Untouched reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-delete-column-tail",
+                "cross-handle delete_columns Untouched reopened output should keep dirty coordinate");
+            check(!reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle delete_columns Untouched reopened output should not shift columns");
+        });
+}
+
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
 {
     const std::filesystem::path source =
@@ -10378,6 +10517,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();
             test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state();
             test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state();
+            test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_state();
             test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();

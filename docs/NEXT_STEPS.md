@@ -202,6 +202,10 @@ The delete-row cross-handle path now covers the aggregate-count shrink case:
 `Data.delete_rows()` removes represented records from the deleted row, shifts
 later Data records upward, keeps the other dirty `Untouched` handle unchanged,
 and saves/reopens both sheets with the updated scoped dirty counts.
+The delete-column counterpart closes the same cross-handle matrix for columns:
+`Data.delete_columns()` removes represented source columns, shifts later Data
+source/dirty columns left, keeps an already-dirty `Untouched` column coordinate
+unchanged, and verifies saved XML plus reopened clean state for both sheets.
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.

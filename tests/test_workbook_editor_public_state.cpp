@@ -8295,8 +8295,23 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         write_two_sheet_source_with_qualified_shift_formula(
             "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-source.xlsx",
             styled_formula_style);
+    const std::filesystem::path equivalent_source =
+        source.parent_path() / "." / source.filename();
+    const std::filesystem::path missing_parent_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-missing-parent") /
+        "out.xlsx";
+    const std::filesystem::path file_parent =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-file-parent");
+    const std::filesystem::path non_directory_output = file_parent / "out.xlsx";
+    const std::filesystem::path directory_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-directory-output");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-output.xlsx");
+    std::filesystem::remove_all(missing_parent_output.parent_path());
+    std::filesystem::remove_all(file_parent);
+    fastxlsx::test::write_file(file_parent, "not a directory");
+    std::filesystem::remove_all(directory_output);
+    std::filesystem::create_directories(directory_output);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -8355,6 +8370,33 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row should reject source overwrite");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row rejected source-overwrite source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(equivalent_source); }),
+        "renamed formula audit shifted row should reject path-equivalent source overwrite");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row rejected path-equivalent source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(std::filesystem::path()); }),
+        "renamed formula audit shifted row should reject empty output path");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row rejected empty-output source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+        "renamed formula audit shifted row should reject missing output parent");
+    check(!std::filesystem::exists(missing_parent_output),
+        "renamed formula audit shifted row should not create rejected missing-parent output");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row rejected missing-parent source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(non_directory_output); }),
+        "renamed formula audit shifted row should reject non-directory output parent");
+    check(std::filesystem::is_regular_file(file_parent) &&
+            fastxlsx::test::read_file(file_parent) == "not a directory",
+        "renamed formula audit shifted row should preserve non-directory parent file");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row rejected non-directory parent source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
+        "renamed formula audit shifted row should reject existing directory output");
+    check(std::filesystem::is_directory(directory_output),
+        "renamed formula audit shifted row should preserve rejected output directory");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row rejected directory-output source scan");
     fastxlsx::WorksheetEditorOptions mismatched_options;
     mismatched_options.max_cells = 2;
     check(threw_fastxlsx_error([&] {
@@ -8463,8 +8505,23 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         write_two_sheet_source_with_qualified_shift_formula(
             "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-source.xlsx",
             styled_formula_style);
+    const std::filesystem::path equivalent_source =
+        source.parent_path() / "." / source.filename();
+    const std::filesystem::path missing_parent_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-missing-parent") /
+        "out.xlsx";
+    const std::filesystem::path file_parent =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-file-parent");
+    const std::filesystem::path non_directory_output = file_parent / "out.xlsx";
+    const std::filesystem::path directory_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-directory-output");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-output.xlsx");
+    std::filesystem::remove_all(missing_parent_output.parent_path());
+    std::filesystem::remove_all(file_parent);
+    fastxlsx::test::write_file(file_parent, "not a directory");
+    std::filesystem::remove_all(directory_output);
+    std::filesystem::create_directories(directory_output);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -8506,6 +8563,33 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted should reject source overwrite");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted rejected source-overwrite source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(equivalent_source); }),
+        "renamed column formula audit shifted should reject path-equivalent source overwrite");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted rejected path-equivalent source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(std::filesystem::path()); }),
+        "renamed column formula audit shifted should reject empty output path");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted rejected empty-output source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+        "renamed column formula audit shifted should reject missing output parent");
+    check(!std::filesystem::exists(missing_parent_output),
+        "renamed column formula audit shifted should not create rejected missing-parent output");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted rejected missing-parent source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(non_directory_output); }),
+        "renamed column formula audit shifted should reject non-directory output parent");
+    check(std::filesystem::is_regular_file(file_parent) &&
+            fastxlsx::test::read_file(file_parent) == "not a directory",
+        "renamed column formula audit shifted should preserve non-directory parent file");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted rejected non-directory parent source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
+        "renamed column formula audit shifted should reject existing directory output");
+    check(std::filesystem::is_directory(directory_output),
+        "renamed column formula audit shifted should preserve rejected output directory");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted rejected directory-output source scan");
     fastxlsx::WorksheetEditorOptions mismatched_options;
     mismatched_options.max_cells = 2;
     check(threw_fastxlsx_error([&] {

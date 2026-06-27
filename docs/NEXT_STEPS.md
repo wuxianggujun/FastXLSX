@@ -333,6 +333,10 @@ The formula/definedName rewrite shard now mirrors that helper contract: its
 shared inspection helper snapshots source/planned worksheet names and full
 catalog entries around formula, source-formula, and definedName audit calls,
 without broadening default rename behavior or adding definedName repair.
+The facade, public-retry, and source-success common helpers now share that
+catalog-view inspection contract too, so their public read-only inspection
+paths preserve source/planned names and catalog entries while leaving
+`last_edit_error()` untouched.
 A fresh `WorkbookEditor::open(output)` over that saved workbook now rematerializes
 the same styled `#REF!` formulas and keeps audit state lexical-only: the
 surviving `Data!B1` / `Data!A2` tokens are reported, `Data!#REF!` is skipped,

@@ -578,6 +578,173 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_p
         "second output should not reload stale source A1 after invalid mutations");
 }
 
+void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preserve_reacquired_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-shift-guards-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-shift-guards-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-shift-guards-second.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientShiftGuards");
+    editor.rename_sheet("TransientShiftGuards", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-shift-guards-first"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "source-overwrite save_as should reject before shift-guard recovery setup flushes");
+    editor.save_as(first_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "matching reacquire before shift guards should keep both handles clean");
+    check(sheet.name() == "Data" && reacquired.name() == "Data",
+        "saved and reacquired shift-guard handles should keep the restored planned name");
+    const std::vector<std::string> expected_names = {"Data", "Untouched"};
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog = {
+        {"Data", "Data", false},
+        {"Untouched", "Untouched", false},
+    };
+
+    const std::size_t baseline_count = reacquired.cell_count();
+    const std::size_t baseline_memory = reacquired.estimated_memory_usage();
+    check(baseline_count == 3 && baseline_memory > 0,
+        "shift-guard setup should start from the saved sparse store");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("shift-guard-invalid-lowercase"));
+    }), "invalid mutation should seed last_edit_error before shift guard no-ops");
+    check(editor.last_edit_error().has_value(),
+        "invalid mutation before shift guard no-ops should update last_edit_error");
+
+    reacquired.insert_rows(2, 0);
+    sheet.delete_rows(2, 0);
+    reacquired.insert_columns(10, 1);
+    sheet.delete_columns(10, 1);
+
+    check(!editor.last_edit_error().has_value(),
+        "post-recovery shift no-ops should clear prior mutation diagnostics");
+    check(reacquired.cell_count() == baseline_count &&
+            sheet.cell_count() == baseline_count,
+        "post-recovery shift no-ops should not mutate sparse cell counts");
+    check(reacquired.estimated_memory_usage() == baseline_memory &&
+            sheet.estimated_memory_usage() == baseline_memory,
+        "post-recovery shift no-ops should not change sparse memory estimates");
+
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-shift-guards-first",
+        "TransientShiftGuards",
+        "post-recovery shift no-ops",
+        3);
+
+    check(threw_fastxlsx_error([&] { reacquired.insert_rows(0, 1); }),
+        "post-recovery insert_rows should reject row zero");
+    check(threw_fastxlsx_error([&] { sheet.delete_columns(16384, 2); }),
+        "post-recovery delete_columns should reject count ranges past the Excel column limit");
+
+    const std::optional<std::string> shift_error = editor.last_edit_error();
+    check(shift_error.has_value(),
+        "post-recovery invalid shifts should update last_edit_error");
+    if (shift_error.has_value()) {
+        check_contains(*shift_error, "16384",
+            "post-recovery invalid shift diagnostic should expose the Excel column limit");
+    }
+    check(reacquired.cell_count() == baseline_count &&
+            sheet.cell_count() == baseline_count,
+        "post-recovery invalid shifts should preserve sparse cell counts");
+    check(reacquired.estimated_memory_usage() == baseline_memory &&
+            sheet.estimated_memory_usage() == baseline_memory,
+        "post-recovery invalid shifts should preserve sparse memory estimates");
+
+    check_public_saved_materialized_recovery_clean_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "rename-back-shift-guards-first",
+        "TransientShiftGuards",
+        "post-recovery invalid shift guards",
+        3,
+        shift_error);
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check(!matching.has_pending_changes(),
+        "matching reacquire after invalid shifts should remain clean");
+    const fastxlsx::CellValue matching_value = matching.get_cell(1, 1);
+    check(matching_value.kind() == fastxlsx::CellValueKind::Text &&
+            matching_value.text_value() == "rename-back-shift-guards-first",
+        "matching reacquire after invalid shifts should still use saved state");
+
+    matching.insert_rows(2, 1);
+    check(!editor.last_edit_error().has_value(),
+        "valid post-invalid-shift edit should clear shift diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "valid post-invalid-shift edit should dirty shared handles");
+    check(!matching.try_cell("A2").has_value(),
+        "valid post-invalid-shift row insertion should remove the old source-backed coordinate");
+    check(matching.get_cell("A3").text_value() == "placeholder-a2",
+        "valid post-invalid-shift row insertion should shift source-backed rows");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "valid post-invalid-shift dirty diagnostics should use restored source name");
+    }
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "second safe save_as should clean all shift-guard recovery handles");
+    check(editor.pending_worksheet_edits().empty(),
+        "second safe save_as should clear summaries after shift guards");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "first shift-guard recovery output should use the restored source name");
+    check_not_contains(first_entries.at("xl/workbook.xml"), "TransientShiftGuards",
+        "first shift-guard recovery output should not leak the transient planned name");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-shift-guards-first",
+        "first output should contain the saved value before shift guards");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+        "shift-guard-invalid-lowercase",
+        "first output should not contain rejected invalid mutation payload");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "second shift-guard recovery output should keep the restored source name");
+    check_not_contains(second_entries.at("xl/workbook.xml"), "TransientShiftGuards",
+        "second shift-guard recovery output should not leak the transient planned name");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-shift-guards-first",
+        "second output should preserve the saved value after shift guards");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="A3" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "second output should persist the valid post-invalid-shift row insertion");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "shift-guard-invalid-lowercase",
+        "second output should not contain rejected invalid mutation payload");
+    check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "second output should not keep the old shifted source-backed coordinate");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state()
 {
     const std::filesystem::path source =
@@ -764,6 +931,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_preserve_reacquired_state();
+            test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preserve_reacquired_state();
             test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state();
         }
     } catch (const std::exception& error) {

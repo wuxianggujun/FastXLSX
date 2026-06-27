@@ -35216,6 +35216,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.830 - Document current WorksheetEditor row/column shift boundary
+
+Status: completed.
+
+Touched files:
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: align API-facing documentation with the current public `WorksheetEditor`
+row/column shift behavior that is now covered by public-state regressions.
+
+Output:
+- Added an API design matrix row describing the current
+  `insert_rows()` / `delete_rows()` / `insert_columns()` /
+  `delete_columns()` boundary: represented sparse cells only, moved formula
+  cells translated through the narrow A1-style translator, deleted or
+  out-of-bounds references emitted as `#REF!`, source-backed `StyleId` handles
+  preserved on moved cells, refreshed sparse dimensions on dirty `save_as()`,
+  and saved planned-name session hygiene across reacquire/failure/read/mutation
+  branches.
+- Updated the editing model overview so the public In-memory path lists
+  represented sparse row/column shifts as current behavior without implying
+  complete Excel structural edits.
+- Updated next-step prose to point future work at the same boundary instead of
+  relying only on test names.
+
+Non-goals / boundary:
+- No public API changes, no production implementation changes, no new tests,
+  no formula recalculation, no non-materialized formula rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `git diff --check` passes.
+
 ### P8.829 - Pin renamed WorksheetEditor delete-row formula snapshot reads
 
 Status: completed.

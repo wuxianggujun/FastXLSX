@@ -293,6 +293,12 @@ Delete-row formula snapshot reads now close that symmetric state-hygiene shape:
 full sparse, A1-range, row/column, and coordinate-batch snapshots expose `D1`
 with its `StyleId`, stay diagnostic-clean and non-dirty, and remain stable
 after a later column shift saves/reopens styled `E1` as `#REF!+#REF!`.
+API-facing docs now summarize the same shift boundary: represented sparse
+row/column shifts move/delete materialized cells, preserve source-backed
+`StyleId` handles on moved formula cells, translate only moved formula text
+through the narrow A1-style translator, and remain outside formula evaluation,
+metadata synchronization, relationship repair, sharedStrings/styles migration,
+calcChain rebuild, and low-memory random editing.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

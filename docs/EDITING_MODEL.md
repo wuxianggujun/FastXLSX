@@ -36,7 +36,12 @@ external workbook references、3D sheet ranges 或 calcChain。当前还已有 s
 In-memory `WorksheetEditor` 首片：`worksheet()` / `try_worksheet()` 返回 borrowed
 handle，支持 source-backed `try_cell()` / `get_cell()`、`set_cell()`、`erase_cell()`、
 strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
-`save_as()` auto-flush。新增更窄的
+represented sparse row/column shift helpers，以及 `save_as()` auto-flush。
+这些 shift helpers 只移动或删除已物化 sparse cells；moved formula cells 只通过窄
+A1-style translator 平移自身公式文本，删除或越界引用写成 `#REF!`，并随 moved cell
+保留 source-backed `StyleId`。它们不更新未物化 worksheet formulas、defined names、
+tables、filters、validations、conditional formatting、drawings、charts、hyperlinks 或
+worksheet relationships，也不是大文件低内存随机编辑。新增更窄的
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
 会在同一次 rename 中同时改 direct workbook definedName formula text 和已经载入
 WorksheetEditor session 的 formula cell 文本，并把这些 session 标脏；它不

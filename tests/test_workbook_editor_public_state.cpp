@@ -1950,6 +1950,33 @@ std::filesystem::path write_two_sheet_source_with_qualified_shift_formula(
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_qualified_delete_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2"),
+            fastxlsx::CellView::text("row2-gap-b2"),
+            fastxlsx::CellView::text("row2-gap-c2"),
+            fastxlsx::CellView::formula("Data!A1+Data!B2").with_style(formula_style)});
+        data.append_row({fastxlsx::CellView::text("extra-c3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_shift_memory_formula(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -8188,6 +8215,105 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         + R"("><f>Data!B1+Data!C1</f></c>)";
     check_contains(worksheet_xml, styled_formula_xml,
         "renamed column formula audit shift save_as should write the shifted qualified formula");
+}
+
+void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_ref_tokens()
+{
+    {
+        fastxlsx::StyleId styled_formula_style;
+        const std::filesystem::path source =
+            write_two_sheet_source_with_qualified_delete_formula(
+                "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-source.xlsx",
+                styled_formula_style);
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+        editor.rename_sheet("Data", "RenamedData");
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+        sheet.delete_rows(1, 1);
+
+        constexpr std::string_view expected_formula = "Data!#REF!+Data!B1";
+        const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D1");
+        check(shifted_formula.has_value() &&
+                shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula->text_value() == expected_formula &&
+                shifted_formula->has_style() &&
+                shifted_formula->style_id().value() == styled_formula_style.value(),
+            "renamed delete-row formula audit should expose the translated styled formula");
+
+        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+            editor.formula_reference_audits();
+        check(audits.size() == 1,
+            "renamed delete-row formula audit should skip the translated #REF! token");
+        check(find_public_state_formula_audit(audits, 1, 4, "Data!#REF!") == nullptr,
+            "renamed delete-row formula audit should not expose Data!#REF! as a reference");
+        check_public_state_renamed_shift_formula_audit(
+            audits, 1, 4, expected_formula, "Data!B1", "B1",
+            "renamed delete-row formula audit shifted surviving B reference");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "renamed delete-row formula audit save_as should clean the planned-name handle");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_formula_xml =
+            std::string(R"(<c r="D1" s=")")
+            + std::to_string(styled_formula_style.value())
+            + R"("><f>Data!#REF!+Data!B1</f></c>)";
+        check_contains(worksheet_xml, styled_formula_xml,
+            "renamed delete-row formula audit save_as should write the #REF! formula");
+    }
+
+    {
+        fastxlsx::StyleId styled_formula_style;
+        const std::filesystem::path source =
+            write_two_sheet_source_with_qualified_delete_formula(
+                "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-source.xlsx",
+                styled_formula_style);
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+        editor.rename_sheet("Data", "RenamedData");
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+        sheet.delete_columns(1, 1);
+
+        constexpr std::string_view expected_formula = "Data!#REF!+Data!A2";
+        const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C2");
+        check(shifted_formula.has_value() &&
+                shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula->text_value() == expected_formula &&
+                shifted_formula->has_style() &&
+                shifted_formula->style_id().value() == styled_formula_style.value(),
+            "renamed delete-column formula audit should expose the translated styled formula");
+
+        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+            editor.formula_reference_audits();
+        check(audits.size() == 1,
+            "renamed delete-column formula audit should skip the translated #REF! token");
+        check(find_public_state_formula_audit(audits, 2, 3, "Data!#REF!") == nullptr,
+            "renamed delete-column formula audit should not expose Data!#REF! as a reference");
+        check_public_state_renamed_shift_formula_audit(
+            audits, 2, 3, expected_formula, "Data!A2", "A2",
+            "renamed delete-column formula audit shifted surviving A reference");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "renamed delete-column formula audit save_as should clean the planned-name handle");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_formula_xml =
+            std::string(R"(<c r="C2" s=")")
+            + std::to_string(styled_formula_style.value())
+            + R"("><f>Data!#REF!+Data!A2</f></c>)";
+        check_contains(worksheet_xml, styled_formula_xml,
+            "renamed delete-column formula audit save_as should write the #REF! formula");
+    }
 }
 
 void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style()
@@ -18479,6 +18605,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula();
             test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_shifted_formula();
+            test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_ref_tokens();
             test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session();
             test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserves_styled_session();

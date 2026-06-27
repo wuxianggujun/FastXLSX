@@ -34295,6 +34295,52 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.771 - WorksheetEditor represented row/column structural shifts
+
+Status: completed.
+
+Touched files:
+- `include/fastxlsx/detail/materialized_worksheet_session.hpp`
+- `include/fastxlsx/workbook_editor.hpp`
+- `src/workbook_editor_worksheet_facade.cpp`
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: add the first small-file In-memory represented-cell row/column
+structural shift helpers without broad worksheet metadata synchronization.
+
+Output:
+- Added public `WorksheetEditor::insert_rows()`, `delete_rows()`,
+  `insert_columns()`, and `delete_columns()` for the materialized sparse store.
+- Shift helpers move or delete represented sparse records only; they do not
+  synthesize dense rows/columns or edit row/column metadata.
+- Moved formula cells reuse the existing narrow formula reference translator,
+  including relative A1 references, ranges, whole-row/whole-column references,
+  absolute anchors, and `#REF!` for shifted references outside Excel bounds.
+- Public-state coverage pins source-backed and dirty sparse cell movement,
+  formula text translation, source style-id preservation on moved formula cells,
+  row/column snapshot ordering, used-range refresh, no-op/invalid-range state
+  hygiene, memory-budget failure hygiene, overflow failure hygiene, saved XML
+  projection, and saved-file reopen readback.
+
+Non-goals / boundary:
+- No table/filter/merge/drawing/chart/hyperlink/defined-name range update,
+  relationship pruning/repair, sharedStrings migration, styles migration,
+  calcChain rebuild, dense row/column metadata editing, worksheet dimension
+  repair beyond sparse projection, complete formula parsing, formula
+  evaluation, or large-file low-memory random editing.
+- Structural shifts are scoped to represented cells already materialized into
+  this small-file `WorksheetEditor` session.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

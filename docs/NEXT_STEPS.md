@@ -216,6 +216,10 @@ Missing-sheet and old-source-name queries now cover the saved styled formula
 state too: `Missing` and `Data` lookups fail without diagnostics or dirty
 materialized state, and the matching `RenamedData` reacquire can still shift
 the formula to `E4` as `B3+C3` with the original `StyleId`.
+Invalid reads now cover the same saved styled formula state: invalid cell/range
+snapshots and valid-missing `get_cell()` calls leave diagnostics empty, keep
+`D4` as `A3+B3`, and a later valid shift still saves `E4` as `B3+C3` with the
+original `StyleId`.
 The corresponding renamed delete-column formula path is pinned too:
 `delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
 `A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and

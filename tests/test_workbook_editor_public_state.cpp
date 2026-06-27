@@ -8400,6 +8400,15 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row invalid mutations should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row invalid-mutation source scan");
+    check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
+        "renamed formula audit shifted row should reject invalid insert_rows start");
+    check(threw_fastxlsx_error([&] { sheet.delete_rows(1048576, 2); }),
+        "renamed formula audit shifted row should reject invalid delete_rows count range");
+    check(sheet.has_pending_changes() &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed formula audit shifted row invalid shifts should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row invalid-shift source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8514,6 +8523,15 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted invalid mutations should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted invalid-mutation source scan");
+    check(threw_fastxlsx_error([&] { sheet.insert_columns(0, 1); }),
+        "renamed column formula audit shifted should reject invalid insert_columns start");
+    check(threw_fastxlsx_error([&] { sheet.delete_columns(16384, 2); }),
+        "renamed column formula audit shifted should reject invalid delete_columns count range");
+    check(sheet.has_pending_changes() &&
+            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        "renamed column formula audit shifted invalid shifts should preserve dirty materialized diagnostics");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted invalid-shift source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

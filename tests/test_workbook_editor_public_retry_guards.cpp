@@ -1,5 +1,53 @@
 #include "test_workbook_editor_public_retry_common.hpp"
 
+void check_reopened_guard_recovery_materialized_output(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options,
+    std::string_view context,
+    std::string_view saved_text,
+    std::string_view later_text)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+    const std::string prefix(context);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 4,
+        prefix + " reopened output should keep the saved sparse cell count");
+
+    const fastxlsx::CellValue reopened_saved = reopened_sheet.get_cell("A1");
+    check(reopened_saved.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_saved.text_value() == saved_text,
+        prefix + " reopened output should read back the saved A1 value");
+    const fastxlsx::CellValue reopened_source = reopened_sheet.get_cell("A2");
+    check(reopened_source.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_source.text_value() == "placeholder-a2",
+        prefix + " reopened output should keep source-backed A2");
+    const fastxlsx::CellValue reopened_later = reopened_sheet.get_cell("B2");
+    check(reopened_later.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_later.text_value() == later_text,
+        prefix + " reopened output should read back the later B2 edit");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+        reopened_sheet.row_cells(2);
+    check(reopened_row_two.size() == 2 &&
+            reopened_row_two[0].reference.row == 2 &&
+            reopened_row_two[0].reference.column == 1 &&
+            reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+            reopened_row_two[1].reference.row == 2 &&
+            reopened_row_two[1].reference.column == 2 &&
+            reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_row_two[1].value.text_value() == later_text,
+        prefix + " reopened row_cells should expose source-backed and later edits");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preserve_reacquired_state()
 {
     const std::filesystem::path source =
@@ -195,6 +243,13 @@ void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preser
         "second output should include the valid post-handle-read mutation");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "second output should not reload stale source A1 after handle reads");
+
+    check_reopened_guard_recovery_materialized_output(
+        second_output,
+        options,
+        "handle-read recovery",
+        "rename-back-handle-reads-first",
+        "rename-back-handle-reads-second");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_preserve_reacquired_state()
@@ -374,6 +429,13 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_prese
         "second output should include the valid post-invalid-read mutation");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "second output should not reload stale source A1 after invalid reads");
+
+    check_reopened_guard_recovery_materialized_output(
+        second_output,
+        options,
+        "invalid-read recovery",
+        "rename-back-invalid-reads-first",
+        "rename-back-invalid-reads-second");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_preserve_reacquired_state()
@@ -576,6 +638,13 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_p
         "second output should not contain rejected invalid column payload");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "second output should not reload stale source A1 after invalid mutations");
+
+    check_reopened_guard_recovery_materialized_output(
+        second_output,
+        options,
+        "invalid-mutation recovery",
+        "rename-back-invalid-mutations-first",
+        "rename-back-invalid-mutations-second");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preserve_reacquired_state()
@@ -947,6 +1016,13 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
         "second output should not contain rejected invalid mutation payload");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "second output should not reload stale source A1 after missing erase");
+
+    check_reopened_guard_recovery_materialized_output(
+        second_output,
+        options,
+        "missing-erase recovery",
+        "rename-back-missing-erase-first",
+        "rename-back-missing-erase-second");
 }
 
 } // namespace

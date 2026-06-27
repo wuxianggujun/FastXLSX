@@ -1,5 +1,115 @@
 #include "test_workbook_editor_public_retry_common.hpp"
 
+void check_reopened_blank_erase_projection(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        "reopened blank/erase projection should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        "reopened blank/erase projection should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 2,
+        "reopened blank/erase projection should keep blank A1 and source-backed B1");
+
+    const fastxlsx::CellValue reopened_blank = reopened_sheet.get_cell("A1");
+    check(reopened_blank.kind() == fastxlsx::CellValueKind::Blank,
+        "reopened blank/erase projection should read A1 as an explicit blank");
+    const fastxlsx::CellValue reopened_number = reopened_sheet.get_cell("B1");
+    check(reopened_number.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_number.number_value() == 1.0,
+        "reopened blank/erase projection should preserve source-backed B1");
+    check(!reopened_sheet.try_cell("A2").has_value(),
+        "reopened blank/erase projection should not read erased A2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
+        reopened_sheet.row_cells(1);
+    check(reopened_row_one.size() == 2 &&
+            reopened_row_one[0].reference.row == 1 &&
+            reopened_row_one[0].reference.column == 1 &&
+            reopened_row_one[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+            reopened_row_one[1].reference.row == 1 &&
+            reopened_row_one[1].reference.column == 2 &&
+            reopened_row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_row_one[1].value.number_value() == 1.0,
+        "reopened blank/erase row_cells should expose the blank and source number");
+}
+
+void check_reopened_scalar_formula_projection(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        "reopened scalar/formula projection should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        "reopened scalar/formula projection should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 4,
+        "reopened scalar/formula projection should keep A1, B1, A2, and C3");
+
+    const fastxlsx::CellValue reopened_number = reopened_sheet.get_cell("A1");
+    const fastxlsx::CellValue reopened_source = reopened_sheet.get_cell("B1");
+    const fastxlsx::CellValue reopened_boolean = reopened_sheet.get_cell("A2");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("C3");
+    check(reopened_number.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_number.number_value() == 42.25,
+        "reopened scalar/formula projection should read numeric A1");
+    check(reopened_source.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_source.number_value() == 1.0,
+        "reopened scalar/formula projection should preserve source-backed B1");
+    check(reopened_boolean.kind() == fastxlsx::CellValueKind::Boolean &&
+            reopened_boolean.boolean_value(),
+        "reopened scalar/formula projection should read boolean A2");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == R"(SUM(A1:B1)&"<ok>")",
+        "reopened scalar/formula projection should read formula C3");
+}
+
+void check_reopened_text_escape_projection(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        "reopened text escape projection should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        "reopened text escape projection should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 4,
+        "reopened text escape projection should keep A1, B1, A2, and C3");
+
+    const fastxlsx::CellValue reopened_whitespace = reopened_sheet.get_cell("A1");
+    const fastxlsx::CellValue reopened_source = reopened_sheet.get_cell("B1");
+    const fastxlsx::CellValue reopened_empty = reopened_sheet.get_cell("A2");
+    const fastxlsx::CellValue reopened_special = reopened_sheet.get_cell("C3");
+    check(reopened_whitespace.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_whitespace.text_value() == R"(  A&B <C> "D"  )",
+        "reopened text escape projection should preserve whitespace text");
+    check(reopened_source.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_source.number_value() == 1.0,
+        "reopened text escape projection should preserve source-backed B1");
+    check(reopened_empty.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_empty.text_value().empty(),
+        "reopened text escape projection should read empty A2 text");
+    check(reopened_special.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_special.text_value() == R"(A&B <C> > "Q")",
+        "reopened text escape projection should read special-character C3 text");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_erase_projection()
 {
     const std::filesystem::path source =
@@ -128,6 +238,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_
         "second output should remove erased source-backed A2");
     check_not_contains(second_worksheet_xml, R"(<row r="2")",
         "second output should remove row 2 after erasing its only source cell");
+
+    check_reopened_blank_erase_projection(second_output, options);
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_projection()
@@ -282,6 +394,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_
         "second output should not reload stale source A1 after number replacement");
     check_not_contains(second_worksheet_xml, "placeholder-a2",
         "second output should replace source-backed A2 with a boolean cell");
+
+    check_reopened_scalar_formula_projection(second_output, options);
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_projection()
@@ -435,6 +549,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_project
         "second output should not reload stale source A1 after text replacement");
     check_not_contains(second_worksheet_xml, "placeholder-a2",
         "second output should replace source-backed A2 with empty text");
+
+    check_reopened_text_escape_projection(second_output, options);
 }
 
 } // namespace

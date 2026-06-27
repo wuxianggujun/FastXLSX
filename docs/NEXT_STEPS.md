@@ -73,6 +73,9 @@ valid shift to verify clean public state and source-backed cell readback.
 The retry/projection shard also reopens saved blank/erase, scalar/formula, and
 text-escape projection outputs to verify clean public state and value-kind
 readback after the saved XML projection.
+The same-handle materialized save path now also reopens the first and second
+outputs, verifying the borrowed handle remains reusable while earlier output
+artifacts stay clean and isolated from later edits.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

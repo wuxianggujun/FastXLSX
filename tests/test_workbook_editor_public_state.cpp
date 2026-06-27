@@ -117,6 +117,12 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+void check_reopened_clean_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view sheet_name,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect);
+
 void check_reopened_default_data_sheet_output(
     const std::filesystem::path& output,
     std::string_view scenario);
@@ -2129,12 +2135,50 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
         "first output should contain the first same-handle materialized edit");
     check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
         "later same-handle edits should not mutate an earlier output artifact");
+    check_reopened_clean_sheet_output(first_output, "Data", "same-handle first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "same-handle first save reopened output should keep source sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "same-handle first save reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "same-handle-first-save",
+                "same-handle first save reopened output should read first saved edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "same-handle first save reopened output should not contain later B1 edit");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "same-handle first save reopened output should keep source-backed A2");
+        });
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-first-save",
         "second output should retain prior materialized sparse state");
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
         "second output should contain the post-save same-handle edit");
+    check_reopened_clean_sheet_output(second_output, "Data", "same-handle second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "same-handle second save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "same-handle second save reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "same-handle-first-save",
+                "same-handle second save reopened output should retain first edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "same-handle-second-save",
+                "same-handle second save reopened output should read later B1 edit");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "same-handle second save reopened output should keep source-backed A2");
+        });
 }
 
 void test_public_workbook_editor_pending_materialized_names_track_dirty_state()

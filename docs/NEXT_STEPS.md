@@ -195,6 +195,11 @@ The matching renamed column-insertion formula path is covered too:
 `insert_columns(2, 1)` moves the styled formula to `E2`, translates `A1+B1` by
 the moved cell's column delta to `B1+C1`, preserves the style id, and
 saves/reopens only under `RenamedData` with the shifted source-backed columns.
+The materialized formula audit path is pinned on top of the same renamed row
+and column shifts: formulas like `Data!A1+Data!B1` are audited at their shifted
+formula cell coordinates with shifted `Data!A3` / `Data!B3` or `Data!B1` /
+`Data!C1` reference tokens, while `formula_reference_audits()` remains read-only
+and still only reports stale source-name risk instead of rewriting formulas.
 Renamed formula shifts are now pinned across same-editor post-save reacquire:
 after saving the `insert_rows(2, 2)` styled formula shift, `try_worksheet("RenamedData")`
 reuses the clean formula/style session, old `Data` stays unavailable, a later

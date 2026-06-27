@@ -252,7 +252,10 @@ void check_public_state_reopened_delete_formula_audit_output(
         reopened.source_formula_reference_audits();
     check(!reopened.has_pending_changes() &&
             reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_worksheet_edits().empty() &&
+            !reopened.last_edit_error().has_value(),
         std::string(message_prefix) + " source audit should keep the reopened editor clean");
     check(source_audits.size() == 1,
         std::string(message_prefix) + " source audit should keep only the surviving reference");
@@ -267,7 +270,9 @@ void check_public_state_reopened_delete_formula_audit_output(
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         std::string(message_prefix) + " should reopen into a clean materialized session");
     check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_worksheet_edits().empty(),
         std::string(message_prefix) + " should keep materialized diagnostics clean before audit");
 
     const std::optional<fastxlsx::CellValue> reopened_formula =
@@ -282,7 +287,10 @@ void check_public_state_reopened_delete_formula_audit_output(
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
         reopened.formula_reference_audits();
     check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_worksheet_edits().empty() &&
+            !reopened.last_edit_error().has_value(),
         std::string(message_prefix) + " should keep materialized diagnostics clean after audit");
     check(reopened_audits.size() == 1,
         std::string(message_prefix) + " should keep only the surviving reference after reopen");
@@ -315,7 +323,10 @@ void check_public_state_reopened_shift_formula_audit_output(
         reopened.source_formula_reference_audits();
     check(!reopened.has_pending_changes() &&
             reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_worksheet_edits().empty() &&
+            !reopened.last_edit_error().has_value(),
         std::string(message_prefix) + " source audit should keep the reopened editor clean");
     check(source_audits.size() == 2,
         std::string(message_prefix) + " source audit should report both shifted references");
@@ -332,7 +343,9 @@ void check_public_state_reopened_shift_formula_audit_output(
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         std::string(message_prefix) + " should reopen into a clean materialized session");
     check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_worksheet_edits().empty(),
         std::string(message_prefix) + " should keep materialized diagnostics clean before audit");
 
     const std::optional<fastxlsx::CellValue> reopened_formula =
@@ -347,7 +360,10 @@ void check_public_state_reopened_shift_formula_audit_output(
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
         reopened.formula_reference_audits();
     check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened.pending_worksheet_edits().empty() &&
+            !reopened.last_edit_error().has_value(),
         std::string(message_prefix) + " should keep materialized diagnostics clean after audit");
     check(reopened_audits.size() == 2,
         std::string(message_prefix) + " should report both shifted references after reopen");

@@ -244,6 +244,11 @@ The recovery path is pinned too: after that guardrail failure, default-options
 materialization of the untouched worksheet can still create a clean read-only
 session without adding dirty materialized diagnostics or changing the source
 formula scan.
+Save-as output path preflights now cover the same source/materialized audit
+isolation: path-equivalent source overwrite, empty output path, missing parent,
+non-directory parent, and existing-directory output failures leave source
+formula scans on the original source XML tokens and keep the dirty shifted
+materialized session saveable.
 The delete-side audit boundary now covers mixed `#REF!` translations as well:
 after deleting row 1 or column 1, `Data!A1+Data!B2` becomes
 `Data!#REF!+Data!B1` or `Data!#REF!+Data!A2`, and the materialized formula audit

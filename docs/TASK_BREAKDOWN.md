@@ -34409,6 +34409,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.774 - Pin dirty WorksheetEditor invalid-to-valid shift recovery
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid row/column structural shift calls preserve an already
+dirty materialized `WorksheetEditor` session and still allow a later valid
+shift to move both source-backed and dirty sparse records.
+
+Output:
+- Added public-state coverage for a dirty row-shift session: a dirty tail cell
+  is preserved through invalid row insertion / row deletion range failures, then
+  moves with source-backed rows after a valid `insert_rows()`.
+- Added symmetric dirty column-shift coverage: a dirty tail cell is preserved
+  through invalid column insertion / column deletion range failures, then moves
+  with source-backed columns after a valid `insert_columns()`.
+- Each path verifies dirty diagnostics and sparse counts survive invalid calls,
+  the later valid shift clears `last_edit_error()`, saved output reopens cleanly,
+  and old shifted coordinates remain absent.
+
+Non-goals / boundary:
+- No production code change, no rollback model, no transaction API, no
+  row/column metadata editing, no metadata repair, no sharedStrings/styles
+  migration, no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

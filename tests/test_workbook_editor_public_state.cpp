@@ -7997,6 +7997,152 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
     }
 }
 
+void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-recovery-source.xlsx");
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 2, fastxlsx::CellValue::text("dirty-row-tail"));
+        const std::size_t dirty_count = sheet.cell_count();
+        check(dirty_count == 4 && sheet.has_pending_changes(),
+            "dirty invalid-to-valid row shift should start from a dirty sparse session");
+        check(editor.pending_materialized_cell_count() == dirty_count,
+            "dirty invalid-to-valid row shift should report the dirty materialized count");
+
+        check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
+            "dirty invalid-to-valid row shift should reject invalid row insertion");
+        check(threw_fastxlsx_error([&] { sheet.delete_rows(1048576, 2); }),
+            "dirty invalid-to-valid row shift should reject invalid row deletion range");
+        check(editor.last_edit_error().has_value(),
+            "dirty invalid-to-valid row shift should retain the invalid shift diagnostic");
+        check(sheet.has_pending_changes() && editor.pending_materialized_cell_count() == dirty_count,
+            "dirty invalid-to-valid row shift failures should preserve dirty diagnostics");
+        check(sheet.cell_count() == dirty_count,
+            "dirty invalid-to-valid row shift failures should preserve sparse count");
+        check(sheet.get_cell("B4").text_value() == "dirty-row-tail",
+            "dirty invalid-to-valid row shift failures should preserve dirty cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "dirty invalid-to-valid row shift failures should preserve source-backed cells");
+
+        sheet.insert_rows(2, 1);
+        check(!editor.last_edit_error().has_value(),
+            "valid insert_rows after dirty invalid shifts should clear the prior diagnostic");
+        check(sheet.has_pending_changes(),
+            "valid insert_rows after dirty invalid shifts should keep the borrowed handle dirty");
+        check(sheet.cell_count() == dirty_count &&
+                editor.pending_materialized_cell_count() == dirty_count,
+            "valid insert_rows after dirty invalid shifts should keep dirty sparse count stable");
+        check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+            "valid insert_rows after dirty invalid shifts should move source-backed rows");
+        check(sheet.get_cell("B5").text_value() == "dirty-row-tail",
+            "valid insert_rows after dirty invalid shifts should move dirty rows");
+        check(!sheet.try_cell("A2").has_value() && !sheet.try_cell("B4").has_value(),
+            "valid insert_rows after dirty invalid shifts should remove old shifted coordinates");
+
+        editor.save_as(output);
+        check_reopened_shift_output(output, "dirty invalid-to-valid row shift recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "dirty invalid-to-valid row recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 2,
+                    "dirty invalid-to-valid row recovery reopened output should expose shifted bounds");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "dirty invalid-to-valid row recovery reopened output should keep source B1");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "placeholder-a2",
+                    "dirty invalid-to-valid row recovery reopened output should read shifted source A2");
+                const fastxlsx::CellValue reopened_b5 = reopened_sheet.get_cell("B5");
+                check(reopened_b5.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_b5.text_value() == "dirty-row-tail",
+                    "dirty invalid-to-valid row recovery reopened output should read shifted dirty cell");
+                check(!reopened_sheet.try_cell("A2").has_value() &&
+                        !reopened_sheet.try_cell("B4").has_value(),
+                    "dirty invalid-to-valid row recovery reopened output should keep old coordinates absent");
+            });
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(2, 4, fastxlsx::CellValue::text("dirty-column-tail"));
+        const std::size_t dirty_count = sheet.cell_count();
+        check(dirty_count == 4 && sheet.has_pending_changes(),
+            "dirty invalid-to-valid column shift should start from a dirty sparse session");
+        check(editor.pending_materialized_cell_count() == dirty_count,
+            "dirty invalid-to-valid column shift should report the dirty materialized count");
+
+        check(threw_fastxlsx_error([&] { sheet.insert_columns(0, 1); }),
+            "dirty invalid-to-valid column shift should reject invalid column insertion");
+        check(threw_fastxlsx_error([&] { sheet.delete_columns(16384, 2); }),
+            "dirty invalid-to-valid column shift should reject invalid column deletion range");
+        check(editor.last_edit_error().has_value(),
+            "dirty invalid-to-valid column shift should retain the invalid shift diagnostic");
+        check(sheet.has_pending_changes() && editor.pending_materialized_cell_count() == dirty_count,
+            "dirty invalid-to-valid column shift failures should preserve dirty diagnostics");
+        check(sheet.cell_count() == dirty_count,
+            "dirty invalid-to-valid column shift failures should preserve sparse count");
+        check(sheet.get_cell("D2").text_value() == "dirty-column-tail",
+            "dirty invalid-to-valid column shift failures should preserve dirty cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "dirty invalid-to-valid column shift failures should preserve source-backed cells");
+
+        sheet.insert_columns(2, 1);
+        check(!editor.last_edit_error().has_value(),
+            "valid insert_columns after dirty invalid shifts should clear the prior diagnostic");
+        check(sheet.has_pending_changes(),
+            "valid insert_columns after dirty invalid shifts should keep the borrowed handle dirty");
+        check(sheet.cell_count() == dirty_count &&
+                editor.pending_materialized_cell_count() == dirty_count,
+            "valid insert_columns after dirty invalid shifts should keep dirty sparse count stable");
+        const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
+        check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_number.number_value() == 1.0,
+            "valid insert_columns after dirty invalid shifts should move source-backed columns");
+        check(sheet.get_cell("E2").text_value() == "dirty-column-tail",
+            "valid insert_columns after dirty invalid shifts should move dirty columns");
+        check(!sheet.try_cell("B1").has_value() && !sheet.try_cell("D2").has_value(),
+            "valid insert_columns after dirty invalid shifts should remove old shifted coordinates");
+
+        editor.save_as(output);
+        check_reopened_shift_output(output, "dirty invalid-to-valid column shift recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "dirty invalid-to-valid column recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+                    "dirty invalid-to-valid column recovery reopened output should expose shifted bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "dirty invalid-to-valid column recovery reopened output should keep source A1");
+                const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+                check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_c1.number_value() == 1.0,
+                    "dirty invalid-to-valid column recovery reopened output should read shifted B1");
+                const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+                check(reopened_e2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_e2.text_value() == "dirty-column-tail",
+                    "dirty invalid-to-valid column recovery reopened output should read shifted dirty cell");
+                check(!reopened_sheet.try_cell("B1").has_value() &&
+                        !reopened_sheet.try_cell("D2").has_value(),
+                    "dirty invalid-to-valid column recovery reopened output should keep old coordinates absent");
+            });
+    }
+}
+
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
 {
     const std::filesystem::path source =
@@ -9810,6 +9956,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
             test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
+            test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();

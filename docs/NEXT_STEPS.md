@@ -185,6 +185,10 @@ The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only
 the materialized session, saves, and reopens as clean shifted sparse state.
+The same recovery shape now also covers already-dirty materialized sessions:
+invalid row/column shifts preserve the dirty sparse store and diagnostics, a
+later valid shift clears the diagnostic, moves both source-backed and dirty
+cells, and saved outputs reopen cleanly with the shifted sparse state.
 The no-op, validation-failure, and memory-guard copy-original shift outputs are
 also reopened in public-state coverage to verify the clean source-backed Data
 sheet remains readable after failed or non-mutating shift attempts.

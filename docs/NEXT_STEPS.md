@@ -121,6 +121,8 @@ readback after mixed summary diagnostics.
 The materialized-summary move-owner path now saves and reopens the assigned
 editor output, confirming summary ownership transfer persists while discarded
 target materialized edits stay absent.
+The A1 single-cell overload save path is reopened to verify inserted D4 text,
+source-backed cells, refreshed bounds, and erased A2 after save.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

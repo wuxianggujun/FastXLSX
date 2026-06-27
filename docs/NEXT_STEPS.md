@@ -78,6 +78,8 @@ outputs after erasing a source-backed cell to release insertion budget, verifyin
 clean diagnostics plus the saved erased/inserted sparse coordinates.
 The adjacent missing-erase guardrail clean-save paths are also reopened to
 verify the rejected target stays absent while source-backed cells remain clean.
+Existing-cell blank overwrite after rejected blank insertions is reopened as
+well, pinning explicit blank readback without admitting the rejected target.
 Public-state
 coverage now also verifies that materialized row/column
 shifts use the same narrow formula translator for `$` absolute anchors,

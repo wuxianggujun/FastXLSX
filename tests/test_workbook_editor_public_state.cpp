@@ -6985,6 +6985,56 @@ void check_reopened_missing_erase_guardrail_clean_output(
         prefix + " reopened column_cells should keep rejected column empty");
 }
 
+void check_reopened_blank_guardrail_overwrite_output(
+    const std::filesystem::path& output,
+    const fastxlsx::WorksheetEditorOptions& options,
+    std::string_view scenario)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        prefix + " reopened output should keep the source sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+        prefix + " reopened output should keep the source used range");
+
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+        prefix + " reopened output should read A1 as an explicit blank");
+    const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+    check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_b1.number_value() == 1.0,
+        prefix + " reopened output should keep source-backed B1");
+    const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+    check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a2.text_value() == "placeholder-a2",
+        prefix + " reopened output should keep source-backed A2");
+    check(!reopened_sheet.try_cell("D4").has_value(),
+        prefix + " reopened output should keep rejected blank D4 absent");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
+        reopened_sheet.row_cells(1);
+    check(reopened_row_one.size() == 2 &&
+            reopened_row_one[0].reference.row == 1 &&
+            reopened_row_one[0].reference.column == 1 &&
+            reopened_row_one[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+            reopened_row_one[1].reference.row == 1 &&
+            reopened_row_one[1].reference.column == 2 &&
+            reopened_row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_row_one[1].value.number_value() == 1.0,
+        prefix + " reopened row_cells should expose blank A1 and source B1");
+    check(reopened_sheet.column_cells(4).empty(),
+        prefix + " reopened column_cells should keep rejected blank column empty");
+}
+
 void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()
 {
     const std::filesystem::path max_source =
@@ -7352,6 +7402,10 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "blank overwrite should remove the previous A1 text");
     check_not_contains(max_worksheet_xml, R"(r="D4")",
         "rejected blank max_cells insertion should not leak as D4");
+    check_reopened_blank_guardrail_overwrite_output(
+        max_output,
+        max_options,
+        "max_cells blank overwrite");
 
     const std::filesystem::path memory_source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-blank-memory-guard-source.xlsx");
@@ -7430,6 +7484,10 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "memory-budget blank overwrite should remove the previous A1 text");
     check_not_contains(memory_worksheet_xml, R"(r="D4")",
         "rejected blank memory-budget insertion should not leak as D4");
+    check_reopened_blank_guardrail_overwrite_output(
+        memory_output,
+        memory_options,
+        "memory-budget blank overwrite");
 }
 
 void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics()

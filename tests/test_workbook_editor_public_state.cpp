@@ -3518,6 +3518,8 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
 {
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-contains-cell-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-contains-cell-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -3579,6 +3581,51 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
         "invalid contains_cell reads should not mutate sparse store state");
     check(sheet.estimated_memory_usage() == memory_before_invalid_reads,
         "invalid contains_cell reads should not change sparse-store memory usage");
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == prior_error,
+        "save_as after contains_cell inspection should preserve prior diagnostics");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "contains_cell reads should not interfere with dirty-session save_as projection");
+    check_contains(worksheet_xml, "contains-new",
+        "contains_cell reads should not drop dirty inserted cells");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "contains_cell reads should not revive erased source cells");
+    check_not_contains(worksheet_xml, "invalid-contains-cell-sentinel",
+        "contains_cell rejected mutations should not leak into saved output");
+
+    check_reopened_clean_sheet_output(output, "Data", "contains_cell dirty projection",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "contains_cell reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "contains_cell reopened output should expose dirty-session bounds");
+            check(reopened_sheet.contains_cell("A1"),
+                "contains_cell reopened output should report source-backed A1");
+            check(reopened_sheet.contains_cell("B3"),
+                "contains_cell reopened output should report explicit B3 blank");
+            check(reopened_sheet.contains_cell("D4"),
+                "contains_cell reopened output should report inserted D4 text");
+            check(!reopened_sheet.contains_cell("A2"),
+                "contains_cell reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "contains_cell reopened output should keep source-backed A1 text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "contains_cell reopened output should keep source-backed B1 number");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Blank,
+                "contains_cell reopened output should read explicit B3 blank");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "contains-new",
+                "contains_cell reopened output should read inserted D4 text");
+        });
 }
 
 void test_public_worksheet_editor_row_and_column_cells_snapshot()

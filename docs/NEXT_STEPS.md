@@ -103,6 +103,9 @@ diagnostic-preserving reads.
 The `row_cells()` / `column_cells()` snapshot path is reopened to verify saved
 row/column ordering, explicit blank cells, source-backed records, later edits,
 and outside-coordinate sparse cells.
+The `contains_cell()` inspection path now also saves and reopens the dirty
+projection, verifying represented blank / inserted / source-backed cells and
+erased source cells after diagnostic-preserving invalid reads.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

@@ -1111,6 +1111,26 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "A1+B3",
             "post-reacquire delete_rows should translate the moved formula text");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_three =
+            matching.row_cells(3);
+        check(shifted_row_three.size() == 2 &&
+                shifted_row_three[0].reference.row == 3 &&
+                shifted_row_three[0].reference.column == 2 &&
+                shifted_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                shifted_row_three[0].value.text_value() == "tail-b4" &&
+                shifted_row_three[1].reference.row == 3 &&
+                shifted_row_three[1].reference.column == 3 &&
+                shifted_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_row_three[1].value.text_value() == "A1+B3",
+            "post-reacquire delete_rows row_cells should expose shifted dirty and formula cells");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_three =
+            matching.column_cells(3);
+        check(shifted_column_three.size() == 1 &&
+                shifted_column_three[0].reference.row == 3 &&
+                shifted_column_three[0].reference.column == 3 &&
+                shifted_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_column_three[0].value.text_value() == "A1+B3",
+            "post-reacquire delete_rows column_cells should expose the shifted formula cell");
         {
             const std::vector<std::string> names =
                 editor.pending_materialized_worksheet_names();
@@ -1237,6 +1257,26 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "A2+C1",
             "post-reacquire delete_columns should translate the moved formula text");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one =
+            matching.row_cells(1);
+        check(shifted_row_one.size() == 2 &&
+                shifted_row_one[0].reference.row == 1 &&
+                shifted_row_one[0].reference.column == 1 &&
+                shifted_row_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_row_one[0].value.number_value() == 1.0 &&
+                shifted_row_one[1].reference.row == 1 &&
+                shifted_row_one[1].reference.column == 2 &&
+                shifted_row_one[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_row_one[1].value.text_value() == "A2+C1",
+            "post-reacquire delete_columns row_cells should expose shifted number and formula cells");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_two =
+            matching.column_cells(2);
+        check(shifted_column_two.size() == 1 &&
+                shifted_column_two[0].reference.row == 1 &&
+                shifted_column_two[0].reference.column == 2 &&
+                shifted_column_two[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_column_two[0].value.text_value() == "A2+C1",
+            "post-reacquire delete_columns column_cells should expose the shifted formula cell");
         {
             const std::vector<std::string> names =
                 editor.pending_materialized_worksheet_names();

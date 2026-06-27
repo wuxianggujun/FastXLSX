@@ -35216,6 +35216,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.805 - Pin renamed WorksheetEditor shift styled formula preservation
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove renamed planned-name row shifts preserve moved source-backed formula
+text translation and style ids.
+
+Output:
+- Added public-state coverage for a source workbook containing a styled formula
+  in `Data!D2`, followed by `rename_sheet("Data", "RenamedData")` and
+  `insert_rows(2, 2)`.
+- The regression verifies the moved formula appears at `D4` as `A3+B3`, keeps
+  the source `StyleId`, reports dirty materialized diagnostics under
+  `RenamedData`, and removes old `D2` / `A2` coordinates.
+- Saved XML and reopened readback both expose only `RenamedData`, preserve the
+  translated styled formula, and keep shifted source rows at their planned-name
+  coordinates.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.804 - Pin renamed WorksheetEditor shift after-retry reacquire
 
 Status: completed.

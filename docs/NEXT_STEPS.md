@@ -415,6 +415,9 @@ height, style, max_cells, and memory-budget failures are staged and do not mutat
 the active sparse store. This is not column insertion/deletion, column shifting,
 column metadata editing, table/range metadata recalculation, sharedStrings/styles
 migration, or large-file low-memory random editing.
+Saved row/column replacement outputs are also reopened in public-state coverage
+to verify clean readback for replacement text, number, formula, explicit blank,
+untouched non-target cells, and non-synthesized sparse gaps.
 `WorksheetEditor::set_row_values()` and `set_column_values()` now cover the
 style-preserving row/column prefix write convenience for small files: they write
 input values to columns 1..N or rows 1..N, preserve source styles on overwritten

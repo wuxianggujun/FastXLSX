@@ -4006,6 +4006,12 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     }
 }
 
+void check_reopened_clean_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view sheet_name,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect);
+
 void test_public_worksheet_editor_set_row_replaces_sparse_row()
 {
     const std::filesystem::path source =
@@ -4068,6 +4074,34 @@ void test_public_worksheet_editor_set_row_replaces_sparse_row()
         "set_row should omit the old target-row numeric value");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "set_row should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "set_row",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "set_row reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "set_row reopened output should keep replaced row bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "set-row-a1",
+                "set_row reopened output should read target-row text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 22.0,
+                "set_row reopened output should read target-row number");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "A1+B2",
+                "set_row reopened output should read target-row formula");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Blank,
+                "set_row reopened output should read target-row explicit blank");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "set_row reopened output should keep non-target rows");
+            check(!reopened_sheet.try_cell("B2").has_value(),
+                "set_row reopened output should not synthesize non-target row cells");
+        });
 }
 
 void test_public_worksheet_editor_set_row_empty_and_guardrails()
@@ -4328,6 +4362,34 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
         "set_column should omit the old target-column row-two text");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "set_column should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(output, "Data", "set_column",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "set_column reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 2,
+                "set_column reopened output should keep replaced column bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "set-column-a1",
+                "set_column reopened output should read target-column text");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a2.number_value() == 44.0,
+                "set_column reopened output should read target-column number");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_a3.text_value() == "A3+B1",
+                "set_column reopened output should read target-column formula");
+            const fastxlsx::CellValue reopened_a4 = reopened_sheet.get_cell("A4");
+            check(reopened_a4.kind() == fastxlsx::CellValueKind::Blank,
+                "set_column reopened output should read target-column explicit blank");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "set_column reopened output should keep non-target columns");
+            check(!reopened_sheet.try_cell("B2").has_value(),
+                "set_column reopened output should not synthesize non-target column cells");
+        });
 }
 
 void test_public_worksheet_editor_set_column_empty_and_guardrails()

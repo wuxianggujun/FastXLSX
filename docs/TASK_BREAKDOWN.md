@@ -35216,6 +35216,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.819 - Pin renamed WorksheetEditor delete-row formula failed save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove renamed planned-name delete-row formula sessions survive a failed
+source-overwrite `save_as()` and can be safely retried.
+
+Output:
+- Added public-state coverage for `delete_rows(1, 1)` on a renamed
+  source-backed styled formula sheet, followed by rejected exact source
+  overwrite and safe retry output.
+- The regression verifies the failed save preserves the dirty materialized
+  session under `RenamedData`, keeps `D1` as `#REF!+#REF!` with the source
+  `StyleId`, preserves workbook catalog/source diagnostics, and leaves the
+  source workbook unchanged under `Data`.
+- The safe retry saves the shifted five-cell sparse state, clears materialized
+  dirty diagnostics, and reopens clean under `RenamedData` with row-two and
+  row-three source cells projected through the delete-row edit.
+
+Non-goals / boundary:
+- No formula recalculation, no cross-sheet formula rewrite, no style migration
+  or style validation, no sharedStrings migration, no metadata synchronization,
+  no relationship repair, no calcChain rebuild, and no large-file low-memory
+  random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.818 - Pin renamed WorksheetEditor delete-column formula failed save
 
 Status: completed.

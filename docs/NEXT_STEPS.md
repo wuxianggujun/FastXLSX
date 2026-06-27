@@ -246,6 +246,10 @@ reacquire coverage: the clean `RenamedData` handle keeps `D1` as
 `#REF!+#REF!` with the original `StyleId`, old `Data` remains unavailable, and
 a later valid `insert_columns(2, 1)` saves/reopens `E1` with the same formula
 and style.
+The delete-row formula failed-save retry shape is pinned as well: a rejected
+exact source overwrite keeps dirty `D1` as `#REF!+#REF!` with the source
+`StyleId`, leaves the source workbook under `Data` untouched, and a safe retry
+saves/reopens the shifted five-cell state cleanly under `RenamedData`.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

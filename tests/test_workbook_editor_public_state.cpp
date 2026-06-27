@@ -8130,6 +8130,10 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save should reject path-equivalent source overwrite");
     check_dirty_planned_session(
         "renamed shift failed save rejected path-equivalent source overwrite");
+    check(threw_fastxlsx_error([&] { editor.save_as(std::filesystem::path()); }),
+        "renamed shift failed save should reject empty output path");
+    check_dirty_planned_session(
+        "renamed shift failed save rejected empty output path");
     check(sheet.get_cell("C1").number_value() == 1.0 &&
             reacquired.get_cell("C1").number_value() == 1.0,
         "renamed shift failed save should preserve shifted numeric cells after rejection");

@@ -35216,6 +35216,41 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.800 - Pin renamed WorksheetEditor shift empty-output failed save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove an empty output path rejection preserves a dirty renamed
+planned-name materialized shift session after post-save reacquire.
+
+Output:
+- Extended the renamed shift failed-save regression to reject
+  `save_as(std::filesystem::path())` after the exact and path-equivalent source
+  overwrite rejections.
+- The branch reuses the dirty planned-session checks, so the renamed catalog,
+  dirty materialized diagnostics, pending edit summary, and both handles remain
+  stable under `RenamedData`.
+- Existing source/first-output/safe-retry XML checks now also prove the empty
+  output path failure does not flush rejected dirty state or block the later
+  safe save.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no workbook catalog repair beyond
+  the existing planned-name helper, no formula/definedName rewrite, no metadata
+  synchronization, no relationship repair, no sharedStrings/styles migration,
+  no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.799 - Pin renamed WorksheetEditor shift path-equivalent failed save
 
 Status: completed.

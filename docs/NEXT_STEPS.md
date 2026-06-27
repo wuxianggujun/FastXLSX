@@ -191,6 +191,10 @@ Renamed planned-name shifts now also cover source-backed styled formulas:
 `insert_rows(2, 2)` translates the moved formula from `A1+B1` to `A3+B3`,
 preserves its source `StyleId`, saves the formula cell under `RenamedData`, and
 reopens clean with the old `Data` name unavailable.
+The corresponding renamed delete-column formula path is pinned too:
+`delete_columns(1, 1)` moves the styled formula to `C2`, translates the deleted
+`A1` reference to `#REF!` and shifted `B1` to `A1`, preserves the style id, and
+saves/reopens only under `RenamedData` while keeping shifted `B2` at `A2`.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

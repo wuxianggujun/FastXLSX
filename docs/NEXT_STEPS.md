@@ -186,6 +186,9 @@ coverage: after an `insert_rows()` save, a matching `worksheet("Data")`
 reacquire reuses the saved clean materialized session, a later
 `insert_columns()` through the reacquired handle is visible through the older
 handle, and both first/second outputs reopen with isolated shifted sparse state.
+The optional `try_worksheet("Data")` matching reacquire path now carries the
+same saved-session proof, including later shared-session shift/save and reopened
+combined sparse readback.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

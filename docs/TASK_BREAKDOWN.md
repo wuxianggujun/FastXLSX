@@ -34968,6 +34968,40 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.790 - Pin post-save WorksheetEditor shift optional reacquire reuse
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove matching-option `try_worksheet("Data")` after a saved structural
+shift reuses the same clean materialized session as throwing `worksheet()`.
+
+Output:
+- Added public-state coverage that saves a `Data.insert_rows()` projection,
+  reacquires the saved session through optional `try_worksheet("Data")`, then
+  performs a follow-up `insert_columns()` through the optional handle.
+- The regression verifies optional reacquire keeps both handles clean, preserves
+  shifted sparse cells instead of reloading source coordinates, dirties the
+  shared session only after the later shift, and exposes one dirty
+  materialized Data session.
+- The first output remains isolated to the row shift, while the second output
+  writes the combined row/column shift and reopens as clean public state.
+
+Non-goals / boundary:
+- No production code change, no new public API, no metadata synchronization, no
+  relationship repair, no sharedStrings/styles migration, no calcChain rebuild,
+  and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

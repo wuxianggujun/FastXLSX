@@ -10491,6 +10491,266 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid reads reopened output should keep old coordinates absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snapshot_reads_preserve_styled_session()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-snapshot-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-snapshot-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-snapshot-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.delete_columns(1, 1);
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-column snapshot reads first save should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-column snapshot reads first save should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column snapshot reads first save should clear dirty materialized diagnostics");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed formula delete-column snapshot reads matching reacquire should stay clean");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed formula delete-column snapshot reads should keep the old source name unavailable");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        reacquired.sparse_cells();
+    check(all_cells.size() == 4,
+        "renamed formula delete-column snapshot reads should return all saved sparse cells");
+    check(all_cells[0].reference.row == 1 && all_cells[0].reference.column == 1 &&
+            all_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+            all_cells[0].value.number_value() == 1.0,
+        "renamed formula delete-column snapshot reads should keep shifted B1 first");
+    check(all_cells[1].reference.row == 2 && all_cells[1].reference.column == 1 &&
+            all_cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            all_cells[1].value.text_value() == "row2-gap-b2",
+        "renamed formula delete-column snapshot reads should keep shifted B2 second");
+    check(all_cells[2].reference.row == 2 && all_cells[2].reference.column == 2 &&
+            all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            all_cells[2].value.text_value() == "row2-gap-c2",
+        "renamed formula delete-column snapshot reads should keep shifted C2 third");
+    check(all_cells[3].reference.row == 2 && all_cells[3].reference.column == 3 &&
+            all_cells[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            all_cells[3].value.text_value() == "#REF!+A1" &&
+            all_cells[3].value.has_style() &&
+            all_cells[3].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads should expose the saved styled formula");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_range =
+        sheet.sparse_cells("A1:C2");
+    check(shifted_range.size() == 4,
+        "renamed formula delete-column snapshot reads should return represented cells in range order");
+    check(shifted_range[0].reference.row == 1 && shifted_range[0].reference.column == 1 &&
+            shifted_range[0].value.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_range[0].value.number_value() == 1.0,
+        "renamed formula delete-column snapshot reads should keep shifted A1 first in range");
+    check(shifted_range[3].reference.row == 2 && shifted_range[3].reference.column == 3 &&
+            shifted_range[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_range[3].value.text_value() == "#REF!+A1" &&
+            shifted_range[3].value.has_style() &&
+            shifted_range[3].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads should expose styled formula in range order");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+        reacquired.row_cells(2);
+    check(row_two.size() == 3,
+        "renamed formula delete-column snapshot reads row_cells should expose the shifted formula row");
+    check(row_two[0].reference.row == 2 && row_two[0].reference.column == 1 &&
+            row_two[0].value.text_value() == "row2-gap-b2",
+        "renamed formula delete-column snapshot reads row_cells should keep shifted B2 first");
+    check(row_two[1].reference.row == 2 && row_two[1].reference.column == 2 &&
+            row_two[1].value.text_value() == "row2-gap-c2",
+        "renamed formula delete-column snapshot reads row_cells should keep shifted C2 second");
+    check(row_two[2].reference.row == 2 && row_two[2].reference.column == 3 &&
+            row_two[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+            row_two[2].value.text_value() == "#REF!+A1" &&
+            row_two[2].value.has_style() &&
+            row_two[2].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads row_cells should keep styled formula last");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+        sheet.column_cells(3);
+    check(column_three.size() == 1,
+        "renamed formula delete-column snapshot reads column_cells should expose the formula column");
+    check(column_three[0].reference.row == 2 &&
+            column_three[0].reference.column == 3 &&
+            column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            column_three[0].value.text_value() == "#REF!+A1" &&
+            column_three[0].value.has_style() &&
+            column_three[0].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads column_cells should keep formula style id");
+
+    const std::array<fastxlsx::WorksheetCellReference, 4> requested_refs {
+        fastxlsx::WorksheetCellReference {2, 3},
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {2, 1},
+        fastxlsx::WorksheetCellReference {2, 3},
+    };
+    const std::vector<fastxlsx::WorksheetCellSnapshot> requested_cells =
+        reacquired.sparse_cells(requested_refs);
+    check(requested_cells.size() == 4,
+        "renamed formula delete-column snapshot reads coordinate batch should keep requested represented cells");
+    check(requested_cells[0].reference.row == 2 && requested_cells[0].reference.column == 3 &&
+            requested_cells[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            requested_cells[0].value.text_value() == "#REF!+A1" &&
+            requested_cells[0].value.has_style() &&
+            requested_cells[0].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads coordinate batch should return C2 first");
+    check(requested_cells[1].reference.row == 1 && requested_cells[1].reference.column == 1 &&
+            requested_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            requested_cells[1].value.number_value() == 1.0,
+        "renamed formula delete-column snapshot reads coordinate batch should return A1 second");
+    check(requested_cells[2].reference.row == 2 && requested_cells[2].reference.column == 1 &&
+            requested_cells[2].value.text_value() == "row2-gap-b2",
+        "renamed formula delete-column snapshot reads coordinate batch should return A2 third");
+    check(requested_cells[3].reference.row == 2 && requested_cells[3].reference.column == 3 &&
+            requested_cells[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            requested_cells[3].value.text_value() == "#REF!+A1" &&
+            requested_cells[3].value.has_style() &&
+            requested_cells[3].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads coordinate batch should preserve duplicate C2 reads");
+
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-column snapshot reads should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-column snapshot reads should keep both planned-name handles clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-column snapshot reads should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-column snapshot reads should not dirty materialized diagnostics");
+    check(editor.source_worksheet_names() == expected_source_names &&
+            editor.worksheet_names() == expected_planned_names,
+        "renamed formula delete-column snapshot reads should preserve source and planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
+        "renamed formula delete-column snapshot reads should preserve the planned workbook catalog");
+    check(reacquired.cell_count() == 4 && sheet.cell_count() == 4,
+        "renamed formula delete-column snapshot reads should preserve sparse counts");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 2, 3,
+        "renamed formula delete-column snapshot reads should preserve delete-column bounds");
+
+    reacquired.insert_rows(2, 1);
+    check(all_cells[3].reference.row == 2 && all_cells[3].reference.column == 3 &&
+            all_cells[3].value.text_value() == "#REF!+A1" &&
+            all_cells[3].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads should return owning snapshots across later shifts");
+    check(row_two[2].reference.row == 2 && row_two[2].reference.column == 3 &&
+            row_two[2].value.text_value() == "#REF!+A1" &&
+            row_two[2].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads row snapshot should remain stable after later shifts");
+    check(column_three[0].reference.row == 2 && column_three[0].reference.column == 3 &&
+            column_three[0].value.text_value() == "#REF!+A1" &&
+            column_three[0].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads column snapshot should remain stable after later shifts");
+    check(requested_cells[3].reference.row == 2 && requested_cells[3].reference.column == 3 &&
+            requested_cells[3].value.text_value() == "#REF!+A1" &&
+            requested_cells[3].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads batch snapshot should remain stable after later shifts");
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "renamed formula delete-column snapshot reads later shift should dirty the shared styled session");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed formula delete-column snapshot reads later shift should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 4,
+        "renamed formula delete-column snapshot reads later shift should keep the styled sparse count");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C3");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "#REF!+A2" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads later shift should translate and preserve style id");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-column snapshot reads second save should clean both styled handles");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-column snapshot reads second save should record the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column snapshot reads second save should clear dirty diagnostics again");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    const std::string second_styled_formula_xml =
+        std::string(R"(<c r="C3" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+A2</f></c>)";
+    check_contains(second_workbook_xml, R"(name="RenamedData")",
+        "renamed formula delete-column snapshot reads second output should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "renamed formula delete-column snapshot reads second output should omit the source catalog name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "renamed formula delete-column snapshot reads second output should project combined shifted bounds");
+    check_contains(second_worksheet_xml, second_styled_formula_xml,
+        "renamed formula delete-column snapshot reads second output should write translated formula with style id");
+    check_not_contains(second_worksheet_xml, R"(r="C2")",
+        "renamed formula delete-column snapshot reads second output should omit the old formula coordinate");
+    check_not_contains(second_worksheet_xml, R"(r="A2")",
+        "renamed formula delete-column snapshot reads second output should omit inserted blank A2");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed formula delete-column snapshot reads reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed formula delete-column snapshot reads reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "renamed formula delete-column snapshot reads reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 4,
+        "renamed formula delete-column snapshot reads reopened output should keep shifted sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+        "renamed formula delete-column snapshot reads reopened output should expose combined shifted bounds");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+        reopened_sheet.row_cells(3);
+    check(reopened_row_three.size() == 3,
+        "renamed formula delete-column snapshot reads reopened row_cells should expose shifted row three");
+    check(reopened_row_three[0].reference.row == 3 && reopened_row_three[0].reference.column == 1 &&
+            reopened_row_three[0].value.text_value() == "row2-gap-b2",
+        "renamed formula delete-column snapshot reads reopened row_cells should read shifted B2");
+    check(reopened_row_three[1].reference.row == 3 && reopened_row_three[1].reference.column == 2 &&
+            reopened_row_three[1].value.text_value() == "row2-gap-c2",
+        "renamed formula delete-column snapshot reads reopened row_cells should read shifted C2");
+    check(reopened_row_three[2].reference.row == 3 && reopened_row_three[2].reference.column == 3 &&
+            reopened_row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_row_three[2].value.text_value() == "#REF!+A2" &&
+            reopened_row_three[2].value.has_style() &&
+            reopened_row_three[2].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads reopened row_cells should read translated styled formula");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+        reopened_sheet.column_cells(3);
+    check(reopened_column_three.size() == 1 &&
+            reopened_column_three[0].reference.row == 3 &&
+            reopened_column_three[0].reference.column == 3 &&
+            reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_column_three[0].value.text_value() == "#REF!+A2" &&
+            reopened_column_three[0].value.has_style() &&
+            reopened_column_three[0].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column snapshot reads reopened column_cells should read translated styled formula");
+    check(!reopened_sheet.try_cell("A2").has_value() &&
+            !reopened_sheet.try_cell("C2").has_value() &&
+            !reopened_sheet.try_cell("D2").has_value(),
+        "renamed formula delete-column snapshot reads reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reacquire_reuses_styled_session()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -17746,6 +18006,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_invalid_mutations_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_missing_query_preserves_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_invalid_reads_preserve_styled_session();
+            test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snapshot_reads_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reacquire_reuses_styled_session();
             test_public_worksheet_editor_shift_after_rename_deletes_formula_rows();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_save_preserves_styled_session();

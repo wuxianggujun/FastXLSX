@@ -254,6 +254,10 @@ Delete-column formula invalid-read hygiene is now covered after save too:
 invalid coordinates/ranges, invalid row/column snapshots, and a valid-missing
 `get_cell("D2")` all leave the saved styled `C2` session clean, and matching
 reacquire can still save/reopen styled `C3` as `#REF!+A2`.
+Delete-column formula snapshot reads now cover the same saved styled session:
+full sparse, A1-range, row/column, and coordinate-batch snapshots expose `C2`
+with its `StyleId`, stay diagnostic-clean and non-dirty, and remain stable
+after a later row shift saves/reopens styled `C3` as `#REF!+A2`.
 The symmetric renamed delete-row formula path is pinned as well:
 `delete_rows(1, 1)` moves the styled formula to `D1`, translates both row-one
 references to `#REF!`, preserves the style id, and saves/reopens only under

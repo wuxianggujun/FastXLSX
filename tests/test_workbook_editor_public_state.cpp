@@ -8256,6 +8256,26 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         editor.save_as(output);
         check(!sheet.has_pending_changes(),
             "renamed delete-row formula audit save_as should clean the planned-name handle");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0,
+            "renamed delete-row formula audit save_as should clear dirty materialized diagnostics");
+
+        fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+        check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+            "renamed delete-row formula audit reacquire should reuse a clean saved session");
+        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
+            editor.formula_reference_audits();
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0,
+            "renamed delete-row formula audit reacquire should keep diagnostics clean");
+        check(reacquired_audits.size() == 1,
+            "renamed delete-row formula audit reacquire should keep only the surviving reference");
+        check(find_public_state_formula_audit(
+                  reacquired_audits, 1, 4, "Data!#REF!") == nullptr,
+            "renamed delete-row formula audit reacquire should still skip Data!#REF!");
+        check_public_state_renamed_shift_formula_audit(
+            reacquired_audits, 1, 4, expected_formula, "Data!B1", "B1",
+            "renamed delete-row formula audit reacquire surviving B reference");
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -8304,6 +8324,26 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         editor.save_as(output);
         check(!sheet.has_pending_changes(),
             "renamed delete-column formula audit save_as should clean the planned-name handle");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0,
+            "renamed delete-column formula audit save_as should clear dirty materialized diagnostics");
+
+        fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+        check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+            "renamed delete-column formula audit reacquire should reuse a clean saved session");
+        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
+            editor.formula_reference_audits();
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0,
+            "renamed delete-column formula audit reacquire should keep diagnostics clean");
+        check(reacquired_audits.size() == 1,
+            "renamed delete-column formula audit reacquire should keep only the surviving reference");
+        check(find_public_state_formula_audit(
+                  reacquired_audits, 2, 3, "Data!#REF!") == nullptr,
+            "renamed delete-column formula audit reacquire should still skip Data!#REF!");
+        check_public_state_renamed_shift_formula_audit(
+            reacquired_audits, 2, 3, expected_formula, "Data!A2", "A2",
+            "renamed delete-column formula audit reacquire surviving A reference");
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");

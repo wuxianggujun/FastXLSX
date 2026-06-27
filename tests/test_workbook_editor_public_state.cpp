@@ -2630,6 +2630,39 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
                 "successful save_as should clear materialized dirty flag from summaries");
         }
     }
+
+    check_reopened_clean_sheet_output(output, "Data", "pending summary Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "pending summary Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "pending summary Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "summary-dirty-data",
+                "pending summary Data reopened output should read materialized A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "pending summary Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "pending summary Data reopened output should keep source-backed A2");
+        });
+    check_reopened_clean_sheet_output(output, "Untouched", "pending summary Untouched replacement",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "pending summary Untouched reopened output should keep replacement sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 1,
+                "pending summary Untouched reopened output should expose replacement bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "replacement",
+                "pending summary Untouched reopened output should read replacement A1");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "pending summary Untouched reopened output should drop source-backed B1");
+        });
 }
 
 void test_public_workbook_editor_pending_materialized_summaries_move_with_owner()

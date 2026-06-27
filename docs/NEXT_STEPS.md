@@ -115,6 +115,9 @@ dirty cells after failed-save recovery.
 The materialized-name move-owner save path is reopened too, verifying the moved
 dirty session persists while the discarded target session does not leak into the
 clean saved workbook.
+The `pending_worksheet_edits()` summary save path now reopens both the
+auto-flushed materialized sheet and the replacement-only sheet, pinning clean
+readback after mixed summary diagnostics.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.

@@ -248,6 +248,20 @@ void check_public_state_reopened_delete_formula_audit_output(
     check(reopened.has_worksheet("RenamedData") &&
             !reopened.has_worksheet("Data"),
         std::string(message_prefix) + " should expose only the saved planned sheet name");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        reopened.source_formula_reference_audits();
+    check(!reopened.has_pending_changes() &&
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0,
+        std::string(message_prefix) + " source audit should keep the reopened editor clean");
+    check(source_audits.size() == 1,
+        std::string(message_prefix) + " source audit should keep only the surviving reference");
+    check(find_public_state_formula_audit(source_audits, row, column, "Data!#REF!") == nullptr,
+        std::string(message_prefix) + " source audit should skip Data!#REF!");
+    check_public_state_reopened_unmatched_formula_audit(
+        source_audits, row, column, expected_formula,
+        qualified_reference_text, reference_text,
+        std::string(message_prefix) + " source audit");
 
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
@@ -297,6 +311,22 @@ void check_public_state_reopened_shift_formula_audit_output(
     check(reopened.has_worksheet("RenamedData") &&
             !reopened.has_worksheet("Data"),
         std::string(message_prefix) + " should expose only the saved planned sheet name");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        reopened.source_formula_reference_audits();
+    check(!reopened.has_pending_changes() &&
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0,
+        std::string(message_prefix) + " source audit should keep the reopened editor clean");
+    check(source_audits.size() == 2,
+        std::string(message_prefix) + " source audit should report both shifted references");
+    check_public_state_reopened_unmatched_formula_audit(
+        source_audits, row, column, expected_formula,
+        first_qualified_reference_text, first_reference_text,
+        std::string(message_prefix) + " source first audit");
+    check_public_state_reopened_unmatched_formula_audit(
+        source_audits, row, column, expected_formula,
+        second_qualified_reference_text, second_reference_text,
+        std::string(message_prefix) + " source second audit");
 
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),

@@ -2671,6 +2671,8 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-source.xlsx");
     const std::filesystem::path target_source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-move-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
@@ -2711,6 +2713,53 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
                 "move assignment should discard old target materialized summary");
         }
     }
+
+    target.save_as(output);
+    check(target.pending_worksheet_edits().empty(),
+        "save_as after summary move assignment should clear assigned materialized summary");
+    check(target.pending_change_count() == 1,
+        "save_as after summary move assignment should count the materialized Patch handoff");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-summary-dirty",
+        "summary move-assigned editor should save assigned dirty materialized payload");
+    check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-summary-dirty",
+        "summary move assignment should not leak discarded target dirty materialized payload");
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized summary move Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "materialized summary move Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "materialized summary move Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "moved-summary-dirty",
+                "materialized summary move Data reopened output should read moved dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "materialized summary move Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "materialized summary move Data reopened output should keep source-backed A2");
+        });
+    check_reopened_clean_sheet_output(output, "Untouched", "materialized summary move Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "materialized summary move Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "materialized summary move Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "materialized summary move Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "materialized summary move Untouched reopened output should keep source-backed B1");
+        });
 }
 
 void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()

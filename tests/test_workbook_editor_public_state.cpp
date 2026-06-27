@@ -8351,6 +8351,10 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted B reference");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "renamed formula audit shifted row should reject source overwrite");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed formula audit shifted row rejected source-overwrite source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -8416,6 +8420,10 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted C reference");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted source scan");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "renamed column formula audit shifted should reject source overwrite");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed column formula audit shifted rejected source-overwrite source scan");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

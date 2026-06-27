@@ -7881,6 +7881,145 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
         "shift after rename reopened output should keep old source coordinate absent");
 }
 
+void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-reacquire-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-reacquire-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-reacquire-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_rows(2, 1);
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "renamed shift reacquire first save should clean the planned-name handle");
+    check(editor.pending_change_count() == 2,
+        "renamed shift reacquire first save should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift reacquire first save should clear dirty materialized diagnostics");
+
+    std::optional<fastxlsx::WorksheetEditor> maybe_reacquired =
+        editor.try_worksheet("RenamedData");
+    check(maybe_reacquired.has_value(),
+        "renamed shift reacquire should find the planned-name saved session");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed shift reacquire should not find the old source sheet name");
+    if (!maybe_reacquired.has_value()) {
+        return;
+    }
+
+    fastxlsx::WorksheetEditor reacquired = std::move(*maybe_reacquired);
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed shift reacquire should return the saved clean materialized session");
+    check(reacquired.name() == "RenamedData",
+        "renamed shift reacquire should preserve the planned handle name");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "renamed shift reacquire should reuse the saved shifted sparse state");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "renamed shift reacquire should keep old row coordinates absent");
+
+    reacquired.insert_columns(2, 1);
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "renamed shift reacquire later shift should dirty the shared planned-name session");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed shift reacquire later shift should report dirty state under the planned name");
+    check(editor.pending_materialized_cell_count() == 3,
+        "renamed shift reacquire later shift should report the shared sparse count once");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "renamed shift reacquire later shift should expose one combined summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "RenamedData" &&
+                    summaries[0].renamed &&
+                    summaries[0].materialized_dirty,
+                "renamed shift reacquire later shift summary should retain rename and dirty state");
+            check(summaries[0].materialized_cell_count == 3,
+                "renamed shift reacquire later shift summary should report sparse count");
+        }
+    }
+    check(sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "renamed shift reacquire later shift should move B1 and share it across handles");
+    check(!sheet.try_cell("B1").has_value() && !reacquired.try_cell("B1").has_value(),
+        "renamed shift reacquire later shift should keep old column coordinates absent");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift reacquire second save should clean both planned-name handles");
+    check(editor.pending_change_count() == 3,
+        "renamed shift reacquire second save should record the second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "renamed shift reacquire second save should clear dirty materialized diagnostics");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_workbook_xml, R"(name="RenamedData")",
+        "renamed shift reacquire first output should keep the planned catalog name");
+    check_not_contains(first_workbook_xml, R"(name="Data")",
+        "renamed shift reacquire first output should omit the source catalog name");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+        "renamed shift reacquire first output should contain only the first shift");
+    check_contains(first_worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "renamed shift reacquire first output should keep B1 before later shift");
+    check_contains(first_worksheet_xml, R"(<c r="A3")",
+        "renamed shift reacquire first output should keep shifted A2");
+    check_not_contains(first_worksheet_xml, R"(r="C1")",
+        "renamed shift reacquire first output should not include the later column shift");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="RenamedData")",
+        "renamed shift reacquire second output should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "renamed shift reacquire second output should omit the source catalog name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "renamed shift reacquire second output should project combined shifted bounds");
+    check_contains(second_worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "renamed shift reacquire second output should write shifted B1");
+    check_contains(second_worksheet_xml, R"(<c r="A3")",
+        "renamed shift reacquire second output should retain shifted A2");
+    check_not_contains(second_worksheet_xml, R"(r="B1")",
+        "renamed shift reacquire second output should omit the old B1 coordinate");
+    check_not_contains(second_worksheet_xml, R"(r="A2")",
+        "renamed shift reacquire second output should omit the old A2 coordinate");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
+    check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
+        "renamed shift reacquire reopened output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "renamed shift reacquire reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_cell_count() == 0,
+        "renamed shift reacquire reopened output should not expose dirty diagnostics");
+    check(reopened_sheet.cell_count() == 3,
+        "renamed shift reacquire reopened output should keep sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+        "renamed shift reacquire reopened output should expose combined bounds");
+    check(reopened_sheet.get_cell("C1").number_value() == 1.0,
+        "renamed shift reacquire reopened output should read shifted B1");
+    check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "renamed shift reacquire reopened output should read shifted A2");
+    check(!reopened_sheet.try_cell("B1").has_value() &&
+            !reopened_sheet.try_cell("A2").has_value(),
+        "renamed shift reacquire reopened output should keep old coordinates absent");
+}
+
 void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
 {
     const std::filesystem::path source =
@@ -12475,6 +12614,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
+            test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session();
             test_public_worksheet_editor_shift_handle_reuse_after_save_as();
             test_public_worksheet_editor_shift_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session();

@@ -182,6 +182,11 @@ The planned-name rename boundary is pinned for shifts too: after
 and applying `insert_rows()` reports dirty materialized diagnostics under the
 planned name, saves the renamed workbook catalog, and reopens only by
 `RenamedData` with the shifted sparse cells.
+The same renamed shift path now covers same-editor post-save reacquire:
+`try_worksheet("RenamedData")` reuses the clean shifted session, the old `Data`
+name stays unavailable, a later `insert_columns()` dirties the shared planned
+session, and the second output reopens only as `RenamedData` with combined
+shifted coordinates.
 The same-handle row/column shift reuse path now saves an insert-rows
 projection, performs a later insert-columns shift on the same borrowed
 `WorksheetEditor`, saves again, and reopens both outputs to verify clean state,

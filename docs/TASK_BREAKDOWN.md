@@ -35071,6 +35071,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `git diff --check` passes.
 
+### P8.793 - Pin renamed WorksheetEditor shift reacquire reuse
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove same-editor matching optional reacquire after a saved renamed
+structural shift reuses the clean planned-name materialized session for later
+edits.
+
+Output:
+- Added public-state coverage for `rename_sheet("Data", "RenamedData")`,
+  `worksheet("RenamedData").insert_rows(2, 1)`, first `save_as()`, then
+  `try_worksheet("RenamedData")` from the same editor.
+- The regression verifies the old `Data` name stays unavailable, optional
+  reacquire reads the saved shifted state, a later `insert_columns(2, 1)`
+  dirties the shared planned-name session, and edit summaries retain source
+  `Data`, planned `RenamedData`, `renamed=true`, and `materialized_dirty=true`.
+- The first output remains row-shift-only, the second output contains the
+  combined row/column shift, and reopening the second output exposes only
+  `RenamedData` as clean public state.
+
+Non-goals / boundary:
+- No same-sheet rename after materialization, no formula/definedName rewrite,
+  no metadata synchronization, no relationship repair, no sharedStrings/styles
+  migration, no calcChain rebuild, and no large-file low-memory random editing.
+
+Acceptance:
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `git diff --check` passes.
+
 ### P8.746 - Targeted-cell Patch completed-target fast path
 
 Status: completed.

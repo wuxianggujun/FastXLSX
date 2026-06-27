@@ -254,6 +254,10 @@ The delete-row formula failed-save retry shape is pinned as well: a rejected
 exact source overwrite keeps dirty `D1` as `#REF!+#REF!` with the source
 `StyleId`, leaves the source workbook under `Data` untouched, and a safe retry
 saves/reopens the shifted five-cell state cleanly under `RenamedData`.
+Delete-row formula option-mismatch hygiene now mirrors the column case:
+mismatched `WorksheetEditorOptions` leave the saved styled `D1` session clean
+and diagnostic-free, while matching reacquire can still `insert_columns(2, 1)`
+and save/reopen styled `E1` as `#REF!+#REF!`.
 The renamed planned-name shift path is also pinned across a rejected
 source-overwrite `save_as()`: after post-save reacquire and a follow-up
 `insert_columns()`, exact source overwrite, path-equivalent source overwrite,

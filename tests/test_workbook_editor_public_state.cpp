@@ -2766,6 +2766,8 @@ void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
 {
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-get-cell-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-get-cell-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -2784,6 +2786,39 @@ void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
         "get_cell should return explicit blank records distinctly from missing cells");
     check(sheet.try_cell(5, 5) == std::nullopt,
         "try_cell should continue to report unrelated missing cells as nullopt");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "get_cell blank save_as should include the explicit blank bounds");
+    check_contains(worksheet_xml, R"(<c r="D4"/>)",
+        "get_cell blank save_as should persist the explicit blank cell");
+
+    check_reopened_clean_sheet_output(output, "Data", "get_cell explicit blank",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "get_cell explicit blank reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "get_cell explicit blank reopened output should expose blank bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "get_cell explicit blank reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "get_cell explicit blank reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "get_cell explicit blank reopened output should keep source-backed A2");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Blank,
+                "get_cell explicit blank reopened output should read D4 as blank");
+            check(!reopened_sheet.try_cell("E5").has_value(),
+                "get_cell explicit blank reopened output should keep unrelated missing cells absent");
+        });
 }
 
 void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()

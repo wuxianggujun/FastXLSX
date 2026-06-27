@@ -402,6 +402,49 @@ void check_public_state_source_formula_audit_preserves_shift_fixture(
         std::string(message_prefix) + " source B reference");
 }
 
+void check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+    const fastxlsx::WorkbookEditor& editor,
+    std::string_view message_prefix)
+{
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::vector<std::string> materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t materialized_count_before_audit =
+        editor.pending_materialized_cell_count();
+    const std::size_t summary_count_before_audit = editor.pending_worksheet_edits().size();
+    const std::optional<std::string> last_error_before_audit = editor.last_edit_error();
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        editor.source_formula_reference_audits();
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        std::string(message_prefix) + " should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        std::string(message_prefix) + " should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() == replacement_names_before_audit,
+        std::string(message_prefix) + " should not create replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit,
+        std::string(message_prefix) + " should preserve dirty materialized diagnostics");
+    check(editor.pending_materialized_cell_count() == materialized_count_before_audit,
+        std::string(message_prefix) + " should preserve dirty materialized cell count");
+    check(editor.pending_worksheet_edits().size() == summary_count_before_audit,
+        std::string(message_prefix) + " should not create pending edit summaries");
+    check(editor.last_edit_error() == last_error_before_audit,
+        std::string(message_prefix) + " should not update last_edit_error");
+
+    constexpr std::string_view source_formula = "Data!A1+Data!B2";
+    check(source_audits.size() == 2,
+        std::string(message_prefix) + " should report only the source formula references");
+    check_public_state_renamed_shift_formula_audit(
+        source_audits, 2, 4, source_formula, "Data!A1", "A1",
+        std::string(message_prefix) + " source A reference");
+    check_public_state_renamed_shift_formula_audit(
+        source_audits, 2, 4, source_formula, "Data!B2", "B2",
+        std::string(message_prefix) + " source B reference");
+}
+
 bool workbook_editor_edit_summaries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
@@ -8725,8 +8768,25 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             write_two_sheet_source_with_qualified_delete_formula(
                 "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-source.xlsx",
                 styled_formula_style);
+        const std::filesystem::path equivalent_source =
+            source.parent_path() / "." / source.filename();
+        const std::filesystem::path missing_parent_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-missing-parent") /
+            "out.xlsx";
+        const std::filesystem::path file_parent =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-file-parent");
+        const std::filesystem::path non_directory_output = file_parent / "out.xlsx";
+        const std::filesystem::path directory_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-directory-output");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-output.xlsx");
+        std::filesystem::remove_all(missing_parent_output.parent_path());
+        std::filesystem::remove_all(file_parent);
+        fastxlsx::test::write_file(file_parent, "not a directory");
+        std::filesystem::remove_all(directory_output);
+        std::filesystem::create_directories(directory_output);
+        const auto source_entries_before_save_preflights =
+            fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -8752,6 +8812,40 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         check_public_state_renamed_shift_formula_audit(
             audits, 1, 4, expected_formula, "Data!B1", "B1",
             "renamed delete-row formula audit shifted surviving B reference");
+
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit shifted source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "renamed delete-row formula audit should reject source overwrite");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit rejected source-overwrite source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(equivalent_source); }),
+            "renamed delete-row formula audit should reject path-equivalent source overwrite");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit rejected path-equivalent source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(std::filesystem::path()); }),
+            "renamed delete-row formula audit should reject empty output path");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit rejected empty-output source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+            "renamed delete-row formula audit should reject missing output parent");
+        check(!std::filesystem::exists(missing_parent_output),
+            "renamed delete-row formula audit should not create rejected missing-parent output");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit rejected missing-parent source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(non_directory_output); }),
+            "renamed delete-row formula audit should reject non-directory output parent");
+        check(std::filesystem::is_regular_file(file_parent) &&
+                fastxlsx::test::read_file(file_parent) == "not a directory",
+            "renamed delete-row formula audit should preserve non-directory parent file");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit rejected non-directory parent source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
+            "renamed delete-row formula audit should reject existing directory output");
+        check(std::filesystem::is_directory(directory_output),
+            "renamed delete-row formula audit should preserve rejected output directory");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-row formula audit rejected directory-output source scan");
 
         editor.save_as(output);
         check(!sheet.has_pending_changes(),
@@ -8785,6 +8879,17 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             + R"("><f>Data!#REF!+Data!B1</f></c>)";
         check_contains(worksheet_xml, styled_formula_xml,
             "renamed delete-row formula audit save_as should write the #REF! formula");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries_before_save_preflights,
+            "renamed delete-row formula audit safe save should leave source package bytes unchanged");
+        check(!std::filesystem::exists(missing_parent_output),
+            "renamed delete-row formula audit safe save should keep rejected missing-parent output absent");
+        check(std::filesystem::is_regular_file(file_parent) &&
+                fastxlsx::test::read_file(file_parent) == "not a directory",
+            "renamed delete-row formula audit safe save should preserve non-directory parent file");
+        check(!std::filesystem::exists(non_directory_output),
+            "renamed delete-row formula audit safe save should not create non-directory child output");
+        check(std::filesystem::is_directory(directory_output),
+            "renamed delete-row formula audit safe save should preserve rejected output directory");
         check_public_state_reopened_delete_formula_audit_output(
             output, "D1", 1, 4, expected_formula, styled_formula_style,
             "Data!B1", "B1",
@@ -8797,8 +8902,25 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             write_two_sheet_source_with_qualified_delete_formula(
                 "fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-source.xlsx",
                 styled_formula_style);
+        const std::filesystem::path equivalent_source =
+            source.parent_path() / "." / source.filename();
+        const std::filesystem::path missing_parent_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-missing-parent") /
+            "out.xlsx";
+        const std::filesystem::path file_parent =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-file-parent");
+        const std::filesystem::path non_directory_output = file_parent / "out.xlsx";
+        const std::filesystem::path directory_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-directory-output");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-output.xlsx");
+        std::filesystem::remove_all(missing_parent_output.parent_path());
+        std::filesystem::remove_all(file_parent);
+        fastxlsx::test::write_file(file_parent, "not a directory");
+        std::filesystem::remove_all(directory_output);
+        std::filesystem::create_directories(directory_output);
+        const auto source_entries_before_save_preflights =
+            fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -8824,6 +8946,40 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         check_public_state_renamed_shift_formula_audit(
             audits, 2, 3, expected_formula, "Data!A2", "A2",
             "renamed delete-column formula audit shifted surviving A reference");
+
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit shifted source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "renamed delete-column formula audit should reject source overwrite");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit rejected source-overwrite source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(equivalent_source); }),
+            "renamed delete-column formula audit should reject path-equivalent source overwrite");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit rejected path-equivalent source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(std::filesystem::path()); }),
+            "renamed delete-column formula audit should reject empty output path");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit rejected empty-output source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(missing_parent_output); }),
+            "renamed delete-column formula audit should reject missing output parent");
+        check(!std::filesystem::exists(missing_parent_output),
+            "renamed delete-column formula audit should not create rejected missing-parent output");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit rejected missing-parent source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(non_directory_output); }),
+            "renamed delete-column formula audit should reject non-directory output parent");
+        check(std::filesystem::is_regular_file(file_parent) &&
+                fastxlsx::test::read_file(file_parent) == "not a directory",
+            "renamed delete-column formula audit should preserve non-directory parent file");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit rejected non-directory parent source scan");
+        check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
+            "renamed delete-column formula audit should reject existing directory output");
+        check(std::filesystem::is_directory(directory_output),
+            "renamed delete-column formula audit should preserve rejected output directory");
+        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+            editor, "renamed delete-column formula audit rejected directory-output source scan");
 
         editor.save_as(output);
         check(!sheet.has_pending_changes(),
@@ -8857,6 +9013,17 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             + R"("><f>Data!#REF!+Data!A2</f></c>)";
         check_contains(worksheet_xml, styled_formula_xml,
             "renamed delete-column formula audit save_as should write the #REF! formula");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries_before_save_preflights,
+            "renamed delete-column formula audit safe save should leave source package bytes unchanged");
+        check(!std::filesystem::exists(missing_parent_output),
+            "renamed delete-column formula audit safe save should keep rejected missing-parent output absent");
+        check(std::filesystem::is_regular_file(file_parent) &&
+                fastxlsx::test::read_file(file_parent) == "not a directory",
+            "renamed delete-column formula audit safe save should preserve non-directory parent file");
+        check(!std::filesystem::exists(non_directory_output),
+            "renamed delete-column formula audit safe save should not create non-directory child output");
+        check(std::filesystem::is_directory(directory_output),
+            "renamed delete-column formula audit safe save should preserve rejected output directory");
         check_public_state_reopened_delete_formula_audit_output(
             output, "C2", 2, 3, expected_formula, styled_formula_style,
             "Data!A2", "A2",

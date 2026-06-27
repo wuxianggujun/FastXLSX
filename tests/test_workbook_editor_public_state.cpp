@@ -4508,6 +4508,40 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
     }
 }
 
+void check_reopened_clean_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view sheet_name,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet(sheet_name);
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened output should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0,
+        prefix + " reopened output should not expose dirty diagnostics");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " reopened output should not expose dirty worksheet names");
+
+    inspect(reopened_sheet);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened readback should keep public state clean");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0,
+        prefix + " reopened readback should keep dirty diagnostics empty");
+}
+
 void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
 {
     const std::filesystem::path source =
@@ -4563,6 +4597,28 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "set_row_values should omit overwritten numeric payloads");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
             "set_row_values should preserve untouched worksheets");
+        check_reopened_clean_sheet_output(output, "Data", "set_row_values",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "set_row_values reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                    "set_row_values reopened output should keep written row bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "row-value-a1",
+                    "set_row_values reopened output should read row prefix text");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank,
+                    "set_row_values reopened output should read explicit blank prefix");
+                const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+                check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c1.text_value() == "A1+B1",
+                    "set_row_values reopened output should read formula prefix");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "set_row_values reopened output should keep non-target row cells");
+            });
     }
 
     {
@@ -4607,6 +4663,23 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "set_row_values should persist value-only edits with the source style id");
         check_contains(worksheet_xml, "row-tail",
             "set_row_values should persist untouched row tail cells");
+        check_reopened_clean_sheet_output(output, "Styled", "styled set_row_values",
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "styled set_row_values reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "styled set_row_values reopened output should keep row bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "styled-row-value" &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "styled set_row_values reopened output should preserve source style id");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_b1.text_value() == "row-tail",
+                    "styled set_row_values reopened output should keep row tail");
+            });
 
         fastxlsx::WorkbookEditor style_reject_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor reject_sheet = style_reject_editor.worksheet("Data");
@@ -4771,6 +4844,28 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "set_column_values should omit the overwritten row-two source value");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
             "set_column_values should preserve untouched worksheets");
+        check_reopened_clean_sheet_output(output, "Data", "set_column_values",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "set_column_values reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                    "set_column_values reopened output should keep written column bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "column-value-a1",
+                    "set_column_values reopened output should read column prefix text");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Blank,
+                    "set_column_values reopened output should read explicit blank prefix");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_a3.number_value() == 7.0,
+                    "set_column_values reopened output should read numeric prefix");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "set_column_values reopened output should keep non-target columns");
+            });
     }
 
     {
@@ -4815,6 +4910,23 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "set_column_values should persist value-only edits with the source style id");
         check_contains(worksheet_xml, "column-tail",
             "set_column_values should persist untouched column tail cells");
+        check_reopened_clean_sheet_output(output, "Styled", "styled set_column_values",
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "styled set_column_values reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 1,
+                    "styled set_column_values reopened output should keep column bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "styled-column-value" &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "styled set_column_values reopened output should preserve source style id");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "column-tail",
+                    "styled set_column_values reopened output should keep column tail");
+            });
 
         fastxlsx::WorkbookEditor style_reject_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor reject_sheet = style_reject_editor.worksheet("Data");

@@ -425,6 +425,9 @@ max_cells, and memory-budget failures are staged and do not mutate the active
 sparse store. This is not row/column replacement, insertion/deletion, shifting,
 dense range writing, metadata recalculation, style migration/merge/creation, or
 large-file low-memory random editing.
+Their saved outputs are also reopened in public-state coverage to verify clean
+readback for row/column prefix values, explicit blanks, formulas, untouched
+tail cells, and preserved source `StyleId` handles on value-only overwrites.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

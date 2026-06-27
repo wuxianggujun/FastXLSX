@@ -9160,6 +9160,157 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_save_preserves_dirty_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-source.xlsx");
+    const std::filesystem::path file_parent =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent");
+    const std::filesystem::path non_directory_output = file_parent / "out.xlsx";
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-second-output.xlsx");
+    std::filesystem::remove_all(file_parent);
+    fastxlsx::test::write_file(file_parent, "not a directory");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    const std::vector<std::string> expected_names = editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire file-parent failed save first save should clean the borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire file-parent failed save first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire file-parent failed save first save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire file-parent failed save first save should keep diagnostics clear");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "shift reacquire file-parent failed save matching reacquire should stay clean before the later shift");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire file-parent failed save matching reacquire should reuse saved shifted state");
+
+    reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "Missing",
+        "shift reacquire file-parent failed save dirty state before rejected save",
+        1,
+        3,
+        shifted_memory);
+
+    check(threw_fastxlsx_error([&] { editor.save_as(non_directory_output); }),
+        "shift reacquire file-parent failed save should reject non-directory output parent");
+    check(std::filesystem::is_regular_file(file_parent) &&
+            fastxlsx::test::read_file(file_parent) == "not a directory",
+        "shift reacquire file-parent failed save should preserve the non-directory parent file");
+    check_public_dirty_materialized_recovery_state(
+        editor,
+        sheet,
+        reacquired,
+        expected_names,
+        expected_names,
+        expected_catalog,
+        "Missing",
+        "shift reacquire file-parent failed save rejected non-directory parent",
+        1,
+        3,
+        shifted_memory);
+    check(sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "shift reacquire file-parent failed save should preserve shifted numeric cells after rejection");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire file-parent failed save should preserve shifted source rows after rejection");
+    check(!sheet.try_cell("B1").has_value() && !reacquired.try_cell("B1").has_value() &&
+            !sheet.try_cell("A2").has_value() && !reacquired.try_cell("A2").has_value(),
+        "shift reacquire file-parent failed save should keep old sparse coordinates absent after rejection");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_xml = source_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(source_xml, R"(<dimension ref="A1:B2"/>)",
+        "shift reacquire file-parent failed save should leave the source workbook bounds unchanged");
+    check_contains(source_xml, R"(<c r="B1"><v>1</v></c>)",
+        "shift reacquire file-parent failed save should leave the source workbook B1 unchanged");
+    check_contains(source_xml, R"(<c r="A2")",
+        "shift reacquire file-parent failed save should leave the source workbook A2 unchanged");
+    check_not_contains(source_xml, R"(r="A3")",
+        "shift reacquire file-parent failed save should not write the row shift into the source workbook");
+    check_not_contains(source_xml, R"(r="C1")",
+        "shift reacquire file-parent failed save should not write the column shift into the source workbook");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_xml, R"(<dimension ref="A1:B3"/>)",
+        "shift reacquire file-parent failed save first output should keep shifted row bounds");
+    check_contains(first_xml, R"(<c r="B1"><v>1</v></c>)",
+        "shift reacquire file-parent failed save first output should keep B1 before rejected later shift");
+    check_contains(first_xml, R"(<c r="A3")",
+        "shift reacquire file-parent failed save first output should contain the shifted source row");
+    check_not_contains(first_xml, R"(r="C1")",
+        "shift reacquire file-parent failed save first output should not include the rejected later column shift");
+    check_not_contains(first_xml, R"(r="A2")",
+        "shift reacquire file-parent failed save first output should keep old row coordinate absent");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire file-parent failed save safe retry should clean both handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "shift reacquire file-parent failed save safe retry should clear dirty diagnostics");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire file-parent failed save safe retry should record the later handoff");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire file-parent failed save safe retry should keep diagnostics clear");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_xml, R"(<dimension ref="A1:C3"/>)",
+        "shift reacquire file-parent failed save safe retry should project combined shifted bounds");
+    check_contains(second_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shift reacquire file-parent failed save safe retry should include shifted B1");
+    check_contains(second_xml, R"(<c r="A3")",
+        "shift reacquire file-parent failed save safe retry should retain the shifted source row");
+    check_not_contains(second_xml, R"(r="B1")",
+        "shift reacquire file-parent failed save safe retry should omit old B1");
+    check_not_contains(second_xml, R"(r="A2")",
+        "shift reacquire file-parent failed save safe retry should keep old row coordinate absent");
+
+    check_reopened_shift_output(second_output, "shift reacquire file-parent failed save safe retry",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire file-parent failed save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire file-parent failed save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire file-parent failed save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire file-parent failed save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire file-parent failed save reopened output should keep old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
 {
     const std::filesystem::path source =
@@ -11804,6 +11955,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_preserves_dirty_session();
             test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_preserves_dirty_session();
             test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_preserves_dirty_session();
+            test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_save_preserves_dirty_session();
             test_public_worksheet_editor_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state();
             test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();

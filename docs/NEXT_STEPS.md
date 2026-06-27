@@ -204,10 +204,10 @@ diagnostic without dirtying materialized state, leaking rejected payloads, or
 blocking a later valid shift from clearing diagnostics and saving.
 The post-save shift failed-save retry path is pinned as well: after a follow-up
 shift dirties the saved session, rejected exact source-overwrite,
-path-equivalent source-overwrite, empty-output, and missing-parent `save_as()`
-calls preserve both borrowed handles, dirty materialized diagnostics, handoff
-count, source/first-output isolation, and the later safe save still flushes the
-combined shifted sparse state.
+path-equivalent source-overwrite, empty-output, missing-parent, and
+non-directory-parent `save_as()` calls preserve both borrowed handles, dirty
+materialized diagnostics, handoff count, source/first-output isolation, and the
+later safe save still flushes the combined shifted sparse state.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

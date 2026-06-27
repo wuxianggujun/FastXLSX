@@ -280,6 +280,55 @@ void check_public_state_reopened_delete_formula_audit_output(
         qualified_reference_text, reference_text, message_prefix);
 }
 
+void check_public_state_reopened_shift_formula_audit_output(
+    const std::filesystem::path& output,
+    std::string_view cell_reference,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    fastxlsx::StyleId expected_style,
+    std::string_view first_qualified_reference_text,
+    std::string_view first_reference_text,
+    std::string_view second_qualified_reference_text,
+    std::string_view second_reference_text,
+    std::string_view message_prefix)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("RenamedData") &&
+            !reopened.has_worksheet("Data"),
+        std::string(message_prefix) + " should expose only the saved planned sheet name");
+
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        std::string(message_prefix) + " should reopen into a clean materialized session");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0,
+        std::string(message_prefix) + " should keep materialized diagnostics clean before audit");
+
+    const std::optional<fastxlsx::CellValue> reopened_formula =
+        reopened_sheet.try_cell(cell_reference);
+    check(reopened_formula.has_value() &&
+            reopened_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula->text_value() == expected_formula &&
+            reopened_formula->has_style() &&
+            reopened_formula->style_id().value() == expected_style.value(),
+        std::string(message_prefix) + " should rematerialize the styled formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reopened_audits =
+        reopened.formula_reference_audits();
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0,
+        std::string(message_prefix) + " should keep materialized diagnostics clean after audit");
+    check(reopened_audits.size() == 2,
+        std::string(message_prefix) + " should report both shifted references after reopen");
+    check_public_state_reopened_unmatched_formula_audit(
+        reopened_audits, row, column, expected_formula,
+        first_qualified_reference_text, first_reference_text, message_prefix);
+    check_public_state_reopened_unmatched_formula_audit(
+        reopened_audits, row, column, expected_formula,
+        second_qualified_reference_text, second_reference_text, message_prefix);
+}
+
 bool workbook_editor_edit_summaries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>& rhs)
@@ -8240,6 +8289,10 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         + R"("><f>Data!A3+Data!B3</f></c>)";
     check_contains(worksheet_xml, styled_formula_xml,
         "renamed formula audit shift save_as should write the shifted qualified formula");
+    check_public_state_reopened_shift_formula_audit_output(
+        output, "D4", 4, 4, expected_formula, styled_formula_style,
+        "Data!A3", "A3", "Data!B3", "B3",
+        "renamed formula audit shifted row reopened output");
 }
 
 void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_shifted_formula()
@@ -8299,6 +8352,10 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         + R"("><f>Data!B1+Data!C1</f></c>)";
     check_contains(worksheet_xml, styled_formula_xml,
         "renamed column formula audit shift save_as should write the shifted qualified formula");
+    check_public_state_reopened_shift_formula_audit_output(
+        output, "E2", 2, 5, expected_formula, styled_formula_style,
+        "Data!B1", "B1", "Data!C1", "C1",
+        "renamed column formula audit shifted output");
 }
 
 void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_ref_tokens()

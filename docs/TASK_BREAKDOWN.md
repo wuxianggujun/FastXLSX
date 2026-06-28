@@ -40278,6 +40278,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.962 - Pin rename-back materialized invalid-read no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid handle-level reads against the clean saved/reacquired
+  rename-back materialized session are no-op-save safe before the next valid
+  mutation.
+
+Output:
+- Extended the same public rename-back regression to reject invalid row,
+  column, A1, and sparse-range reads after the clean no-op save.
+- The regression verifies those read failures leave `last_edit_error()` clear,
+  keep both borrowed handles clean, keep dirty materialized diagnostics and
+  summaries empty, and do not increment the materialized handoff count.
+- A follow-up no-op `save_as()` writes decompressed package entries matching the
+  first restored-name output, then the later valid mutation path continues to
+  save normally under `Data`.
+
+Non-goals:
+- No coordinate repair or clamping, read-side diagnostics, missing-cell
+  synthesis, source reload, transient-name aliasing, catalog repair, metadata
+  repair, Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

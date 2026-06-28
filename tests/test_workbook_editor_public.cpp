@@ -5390,6 +5390,8 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-output.xlsx");
     const std::filesystem::path no_op_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-noop.xlsx");
+    const std::filesystem::path invalid_read_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-invalid-read-noop.xlsx");
     const std::filesystem::path recovery_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-recovery.xlsx");
 
@@ -5523,6 +5525,47 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
     const auto no_op_entries = fastxlsx::test::read_zip_entries(no_op_output);
     check(no_op_entries == output_entries,
         "rename-back no-op output should match the first restored-name materialized output");
+
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell(0, 1); }),
+        "rename-back invalid read should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(1, 0); }),
+        "rename-back invalid read should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell("a1"); }),
+        "rename-back invalid read should reject lowercase A1 references");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("XFE1"); }),
+        "rename-back invalid read should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "rename-back invalid read should reject row-zero ranges");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
+    }), "rename-back invalid read should reject reversed ranges");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back invalid reads should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back invalid reads should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back invalid reads should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back invalid reads should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back invalid reads should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back invalid reads should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back invalid reads should keep current summaries empty");
+
+    editor.save_as(invalid_read_no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back invalid-read no-op save should keep both handles clean");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back invalid-read no-op save should keep diagnostics clear");
+    check(editor.pending_change_count() == 3,
+        "rename-back invalid-read no-op save should not add another materialized handoff");
+    const auto invalid_read_no_op_entries =
+        fastxlsx::test::read_zip_entries(invalid_read_no_op_output);
+    check(invalid_read_no_op_entries == output_entries,
+        "rename-back invalid-read no-op output should match the first restored-name materialized output");
 
     reacquired.set_cell(2, 2,
         fastxlsx::CellValue::text("rename-back-materialized-second"));

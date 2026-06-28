@@ -3552,6 +3552,10 @@ after `Data` is renamed to `TransientData`, renamed back, saved, and reacquired
 under the restored source/planned name, a second `save_as()` keeps handles clean,
 materialized diagnostics and summaries empty, and decompressed package entries
 identical to the first restored-name output without reviving the transient name.
+Invalid reads on that clean rename-back session are no-op-save safe as well:
+row/column/A1/range preflight failures leave `last_edit_error()` clear, keep both
+handles clean, leave materialized diagnostics and summaries empty, and a later
+`save_as()` still matches the first restored-name package entries.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

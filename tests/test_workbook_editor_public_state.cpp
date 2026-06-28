@@ -6454,6 +6454,54 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
                     "set_row_values guardrail recovery reopened output should keep rejected A3 absent");
             });
     }
+
+    {
+        fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+        const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.memory_budget_bytes = exact_memory_budget;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+        check(baseline_memory == exact_memory_budget,
+            "set_row_values memory-budget precondition should load with an exact sparse budget");
+
+        bool failed = false;
+        try {
+            sheet.set_row_values(1, {
+                fastxlsx::CellValue::text(std::string(4096, 'r')),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+                "set_row_values should expose CellStore memory-budget diagnostics");
+        }
+        check(failed,
+            "set_row_values should enforce memory_budget_bytes on staged row-prefix writes");
+        check(editor.last_edit_error().has_value(),
+            "failed set_row_values memory-budget mutation should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(),
+                "CellStore memory_budget_bytes guardrail exceeded",
+                "last_edit_error should retain the set_row_values memory-budget diagnostic");
+        }
+        check(!sheet.has_pending_changes(),
+            "failed set_row_values memory-budget mutation should not dirty the session");
+        check(!editor.has_pending_changes(),
+            "failed set_row_values memory-budget mutation should not dirty the editor");
+        check(sheet.cell_count() == 3,
+            "failed set_row_values memory-budget mutation should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed set_row_values memory-budget mutation should preserve sparse memory estimate");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "failed set_row_values memory-budget mutation should preserve row-prefix text");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "failed set_row_values memory-budget mutation should preserve row tail cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "failed set_row_values memory-budget mutation should preserve non-target rows");
+    }
 }
 
 void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
@@ -6726,6 +6774,54 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
                 check(!reopened_sheet.try_cell("C1").has_value(),
                     "set_column_values guardrail recovery reopened output should keep rejected C1 absent");
             });
+    }
+
+    {
+        fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+        const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.memory_budget_bytes = exact_memory_budget;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+        check(baseline_memory == exact_memory_budget,
+            "set_column_values memory-budget precondition should load with an exact sparse budget");
+
+        bool failed = false;
+        try {
+            sheet.set_column_values(1, {
+                fastxlsx::CellValue::text(std::string(4096, 'c')),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+                "set_column_values should expose CellStore memory-budget diagnostics");
+        }
+        check(failed,
+            "set_column_values should enforce memory_budget_bytes on staged column-prefix writes");
+        check(editor.last_edit_error().has_value(),
+            "failed set_column_values memory-budget mutation should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(),
+                "CellStore memory_budget_bytes guardrail exceeded",
+                "last_edit_error should retain the set_column_values memory-budget diagnostic");
+        }
+        check(!sheet.has_pending_changes(),
+            "failed set_column_values memory-budget mutation should not dirty the session");
+        check(!editor.has_pending_changes(),
+            "failed set_column_values memory-budget mutation should not dirty the editor");
+        check(sheet.cell_count() == 3,
+            "failed set_column_values memory-budget mutation should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed set_column_values memory-budget mutation should preserve sparse memory estimate");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "failed set_column_values memory-budget mutation should preserve column-prefix row one");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "failed set_column_values memory-budget mutation should preserve column tail cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "failed set_column_values memory-budget mutation should preserve non-target columns");
     }
 }
 

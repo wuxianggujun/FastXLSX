@@ -38806,6 +38806,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.925 - Pin row-column value-prefix memory-budget staging
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorksheetEditor::set_row_values()` and `set_column_values()` keep
+their value-prefix updates staged when `memory_budget_bytes` rejects the new
+payload.
+
+Output:
+- Added public-state regressions that open a `WorksheetEditor` with
+  `memory_budget_bytes` set to the exact loaded sparse-store memory estimate,
+  then attempt oversized row-prefix and column-prefix value updates.
+- The regressions verify the memory-budget failures update
+  `last_edit_error()`, keep the editor/session clean, preserve sparse counts
+  and memory estimates, and keep the original source-backed prefix/tail row or
+  column cells readable.
+- Updated API / next-step / task breakdown documentation to record the
+  value-prefix memory-budget staging boundary.
+
+Non-goals / boundary:
+- No memory-budget auto-sizing, no process-RSS accounting, no style migration,
+  no sharedStrings migration, no row/column metadata synchronization, no
+  formula repair or evaluation, no calcChain rebuild, no rollback history, and
+  no low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

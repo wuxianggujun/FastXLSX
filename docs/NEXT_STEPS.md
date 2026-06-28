@@ -251,6 +251,12 @@ while a dirty materialized `WorksheetEditor` shift and `request_full_calculation
 are pending, reports source workbook direct definedName text such as
 `Data!$A$1:$B$2`, and later `save_as()` keeps that definedName unchanged while
 writing the shifted worksheet cell plus `fullCalcOnLoad="1"` without calcChain.
+The renamed variant is now pinned too: after default `rename_sheet("Data",
+"RenamedData")`, queued full calculation, and a dirty materialized shift under
+the planned sheet name, the definedName audit maps stale source `Data` references
+to planned `RenamedData` for diagnostics but `save_as()` still keeps direct
+workbook definedNames unchanged unless the caller opted into the explicit
+definedName rewrite policy.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

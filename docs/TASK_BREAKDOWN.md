@@ -37715,6 +37715,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor_formula_rewrite$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.900 - Pin renamed full-calc definedName audit isolation
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_formula_rewrite.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorkbookEditor::defined_name_formula_reference_audits()` still
+reports stale source-name risk, without rewriting workbook definedNames, when
+default sheet rename, workbook full-calculation metadata, and a dirty
+materialized `WorksheetEditor` shift are pending together.
+
+Output:
+- Added formula-rewrite shard coverage for `rename_sheet("Data", "RenamedData")`,
+  `request_full_calculation()`, `worksheet("RenamedData").insert_rows(1, 1)`,
+  and `defined_name_formula_reference_audits()`.
+- The regression verifies the audit reports source formula text
+  `Data!$A$1:$B$2`, maps source `Data` to planned `RenamedData`, and flags the
+  source-name reference as stale.
+- The audit call preserves public edit count, dirty materialized diagnostics,
+  replacement diagnostics, pending summary count, and `last_edit_error`.
+- The saved package writes the renamed workbook catalog and
+  `fullCalcOnLoad="1"`, preserves the direct workbook definedName text, writes
+  the shifted worksheet cell, and does not create `xl/calcChain.xml`.
+
+Non-goals / boundary:
+- No default semantic sheet rename, no definedName rewrite outside explicit
+  rename policies, no formula evaluation, no workbook metadata repair, no
+  calcChain rebuild, no sharedStrings/styles migration, no merged audit view,
+  and no low-memory random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_formula_rewrite_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_formula_rewrite_tests.exe` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor_formula_rewrite$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

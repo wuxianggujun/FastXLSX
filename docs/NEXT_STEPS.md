@@ -3481,6 +3481,10 @@ successful auto-flush, keeps them omitted after clean matching reacquire, adds
 them back only when a later mutation dirties the reused session, and clears
 them again after the next successful `save_as()`. Prior materialized handoffs
 are not exposed as whole-`<sheetData>` replacement summaries.
+That summary check now covers the whole-store value-clear exact-budget
+recovery chain at field level: each real recovery mutation reports one
+dirty-only `Data` summary with matching sparse count and materialized memory,
+while invalid preflights and guard-only no-op saves keep summaries empty.
 The rename-context variant is pinned as well: if a sheet has a queued public
 rename and a dirty materialized session, `save_as()` clears only the
 materialized dirty fields while keeping the rename summary visible; clean

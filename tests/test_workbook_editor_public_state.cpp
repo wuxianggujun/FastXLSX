@@ -8854,6 +8854,37 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     fastxlsx::WorksheetEditorOptions options;
     options.memory_budget_bytes = exact_memory_budget;
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    const auto check_clear_all_dirty_summary =
+        [&](std::size_t expected_cell_count, std::string_view label) {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1,
+                std::string(label) + " should report one dirty materialized summary");
+            if (summaries.size() == 1) {
+                const auto& summary = summaries[0];
+                check(summary.source_name == "Data",
+                    std::string(label) + " should report the source sheet name");
+                check(summary.planned_name == "Data",
+                    std::string(label) + " should report the planned sheet name");
+                check(!summary.renamed,
+                    std::string(label) + " should not report a rename");
+                check(!summary.sheet_data_replaced,
+                    std::string(label) + " should not report a sheetData replacement");
+                check(summary.materialized_dirty,
+                    std::string(label) + " should report dirty materialized state");
+                check(summary.replacement_cell_count == 0,
+                    std::string(label) + " should report zero replacement cells");
+                check(summary.estimated_replacement_memory_usage == 0,
+                    std::string(label) + " should report zero replacement memory");
+                check(summary.materialized_cell_count == expected_cell_count,
+                    std::string(label) + " should report the active sparse count");
+                check(summary.estimated_materialized_memory_usage ==
+                        editor.estimated_pending_materialized_memory_usage(),
+                    std::string(label) + " should match the aggregate materialized memory estimate");
+                check(summary.estimated_materialized_memory_usage > 0,
+                    std::string(label) + " should report a positive materialized memory estimate");
+            }
+        };
     const std::size_t baseline_memory = sheet.estimated_memory_usage();
     check(baseline_memory == exact_memory_budget,
         "clear_cell_values() memory-budget precondition should load with an exact sparse budget");
@@ -8906,6 +8937,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "set_cell after clear_cell_values() should stay within the exact memory budget");
     check(sheet.get_cell("D4").text_value() == "clear-all-mb-release",
         "set_cell after clear_cell_values() should insert the memory-budget recovery cell");
+    check_clear_all_dirty_summary(10,
+        "clear_cell_values() memory-budget release initial recovery");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -9289,6 +9322,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
             reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
         "clear_cell_values() memory-budget release invalid mutation recovery should preserve saved D4");
+    check_clear_all_dirty_summary(11,
+        "clear_cell_values() memory-budget release invalid mutation recovery");
 
     editor.save_as(invalid_mutation_recovery_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
@@ -9410,6 +9445,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
             reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
         "clear_cell_values() memory-budget release invalid shift recovery should preserve D4");
+    check_clear_all_dirty_summary(11,
+        "clear_cell_values() memory-budget release invalid shift recovery");
 
     editor.save_as(invalid_shift_recovery_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
@@ -9545,6 +9582,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
             reacquired.get_cell("E6").text_value() == "clear-all-invalid-mutation-recovery",
         "clear_cell_values() memory-budget release same-sheet guard recovery should preserve prior saved cells");
+    check_clear_all_dirty_summary(12,
+        "clear_cell_values() memory-budget release same-sheet guard recovery");
 
     editor.save_as(same_sheet_guard_recovery_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),

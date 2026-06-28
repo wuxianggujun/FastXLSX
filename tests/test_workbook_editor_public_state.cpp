@@ -9037,6 +9037,125 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         });
 }
 
+void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_qualified_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-shift-formula-audit-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-shift-formula-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.request_full_calculation();
+
+    constexpr std::string_view expected_formula = "Data!A2+Data!B2";
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D3");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == expected_formula &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "full-calc shifted formula audit setup should expose the translated styled formula");
+    check(editor.pending_change_count() == 1 &&
+            editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 7,
+        "full-calc shifted formula audit setup should keep metadata and materialized diagnostics pending");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "full-calc shifted formula audit");
+    check(audits.size() == 2,
+        "full-calc shifted formula audit should report both shifted references");
+
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* first_audit =
+        find_public_state_formula_audit(audits, 3, 4, "Data!A2");
+    check(first_audit != nullptr,
+        "full-calc shifted formula audit should expose the shifted A reference");
+    if (first_audit != nullptr) {
+        check(first_audit->formula_sheet_source_name == "Data" &&
+                first_audit->formula_sheet_planned_name == "Data" &&
+                first_audit->formula_text == expected_formula &&
+                first_audit->sheet_qualifier_text == "Data!" &&
+                first_audit->reference_text == "A2" &&
+                first_audit->referenced_sheet_name == "Data",
+            "full-calc shifted formula audit should report shifted A formula tokens");
+        check(first_audit->matched_current_workbook_sheet &&
+                first_audit->matched_source_sheet_name == "Data" &&
+                first_audit->matched_planned_sheet_name == "Data" &&
+                !first_audit->references_renamed_source_name &&
+                first_audit->references_planned_sheet_name,
+            "full-calc shifted formula audit should match the current Data sheet");
+    }
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* second_audit =
+        find_public_state_formula_audit(audits, 3, 4, "Data!B2");
+    check(second_audit != nullptr,
+        "full-calc shifted formula audit should expose the shifted B reference");
+    if (second_audit != nullptr) {
+        check(second_audit->formula_sheet_source_name == "Data" &&
+                second_audit->formula_sheet_planned_name == "Data" &&
+                second_audit->formula_text == expected_formula &&
+                second_audit->sheet_qualifier_text == "Data!" &&
+                second_audit->reference_text == "B2" &&
+                second_audit->referenced_sheet_name == "Data",
+            "full-calc shifted formula audit should report shifted B formula tokens");
+        check(second_audit->matched_current_workbook_sheet &&
+                second_audit->matched_source_sheet_name == "Data" &&
+                second_audit->matched_planned_sheet_name == "Data" &&
+                !second_audit->references_renamed_source_name &&
+                second_audit->references_planned_sheet_name,
+            "full-calc shifted formula audit should keep B reference matched to Data");
+    }
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc shifted formula audit save_as should clean the materialized sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc shifted formula audit save_as should count metadata edit plus materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc shifted formula audit save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D3" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>Data!A2+Data!B2</f></c>)";
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc shifted formula audit save_as should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc shifted formula audit save_as should not invent calcChain.xml");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc shifted formula audit save_as should write shifted qualified formula");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "full-calc shifted formula audit save_as should omit old formula coordinate");
+
+    check_reopened_shift_output(output, "full-calc shifted formula audit",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc shifted formula audit reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "full-calc shifted formula audit reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d3 =
+                reopened_sheet.try_cell("D3");
+            check(reopened_d3.has_value() &&
+                    reopened_d3->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d3->text_value() == "Data!A2+Data!B2" &&
+                    reopened_d3->has_style() &&
+                    reopened_d3->style_id().value() == styled_formula_style.value(),
+                "full-calc shifted formula audit reopened output should read shifted formula");
+            check(!reopened_sheet.try_cell("D2").has_value(),
+                "full-calc shifted formula audit reopened output should keep old formula coordinate absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
 {
     const std::filesystem::path source =
@@ -20312,6 +20431,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift();
+            test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula();

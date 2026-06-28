@@ -276,6 +276,11 @@ materialized formula audit, the original source-formula audit, materialized
 diagnostics, `last_edit_error()`, and source package bytes; the later safe retry
 still writes the renamed catalog, shifted formula, and `fullCalcOnLoad="1"`
 without creating calcChain.
+Mismatched `WorksheetEditorOptions` access now has the same renamed
+full-calculation audit hygiene: rejected matching-name `try_worksheet()` /
+`worksheet()` calls preserve the dirty shifted formula, source/materialized
+formula audits, catalog state, materialized diagnostics, and later save-as
+output, without option migration or session cloning.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

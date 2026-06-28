@@ -292,6 +292,12 @@ hygiene: row-zero, column-zero, lowercase-A1, overflow, reversed-range,
 invalid-batch, and missing-cell reads preserve the dirty shifted formula,
 source/materialized audits, catalog state, materialized diagnostics, and later
 save-as output, without coordinate repair, relaxed parsing, or session cloning.
+Invalid `WorksheetEditor` mutations now pin the adjacent failure mode: rejected
+`set_cell()` / `erase_cell()` / `erase_cells()` calls keep the expected invalid
+reference diagnostic in `last_edit_error()`, but leave the renamed full-calc
+dirty formula session, source/materialized audits, catalog state, materialized
+diagnostics, and later save-as output intact, without rollback history or
+rejected payload leakage.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

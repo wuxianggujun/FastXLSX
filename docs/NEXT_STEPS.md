@@ -3547,6 +3547,11 @@ invalid-mutation/no-op-save boundary for saved renamed sessions: rejected
 without dirtying clean handles or materialized diagnostics, a no-op save matches
 the prior renamed output, and a later valid mutation clears the diagnostic and
 re-dirties the planned-name session.
+The basic rename-back materialized path now has the same no-op-save stability:
+after `Data` is renamed to `TransientData`, renamed back, saved, and reacquired
+under the restored source/planned name, a second `save_as()` keeps handles clean,
+materialized diagnostics and summaries empty, and decompressed package entries
+identical to the first restored-name output without reviving the transient name.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

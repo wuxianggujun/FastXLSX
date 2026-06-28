@@ -40202,6 +40202,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.960 - Pin rename-back materialized no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove the basic rename-back materialized diagnostics path remains
+  no-op-save stable after a clean matching-option reacquire, without adding work
+  to the near-timeout public-state shard.
+
+Output:
+- Extended the public rename-back materialized-diagnostics regression to save
+  `Data -> TransientData -> Data`, reacquire the restored `Data` session, and
+  run a second no-op `save_as()`.
+- The regression verifies the reacquired session keeps the saved materialized
+  value, both borrowed handles stay clean, public diagnostics and lower-level
+  materialized aggregates remain empty, and the no-op output entries match the
+  first restored-name save.
+- The saved workbook keeps the restored source/planned name and does not revive
+  or leak the transient planned name.
+
+Non-goals:
+- No undo/rollback semantics, clean-session commit model, source-package
+  mutation, transient-name aliasing, catalog repair, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

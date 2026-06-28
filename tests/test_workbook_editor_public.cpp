@@ -5388,6 +5388,8 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-output.xlsx");
+    const std::filesystem::path no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -5469,6 +5471,42 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
     check(editor.pending_worksheet_edits().empty(),
         "save_as after rename-back materialized edit should clear current summaries");
 
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    const fastxlsx::CellValue reacquired_value = reacquired.get_cell(1, 1);
+    check(reacquired_value.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_value.text_value() == "rename-back-materialized-source-name",
+        "clean rename-back reacquire should reuse the saved materialized value");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clean rename-back reacquire should keep both handles clean");
+    check(!editor.last_edit_error().has_value(),
+        "clean rename-back reacquire should keep diagnostics clear");
+    check(editor.pending_change_count() == 3,
+        "clean rename-back reacquire should not add another public handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean rename-back reacquire should not re-add dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean rename-back reacquire should not re-add dirty cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean rename-back reacquire should not re-add dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clean rename-back reacquire should keep current summaries empty");
+
+    editor.save_as(no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back no-op save should keep both handles clean");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back no-op save should keep diagnostics clear");
+    check(editor.pending_change_count() == 3,
+        "rename-back no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back no-op save should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back no-op save should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back no-op save should keep current summaries empty");
+
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
         "rename-back materialized output should use the restored source name");
@@ -5479,6 +5517,10 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
         "rename-back materialized output should contain the materialized edit");
     check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "rename-back materialized output should replace the old source cell value");
+
+    const auto no_op_entries = fastxlsx::test::read_zip_entries(no_op_output);
+    check(no_op_entries == output_entries,
+        "rename-back no-op output should match the first restored-name materialized output");
 }
 
 } // namespace

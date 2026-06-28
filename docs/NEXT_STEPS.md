@@ -3575,6 +3575,12 @@ invalid mutation records `last_edit_error()`, valid row/column and A1
 `erase_cell()` calls against absent cells clear the diagnostic without dirtying
 the clean rename-back session, preserve sparse count/memory, keep missing
 targets absent, and a no-op save still matches the first restored-name output.
+Missing-cell value-clear no-ops now cover the same clean rename-back branch:
+after an invalid mutation records `last_edit_error()`, valid row/column and A1
+`clear_cell_value()` calls against absent cells clear the diagnostic without
+dirtying either handle, preserve sparse count/memory, keep missing targets
+absent without synthesizing blank cells, and a no-op save still matches the
+first restored-name output.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

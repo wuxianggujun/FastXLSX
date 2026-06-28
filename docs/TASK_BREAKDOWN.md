@@ -38955,6 +38955,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.929 - Pin row-column range erase memory-budget release
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorksheetEditor::erase_rows()` and `erase_columns()` release exact
+`memory_budget_bytes` sparse-store capacity across inclusive row/column ranges
+for later small insertions.
+
+Output:
+- Added public-state regressions that first reject an oversized `set_cell()` in
+  an exact-memory-budget session, then erase a represented row range or column
+  range and insert a smaller recovery cell.
+- The regressions verify the range erase clears the prior memory-budget
+  diagnostic, lowers the sparse memory estimate, removes all source cells in
+  the erased range, and saves/reopens the recovery cell without leaking the
+  rejected payload.
+- Updated API / next-step / task breakdown documentation to record the
+  row/column range-erase memory-budget release boundary.
+
+Non-goals / boundary:
+- No memory-budget auto-sizing, no process-RSS accounting, no row/column
+  metadata synchronization, no tombstones, no transaction rollback, no formula
+  repair or evaluation, no calcChain rebuild, no sharedStrings/styles
+  migration, and no low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

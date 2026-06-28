@@ -1162,6 +1162,10 @@ migration, or large-file low-memory random editing.
 Saved row/column replacement outputs are also reopened in public-state coverage
 to verify clean readback for replacement text, number, formula, explicit blank,
 untouched non-target cells, and non-synthesized sparse gaps.
+Public-state now also pins the exact-memory-budget failure path for those
+row/column replacements: oversized `set_row()` / `set_column()` payloads fail
+before deleting the old target records, preserving sparse counts, memory
+estimates, dirty state, and source-backed cells.
 `WorksheetEditor::set_row_values()` and `set_column_values()` now cover the
 style-preserving row/column prefix write convenience for small files: they write
 input values to columns 1..N or rows 1..N, preserve source styles on overwritten

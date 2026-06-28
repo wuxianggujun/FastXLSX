@@ -38770,6 +38770,42 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.924 - Pin row-column replacement memory-budget staging
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorksheetEditor::set_row()` and `set_column()` keep their
+erase-plus-update replacement staged when `memory_budget_bytes` rejects the
+new payload.
+
+Output:
+- Added public-state shard coverage that opens `Data` with
+  `memory_budget_bytes` set to the exact loaded sparse-store memory estimate,
+  then attempts oversized `set_row()` and `set_column()` replacements.
+- The regressions verify the memory-budget failures update
+  `last_edit_error()`, keep the editor and worksheet clean, preserve sparse
+  counts and memory estimates, and leave the original source-backed target row
+  or column records readable.
+
+Non-goals / boundary:
+- No memory-budget auto-sizing, no process-RSS accounting, no style migration,
+  no sharedStrings migration, no row/column metadata synchronization, no
+  formula repair or evaluation, no calcChain rebuild, no rollback history, and
+  no low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

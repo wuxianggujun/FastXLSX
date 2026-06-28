@@ -341,6 +341,12 @@ planned-name handles clean, preserve source/materialized audits, leave dirty
 diagnostics empty and `last_edit_error()` clear, and a later valid `set_cell()`
 re-dirties then saves/reopens with the shifted formula, recovered text,
 `fullCalcOnLoad="1"`, and no calcChain.
+The invalid-read no-op save path now pins the read-only half of that boundary:
+the same invalid row/column/A1/range/batch and missing-cell reads leave
+`last_edit_error()` clear and saved edit summaries unchanged, and a second
+`save_as()` without a recovery mutation writes the same renamed/fullCalc
+shifted worksheet bytes as the pre-error save without recovery cells or
+calcChain.
 Invalid row/column shifts on that same clean saved/reacquired session now have
 the mutation-side recovery coverage as well: rejected shift bounds failures
 preserve the shift diagnostic without dirtying either handle or materialized

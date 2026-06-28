@@ -38602,6 +38602,49 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.920 - Pin saved renamed full-calc invalid reads no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid `WorksheetEditor` read preflights against a clean
+saved/reacquired renamed full-calculation formula audit session stay read-only
+through a later no-op `save_as()` when no recovery mutation is made.
+
+Output:
+- Added public-state shard coverage for the saved/reacquired renamed/fullCalc
+  formula-audit setup followed by invalid row/column/A1/range/batch reads,
+  invalid `row_cells()` / `column_cells()`, a missing-cell `get_cell()`,
+  source/materialized formula audits, and a second `save_as()` without a
+  recovery mutation.
+- The regression verifies the invalid read failures keep both planned-name
+  handles clean, keep `last_edit_error()` clear, avoid dirty materialized and
+  replacement diagnostics, keep saved edit summaries and catalog state
+  unchanged, and preserve the shifted sparse count/bounds.
+- The no-op save writes the same package entry bytes as the pre-error save,
+  keeping the renamed catalog, shifted styled formula, and `fullCalcOnLoad="1"`
+  while omitting recovery cells, old formula coordinates, and
+  `xl/calcChain.xml`.
+
+Non-goals / boundary:
+- No relaxed coordinate parsing, no missing-cell synthesis, no read-side
+  `last_edit_error()` diagnostics, no session reload, no source-name fallback,
+  no default formula rewrite, no formula evaluation or repair, no metadata
+  synchronization, no calcChain rebuild, no sharedStrings/styles migration, and
+  no low-memory random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

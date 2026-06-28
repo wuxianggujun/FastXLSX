@@ -8839,6 +8839,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-shift-output.xlsx");
     const std::filesystem::path invalid_shift_recovery_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-shift-recovery-output.xlsx");
+    const std::filesystem::path same_sheet_guard_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-same-sheet-guard-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -9436,6 +9438,83 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid shift recovery should persist D4");
     check_not_contains(invalid_shift_recovery_xml, R"(r="E5")",
         "clear_cell_values() memory-budget release invalid shift recovery should omit old E5");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_same_sheet_guard =
+        workbook_editor_public_catalog_snapshot(editor);
+    (void)check_public_same_sheet_guard_failure(
+        editor,
+        [&] {
+            editor.rename_sheet("Data", "BlockedClearAll");
+        },
+        PublicMaterializedGuardDiagnostic::RenameSheet,
+        "clear_cell_values() memory-budget release same-sheet guard rename");
+    const std::optional<std::string> same_sheet_guard_error =
+        check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data(
+                    "Data",
+                    {{fastxlsx::CellValue::text("blocked-clear-all-replacement")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "clear_cell_values() memory-budget release same-sheet guard replacement",
+            PublicMaterializedGuardDiagnostic::RenameSheet);
+    check(editor.last_edit_error() == same_sheet_guard_error,
+        "clear_cell_values() memory-budget release same-sheet guard should retain replacement diagnostic");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release same-sheet guard should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire + 2,
+        "clear_cell_values() memory-budget release same-sheet guard should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release same-sheet guard should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release same-sheet guard should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release same-sheet guard should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release same-sheet guard should not dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_same_sheet_guard,
+        "clear_cell_values() memory-budget release same-sheet guard");
+    check(!editor.has_worksheet("BlockedClearAll"),
+        "clear_cell_values() memory-budget release same-sheet guard should not expose rejected sheet name");
+    check(sheet.cell_count() == 11 && reacquired.cell_count() == 11,
+        "clear_cell_values() memory-budget release same-sheet guard should preserve sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 6, 5,
+        "clear_cell_values() memory-budget release same-sheet guard should preserve original handle bounds");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 6, 5,
+        "clear_cell_values() memory-budget release same-sheet guard should preserve reacquired bounds");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("E6").text_value() == "clear-all-invalid-mutation-recovery",
+        "clear_cell_values() memory-budget release same-sheet guard should preserve saved cells");
+
+    editor.save_as(same_sheet_guard_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release same-sheet guard noop save should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire + 2,
+        "clear_cell_values() memory-budget release same-sheet guard noop save should not add a handoff");
+    check(editor.last_edit_error() == same_sheet_guard_error,
+        "clear_cell_values() memory-budget release same-sheet guard noop save should preserve diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release same-sheet guard noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release same-sheet guard noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release same-sheet guard noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release same-sheet guard noop save should not dirty summaries");
+    const auto same_sheet_guard_entries =
+        fastxlsx::test::read_zip_entries(same_sheet_guard_output);
+    check(same_sheet_guard_entries == invalid_shift_recovery_entries,
+        "clear_cell_values() memory-budget release same-sheet guard noop save should keep recovery output entries stable");
+    const std::string same_sheet_guard_workbook_xml =
+        same_sheet_guard_entries.at("xl/workbook.xml");
+    const std::string same_sheet_guard_worksheet_xml =
+        same_sheet_guard_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(same_sheet_guard_workbook_xml, "BlockedClearAll",
+        "clear_cell_values() memory-budget release same-sheet guard should not persist rejected sheet name");
+    check_not_contains(same_sheet_guard_worksheet_xml, "blocked-clear-all-replacement",
+        "clear_cell_values() memory-budget release same-sheet guard should not leak rejected replacement payload");
 
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",

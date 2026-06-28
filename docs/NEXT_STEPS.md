@@ -3467,6 +3467,10 @@ dirtying handles or changing the recovery output on a later no-op save.
 The valid-shift recovery branch is pinned as well: a later `insert_rows()`
 clears the shift diagnostic, dirties the shared handles once, moves the
 recovered sparse cell, and reopens clean after the next materialized handoff.
+Same-sheet Patch operation-mixing guards are now pinned on that recovered
+session too: rejected `rename_sheet()` / `replace_sheet_data()` calls preserve
+the guard diagnostic, keep handles and catalog state clean, and a no-op save
+matches the recovery output without leaking rejected names or payloads.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

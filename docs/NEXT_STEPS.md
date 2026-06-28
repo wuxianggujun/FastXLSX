@@ -3461,6 +3461,9 @@ materialized diagnostics, rejected payloads, and no-op-save output stable.
 The follow-up recovery path is pinned too: a later valid mutation clears that
 diagnostic, dirties the shared saved/reacquired session once, expands the
 persisted bounds, and reopens clean after the next materialized handoff.
+Invalid row/column shift preflights now cover the same recovered session:
+rejected structural bounds failures preserve the shift diagnostic without
+dirtying handles or changing the recovery output on a later no-op save.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

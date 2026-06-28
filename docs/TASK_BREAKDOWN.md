@@ -39504,6 +39504,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.943 - Pin whole-store clear saved-session invalid shifts
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid row/column shift preflights against the recovered saved/reacquired
+  no-argument `clear_cell_values()` exact-budget session remain no-op-save safe.
+
+Output:
+- Extended the public-state no-argument whole-store value-clear memory-budget
+  regression to run invalid `insert_rows()` / `delete_rows()` /
+  `insert_columns()` / `delete_columns()` bounds failures after the invalid
+  mutation recovery handoff.
+- The regression verifies the shift diagnostic is populated and preserved,
+  both handles stay clean, sparse count and bounds stay stable, saved blank and
+  recovery cells remain readable, catalog state is preserved, materialized
+  diagnostics stay empty, pending handoff count remains stable, and a later
+  no-op `save_as()` writes decompressed package entries matching the recovery
+  output.
+- Updated API and planning docs to record this as saved-session invalid-shift
+  hygiene, not partial shift retry or range repair.
+
+Non-goals:
+- No range repair or clamping, partial shift retry, rollback, source-name
+  fallback, formula repair or evaluation, calcChain rebuild,
+  sharedStrings/styles migration, metadata repair, or low-memory large-file
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

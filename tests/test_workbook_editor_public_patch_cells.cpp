@@ -198,6 +198,21 @@ void check_patch_cells_clean_diagnostics(
         prefix + " should not report Data targeted patches");
 }
 
+void check_patch_cells_materialized_guard_error(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    const std::optional<std::string> error = editor.last_edit_error();
+    check(error.has_value(), prefix + " should record last_edit_error");
+    if (error.has_value()) {
+        check_contains(*error, "WorkbookEditor::replace_cells() failed",
+            prefix + " should report the public replace_cells wrapper");
+        check_contains(*error,
+            "cannot replace cells after materializing planned worksheet session",
+            prefix + " should report the materialized-session guard");
+    }
+}
+
 void test_replace_cells_patches_existing_cells_and_preserves_unrelated_parts()
 {
     const std::filesystem::path source =
@@ -774,6 +789,166 @@ void test_replace_cells_after_full_calculation_preserves_materialization_guard()
         "full-calc queued replace_cells save should not invent calcChain.xml");
 }
 
+void test_replace_cells_after_renamed_full_calculation_materialization_rejects_targeted_patch()
+{
+    {
+        const std::filesystem::path source =
+            write_patch_cells_source("workbook-editor-public-patch-cells-renamed-full-calc-dirty-guard-source.xlsx");
+        const std::filesystem::path output =
+            artifact("workbook-editor-public-patch-cells-renamed-full-calc-dirty-guard-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.rename_sheet("Data", "RenamedTargetedGuardData");
+        editor.request_full_calculation();
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedTargetedGuardData");
+        sheet.set_cell(1, 1,
+            fastxlsx::CellValue::text("renamed-full-calc-targeted-dirty"));
+
+        const std::size_t cell_count_before = sheet.cell_count();
+        const std::size_t memory_before = sheet.estimated_memory_usage();
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc targeted dirty guard setup should queue rename plus metadata");
+        check(editor.pending_materialized_worksheet_names()
+                == std::vector<std::string>{"RenamedTargetedGuardData"},
+            "renamed full-calc targeted dirty guard setup should expose the planned dirty name");
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_cells("RenamedTargetedGuardData",
+                {{{1, 2}, fastxlsx::CellValue::text("rejected targeted patch")}});
+        }), "replace_cells should reject renamed full-calc dirty materialized worksheet");
+        check_patch_cells_materialized_guard_error(
+            editor, "renamed full-calc dirty targeted rejection");
+        check_patch_cells_clean_diagnostics(
+            editor, "renamed full-calc dirty targeted rejection");
+        check(!editor.has_pending_targeted_cell_replacement("RenamedTargetedGuardData"),
+            "renamed full-calc dirty targeted rejection should not report planned targeted patches");
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc dirty targeted rejection should preserve rename plus metadata count");
+        check(editor.pending_materialized_worksheet_names()
+                == std::vector<std::string>{"RenamedTargetedGuardData"},
+            "renamed full-calc dirty targeted rejection should preserve the planned dirty name");
+        check(editor.pending_materialized_cell_count() == cell_count_before,
+            "renamed full-calc dirty targeted rejection should preserve dirty cell diagnostics");
+        check(editor.estimated_pending_materialized_memory_usage() == memory_before,
+            "renamed full-calc dirty targeted rejection should preserve dirty memory diagnostics");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1,
+                "renamed full-calc dirty targeted rejection should keep one summary");
+            if (summaries.size() == 1) {
+                const auto& summary = summaries[0];
+                check(summary.source_name == "Data" &&
+                        summary.planned_name == "RenamedTargetedGuardData",
+                    "renamed full-calc dirty targeted rejection should keep source/planned names");
+                check(summary.renamed && summary.materialized_dirty,
+                    "renamed full-calc dirty targeted rejection should keep rename and dirty flags");
+                check(!summary.targeted_cells_replaced &&
+                        summary.targeted_cell_replacement_count == 0,
+                    "renamed full-calc dirty targeted rejection should not report targeted state");
+            }
+        }
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "renamed full-calc dirty targeted rejection save should clean the handle");
+        check(editor.pending_change_count() == 3,
+            "renamed full-calc dirty targeted rejection save should count rename, metadata, and handoff");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+            "renamed full-calc dirty targeted rejection save should persist calc metadata");
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedTargetedGuardData")",
+            "renamed full-calc dirty targeted rejection save should persist planned name");
+        check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "renamed full-calc dirty targeted rejection save should not restore source name");
+        check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+            "renamed full-calc dirty targeted rejection save should not invent calcChain.xml");
+        const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(data_sheet, "renamed-full-calc-targeted-dirty",
+            "renamed full-calc dirty targeted rejection save should persist materialized edit");
+        check_not_contains(data_sheet, "rejected targeted patch",
+            "renamed full-calc dirty targeted rejection save should not leak rejected payload");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_patch_cells_source("workbook-editor-public-patch-cells-renamed-full-calc-clean-guard-source.xlsx");
+        const std::filesystem::path output =
+            artifact("workbook-editor-public-patch-cells-renamed-full-calc-clean-guard-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.rename_sheet("Data", "RenamedTargetedCleanGuardData");
+        editor.request_full_calculation();
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedTargetedCleanGuardData");
+        const fastxlsx::CellValue original = sheet.get_cell(1, 1);
+        check(original.kind() == fastxlsx::CellValueKind::Text &&
+                original.text_value() == "old-a1",
+            "renamed full-calc clean targeted guard setup should read source cells");
+
+        check(threw_fastxlsx_error([&] {
+            editor.replace_cells("RenamedTargetedCleanGuardData",
+                {{{1, 2}, fastxlsx::CellValue::text("rejected clean targeted patch")}});
+        }), "replace_cells should reject renamed full-calc clean materialized worksheet");
+        check_patch_cells_materialized_guard_error(
+            editor, "renamed full-calc clean targeted rejection");
+        check_patch_cells_clean_diagnostics(
+            editor, "renamed full-calc clean targeted rejection");
+        check(!editor.has_pending_targeted_cell_replacement("RenamedTargetedCleanGuardData"),
+            "renamed full-calc clean targeted rejection should not report planned targeted patches");
+        check(!sheet.has_pending_changes(),
+            "renamed full-calc clean targeted rejection should keep the handle clean");
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc clean targeted rejection should preserve rename plus metadata count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "renamed full-calc clean targeted rejection should keep dirty names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "renamed full-calc clean targeted rejection should keep dirty cells empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "renamed full-calc clean targeted rejection should keep dirty memory empty");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1,
+                "renamed full-calc clean targeted rejection should keep one summary");
+            if (summaries.size() == 1) {
+                const auto& summary = summaries[0];
+                check(summary.source_name == "Data" &&
+                        summary.planned_name == "RenamedTargetedCleanGuardData",
+                    "renamed full-calc clean targeted rejection should keep source/planned names");
+                check(summary.renamed && !summary.materialized_dirty,
+                    "renamed full-calc clean targeted rejection should keep a clean rename summary");
+                check(!summary.targeted_cells_replaced &&
+                        summary.targeted_cell_replacement_count == 0,
+                    "renamed full-calc clean targeted rejection should not report targeted state");
+            }
+        }
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "renamed full-calc clean targeted rejection save should keep the handle clean");
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc clean targeted rejection save should not add a handoff");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+            "renamed full-calc clean targeted rejection save should persist calc metadata");
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedTargetedCleanGuardData")",
+            "renamed full-calc clean targeted rejection save should persist planned name");
+        check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "renamed full-calc clean targeted rejection save should not restore source name");
+        check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+            "renamed full-calc clean targeted rejection save should not invent calcChain.xml");
+        check(output_entries.at("xl/worksheets/sheet1.xml") ==
+                source_entries.at("xl/worksheets/sheet1.xml"),
+            "renamed full-calc clean targeted rejection save should preserve source worksheet bytes");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "rejected clean targeted patch",
+            "renamed full-calc clean targeted rejection save should not leak rejected payload");
+    }
+}
+
 void test_replace_cells_follows_planned_catalog_after_rename()
 {
     const std::filesystem::path source =
@@ -877,6 +1052,7 @@ int main()
         test_replace_cells_can_follow_up_on_upserted_planned_cells();
         test_replace_cells_mode_mixing_guards_and_empty_noop();
         test_replace_cells_after_full_calculation_preserves_materialization_guard();
+        test_replace_cells_after_renamed_full_calculation_materialization_rejects_targeted_patch();
         test_replace_cells_follows_planned_catalog_after_rename();
         test_replace_cells_duplicate_targets_keep_latest_payload();
     } catch (const std::exception& error) {

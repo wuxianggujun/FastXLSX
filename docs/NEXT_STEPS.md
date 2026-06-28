@@ -209,6 +209,11 @@ materialized sessions reject later same-sheet `rename_sheet()` /
 `replace_sheet_data()` attempts under the current planned name, preserve the
 rename plus calc metadata edit count, and save without leaking rejected catalog
 names or replacement payloads.
+The targeted Patch guard now follows that renamed/full-calc ordering as well:
+after clean or dirty materialization under a planned sheet name, same-sheet
+`replace_cells()` is rejected with the public targeted-cell wrapper diagnostic,
+leaves targeted diagnostics empty, preserves the rename plus calc metadata
+state, and later saves without leaking the rejected targeted payload.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

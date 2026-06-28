@@ -3556,6 +3556,11 @@ Invalid reads on that clean rename-back session are no-op-save safe as well:
 row/column/A1/range preflight failures leave `last_edit_error()` clear, keep both
 handles clean, leave materialized diagnostics and summaries empty, and a later
 `save_as()` still matches the first restored-name package entries.
+Invalid mutations now cover the matching write-side preflight: rejected
+`set_cell()` / `erase_cell()` calls record the invalid-reference diagnostic
+without dirtying handles or materialized diagnostics, a no-op save still matches
+the first restored-name output, and the next valid mutation clears the
+diagnostic before saving.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

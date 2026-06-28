@@ -5392,6 +5392,8 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-noop.xlsx");
     const std::filesystem::path invalid_read_no_op_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-invalid-read-noop.xlsx");
+    const std::filesystem::path invalid_mutation_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-invalid-mutation-noop.xlsx");
     const std::filesystem::path recovery_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-recovery.xlsx");
 
@@ -5567,10 +5569,47 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
     check(invalid_read_no_op_entries == output_entries,
         "rename-back invalid-read no-op output should match the first restored-name materialized output");
 
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(0, 1,
+            fastxlsx::CellValue::text("rename-back-invalid-row"));
+    }), "rename-back invalid mutation should reject row zero");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("XFE1",
+            fastxlsx::CellValue::text("rename-back-invalid-a1"));
+    }), "rename-back invalid mutation should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell(1, 0); }),
+        "rename-back invalid mutation should reject column-zero erase");
+    check(editor.last_edit_error().has_value(),
+        "rename-back invalid mutations should record diagnostics");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back invalid mutations should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back invalid mutations should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back invalid mutations should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back invalid mutations should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back invalid mutations should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back invalid mutations should keep current summaries empty");
+
+    editor.save_as(invalid_mutation_no_op_output);
+    check(editor.last_edit_error().has_value(),
+        "rename-back invalid-mutation no-op save should preserve diagnostics");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back invalid-mutation no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back invalid-mutation no-op save should not add another materialized handoff");
+    const auto invalid_mutation_no_op_entries =
+        fastxlsx::test::read_zip_entries(invalid_mutation_no_op_output);
+    check(invalid_mutation_no_op_entries == output_entries,
+        "rename-back invalid-mutation no-op output should match the first restored-name materialized output");
+
     reacquired.set_cell(2, 2,
         fastxlsx::CellValue::text("rename-back-materialized-second"));
     check(!editor.last_edit_error().has_value(),
-        "rename-back mutation after no-op save should keep diagnostics clear");
+        "rename-back mutation after no-op save should clear invalid mutation diagnostics");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
         "rename-back mutation after no-op save should dirty both handles");
     check(editor.pending_change_count() == 3,

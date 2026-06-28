@@ -163,6 +163,11 @@ materialization followed by `request_full_calculation()` queues the workbook
 metadata request, leaves materialized diagnostics and worksheet edit summaries
 empty, and saves with the source worksheet bytes preserved while still writing
 `fullCalcOnLoad="1"`.
+Post-save clean materialized sessions now have the same ordering guard: after a
+dirty materialized projection has already been flushed by `save_as()`, a later
+`request_full_calculation()` adds only the workbook metadata request; the next
+save reuses the prior sparse projection, keeps dirty materialized diagnostics
+empty, and does not add another materialized handoff.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

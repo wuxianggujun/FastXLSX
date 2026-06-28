@@ -2873,6 +2873,68 @@ void test_public_request_full_calculation_preserves_clean_materialized_session()
         "clean materialized full-calc save should preserve Data worksheet bytes");
 }
 
+void test_public_request_full_calculation_preserves_saved_clean_materialized_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-full-calc-saved-clean-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-saved-clean-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-saved-clean-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("saved-clean-full-calc"));
+    editor.save_as(first_output);
+
+    check(!sheet.has_pending_changes(),
+        "saved-clean full-calc setup should leave the borrowed sheet clean");
+    check(editor.pending_change_count() == 1,
+        "saved-clean full-calc setup should count the prior materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "saved-clean full-calc setup should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "saved-clean full-calc setup should clear dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "saved-clean full-calc setup should clear dirty materialized memory");
+
+    editor.request_full_calculation();
+    check(!editor.last_edit_error().has_value(),
+        "request_full_calculation after saved-clean materialized save should clear diagnostics");
+    check(editor.pending_change_count() == 2,
+        "request_full_calculation after saved-clean materialized save should add one metadata edit");
+    check(!sheet.has_pending_changes(),
+        "request_full_calculation should not dirty a saved-clean materialized sheet");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "request_full_calculation after saved-clean materialized save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "request_full_calculation after saved-clean materialized save should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "request_full_calculation after saved-clean materialized save should keep dirty memory empty");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes(),
+        "second save_as after saved-clean full-calc request should keep the sheet clean");
+    check(editor.pending_change_count() == 2,
+        "second save_as after saved-clean full-calc request should not add a new handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second save_as after saved-clean full-calc request should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second save_as after saved-clean full-calc request should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second save_as after saved-clean full-calc request should keep dirty memory empty");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "saved-clean full-calc save should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "saved-clean full-calc save should not invent calcChain.xml");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "saved-clean-full-calc",
+        "saved-clean full-calc save should preserve the prior materialized projection");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "saved-clean full-calc save should not reload the old source cell");
+}
+
 void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
 {
     const std::filesystem::path source =
@@ -4347,6 +4409,7 @@ int main(int argc, char* argv[])
             test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
             test_public_request_full_calculation_preserves_dirty_materialized_session();
             test_public_request_full_calculation_preserves_clean_materialized_session();
+            test_public_request_full_calculation_preserves_saved_clean_materialized_session();
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_worksheet_editor_reacquire_reuses_dirty_session();

@@ -152,6 +152,12 @@ read-only materialization stays a no-op copy-original save after rejected
 same-sheet rename/replacement, while a post-save clean materialized session
 keeps its prior projection and can save again without adding a handoff or
 leaking the rejected catalog name / replacement payload.
+The same catalog guard now has full-calculation metadata coverage: after
+`request_full_calculation()` is queued beside dirty or clean materialized
+sessions, same-sheet `rename_sheet()` and `replace_sheet_data()` still fail
+before catalog or replacement state changes, preserve the queued metadata edit,
+and a later safe save writes `fullCalcOnLoad="1"` without leaking rejected
+catalog names or replacement payloads.
 The workbook full-calculation metadata helper is now pinned against dirty
 materialized sessions too: calling `request_full_calculation()` after a
 `WorksheetEditor` mutation queues only the workbook metadata edit, preserves the

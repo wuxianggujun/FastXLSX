@@ -141,6 +141,12 @@ after `replace_sheet_data()` queues a replacement, both `try_worksheet()` and
 `worksheet()` reject same-sheet materialization without updating
 `last_edit_error()`, preserve replacement diagnostics and pending edit count,
 avoid materialized diagnostics, and still save the queued replacement.
+The materialized-to-Patch catalog guard now has public coverage too: after a
+dirty `WorksheetEditor` session exists, rejected same-sheet `rename_sheet()`
+and `replace_sheet_data()` calls preserve the source/planned catalog, leave
+replacement diagnostics empty, keep the dirty materialized summary, and a later
+safe `save_as()` writes only the materialized cells without leaking the rejected
+rename or replacement payload.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -214,6 +214,11 @@ after clean or dirty materialization under a planned sheet name, same-sheet
 `replace_cells()` is rejected with the public targeted-cell wrapper diagnostic,
 leaves targeted diagnostics empty, preserves the rename plus calc metadata
 state, and later saves without leaking the rejected targeted payload.
+The full-calculation helper is now pinned against an actual row-shift projection
+too: after a dirty `WorksheetEditor::insert_rows()` sparse shift, queued
+`request_full_calculation()` preserves materialized names/counts/memory until
+`save_as()`, and the saved package carries `fullCalcOnLoad="1"` alongside the
+shifted styled formula without creating `xl/calcChain.xml`.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

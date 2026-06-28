@@ -8008,6 +8008,117 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         });
 }
 
+void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
+    sheet.insert_rows(2, 2);
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(dirty_cell_count == 8,
+        "full-calc insert_rows setup should keep shifted sparse count");
+    check(editor.pending_change_count() == 0,
+        "full-calc insert_rows setup should not queue a Patch handoff before save_as");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "full-calc insert_rows setup should report Data dirty");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "full-calc insert_rows setup should report shifted sparse count");
+
+    editor.request_full_calculation();
+
+    check(!editor.last_edit_error().has_value(),
+        "request_full_calculation after insert_rows should clear diagnostics");
+    check(editor.pending_change_count() == 1,
+        "request_full_calculation after insert_rows should add one metadata edit");
+    check(sheet.has_pending_changes(),
+        "request_full_calculation after insert_rows should keep the shifted sheet dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "request_full_calculation after insert_rows should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "request_full_calculation after insert_rows should preserve dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "request_full_calculation after insert_rows should preserve dirty sparse memory");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc insert_rows save_as should clean the shifted materialized sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc insert_rows save_as should count metadata edit plus materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "full-calc insert_rows save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "full-calc insert_rows save_as should clear dirty materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc insert_rows save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A3+B3</f></c>)";
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "full-calc insert_rows save_as should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc insert_rows save_as should not invent calcChain.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D5"/>)",
+        "full-calc insert_rows save_as should project the shifted sparse dimension");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc insert_rows save_as should write shifted styled formula text");
+    check_contains(worksheet_xml, R"(<c r="A5")",
+        "full-calc insert_rows save_as should write shifted source-backed trailing cell");
+    check_contains(worksheet_xml, R"(<c r="C5")",
+        "full-calc insert_rows save_as should write shifted dirty trailing cell");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "full-calc insert_rows save_as should omit old formula coordinate");
+    check_not_contains(worksheet_xml, R"(r="C3")",
+        "full-calc insert_rows save_as should omit old dirty coordinate");
+
+    check_reopened_shift_output(output, "full-calc insert_rows",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "full-calc insert_rows reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+                "full-calc insert_rows reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d4 =
+                reopened_sheet.try_cell("D4");
+            check(reopened_d4.has_value() &&
+                    reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d4->text_value() == "A3+B3" &&
+                    reopened_d4->has_style() &&
+                    reopened_d4->style_id().value() == styled_formula_style.value(),
+                "full-calc insert_rows reopened output should read shifted styled formula");
+            const std::optional<fastxlsx::CellValue> reopened_a5 =
+                reopened_sheet.try_cell("A5");
+            check(reopened_a5.has_value() &&
+                    reopened_a5->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a5->text_value() == "extra-c3",
+                "full-calc insert_rows reopened output should read shifted source trailing cell");
+            const std::optional<fastxlsx::CellValue> reopened_c5 =
+                reopened_sheet.try_cell("C5");
+            check(reopened_c5.has_value() &&
+                    reopened_c5->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c5->text_value() == "extra-c3",
+                "full-calc insert_rows reopened output should read shifted dirty trailing cell");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "full-calc insert_rows reopened output should keep old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -19864,6 +19975,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_column_removes_sparse_column();
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
             test_public_worksheet_editor_insert_rows_shifts_sparse_records();
+            test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift();
             test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot();
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();

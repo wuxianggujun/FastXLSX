@@ -1131,6 +1131,12 @@ The no-argument `erase_cells()` whole-store path now completes that exact-budget
 release family: after the same rejected oversized insertion, erasing the entire
 represented sparse store clears diagnostics, releases the estimate, and saves a
 single recovery cell without reviving erased source data.
+The row/column clear paths now pin the value-payload side of that budget story:
+`clear_row()` and `clear_column()` keep represented records as explicit blanks,
+but clearing large source text payloads lowers the sparse memory estimate enough
+for a later small insertion in the same exact-budget session. The saved output
+reopens with blank target records, preserved non-target cells, and no rejected
+payload leakage.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

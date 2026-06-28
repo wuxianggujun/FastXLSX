@@ -3527,7 +3527,10 @@ output before any later real mutation. Mismatched `WorksheetEditorOptions`
 against that clean saved/reacquired renamed session now follows the same
 no-op-save boundary: planned-name access rejections keep diagnostics clear,
 leave handles and summaries clean, and a later no-op output still matches the
-prior renamed no-op package entries.
+prior renamed no-op package entries. Missing-sheet and old source-name lookups
+are pinned beside it: optional lookups stay empty, throwing lookups fail without
+dirtying the saved renamed session, and the next no-op output still matches the
+previous renamed no-op package entries.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

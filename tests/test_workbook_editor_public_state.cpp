@@ -9712,6 +9712,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     const std::filesystem::path option_no_op_output =
         artifact(
             "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-option-noop-output.xlsx");
+    const std::filesystem::path missing_no_op_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-missing-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-output.xlsx");
     const std::string clear_rename_a1 =
@@ -10122,6 +10125,47 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     const auto option_no_op_entries = fastxlsx::test::read_zip_entries(option_no_op_output);
     check(option_no_op_entries == no_op_entries,
         "clear_cell_values() memory-budget renamed summary option no-op output should match the prior no-op save");
+
+    const std::optional<fastxlsx::WorksheetEditor> saved_missing_lookup =
+        editor.try_worksheet("Missing", options);
+    check(!saved_missing_lookup.has_value(),
+        "clear_cell_values() memory-budget renamed summary saved missing lookup should return empty optional");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), "clear_cell_values() memory-budget renamed summary saved missing worksheet should throw");
+    const std::optional<fastxlsx::WorksheetEditor> saved_old_source_lookup =
+        editor.try_worksheet("Data", options);
+    check(!saved_old_source_lookup.has_value(),
+        "clear_cell_values() memory-budget renamed summary saved old source lookup should return empty optional");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", options);
+    }), "clear_cell_values() memory-budget renamed summary saved old source worksheet should throw");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary saved missing lookup should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary saved missing lookup should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary saved missing lookup should not add a materialized handoff");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary saved missing lookup lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after saved missing lookup");
+
+    editor.save_as(missing_no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary missing no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary missing no-op save should not add a materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary missing no-op save should keep diagnostics clear");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary missing no-op save lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after missing no-op save");
+
+    const auto missing_no_op_entries = fastxlsx::test::read_zip_entries(missing_no_op_output);
+    check(missing_no_op_entries == option_no_op_entries,
+        "clear_cell_values() memory-budget renamed summary missing no-op output should match the prior no-op save");
 
     reacquired.set_cell(5, 5,
         fastxlsx::CellValue::text("clear-all-renamed-summary-reacquire"));

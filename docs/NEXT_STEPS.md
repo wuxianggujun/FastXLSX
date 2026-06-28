@@ -309,6 +309,12 @@ after a rejected invalid formula payload, a later valid `set_cell()` clears
 `last_edit_error()`, keeps the renamed full-calc dirty formula audit state,
 adds the recovered text cell, and saves/reopens without leaking the rejected
 formula payload or inventing calcChain.
+Saved-session reacquire now covers the same renamed full-calc formula audit
+state: after the first save, matching planned-name reacquire stays clean,
+preserves shifted materialized and original source audits without adding
+handoffs, keeps old source-name lookup unavailable, and a later valid
+`set_cell()` re-dirties the shared session before the second save/reopen keeps
+the shifted formula, new text cell, `fullCalcOnLoad="1"`, and no calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -38151,6 +38151,50 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.910 - Pin renamed full-calc formula audit saved-session reacquire
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a saved and then reacquired materialized session keeps the renamed
+full-calculation formula audit state coherent, and that a later valid mutation
+can re-dirty the same planned-name session.
+
+Output:
+- Added public-state shard coverage for `rename_sheet("Data", "RenamedData")`,
+  `request_full_calculation()`, a dirty `insert_rows(2, 1)` qualified formula
+  shift, first `save_as()`, matching `try_worksheet("RenamedData")`
+  reacquire, materialized/source formula audits, a later valid `set_cell()`,
+  second `save_as()`, and reopened readback.
+- The regression verifies saved-session reacquire stays clean, does not add
+  materialized handoffs, keeps the old source name unavailable, preserves the
+  shifted `D3` styled formula and original source formula audits, and keeps
+  dirty materialized diagnostics empty until the later valid mutation.
+- The later mutation re-dirties the shared planned-name session, grows the
+  sparse count with the new `C5` text cell, preserves the shifted qualified
+  formula audits, and clears dirty diagnostics after the second save.
+- The saved packages keep the renamed catalog and `fullCalcOnLoad="1"` without
+  creating `xl/calcChain.xml`; the second output/reopen also keeps the shifted
+  formula plus new text cell.
+
+Non-goals / boundary:
+- No session cloning, no source-name fallback, no undo/rollback history, no
+  default formula rewrite during sheet rename, no formula evaluation or repair,
+  no metadata synchronization, no calcChain rebuild, no sharedStrings/styles
+  migration, and no low-memory random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

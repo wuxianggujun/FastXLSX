@@ -177,6 +177,13 @@ reads after a prior `request_full_calculation()`, the clean materialized session
 does not contribute dirty diagnostics, summaries, or a materialized handoff, and
 the saved worksheet bytes stay source-identical while workbook calc metadata is
 rewritten.
+The same reverse ordering now covers Patch-to-in-memory guards: if
+`request_full_calculation()` is queued before a same-sheet
+`replace_sheet_data()` or targeted `replace_cells()`, later `worksheet()` /
+`try_worksheet()` calls still reject materialization without updating
+`last_edit_error()`, preserve the queued Patch diagnostics and public edit
+counts, avoid dirty materialized diagnostics, and `save_as()` still writes both
+`fullCalcOnLoad="1"` and the queued Patch payload.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

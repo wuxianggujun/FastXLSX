@@ -711,6 +711,69 @@ void test_replace_cells_mode_mixing_guards_and_empty_noop()
     }
 }
 
+void test_replace_cells_after_full_calculation_preserves_materialization_guard()
+{
+    const std::filesystem::path source =
+        write_patch_cells_source("workbook-editor-public-patch-cells-full-calc-guard-source.xlsx");
+    const std::filesystem::path output =
+        artifact("workbook-editor-public-patch-cells-full-calc-guard-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.request_full_calculation();
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before replace_cells should clear diagnostics");
+    check(editor.pending_change_count() == 1,
+        "full-calc before replace_cells should count one metadata edit");
+
+    editor.replace_cells("Data",
+        {{{1, 1}, fastxlsx::CellValue::text("full-calc targeted patch")}});
+    const std::size_t targeted_xml_bytes =
+        editor.estimated_pending_targeted_cell_replacement_xml_bytes();
+    check(!editor.last_edit_error().has_value(),
+        "replace_cells after full-calc request should keep diagnostics clear");
+    check(editor.pending_change_count() == 2,
+        "replace_cells after full-calc request should count metadata plus targeted patch");
+    check(editor.pending_targeted_cell_replacement_count() == 1,
+        "replace_cells after full-calc request should expose targeted diagnostics");
+    check(editor.pending_targeted_cell_replacement_worksheet_names()
+            == std::vector<std::string>{"Data"},
+        "replace_cells after full-calc request should expose Data targeted diagnostics");
+    check(targeted_xml_bytes > 0,
+        "replace_cells after full-calc request should expose targeted XML bytes");
+
+    check(threw_fastxlsx_error([&] { (void)editor.worksheet("Data"); }),
+        "worksheet() should reject full-calc queued replace_cells");
+    check(!editor.last_edit_error().has_value(),
+        "worksheet() full-calc replace_cells guard should not update last_edit_error");
+    check(threw_fastxlsx_error([&] { (void)editor.try_worksheet("Data"); }),
+        "try_worksheet() should reject full-calc queued replace_cells");
+    check(!editor.last_edit_error().has_value(),
+        "try_worksheet() full-calc replace_cells guard should not update last_edit_error");
+    check(editor.pending_change_count() == 2,
+        "full-calc replace_cells guard should preserve public edit count");
+    check(editor.pending_targeted_cell_replacement_count() == 1,
+        "full-calc replace_cells guard should preserve targeted count");
+    check(editor.pending_targeted_cell_replacement_worksheet_names()
+            == std::vector<std::string>{"Data"},
+        "full-calc replace_cells guard should preserve targeted worksheet names");
+    check(editor.estimated_pending_targeted_cell_replacement_xml_bytes()
+            == targeted_xml_bytes,
+        "full-calc replace_cells guard should preserve targeted XML byte diagnostics");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_sheet,
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>full-calc targeted patch</t></is></c>",
+        "full-calc queued replace_cells save should persist the targeted patch");
+    check_not_contains(data_sheet, "old-a1",
+        "full-calc queued replace_cells save should remove the old target payload");
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc queued replace_cells save should persist workbook calc metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc queued replace_cells save should not invent calcChain.xml");
+}
+
 void test_replace_cells_follows_planned_catalog_after_rename()
 {
     const std::filesystem::path source =
@@ -813,6 +876,7 @@ int main()
         test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells_and_rows();
         test_replace_cells_can_follow_up_on_upserted_planned_cells();
         test_replace_cells_mode_mixing_guards_and_empty_noop();
+        test_replace_cells_after_full_calculation_preserves_materialization_guard();
         test_replace_cells_follows_planned_catalog_after_rename();
         test_replace_cells_duplicate_targets_keep_latest_payload();
     } catch (const std::exception& error) {

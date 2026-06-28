@@ -3059,6 +3059,69 @@ void test_public_request_full_calculation_preserves_later_clean_materialization(
         "full-calc-before-clean-materialize save should preserve source worksheet bytes");
 }
 
+void test_public_request_full_calculation_preserves_later_replacement_guard()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-full-calc-before-replacement-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-before-replacement-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.request_full_calculation();
+    check(!editor.last_edit_error().has_value(),
+        "full-calc-before-replacement setup should clear diagnostics");
+    check(editor.pending_change_count() == 1,
+        "full-calc-before-replacement setup should count one metadata edit");
+
+    editor.replace_sheet_data("Data",
+        {{fastxlsx::CellValue::text("full-calc-before-replacement")}});
+    const std::size_t replacement_memory =
+        editor.estimated_pending_replacement_memory_usage();
+    check(!editor.last_edit_error().has_value(),
+        "replacement after full-calc request should keep diagnostics clear");
+    check(editor.pending_change_count() == 2,
+        "replacement after full-calc request should count metadata plus replacement");
+    check(editor.pending_replacement_cell_count() == 1,
+        "replacement after full-calc request should expose replacement cell diagnostics");
+    check(editor.pending_replacement_worksheet_names() == std::vector<std::string>{"Data"},
+        "replacement after full-calc request should expose Data replacement diagnostics");
+    check(replacement_memory > 0,
+        "replacement after full-calc request should expose replacement memory diagnostics");
+
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data");
+    }), "try_worksheet should reject a full-calc queued replacement");
+    check(!editor.last_edit_error().has_value(),
+        "try_worksheet full-calc replacement guard should not update last_edit_error");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data");
+    }), "worksheet should reject a full-calc queued replacement");
+    check(!editor.last_edit_error().has_value(),
+        "worksheet full-calc replacement guard should not update last_edit_error");
+    check(editor.pending_change_count() == 2,
+        "full-calc replacement guard should preserve queued public edit count");
+    check(editor.pending_replacement_cell_count() == 1,
+        "full-calc replacement guard should preserve replacement cell diagnostics");
+    check(editor.pending_replacement_worksheet_names() == std::vector<std::string>{"Data"},
+        "full-calc replacement guard should preserve replacement worksheet names");
+    check(editor.estimated_pending_replacement_memory_usage() == replacement_memory,
+        "full-calc replacement guard should preserve replacement memory diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc replacement guard should not create materialized diagnostics");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc queued replacement save should persist workbook calc metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc queued replacement save should not invent calcChain.xml");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "full-calc-before-replacement",
+        "full-calc queued replacement save should persist the replacement payload");
+}
+
 void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
 {
     const std::filesystem::path source =
@@ -4536,6 +4599,7 @@ int main(int argc, char* argv[])
             test_public_request_full_calculation_preserves_saved_clean_materialized_session();
             test_public_request_full_calculation_allows_later_materialized_edit();
             test_public_request_full_calculation_preserves_later_clean_materialization();
+            test_public_request_full_calculation_preserves_later_replacement_guard();
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_worksheet_editor_reacquire_reuses_dirty_session();

@@ -3591,6 +3591,12 @@ reads, lowercase or overflowing A1 references, invalid/reversed sparse ranges,
 and invalid row/column snapshot reads still fail without replacing the guard
 diagnostic, dirtying the borrowed handle, or changing the copy-original no-op
 save output.
+Invalid mutations after the same guard now cover the complementary diagnostic
+path: rejected row-zero `set_cell()` and column-overflow `erase_cell()` replace
+the prior same-sheet guard diagnostic with the invalid-coordinate diagnostic,
+keep the borrowed handle clean, leave materialized diagnostics and pending
+summaries empty, and a no-op save remains copy-original without leaking the
+rejected replacement or mutation payload.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

@@ -2771,6 +2771,105 @@ void test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_diagno
         "guard invalid-read rejected replacement should not leak into output");
 }
 
+void test_public_worksheet_editor_same_sheet_guard_invalid_mutations_replace_diagnostic()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-guard-invalid-mutations-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-guard-invalid-mutations-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = data.get_cell("A1");
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "guard invalid-mutation setup should materialize Data from source");
+    check(!data.has_pending_changes(),
+        "guard invalid-mutation setup should keep Data clean");
+
+    const std::size_t data_cell_count = data.cell_count();
+    const std::size_t data_memory = data.estimated_memory_usage();
+
+    const std::optional<std::string> guard_error =
+        check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("guard-invalid-mutation-blocked")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "guard invalid-mutation same-sheet replacement");
+
+    check(threw_fastxlsx_error([&] {
+        data.set_cell(0, 1,
+            fastxlsx::CellValue::text("guard-rejected-invalid-mutation-row-zero"));
+    }), "guard invalid mutations should reject row-zero set_cell");
+    const std::optional<std::string> invalid_set_error = editor.last_edit_error();
+    check(invalid_set_error.has_value(),
+        "guard invalid set_cell should replace the same-sheet diagnostic");
+    if (invalid_set_error.has_value()) {
+        check_contains(*invalid_set_error,
+            "WorksheetEditor cell coordinate is invalid",
+            "guard invalid set_cell should report the coordinate diagnostic");
+        check_not_contains(*invalid_set_error,
+            public_materialized_guard_action_fragment(
+                PublicMaterializedGuardDiagnostic::ReplaceSheetData),
+            "guard invalid set_cell should replace the same-sheet guard diagnostic");
+    }
+    check(invalid_set_error != guard_error,
+        "guard invalid set_cell should not preserve the stale guard diagnostic");
+
+    check(threw_fastxlsx_error([&] { data.erase_cell(1, 16385); }),
+        "guard invalid mutations should reject column-overflow erase_cell");
+    const std::optional<std::string> invalid_erase_error = editor.last_edit_error();
+    check(invalid_erase_error.has_value(),
+        "guard invalid erase_cell should keep invalid mutation diagnostics populated");
+    if (invalid_erase_error.has_value()) {
+        check_contains(*invalid_erase_error,
+            "WorksheetEditor cell coordinate is invalid",
+            "guard invalid erase_cell should report the coordinate diagnostic");
+        check_not_contains(*invalid_erase_error,
+            public_materialized_guard_action_fragment(
+                PublicMaterializedGuardDiagnostic::ReplaceSheetData),
+            "guard invalid erase_cell should not restore the same-sheet guard diagnostic");
+    }
+
+    check(!data.has_pending_changes(),
+        "guard invalid mutations should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "guard invalid mutations should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "guard invalid mutations should not queue public edits");
+    check(editor.pending_worksheet_edits().empty(),
+        "guard invalid mutations should keep pending summaries empty");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "guard invalid mutations should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "guard invalid mutations should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "guard invalid mutations should keep dirty materialized memory empty");
+    check_public_preserved_sheet_diagnostics(
+        data, data_cell_count, data_memory, "Data",
+        "guard invalid mutations");
+    check_public_inspection_preserves_last_edit_error(editor, invalid_erase_error);
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == invalid_erase_error,
+        "guard invalid-mutation no-op save_as should preserve invalid mutation diagnostics");
+    check(!data.has_pending_changes(),
+        "guard invalid-mutation no-op save_as should keep Data clean");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "guard invalid-mutation no-op output should remain copy-original");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "guard-invalid-mutation-blocked",
+        "guard invalid-mutation rejected replacement should not leak into output");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "guard-rejected-invalid-mutation-row-zero",
+        "guard invalid-mutation rejected set_cell payload should not leak into output");
+}
+
 void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic()
 {
     {
@@ -4541,6 +4640,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_same_sheet_guard_snapshot_reads_preserve_diagnostic();
             test_public_worksheet_editor_same_sheet_guard_scalar_reads_preserve_diagnostic();
             test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_diagnostic();
+            test_public_worksheet_editor_same_sheet_guard_invalid_mutations_replace_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clears_diagnostic();

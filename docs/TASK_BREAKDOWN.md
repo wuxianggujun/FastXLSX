@@ -40591,6 +40591,44 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.970 - Pin same-sheet guard invalid-mutation no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid `WorksheetEditor` mutations after a same-sheet Patch guard
+  failure replace the prior guard diagnostic while preserving no-op-save state.
+
+Output:
+- Added a `public-guards` regression that materializes `Data`, triggers a
+  same-sheet `replace_sheet_data()` guard failure, then rejects row-zero
+  `set_cell()` and column-overflow `erase_cell()`.
+- The regression verifies those invalid mutations update `last_edit_error()` to
+  the invalid-coordinate diagnostic, replace the stale same-sheet guard
+  diagnostic, keep the borrowed handle clean, and leave materialized diagnostics
+  and pending summaries empty.
+- A follow-up no-op `save_as()` writes decompressed package entries matching
+  the source workbook and does not leak either the rejected replacement payload
+  or rejected mutation payload.
+
+Non-goals:
+- No coordinate repair or clamping, rejected-payload staging, rollback,
+  clean-session commits, guard bypass, metadata repair, Patch/materialized
+  sparse-session composition, calcChain rebuild, sharedStrings/styles
+  migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

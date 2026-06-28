@@ -265,6 +265,11 @@ reports source `D2` tokens `Data!A1` / `Data!B1`, maps source `Data` to planned
 `RenamedData` as stale source-name diagnostics, and later `save_as()` writes the
 renamed catalog, shifted `D3` formula, and `fullCalcOnLoad="1"` without
 creating calcChain.
+The materialized formula audit side of that renamed boundary is covered too:
+`formula_reference_audits()` reports the shifted `D3` tokens `Data!A2` /
+`Data!B2`, preserves the queued rename/full-calc/materialized diagnostics, and
+still leaves default rename as audit-only stale-qualifier evidence until an
+explicit formula rewrite policy is requested.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

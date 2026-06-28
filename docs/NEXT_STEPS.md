@@ -335,6 +335,12 @@ planned-name handles clean, preserve source/materialized audits, leave dirty
 diagnostics empty and `last_edit_error()` clear, and a later valid `set_cell()`
 re-dirties then saves/reopens with the shifted formula, recovered text,
 `fullCalcOnLoad="1"`, and no calcChain.
+Invalid row/column shifts on that same clean saved/reacquired session now have
+the mutation-side recovery coverage as well: rejected shift bounds failures
+preserve the shift diagnostic without dirtying either handle or materialized
+diagnostics, keep source/materialized audits readable, and a later valid
+`set_cell()` clears the diagnostic before save/reopen persists the shifted
+formula, recovered text, `fullCalcOnLoad="1"`, and no calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

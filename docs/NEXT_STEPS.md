@@ -136,6 +136,11 @@ after `replace_cells()` queues a same-sheet targeted edit, both `worksheet()`
 and `try_worksheet()` reject materialization without updating
 `last_edit_error()`, while targeted cell counts, worksheet names, XML byte
 estimates, and pending public edit count remain intact.
+The same reverse guard is now pinned for queued whole-`<sheetData>` replacement:
+after `replace_sheet_data()` queues a replacement, both `try_worksheet()` and
+`worksheet()` reject same-sheet materialization without updating
+`last_edit_error()`, preserve replacement diagnostics and pending edit count,
+avoid materialized diagnostics, and still save the queued replacement.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

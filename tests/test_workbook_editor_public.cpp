@@ -3138,13 +3138,46 @@ void test_public_try_worksheet_reuses_options_and_blocks_replacement_mix()
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("queued")}});
+        const std::size_t replacement_memory =
+            editor.estimated_pending_replacement_memory_usage();
+        check(editor.pending_change_count() == 1,
+            "queued sheetData replacement should count one public edit before materialization guards");
+        check(editor.pending_replacement_cell_count() == 1,
+            "queued sheetData replacement should expose replacement cell diagnostics");
+        check(editor.pending_replacement_worksheet_names()
+                == std::vector<std::string>{"Data"},
+            "queued sheetData replacement should expose Data replacement diagnostics");
+        check(replacement_memory > 0,
+            "queued sheetData replacement should expose replacement memory diagnostics");
         check(threw_fastxlsx_error([&] {
             (void)editor.try_worksheet("Data");
         }), "try_worksheet should reject a worksheet with queued sheetData replacement");
         check(!editor.last_edit_error().has_value(),
             "try_worksheet replacement-mix rejection should not update last_edit_error");
+        check(threw_fastxlsx_error([&] {
+            (void)editor.worksheet("Data");
+        }), "worksheet should reject a worksheet with queued sheetData replacement");
+        check(!editor.last_edit_error().has_value(),
+            "worksheet replacement-mix rejection should not update last_edit_error");
         check(editor.pending_change_count() == 1,
             "try_worksheet replacement-mix rejection should preserve queued edits");
+        check(editor.pending_replacement_cell_count() == 1,
+            "replacement-mix rejection should preserve replacement cell diagnostics");
+        check(editor.pending_replacement_worksheet_names()
+                == std::vector<std::string>{"Data"},
+            "replacement-mix rejection should preserve replacement worksheet names");
+        check(editor.estimated_pending_replacement_memory_usage() == replacement_memory,
+            "replacement-mix rejection should preserve replacement memory diagnostics");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "replacement-mix rejection should not create materialized diagnostics");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-try-worksheet-replacement-mix-output.xlsx");
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "queued",
+            "replacement-mix rejection should still allow the queued replacement to save");
     }
 }
 

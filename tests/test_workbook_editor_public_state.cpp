@@ -9904,6 +9904,64 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after missing/source-name lookup");
 
+    const std::vector<std::string> source_names_after_read_only_diagnostics =
+        editor.source_worksheet_names();
+    check(source_names_after_read_only_diagnostics ==
+            std::vector<std::string> {"Data", "Untouched"},
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve source names");
+    const std::vector<std::string> planned_names_after_read_only_diagnostics =
+        editor.worksheet_names();
+    check(planned_names_after_read_only_diagnostics ==
+            std::vector<std::string> {"RenamedClearAll", "Untouched"},
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve planned names");
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>
+        catalog_after_read_only_diagnostics = editor.worksheet_catalog();
+    check(catalog_after_read_only_diagnostics.size() == 2,
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve catalog size");
+    if (catalog_after_read_only_diagnostics.size() == 2) {
+        check(catalog_after_read_only_diagnostics[0].source_name == "Data" &&
+                catalog_after_read_only_diagnostics[0].planned_name == "RenamedClearAll" &&
+                catalog_after_read_only_diagnostics[0].renamed,
+            "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve renamed catalog entry");
+        check(catalog_after_read_only_diagnostics[1].source_name == "Untouched" &&
+                catalog_after_read_only_diagnostics[1].planned_name == "Untouched" &&
+                !catalog_after_read_only_diagnostics[1].renamed,
+            "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve untouched catalog entry");
+    }
+    check(editor.has_source_worksheet("Data"),
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should keep the source sheet visible");
+    check(editor.has_worksheet("RenamedClearAll"),
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should keep the planned sheet visible");
+    check(!editor.has_worksheet("Data"),
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should keep the old source name unavailable");
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_read_only_diagnostics = editor.pending_worksheet_edits();
+    check(summaries_after_read_only_diagnostics.size() == 1,
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve one pending summary");
+    const std::vector<std::string> dirty_names_after_read_only_diagnostics =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_read_only_diagnostics ==
+            std::vector<std::string> {"RenamedClearAll"},
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve dirty materialized names");
+    const std::size_t dirty_cell_count_after_read_only_diagnostics =
+        editor.pending_materialized_cell_count();
+    check(dirty_cell_count_after_read_only_diagnostics == 4,
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() > 0,
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve dirty memory estimate");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should keep diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should keep the planned handle dirty");
+    check(editor.pending_change_count() == 1,
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should not add a materialized handoff");
+    check(sheet.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve handle sparse count");
+    check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve D4");
+    check_renamed_clear_all_summary(true, 4,
+        "clear_cell_values() memory-budget renamed summary after read-only diagnostics");
+
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary first save should clean the planned handle");

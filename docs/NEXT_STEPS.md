@@ -3508,6 +3508,12 @@ empty optional lookups and throwing `worksheet()` failures for `Missing` and
 the old `Data` source name keep diagnostics clear, preserve the dirty
 planned-name materialized session, and still allow the later safe save to flush
 the existing handoff.
+Read-only public-state queries now cover the same dirty renamed window:
+catalog views, source/planned existence checks, pending edit summaries,
+dirty materialized names/count, and dirty memory estimates preserve the
+combined rename/materialized session, keep the old `Data` planned name
+unavailable, leave diagnostics clear, and still allow the later safe save to
+flush the existing handoff.
 Rejected `save_as()` preflight keeps that combined state intact: source-overwrite
 rejection does not flush the renamed dirty session, does not increment the
 materialized handoff count, does not update `last_edit_error()`, and leaves

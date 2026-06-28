@@ -9707,6 +9707,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-source.xlsx");
     const std::filesystem::path first_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-first-output.xlsx");
+    const std::filesystem::path no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-output.xlsx");
     const std::string clear_rename_a1 =
@@ -10051,6 +10053,37 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary clean reacquire lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after clean reacquire");
+
+    editor.save_as(no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary no-op save should not add a materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary no-op save should keep diagnostics clear");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary no-op save lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after no-op save");
+
+    const auto no_op_entries = fastxlsx::test::read_zip_entries(no_op_output);
+    check(no_op_entries == first_entries,
+        "clear_cell_values() memory-budget renamed summary no-op output should match the first save");
+    check_reopened_clean_sheet_output(no_op_output, "RenamedClearAll",
+        "clear_cell_values() memory-budget renamed summary no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "clear_cell_values() memory-budget renamed summary no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "clear_cell_values() memory-budget renamed summary no-op reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "clear-all-renamed-mb-release",
+                "clear_cell_values() memory-budget renamed summary no-op reopened output should read D4");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                "clear_cell_values() memory-budget renamed summary no-op reopened output should keep A1 blank");
+        });
 
     reacquired.set_cell(5, 5,
         fastxlsx::CellValue::text("clear-all-renamed-summary-reacquire"));

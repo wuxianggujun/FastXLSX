@@ -3518,7 +3518,12 @@ Rejected `save_as()` preflight keeps that combined state intact: source-overwrit
 rejection does not flush the renamed dirty session, does not increment the
 materialized handoff count, does not update `last_edit_error()`, and leaves
 `pending_worksheet_edits()` reporting both `renamed` and `materialized_dirty`
-until a later safe `save_as()` succeeds.
+fields until a later safe `save_as()` succeeds.
+Clean matching-option reacquire after that safe save now has a renamed
+no-op-save check too: a second `save_as()` keeps both borrowed handles clean,
+preserves the rename-only summary and empty planned-name materialized
+diagnostics, and writes decompressed package entries matching the first renamed
+output before any later real mutation.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

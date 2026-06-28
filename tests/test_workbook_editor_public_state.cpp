@@ -9718,6 +9718,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     const std::filesystem::path read_only_no_op_output =
         artifact(
             "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-read-only-noop-output.xlsx");
+    const std::filesystem::path invalid_read_no_op_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-invalid-read-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-output.xlsx");
     const std::string clear_rename_a1 =
@@ -10221,6 +10224,67 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         fastxlsx::test::read_zip_entries(read_only_no_op_output);
     check(read_only_no_op_entries == missing_no_op_entries,
         "clear_cell_values() memory-budget renamed summary read-only no-op output should match the prior no-op save");
+
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell(0, 1); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(1, 0); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(1048577, 1); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject row overflow");
+    check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 16385); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject column overflow");
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell("a1"); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject lowercase A1");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("A1:B2"); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject range A1");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("XFE1"); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "clear_cell_values() memory-budget renamed summary saved invalid reads should reject invalid range");
+    const std::array<fastxlsx::WorksheetCellReference, 2> saved_invalid_read_batch {
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {1048577, 1},
+    };
+    check(threw_fastxlsx_error([&] { (void)reacquired.sparse_cells(saved_invalid_read_batch); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject invalid batch");
+    check(threw_fastxlsx_error([&] { (void)reacquired.row_cells(0); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject invalid row snapshot");
+    check(threw_fastxlsx_error([&] { (void)reacquired.column_cells(16385); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject invalid column snapshot");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(5, 5); }),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should reject missing get_cell");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should not add a materialized handoff");
+    check(reacquired.cell_count() == 4 && sheet.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should preserve handle sparse counts");
+    check(reacquired.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary saved invalid reads should preserve saved D4");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary saved invalid reads lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after saved invalid reads");
+
+    editor.save_as(invalid_read_no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save should not add a materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save should keep diagnostics clear");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after invalid-read no-op save");
+
+    const auto invalid_read_no_op_entries =
+        fastxlsx::test::read_zip_entries(invalid_read_no_op_output);
+    check(invalid_read_no_op_entries == read_only_no_op_entries,
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op output should match the prior no-op save");
 
     reacquired.set_cell(5, 5,
         fastxlsx::CellValue::text("clear-all-renamed-summary-reacquire"));

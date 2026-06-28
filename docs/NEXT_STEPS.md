@@ -3536,6 +3536,11 @@ saved/reacquired renamed session now have the matching no-op-save check:
 source/planned name lists, catalog entries, existence checks, pending summaries,
 and materialized aggregates preserve the rename-only clean state, and the next
 no-op output still matches the previous renamed no-op package entries.
+Invalid read preflights are pinned beside those read-only queries: rejected
+row/column/A1/range/batch/row_cells/column_cells reads plus missing `get_cell()`
+keep diagnostics clear, leave both handles clean, preserve the rename-only
+summary and empty materialized diagnostics, and the next no-op output still
+matches the previous renamed no-op package entries.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

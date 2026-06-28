@@ -41351,6 +41351,50 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.989 - Pin rename-back missing-clear failed-save retry missing lookup
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove missing-sheet and transient-name lookups after the rename-back
+  missing-clear failed-save safe retry reject cleanly and leave the restored
+  materialized session usable.
+
+Output:
+- Added an independent public regression that repeats the rename-back
+  missing-clear no-op, failed source-overwrite save, and safe retry path.
+- After the safe retry, optional `try_worksheet()` lookups for `Missing` and
+  `TransientData` return empty, while throwing `worksheet()` lookups fail
+  without setting `last_edit_error()`, dirtying existing handles, changing
+  pending handoff count, materialized diagnostics, summaries, catalog,
+  saved/recovered values, or missing target absence.
+- A later matching `worksheet("Data")` stays clean, reads the saved and
+  recovered values, and a follow-up mutation/save records one more handoff.
+- The retry output excludes the follow-up value, while the follow-up output
+  keeps saved/recovered/follow-up values, uses restored `Data`, excludes
+  `TransientData`, excludes the rejected payload, and avoids synthesizing
+  `E5` / `D4`.
+
+Non-goals:
+- No source-name fallback, sheet aliasing, missing-sheet creation, session
+  cloning, source-package overwrite mode, source mutation, transactional
+  undo/redo, dense clear semantics, explicit blank synthesis for missing cells,
+  metadata repair, Patch/materialized sparse-session composition, calcChain
+  rebuild, sharedStrings/styles migration, or low-memory large-file random
+  editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

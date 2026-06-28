@@ -3602,6 +3602,11 @@ Mismatched options after that same safe retry now have a dedicated guard: both
 without setting `last_edit_error()`, dirtying existing handles, changing
 pending handoff counts, or disturbing the restored catalog and saved values;
 matching reacquire plus a follow-up save still works afterward.
+Missing-sheet and transient-name lookups after the safe retry now match that
+hygiene: optional lookups return empty, throwing lookups fail, diagnostics stay
+clear, the restored `Data` session stays clean with saved values intact, and a
+later matching reacquire plus follow-up save still excludes rejected payloads,
+missing clear targets, and `TransientData`.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

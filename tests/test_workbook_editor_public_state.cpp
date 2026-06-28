@@ -8829,6 +8829,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-option-mismatch-output.xlsx");
     const std::filesystem::path missing_query_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-missing-query-output.xlsx");
+    const std::filesystem::path invalid_read_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-read-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -9075,6 +9077,85 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         fastxlsx::test::read_zip_entries(missing_query_output);
     check(missing_query_entries == output_entries,
         "clear_cell_values() memory-budget release missing query noop save should keep output entries stable");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_reads =
+        workbook_editor_public_catalog_snapshot(editor);
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
+        "clear_cell_values() memory-budget release invalid reads should reject row-zero try_cell");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(1, 0); }),
+        "clear_cell_values() memory-budget release invalid reads should reject column-zero get_cell");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell("a1"); }),
+        "clear_cell_values() memory-budget release invalid reads should reject lowercase A1 reads");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("XFE1"); }),
+        "clear_cell_values() memory-budget release invalid reads should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "clear_cell_values() memory-budget release invalid reads should reject invalid CellRange reads");
+    check(threw_fastxlsx_error([&] { (void)reacquired.sparse_cells("D4:A1"); }),
+        "clear_cell_values() memory-budget release invalid reads should reject reversed A1 range reads");
+    check(threw_fastxlsx_error([&] {
+        const std::array<fastxlsx::WorksheetCellReference, 2> invalid_batch {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1048577, 1},
+        };
+        (void)sheet.sparse_cells(invalid_batch);
+    }), "clear_cell_values() memory-budget release invalid reads should reject invalid coordinate batch reads");
+    check(threw_fastxlsx_error([&] { (void)sheet.row_cells(0); }),
+        "clear_cell_values() memory-budget release invalid reads should reject row_cells row zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.column_cells(16385); }),
+        "clear_cell_values() memory-budget release invalid reads should reject column_cells column overflow");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("E5"); }),
+        "clear_cell_values() memory-budget release invalid reads should reject valid but missing get_cell");
+
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release invalid reads should keep last_edit_error clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release invalid reads should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release invalid reads should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release invalid reads should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release invalid reads should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release invalid reads should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release invalid reads should not dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_invalid_reads,
+        "clear_cell_values() memory-budget release invalid reads");
+    check(sheet.cell_count() == 10 && reacquired.cell_count() == 10,
+        "clear_cell_values() memory-budget release invalid reads should preserve sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget release invalid reads should preserve original handle bounds");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget release invalid reads should preserve reacquired bounds");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
+        "clear_cell_values() memory-budget release invalid reads should preserve saved D4");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank &&
+            reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_cell_values() memory-budget release invalid reads should preserve saved blanks");
+
+    editor.save_as(invalid_read_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release invalid reads noop save should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release invalid reads noop save should not add a handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release invalid reads noop save should keep diagnostics clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release invalid reads noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release invalid reads noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release invalid reads noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release invalid reads noop save should not dirty summaries");
+    const auto invalid_read_entries =
+        fastxlsx::test::read_zip_entries(invalid_read_output);
+    check(invalid_read_entries == output_entries,
+        "clear_cell_values() memory-budget release invalid reads noop save should keep output entries stable");
 
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",

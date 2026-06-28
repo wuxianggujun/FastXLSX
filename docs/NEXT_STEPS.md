@@ -3449,6 +3449,11 @@ blocking later valid matching-option edits.
 Missing-sheet lookups against the same saved/reacquired session now match that
 boundary: empty optional lookup and throwing lookup preserve diagnostics,
 handles, saved cells, catalog state, and no-op-save output stability.
+Invalid read preflights now cover the next read-only failure branch on the same
+whole-store value-clear session: invalid coordinates, invalid A1/range/batch
+reads, invalid row/column snapshots, and valid-but-missing `get_cell()` preserve
+diagnostics, handles, saved cells, catalog state, and no-op-save output
+stability.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

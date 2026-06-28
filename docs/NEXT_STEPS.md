@@ -3613,6 +3613,12 @@ Non-empty missing-only erase no-ops now pin the same cleanup contract:
 `erase_cells()` over absent targets clear the guard diagnostic, preserve sparse
 count/memory, avoid tombstones or missing-cell synthesis, and still save as a
 copy-original package without leaking the rejected replacement payload.
+Non-empty missing-only value-clear no-ops now pin the parallel cleanup contract:
+`clear_cell_values(CellRange)`, strict A1 range `clear_cell_values()`, and
+coordinate-batch `clear_cell_values()` over absent targets clear the guard
+diagnostic, preserve sparse count/memory, avoid explicit blank or missing-cell
+synthesis, and still save as a copy-original package without leaking the
+rejected replacement payload.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

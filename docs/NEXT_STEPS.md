@@ -3561,6 +3561,11 @@ Invalid mutations now cover the matching write-side preflight: rejected
 without dirtying handles or materialized diagnostics, a no-op save still matches
 the first restored-name output, and the next valid mutation clears the
 diagnostic before saving.
+Lookup and option preflights on that same clean rename-back session are pinned
+beside it: mismatched `WorksheetEditorOptions`, missing-sheet lookups, and
+transient planned-name lookups leave diagnostics clear, keep both handles clean,
+preserve the restored `Data` catalog, and a no-op save still matches the first
+restored-name output.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

@@ -5671,6 +5671,127 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
         "rename-back recovery output should include the post-no-op mutation");
 }
 
+void test_public_worksheet_editor_rename_back_materialized_lookup_noop_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-lookup-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-lookup-output.xlsx");
+    const std::filesystem::path lookup_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-lookup-noop.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditorOptions mismatched_options = options;
+    mismatched_options.max_cells = 9;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientData");
+    editor.rename_sheet("TransientData", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-lookup-saved"));
+    editor.save_as(output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back lookup setup should leave both handles clean");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back lookup setup should leave diagnostics clear");
+    check(editor.pending_change_count() == 3,
+        "rename-back lookup setup should count renames plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back lookup setup should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back lookup setup should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back lookup setup should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back lookup setup should keep current summaries empty");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-lookup-saved",
+        "rename-back lookup setup");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), "rename-back lookup should reject mismatched try_worksheet options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", mismatched_options);
+    }), "rename-back lookup should reject mismatched worksheet options");
+    const std::optional<fastxlsx::WorksheetEditor> missing_try =
+        editor.try_worksheet("Missing", options);
+    check(!missing_try.has_value(),
+        "rename-back lookup should return empty for missing try_worksheet");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), "rename-back lookup should throw for missing worksheet");
+    const std::optional<fastxlsx::WorksheetEditor> transient_try =
+        editor.try_worksheet("TransientData", options);
+    check(!transient_try.has_value(),
+        "rename-back lookup should not preserve the transient planned name");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("TransientData", options);
+    }), "rename-back lookup should throw for the transient planned name");
+
+    check(!editor.last_edit_error().has_value(),
+        "rename-back lookup failures should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back lookup failures should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back lookup failures should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back lookup failures should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back lookup failures should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back lookup failures should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back lookup failures should keep current summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "rename-back lookup failures");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back lookup failures");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-lookup-saved",
+        "rename-back lookup failures");
+
+    editor.save_as(lookup_no_op_output);
+    check(!editor.last_edit_error().has_value(),
+        "rename-back lookup no-op save should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back lookup no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back lookup no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back lookup no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back lookup no-op save should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back lookup no-op save should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back lookup no-op save should keep current summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back lookup no-op save");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back lookup output should use the restored source name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back lookup output should not leak the transient planned name");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-lookup-saved",
+        "rename-back lookup output should contain the saved materialized edit");
+
+    const auto lookup_no_op_entries =
+        fastxlsx::test::read_zip_entries(lookup_no_op_output);
+    check(lookup_no_op_entries == output_entries,
+        "rename-back lookup no-op output should match the first restored-name materialized output");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -5720,6 +5841,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_failed_save_as_preserves_renamed_summary_dirty_state();
             test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planned_name();
             test_public_worksheet_editor_rename_back_materialized_diagnostics_use_source_name();
+            test_public_worksheet_editor_rename_back_materialized_lookup_noop_save();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

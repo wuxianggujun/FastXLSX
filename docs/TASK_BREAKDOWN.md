@@ -40355,6 +40355,45 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.964 - Pin rename-back materialized lookup no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove lookup and option preflights against the clean saved/reacquired
+  rename-back materialized session are no-op-save safe.
+
+Output:
+- Added an independent public regression that saves `Data -> TransientData ->
+  Data` materialized state, reacquires the restored `Data` session, and then
+  rejects mismatched `WorksheetEditorOptions`, missing-sheet lookups, and
+  lookups by the transient planned name.
+- The regression verifies those lookup/preflight failures keep
+  `last_edit_error()` clear, keep both borrowed handles clean, leave lower-level
+  materialized diagnostics and summaries empty, preserve the restored catalog,
+  and keep the saved value readable.
+- A follow-up no-op `save_as()` writes decompressed package entries matching the
+  first restored-name materialized output.
+
+Non-goals:
+- No option migration, session cloning, missing-sheet creation, source-name
+  fallback, transient-name aliasing, undo/rollback, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

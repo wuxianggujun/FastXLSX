@@ -3607,6 +3607,11 @@ hygiene: optional lookups return empty, throwing lookups fail, diagnostics stay
 clear, the restored `Data` session stays clean with saved values intact, and a
 later matching reacquire plus follow-up save still excludes rejected payloads,
 missing clear targets, and `TransientData`.
+Invalid reads after the same safe retry are pinned beside those lookup guards:
+row/column/A1/range/row-snapshot/column-snapshot failures leave diagnostics
+clear, preserve the restored clean `Data` session, keep saved values and sparse
+counts intact, and a later matching reacquire plus follow-up save still excludes
+rejected payloads, missing clear targets, and `TransientData`.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

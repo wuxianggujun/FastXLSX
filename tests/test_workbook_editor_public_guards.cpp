@@ -242,6 +242,21 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement sheet names");
 }
 
+void check_workbook_editor_no_targeted_cell_diagnostics(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.pending_targeted_cell_replacement_count() == 0,
+        prefix + " should not expose targeted cell patches");
+    check(editor.pending_targeted_cell_replacement_worksheet_names().empty(),
+        prefix + " should not expose targeted cell worksheet names");
+    check(editor.estimated_pending_targeted_cell_replacement_xml_bytes() == 0,
+        prefix + " should not expose targeted cell XML bytes");
+    check(!editor.has_pending_targeted_cell_replacement("Data"),
+        prefix + " should not report Data targeted cell patches");
+}
+
 void check_workbook_editor_no_replacement_payload_size_diagnostics(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
@@ -300,6 +315,18 @@ void check_public_inspection_preserves_last_edit_error(
 
     (void)editor.pending_replacement_worksheet_names();
     check_inspection_state("pending_replacement_worksheet_names");
+
+    (void)editor.pending_targeted_cell_replacement_count();
+    check_inspection_state("pending_targeted_cell_replacement_count");
+
+    (void)editor.pending_targeted_cell_replacement_worksheet_names();
+    check_inspection_state("pending_targeted_cell_replacement_worksheet_names");
+
+    (void)editor.has_pending_targeted_cell_replacement("Data");
+    check_inspection_state("has_pending_targeted_cell_replacement");
+
+    (void)editor.estimated_pending_targeted_cell_replacement_xml_bytes();
+    check_inspection_state("estimated_pending_targeted_cell_replacement_xml_bytes");
 
     (void)editor.pending_materialized_worksheet_names();
     check_inspection_state("pending_materialized_worksheet_names");
@@ -1970,10 +1997,21 @@ void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
     check(threw_fastxlsx_error([&] {
         editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("blocked-public")}});
     }), "public replace_sheet_data should reject a materialized same sheet");
+    check(threw_fastxlsx_error([&] {
+        editor.replace_cells("Data",
+            {{{1, 1}, fastxlsx::CellValue::text("blocked-public-targeted")}});
+    }), "public replace_cells should reject a materialized same sheet");
     check(threw_fastxlsx_error([&] { editor.rename_sheet("Data", "BlockedPublicRename"); }),
         "public rename_sheet should reject a materialized same sheet");
     check(editor.last_edit_error().has_value(),
         "blocked same-sheet operations should record last_edit_error");
+    check_workbook_editor_no_targeted_cell_diagnostics(
+        editor, "blocked public same-sheet targeted cells");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "cannot rename sheet after materializing planned worksheet session",
+            "blocked same-sheet rename should replace targeted-cell diagnostic");
+    }
 
     editor.rename_sheet("Untouched", "OtherPublicName");
     check(!editor.last_edit_error().has_value(),
@@ -1987,6 +2025,9 @@ void test_public_worksheet_editor_blocks_same_sheet_patch_operations()
         "public WorksheetEditor edit should auto-flush beside a cross-sheet edit");
     check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "blocked-public",
         "blocked same-sheet replacement should not leak into output");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "blocked-public-targeted",
+        "blocked same-sheet targeted cells should not leak into output");
     check_not_contains(output_entries.at("xl/workbook.xml"), "BlockedPublicRename",
         "blocked same-sheet rename should not leak into workbook catalog");
 }
@@ -2061,7 +2102,38 @@ void test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_opera
         "read-only materialized session should block same-sheet replacement");
     const std::optional<std::string> replacement_error = editor.last_edit_error();
     check_readonly_state("after rejected replacement", replacement_error);
+    check_workbook_editor_no_targeted_cell_diagnostics(
+        editor, "read-only same-sheet replacement");
     check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+
+    bool targeted_failed = false;
+    try {
+        editor.replace_cells("Data",
+            {{{1, 1}, fastxlsx::CellValue::text("blocked-readonly-targeted")}});
+    } catch (const fastxlsx::FastXlsxError& error) {
+        targeted_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "read-only same-sheet targeted cells should replace last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "read-only same-sheet targeted diagnostic should match thrown error");
+            check_contains(*last_error, "WorkbookEditor::replace_cells() failed",
+                "read-only same-sheet targeted cells should report public wrapper");
+            check_contains(*last_error,
+                "cannot replace cells after materializing planned worksheet session",
+                "read-only same-sheet targeted cells should report materialized-session guard");
+            check_not_contains(*last_error, "replace sheet data",
+                "read-only same-sheet targeted cells should replace the replacement diagnostic");
+        }
+    }
+    check(targeted_failed,
+        "read-only materialized session should block same-sheet targeted cells");
+    const std::optional<std::string> targeted_error = editor.last_edit_error();
+    check_readonly_state("after rejected targeted cells", targeted_error);
+    check_workbook_editor_no_targeted_cell_diagnostics(
+        editor, "read-only same-sheet targeted rejection");
+    check_public_inspection_preserves_last_edit_error(editor, targeted_error);
 
     bool rename_failed = false;
     try {
@@ -2077,8 +2149,8 @@ void test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_opera
             check_contains(*last_error,
                 "cannot rename sheet after materializing planned worksheet session",
                 "read-only same-sheet rename should report materialized-session guard");
-            check_not_contains(*last_error, "replace sheet data",
-                "read-only same-sheet rename should replace the replacement diagnostic");
+            check_not_contains(*last_error, "replace cells",
+                "read-only same-sheet rename should replace the targeted-cell diagnostic");
         }
     }
     check(rename_failed,
@@ -2190,7 +2262,38 @@ void test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_op
         "saved-clean materialized session should block same-sheet replacement");
     const std::optional<std::string> replacement_error = editor.last_edit_error();
     check_saved_clean_state("after rejected saved-clean replacement", replacement_error);
+    check_workbook_editor_no_targeted_cell_diagnostics(
+        editor, "saved-clean same-sheet replacement");
     check_public_inspection_preserves_last_edit_error(editor, replacement_error);
+
+    bool targeted_failed = false;
+    try {
+        editor.replace_cells("Data",
+            {{{1, 1}, fastxlsx::CellValue::text("blocked-saved-clean-targeted")}});
+    } catch (const fastxlsx::FastXlsxError& error) {
+        targeted_failed = true;
+        const std::optional<std::string> last_error = editor.last_edit_error();
+        check(last_error.has_value(),
+            "saved-clean same-sheet targeted cells should replace last_edit_error");
+        if (last_error.has_value()) {
+            check(*last_error == error.what(),
+                "saved-clean same-sheet targeted diagnostic should match thrown error");
+            check_contains(*last_error, "WorkbookEditor::replace_cells() failed",
+                "saved-clean same-sheet targeted cells should report public wrapper");
+            check_contains(*last_error,
+                "cannot replace cells after materializing planned worksheet session",
+                "saved-clean same-sheet targeted cells should report materialized-session guard");
+            check_not_contains(*last_error, "replace sheet data",
+                "saved-clean same-sheet targeted cells should replace the replacement diagnostic");
+        }
+    }
+    check(targeted_failed,
+        "saved-clean materialized session should block same-sheet targeted cells");
+    const std::optional<std::string> targeted_error = editor.last_edit_error();
+    check_saved_clean_state("after rejected saved-clean targeted cells", targeted_error);
+    check_workbook_editor_no_targeted_cell_diagnostics(
+        editor, "saved-clean same-sheet targeted rejection");
+    check_public_inspection_preserves_last_edit_error(editor, targeted_error);
 
     bool rename_failed = false;
     try {
@@ -2206,8 +2309,8 @@ void test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_op
             check_contains(*last_error,
                 "cannot rename sheet after materializing planned worksheet session",
                 "saved-clean same-sheet rename should report materialized-session guard");
-            check_not_contains(*last_error, "replace sheet data",
-                "saved-clean same-sheet rename should replace the replacement diagnostic");
+            check_not_contains(*last_error, "replace cells",
+                "saved-clean same-sheet rename should replace the targeted-cell diagnostic");
         }
     }
     check(rename_failed,
@@ -2226,6 +2329,9 @@ void test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_op
     check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
         "blocked-saved-clean-replacement",
         "rejected saved-clean replacement should not leak into output");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "blocked-saved-clean-targeted",
+        "rejected saved-clean targeted cells should not leak into output");
     check_not_contains(output_entries.at("xl/workbook.xml"), "BlockedSavedCleanRename",
         "rejected saved-clean rename should not leak into workbook catalog");
 }

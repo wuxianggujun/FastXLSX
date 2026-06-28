@@ -219,6 +219,11 @@ too: after a dirty `WorksheetEditor::insert_rows()` sparse shift, queued
 `request_full_calculation()` preserves materialized names/counts/memory until
 `save_as()`, and the saved package carries `fullCalcOnLoad="1"` alongside the
 shifted styled formula without creating `xl/calcChain.xml`.
+The reverse ordering is now covered for column shifts: a queued
+`request_full_calculation()` before `worksheet()` still allows a later dirty
+`WorksheetEditor::insert_columns()` sparse shift, and `save_as()` writes the
+workbook calc metadata plus shifted numeric/formula/text cells while omitting
+old coordinates and `xl/calcChain.xml`.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

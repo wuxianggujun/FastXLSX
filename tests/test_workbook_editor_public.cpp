@@ -6723,6 +6723,205 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_
         "rename-back missing clear failed-save post-save follow-up output should not synthesize A1 missing target");
 }
 
+void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_save_retry_option_mismatch()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-failed-save-option-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-failed-save-option-output.xlsx");
+    const std::filesystem::path clear_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-failed-save-option-noop.xlsx");
+    const std::filesystem::path retry_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-failed-save-option-retry.xlsx");
+    const std::filesystem::path followup_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-failed-save-option-followup.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditorOptions mismatched_options = options;
+    mismatched_options.max_cells = 9;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientData");
+    editor.rename_sheet("TransientData", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-missing-clear-option-saved"));
+    editor.save_as(output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(0, 1,
+            fastxlsx::CellValue::text("rename-back-missing-clear-option-rejected"));
+    }), "rename-back missing clear option setup should reject row-zero mutation");
+    reacquired.clear_cell_value(5, 5);
+    reacquired.clear_cell_value("D4");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear option no-op should clear invalid mutation diagnostics");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear option no-op should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing clear option no-op should not add another handoff");
+
+    editor.save_as(clear_no_op_output);
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear option no-op save should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear option no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing clear option no-op save should not add another handoff");
+
+    reacquired.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-missing-clear-option-recovered"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "rename-back missing clear option recovery mutation should dirty both handles");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "rename-back missing clear option failed save should reject source overwrite");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear option failed save should not create last_edit_error");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "rename-back missing clear option failed save should keep both handles dirty");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing clear option failed save should not count a materialized handoff");
+
+    editor.save_as(retry_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear option retry save should clean both handles");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear option retry save should count one more materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear option retry save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear option retry save should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear option retry save should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear option retry save should clear summaries");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_after_retry =
+        workbook_editor_public_catalog_snapshot(editor);
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), "rename-back missing clear option mismatch try_worksheet should reject mismatched options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", mismatched_options);
+    }), "rename-back missing clear option mismatch worksheet should reject mismatched options");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear option mismatch should not update last_edit_error");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear option mismatch should keep existing handles clean");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear option mismatch should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear option mismatch should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear option mismatch should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear option mismatch should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear option mismatch should keep summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_after_retry, "rename-back missing clear option mismatch");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-missing-clear-option-saved",
+        "rename-back missing clear option mismatch");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 2, 2, "rename-back-missing-clear-option-recovered",
+        "rename-back missing clear option mismatch");
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back missing clear option mismatch should keep missing targets absent");
+
+    fastxlsx::WorksheetEditor matching = editor.worksheet("Data", options);
+    check_public_two_clean_retry_saved_value(
+        matching, 1, 1, "rename-back-missing-clear-option-saved",
+        "rename-back missing clear option matching reacquire");
+    check_public_two_clean_retry_saved_value(
+        matching, 2, 2, "rename-back-missing-clear-option-recovered",
+        "rename-back missing clear option matching reacquire");
+    check(!matching.has_pending_changes(),
+        "rename-back missing clear option matching reacquire should stay clean");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear option matching reacquire should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear option matching reacquire should keep dirty names empty");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear option matching reacquire should keep diagnostics clear");
+
+    matching.set_cell(3, 3,
+        fastxlsx::CellValue::text("rename-back-missing-clear-option-followup"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes() &&
+            matching.has_pending_changes(),
+        "rename-back missing clear option follow-up mutation should dirty all handles");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear option follow-up mutation should not count a handoff before save");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "rename-back missing clear option follow-up mutation should dirty the restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == matching.cell_count(),
+        "rename-back missing clear option follow-up mutation should expose current dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            matching.estimated_memory_usage(),
+        "rename-back missing clear option follow-up mutation should expose current dirty memory");
+
+    editor.save_as(followup_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "rename-back missing clear option follow-up save should clean all handles");
+    check(editor.pending_change_count() == 5,
+        "rename-back missing clear option follow-up save should count one more handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear option follow-up save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear option follow-up save should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear option follow-up save should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear option follow-up save should clear summaries");
+
+    const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
+    check_contains(retry_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back missing clear option retry output should use restored source name");
+    check_not_contains(retry_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back missing clear option retry output should not leak transient name");
+    check_contains(retry_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-saved",
+        "rename-back missing clear option retry output should keep saved value");
+    check_contains(retry_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-recovered",
+        "rename-back missing clear option retry output should include recovered value");
+    check_not_contains(retry_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-followup",
+        "rename-back missing clear option retry output should not include follow-up value");
+
+    const auto followup_entries =
+        fastxlsx::test::read_zip_entries(followup_output);
+    check_contains(followup_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back missing clear option follow-up output should use restored source name");
+    check_not_contains(followup_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back missing clear option follow-up output should not leak transient name");
+    check_contains(followup_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-saved",
+        "rename-back missing clear option follow-up output should keep saved value");
+    check_contains(followup_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-recovered",
+        "rename-back missing clear option follow-up output should keep recovered value");
+    check_contains(followup_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-followup",
+        "rename-back missing clear option follow-up output should include follow-up value");
+    check_not_contains(followup_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-option-rejected",
+        "rename-back missing clear option follow-up output should not leak rejected payloads");
+    check_not_contains(followup_entries.at("xl/worksheets/sheet1.xml"), R"(r="E5")",
+        "rename-back missing clear option follow-up output should not synthesize row/column missing target");
+    check_not_contains(followup_entries.at("xl/worksheets/sheet1.xml"), R"(r="D4")",
+        "rename-back missing clear option follow-up output should not synthesize A1 missing target");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -6779,6 +6978,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_materialized_missing_clear_recovery_save();
             test_public_worksheet_editor_rename_back_materialized_missing_clear_recovery_failed_save();
             test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_save_retry_reacquire();
+            test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_save_retry_option_mismatch();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

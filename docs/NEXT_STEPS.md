@@ -3597,6 +3597,11 @@ fresh matching `worksheet("Data")` stays clean, reads both saved values from the
 restored materialized session, leaves diagnostics empty, and a later follow-up
 mutation/save preserves saved/recovered cells while still excluding rejected
 payloads, missing clear targets, and `TransientData`.
+Mismatched options after that same safe retry now have a dedicated guard: both
+`try_worksheet()` and throwing `worksheet()` reject the mismatched options
+without setting `last_edit_error()`, dirtying existing handles, changing
+pending handoff counts, or disturbing the restored catalog and saved values;
+matching reacquire plus a follow-up save still works afterward.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

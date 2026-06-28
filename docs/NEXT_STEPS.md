@@ -322,6 +322,13 @@ source/materialized audits, source package bytes, and clear
 `last_edit_error()`; the following safe retry records the next handoff and
 writes the renamed catalog, shifted formula, dirty text cell,
 `fullCalcOnLoad="1"`, and no calcChain.
+Invalid mutations on the clean saved/reacquired session now have matching
+recovery coverage: rejected `set_cell()` / `erase_cell()` calls keep both
+planned-name handles clean, preserve the invalid-reference diagnostic and
+source/materialized audits without staging rejected payloads, and a later valid
+`set_cell()` clears the diagnostic, re-dirties the shared session, then
+save/reopen keeps the shifted formula, recovered text cell,
+`fullCalcOnLoad="1"`, and no calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

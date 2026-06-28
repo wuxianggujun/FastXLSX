@@ -10927,6 +10927,207 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire failed save reopened output should read the dirty text cell");
 }
 
+void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_mutation_recovery()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_qualified_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-invalid-mutation-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-invalid-mutation-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-invalid-mutation-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    editor.request_full_calculation();
+    const std::vector<std::string> expected_source_names =
+        editor.source_worksheet_names();
+    const std::vector<std::string> expected_planned_names =
+        editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
+        editor.worksheet_catalog();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_rows(2, 1);
+
+    constexpr std::string_view shifted_formula = "Data!A2+Data!B2";
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire invalid mutation first save should clean the original handle");
+    check(editor.pending_change_count() == 3,
+        "renamed full-calc formula audit saved reacquire invalid mutation first save should count rename, metadata, and materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc formula audit saved reacquire invalid mutation first save should clear dirty diagnostics");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire invalid mutation reacquire should start clean");
+    check(!editor.try_worksheet("Data").has_value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation should keep old source name unavailable");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1,
+            fastxlsx::CellValue::formula("invalid-saved-reacquire-row-zero"));
+    }), "renamed full-calc formula audit saved reacquire invalid mutation should reject row-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("XFE1",
+            fastxlsx::CellValue::formula("invalid-saved-reacquire-column-overflow"));
+    }), "renamed full-calc formula audit saved reacquire invalid mutation should reject column-overflow set_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "renamed full-calc formula audit saved reacquire invalid mutation should reject range erase_cell references");
+
+    check(editor.last_edit_error().has_value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation should populate last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(), "WorksheetEditor cell reference is invalid",
+            "renamed full-calc formula audit saved reacquire invalid mutation should expose invalid reference diagnostic");
+    }
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire invalid mutation should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed full-calc formula audit saved reacquire invalid mutation should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc formula audit saved reacquire invalid mutation should not dirty materialized diagnostics");
+    check(editor.source_worksheet_names() == expected_source_names &&
+            editor.worksheet_names() == expected_planned_names,
+        "renamed full-calc formula audit saved reacquire invalid mutation should preserve source and planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
+        "renamed full-calc formula audit saved reacquire invalid mutation should preserve the planned workbook catalog");
+    check(sheet.cell_count() == 7 && reacquired.cell_count() == 7,
+        "renamed full-calc formula audit saved reacquire invalid mutation should preserve sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 4, 4,
+        "renamed full-calc formula audit saved reacquire invalid mutation should preserve shifted bounds");
+    const std::optional<fastxlsx::CellValue> preserved_formula =
+        reacquired.try_cell("D3");
+    check(preserved_formula.has_value() &&
+            preserved_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            preserved_formula->text_value() == shifted_formula &&
+            preserved_formula->has_style() &&
+            preserved_formula->style_id().value() == styled_formula_style.value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation should preserve the shifted styled formula");
+    check(!sheet.try_cell("C5").has_value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation should not stage rejected payloads");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> clean_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "renamed full-calc formula audit saved reacquire invalid mutation clean audit");
+    check(clean_audits.size() == 2,
+        "renamed full-calc formula audit saved reacquire invalid mutation should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        clean_audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        "renamed full-calc formula audit saved reacquire invalid mutation shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        clean_audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire invalid mutation shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed full-calc formula audit saved reacquire invalid mutation source audit");
+    check(editor.last_edit_error().has_value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation audits should preserve last_edit_error");
+
+    sheet.set_cell(5, 3, fastxlsx::CellValue::text("invalid-recovery-c5"));
+    check(!editor.last_edit_error().has_value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation valid recovery should clear diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery should dirty both handles");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 8,
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery should grow sparse count");
+    const std::optional<fastxlsx::CellValue> recovered_cell =
+        reacquired.try_cell("C5");
+    check(recovered_cell.has_value() &&
+            recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
+            recovered_cell->text_value() == "invalid-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery should expose the valid text cell");
+    const std::optional<fastxlsx::CellValue> recovered_formula =
+        sheet.try_cell("D3");
+    check(recovered_formula.has_value() &&
+            recovered_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            recovered_formula->text_value() == shifted_formula &&
+            recovered_formula->has_style() &&
+            recovered_formula->style_id().value() == styled_formula_style.value(),
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery should preserve shifted formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> dirty_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "renamed full-calc formula audit saved reacquire invalid mutation recovery dirty audit");
+    check(dirty_audits.size() == 2,
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        dirty_audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        dirty_audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed full-calc formula audit saved reacquire invalid mutation recovery source audit");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery save should clean both handles");
+    check(editor.pending_change_count() == 4,
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery save should record the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery save should clear dirty diagnostics");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "renamed full-calc formula audit saved reacquire invalid mutation first output should keep fullCalcOnLoad");
+    check_not_contains(first_worksheet_xml, "invalid-saved-reacquire-",
+        "renamed full-calc formula audit saved reacquire invalid mutation first output should omit rejected payloads");
+    check_not_contains(first_worksheet_xml, "invalid-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid mutation first output should omit the later recovery cell");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    const std::string second_styled_formula_xml =
+        std::string(R"(<c r="D3" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>Data!A2+Data!B2</f></c>)";
+    check_contains(second_workbook_xml, R"(name="RenamedData")",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should omit the source catalog name");
+    check_contains(second_workbook_xml, R"(fullCalcOnLoad="1")",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should keep fullCalcOnLoad");
+    check(second_entries.find("xl/calcChain.xml") == second_entries.end(),
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should not invent calcChain.xml");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:D5"/>)",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should project recovered bounds");
+    check_contains(second_worksheet_xml, second_styled_formula_xml,
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should keep shifted formula with style");
+    check_contains(second_worksheet_xml, "invalid-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should write recovered text");
+    check_not_contains(second_worksheet_xml, "invalid-saved-reacquire-",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should not leak rejected payloads");
+    check_not_contains(second_worksheet_xml, R"(r="D2")",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output should omit old formula coordinate");
+
+    check_public_state_reopened_shift_formula_audit_output(
+        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire invalid mutation second output");
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
+    const std::optional<fastxlsx::CellValue> reopened_recovered_cell =
+        reopened_sheet.try_cell("C5");
+    check(reopened_recovered_cell.has_value() &&
+            reopened_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
+            reopened_recovered_cell->text_value() == "invalid-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid mutation reopened output should read recovered text");
+}
+
 void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
 {
     const std::filesystem::path source =
@@ -22215,6 +22416,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_invalid_diagnostic_recovery_preserve_state();
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_preserve_state();
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_failed_save_preserve_state();
+            test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_mutation_recovery();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula();

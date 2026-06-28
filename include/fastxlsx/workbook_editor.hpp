@@ -2212,7 +2212,11 @@ public:
     /// replace_cells() payloads cannot be materialized, and replace_sheet_data()
     /// / replace_cells() / rename_sheet() reject a worksheet after it has been
     /// materialized. Use one editing mode per worksheet in this first public
-    /// slice.
+    /// slice. Workbook-level request_full_calculation() is intentionally
+    /// separate from this per-worksheet edit-mode guard: it may be queued before
+    /// or after a catalog rename and clean or dirty materialized sessions, but
+    /// it does not make queued Patch payloads composable with a materialized
+    /// WorksheetEditor session.
     ///
     /// @param sheet_name Existing worksheet name in the current planned catalog.
     /// @param options Per-materialization sparse-store guardrails.
@@ -2487,7 +2491,12 @@ public:
     /// `fullCalcOnLoad="1"` on `xl/workbook.xml` and removes stale
     /// `xl/calcChain.xml` when present. This does not evaluate formulas, repair
     /// relationships, update defined names, or expose the internal calc-chain
-    /// policy surface.
+    /// policy surface. The request is workbook-scoped metadata and can coexist
+    /// with queued sheet-catalog renames plus clean or dirty materialized
+    /// WorksheetEditor sessions; it preserves planned sheet names and dirty
+    /// materialized diagnostics until save_as(). It does not relax same-sheet
+    /// replace_sheet_data() / replace_cells() versus materialized-session
+    /// guards.
     void request_full_calculation();
 
     /// Writes the edited workbook to a new package path.

@@ -41438,6 +41438,52 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.991 - Pin rename-back missing-clear failed-save retry invalid mutations
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid mutation preflights after the rename-back missing-clear
+  failed-save safe retry reject cleanly and leave the restored materialized
+  session usable.
+
+Output:
+- Added an independent public regression that repeats the rename-back
+  missing-clear no-op, failed source-overwrite save, and safe retry path.
+- After the safe retry, invalid row/column `set_cell()`, overflowing A1
+  `set_cell()`, invalid `erase_cell()`, and invalid `clear_cell_value()` calls
+  record diagnostics without dirtying handles, changing pending handoff count,
+  materialized diagnostics, summaries, catalog, saved/recovered values, sparse
+  count/memory, or missing target absence.
+- A no-op `save_as()` after those rejected mutations preserves diagnostics and
+  writes bytes equivalent to the retry output.
+- A later matching `worksheet("Data")` stays clean, reads the saved and
+  recovered values, and a valid follow-up mutation clears diagnostics before
+  saving one more handoff.
+- The retry output excludes the follow-up value, while the follow-up output
+  keeps saved/recovered/follow-up values, uses restored `Data`, excludes
+  `TransientData`, excludes rejected payloads, and avoids synthesizing
+  `E5` / `D4`.
+
+Non-goals:
+- No coordinate repair, range clamping, tombstones, dense clear semantics,
+  session cloning, source-package overwrite mode, source mutation,
+  transactional undo/redo, explicit blank synthesis for missing cells, metadata
+  repair, Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

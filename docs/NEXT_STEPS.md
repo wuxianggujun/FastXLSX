@@ -3612,6 +3612,11 @@ row/column/A1/range/row-snapshot/column-snapshot failures leave diagnostics
 clear, preserve the restored clean `Data` session, keep saved values and sparse
 counts intact, and a later matching reacquire plus follow-up save still excludes
 rejected payloads, missing clear targets, and `TransientData`.
+Invalid mutations after that safe retry now cover the write-side preflight:
+rejected row/column/A1/clear operations record diagnostics without dirtying the
+clean restored session or changing saved sparse state, a no-op save stays byte
+equivalent to the retry output, and the next valid mutation clears diagnostics
+before the follow-up save.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

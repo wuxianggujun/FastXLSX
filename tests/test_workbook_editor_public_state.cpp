@@ -8841,6 +8841,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-shift-recovery-output.xlsx");
     const std::filesystem::path same_sheet_guard_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-same-sheet-guard-output.xlsx");
+    const std::filesystem::path same_sheet_guard_recovery_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-same-sheet-guard-recovery-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -9516,6 +9518,68 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     check_not_contains(same_sheet_guard_worksheet_xml, "blocked-clear-all-replacement",
         "clear_cell_values() memory-budget release same-sheet guard should not leak rejected replacement payload");
 
+    sheet.set_cell(7, 5,
+        fastxlsx::CellValue::text("clear-all-same-sheet-guard-recovery"));
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release same-sheet guard recovery should clear diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release same-sheet guard recovery should dirty the shared session");
+    const std::vector<std::string> same_sheet_guard_recovery_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(same_sheet_guard_recovery_dirty_names.size() == 1 &&
+            same_sheet_guard_recovery_dirty_names[0] == "Data",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should report Data dirty once");
+    check(editor.pending_materialized_cell_count() == 12,
+        "clear_cell_values() memory-budget release same-sheet guard recovery should report the recovered sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() > 0,
+        "clear_cell_values() memory-budget release same-sheet guard recovery should report dirty memory");
+    check(sheet.cell_count() == 12 && reacquired.cell_count() == 12,
+        "clear_cell_values() memory-budget release same-sheet guard recovery should update both handle counts");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 7, 5,
+        "clear_cell_values() memory-budget release same-sheet guard recovery should expand original handle bounds");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 7, 5,
+        "clear_cell_values() memory-budget release same-sheet guard recovery should expand reacquired bounds");
+    check(sheet.get_cell("E7").text_value() == "clear-all-same-sheet-guard-recovery" &&
+            reacquired.get_cell("E7").text_value() == "clear-all-same-sheet-guard-recovery",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should be visible through both handles");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("E6").text_value() == "clear-all-invalid-mutation-recovery",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should preserve prior saved cells");
+
+    editor.save_as(same_sheet_guard_recovery_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should clean handles");
+    check(editor.pending_change_count() == pending_count_after_reacquire + 3,
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should add one handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should keep diagnostics clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should clear dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should clear dirty summaries");
+    const auto same_sheet_guard_recovery_entries =
+        fastxlsx::test::read_zip_entries(same_sheet_guard_recovery_output);
+    const std::string same_sheet_guard_recovery_xml =
+        same_sheet_guard_recovery_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(same_sheet_guard_recovery_xml, R"(<dimension ref="A1:E7"/>)",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should persist expanded bounds");
+    check_contains(same_sheet_guard_recovery_xml, R"(<c r="E7")",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should persist E7");
+    check_contains(same_sheet_guard_recovery_xml, "clear-all-same-sheet-guard-recovery",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should persist recovery text");
+    check_contains(same_sheet_guard_recovery_xml, "clear-all-invalid-mutation-recovery",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should preserve shifted recovery text");
+    check_contains(same_sheet_guard_recovery_xml, "clear-all-mb-release",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should preserve D4");
+    check_not_contains(same_sheet_guard_recovery_entries.at("xl/workbook.xml"), "BlockedClearAll",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should not persist rejected sheet name");
+    check_not_contains(same_sheet_guard_recovery_xml, "blocked-clear-all-replacement",
+        "clear_cell_values() memory-budget release same-sheet guard recovery should not leak rejected replacement payload");
+
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -9573,6 +9637,28 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
                 "clear_cell_values() memory-budget release invalid shift recovery reopened output should read shifted E6");
             check(!reopened_sheet.try_cell("E5").has_value(),
                 "clear_cell_values() memory-budget release invalid shift recovery reopened output should keep old E5 absent");
+        });
+    check_reopened_clean_sheet_output(same_sheet_guard_recovery_output, "Data",
+        "clear_cell_values() memory-budget release same-sheet guard recovery",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 12,
+                "clear_cell_values() memory-budget release same-sheet guard recovery reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 7, 5,
+                "clear_cell_values() memory-budget release same-sheet guard recovery reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "clear-all-mb-release",
+                "clear_cell_values() memory-budget release same-sheet guard recovery reopened output should read D4");
+            const fastxlsx::CellValue reopened_e6 = reopened_sheet.get_cell("E6");
+            check(reopened_e6.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e6.text_value() == "clear-all-invalid-mutation-recovery",
+                "clear_cell_values() memory-budget release same-sheet guard recovery reopened output should read shifted E6");
+            const fastxlsx::CellValue reopened_e7 = reopened_sheet.get_cell("E7");
+            check(reopened_e7.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e7.text_value() == "clear-all-same-sheet-guard-recovery",
+                "clear_cell_values() memory-budget release same-sheet guard recovery reopened output should read E7");
+            check(!reopened_sheet.try_cell("E5").has_value(),
+                "clear_cell_values() memory-budget release same-sheet guard recovery reopened output should keep old E5 absent");
         });
 }
 

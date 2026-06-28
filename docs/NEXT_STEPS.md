@@ -3471,6 +3471,10 @@ Same-sheet Patch operation-mixing guards are now pinned on that recovered
 session too: rejected `rename_sheet()` / `replace_sheet_data()` calls preserve
 the guard diagnostic, keep handles and catalog state clean, and a no-op save
 matches the recovery output without leaking rejected names or payloads.
+The recovery side of that same-sheet guard branch is pinned as well: a later
+valid materialized `set_cell()` clears the guard diagnostic, dirties the shared
+saved/recovered session once, persists an additional recovery cell, and reopens
+clean without leaking rejected Patch artifacts.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

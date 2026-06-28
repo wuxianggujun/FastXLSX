@@ -39545,6 +39545,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.944 - Pin whole-store clear invalid shift recovery
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove a later valid row shift recovers the saved/reacquired no-argument
+  `clear_cell_values()` exact-budget session after invalid shift diagnostics
+  and a no-op save.
+
+Output:
+- Extended the public-state no-argument whole-store value-clear memory-budget
+  regression to run a valid `insert_rows()` after the invalid-shift no-op save
+  branch.
+- The regression verifies the valid shift clears `last_edit_error()`, dirties
+  the shared saved/reacquired handles once, preserves sparse count, expands row
+  bounds, moves the recovered cell from `E5` to `E6`, preserves the earlier
+  recovery cell, and saves as one additional materialized handoff.
+- The recovery output is checked for expanded dimension, shifted recovery cell,
+  old-coordinate removal, and clean reopen state.
+- Updated API and planning docs to record this as shift diagnostic recovery
+  hygiene, not broad structural metadata repair.
+
+Non-goals:
+- No broad structural editing semantics, metadata range repair, formula repair
+  or evaluation, calcChain rebuild, sharedStrings/styles migration, rollback,
+  or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

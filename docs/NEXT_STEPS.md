@@ -3464,6 +3464,9 @@ persisted bounds, and reopens clean after the next materialized handoff.
 Invalid row/column shift preflights now cover the same recovered session:
 rejected structural bounds failures preserve the shift diagnostic without
 dirtying handles or changing the recovery output on a later no-op save.
+The valid-shift recovery branch is pinned as well: a later `insert_rows()`
+clears the shift diagnostic, dirties the shared handles once, moves the
+recovered sparse cell, and reopens clean after the next materialized handoff.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

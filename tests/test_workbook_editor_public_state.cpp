@@ -8837,6 +8837,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-mutation-recovery-output.xlsx");
     const std::filesystem::path invalid_shift_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-shift-output.xlsx");
+    const std::filesystem::path invalid_shift_recovery_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-shift-recovery-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -9377,6 +9379,64 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     check(invalid_shift_entries == invalid_mutation_recovery_entries,
         "clear_cell_values() memory-budget release invalid shifts noop save should keep recovery output entries stable");
 
+    reacquired.insert_rows(5, 1);
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release invalid shift recovery should clear diagnostics");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release invalid shift recovery should dirty the shared session");
+    const std::vector<std::string> shift_recovery_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(shift_recovery_dirty_names.size() == 1 && shift_recovery_dirty_names[0] == "Data",
+        "clear_cell_values() memory-budget release invalid shift recovery should report Data dirty once");
+    check(editor.pending_materialized_cell_count() == 11,
+        "clear_cell_values() memory-budget release invalid shift recovery should keep sparse count stable");
+    check(editor.estimated_pending_materialized_memory_usage() > 0,
+        "clear_cell_values() memory-budget release invalid shift recovery should report dirty memory");
+    check(sheet.cell_count() == 11 && reacquired.cell_count() == 11,
+        "clear_cell_values() memory-budget release invalid shift recovery should preserve handle counts");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 6, 5,
+        "clear_cell_values() memory-budget release invalid shift recovery should expand original handle row bounds");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 6, 5,
+        "clear_cell_values() memory-budget release invalid shift recovery should expand reacquired row bounds");
+    check(sheet.get_cell("E6").text_value() == "clear-all-invalid-mutation-recovery" &&
+            reacquired.get_cell("E6").text_value() == "clear-all-invalid-mutation-recovery",
+        "clear_cell_values() memory-budget release invalid shift recovery should move E5 to E6");
+    check(!sheet.try_cell("E5").has_value() && !reacquired.try_cell("E5").has_value(),
+        "clear_cell_values() memory-budget release invalid shift recovery should clear old E5");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
+        "clear_cell_values() memory-budget release invalid shift recovery should preserve D4");
+
+    editor.save_as(invalid_shift_recovery_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release invalid shift recovery save should clean handles");
+    check(editor.pending_change_count() == pending_count_after_reacquire + 2,
+        "clear_cell_values() memory-budget release invalid shift recovery save should add one handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release invalid shift recovery save should keep diagnostics clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release invalid shift recovery save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release invalid shift recovery save should clear dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release invalid shift recovery save should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release invalid shift recovery save should clear dirty summaries");
+    const auto invalid_shift_recovery_entries =
+        fastxlsx::test::read_zip_entries(invalid_shift_recovery_output);
+    const std::string invalid_shift_recovery_xml =
+        invalid_shift_recovery_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(invalid_shift_recovery_xml, R"(<dimension ref="A1:E6"/>)",
+        "clear_cell_values() memory-budget release invalid shift recovery should persist expanded row bounds");
+    check_contains(invalid_shift_recovery_xml, R"(<c r="E6")",
+        "clear_cell_values() memory-budget release invalid shift recovery should persist shifted E6");
+    check_contains(invalid_shift_recovery_xml, "clear-all-invalid-mutation-recovery",
+        "clear_cell_values() memory-budget release invalid shift recovery should persist shifted recovery text");
+    check_contains(invalid_shift_recovery_xml, "clear-all-mb-release",
+        "clear_cell_values() memory-budget release invalid shift recovery should persist D4");
+    check_not_contains(invalid_shift_recovery_xml, R"(r="E5")",
+        "clear_cell_values() memory-budget release invalid shift recovery should omit old E5");
+
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -9416,6 +9476,24 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             check(reopened_e5.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_e5.text_value() == "clear-all-invalid-mutation-recovery",
                 "clear_cell_values() memory-budget release invalid mutation recovery reopened output should read E5");
+        });
+    check_reopened_clean_sheet_output(invalid_shift_recovery_output, "Data",
+        "clear_cell_values() memory-budget release invalid shift recovery",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 11,
+                "clear_cell_values() memory-budget release invalid shift recovery reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 6, 5,
+                "clear_cell_values() memory-budget release invalid shift recovery reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "clear-all-mb-release",
+                "clear_cell_values() memory-budget release invalid shift recovery reopened output should read D4");
+            const fastxlsx::CellValue reopened_e6 = reopened_sheet.get_cell("E6");
+            check(reopened_e6.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e6.text_value() == "clear-all-invalid-mutation-recovery",
+                "clear_cell_values() memory-budget release invalid shift recovery reopened output should read shifted E6");
+            check(!reopened_sheet.try_cell("E5").has_value(),
+                "clear_cell_values() memory-budget release invalid shift recovery reopened output should keep old E5 absent");
         });
 }
 

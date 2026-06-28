@@ -152,6 +152,12 @@ read-only materialization stays a no-op copy-original save after rejected
 same-sheet rename/replacement, while a post-save clean materialized session
 keeps its prior projection and can save again without adding a handoff or
 leaking the rejected catalog name / replacement payload.
+The workbook full-calculation metadata helper is now pinned against dirty
+materialized sessions too: calling `request_full_calculation()` after a
+`WorksheetEditor` mutation queues only the workbook metadata edit, preserves the
+dirty materialized names/counts/memory until `save_as()`, and the save output
+contains both `fullCalcOnLoad="1"` and the materialized sparse projection
+without inventing `xl/calcChain.xml`.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

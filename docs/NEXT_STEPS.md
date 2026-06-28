@@ -168,6 +168,10 @@ dirty materialized projection has already been flushed by `save_as()`, a later
 `request_full_calculation()` adds only the workbook metadata request; the next
 save reuses the prior sparse projection, keeps dirty materialized diagnostics
 empty, and does not add another materialized handoff.
+The reverse ordering is covered as well: a workbook-level
+`request_full_calculation()` queued before `worksheet()` does not block later
+materialization or dirty sparse edits, and `save_as()` writes both the existing
+workbook metadata request and the later materialized projection.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

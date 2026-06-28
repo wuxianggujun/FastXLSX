@@ -9813,6 +9813,39 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary dirty mutation");
 
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "clear_cell_values() memory-budget renamed summary rejected save should reject source overwrite");
+    check(sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary rejected save should keep the planned handle dirty");
+    check(editor.pending_change_count() == 1,
+        "clear_cell_values() memory-budget renamed summary rejected save should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string> {"RenamedClearAll"},
+        "clear_cell_values() memory-budget renamed summary rejected save should preserve the planned dirty name");
+    check(editor.pending_materialized_cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary rejected save should preserve dirty sparse count");
+    check(sheet.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary rejected save should preserve handle sparse count");
+    check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary rejected save should preserve D4");
+    check_renamed_clear_all_summary(true, 4,
+        "clear_cell_values() memory-budget renamed summary after rejected save");
+    const auto source_after_rejected_save_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_after_rejected_save_workbook_xml =
+        source_after_rejected_save_entries.at("xl/workbook.xml");
+    const std::string source_after_rejected_save_worksheet_xml =
+        source_after_rejected_save_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(source_after_rejected_save_workbook_xml, R"(name="Data")",
+        "clear_cell_values() memory-budget renamed summary rejected save should leave source catalog unchanged");
+    check_not_contains(source_after_rejected_save_workbook_xml, "RenamedClearAll",
+        "clear_cell_values() memory-budget renamed summary rejected save should not write the planned name to source");
+    check_contains(source_after_rejected_save_worksheet_xml, "clear-rename-budget-a1-",
+        "clear_cell_values() memory-budget renamed summary rejected save should leave source A1 text intact");
+    check_contains(source_after_rejected_save_worksheet_xml, "clear-rename-budget-a2-",
+        "clear_cell_values() memory-budget renamed summary rejected save should leave source A2 text intact");
+    check_not_contains(source_after_rejected_save_worksheet_xml, "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary rejected save should not leak dirty D4 to source");
+
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary first save should clean the planned handle");

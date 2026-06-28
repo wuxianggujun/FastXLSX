@@ -39751,6 +39751,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.949 - Pin whole-store clear renamed rejected-save state
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove `save_as(source)` rejection does not flush or corrupt the renamed
+  no-argument `clear_cell_values()` exact-budget dirty session.
+
+Output:
+- Extended the renamed whole-store value-clear summary regression to call
+  `save_as(source)` after the first dirty materialized recovery mutation and
+  before the safe output save.
+- The regression verifies the rejected save preserves the combined
+  rename/materialized summary, planned dirty materialized name, dirty sparse
+  count, dirty handle contents, and pending-change count.
+- The source package is reread after the rejected save to prove the source
+  catalog name and original source cell payloads remain intact and the dirty
+  recovery payload does not leak into source bytes.
+- The later safe `save_as(output)` path remains unchanged and still clears only
+  materialized dirty fields while keeping the rename summary visible.
+
+Non-goals:
+- No in-place save, transaction rollback, source mutation, rename-aware formula
+  repair, metadata repair, Patch/materialized sparse-session composition,
+  calcChain rebuild, sharedStrings/styles migration, or low-memory large-file
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

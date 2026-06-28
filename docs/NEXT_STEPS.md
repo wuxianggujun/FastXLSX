@@ -3495,6 +3495,10 @@ coverage: planned-name materialization after a queued rename reports combined
 rename/materialized summary fields while dirty, save/reacquire returns to a
 rename-only summary, and a later valid mutation re-adds the materialized fields
 before the next handoff.
+Rejected source-overwrite saves are pinned on that path too: `save_as(source)`
+fails before flushing the renamed dirty materialized session, preserves the
+combined summary and planned dirty diagnostics, leaves the source workbook bytes
+unchanged, and does not block the later safe output save.
 Rejected `save_as()` preflight keeps that combined state intact: source-overwrite
 rejection does not flush the renamed dirty session, does not increment the
 materialized handoff count, does not update `last_edit_error()`, and leaves

@@ -3523,7 +3523,11 @@ Clean matching-option reacquire after that safe save now has a renamed
 no-op-save check too: a second `save_as()` keeps both borrowed handles clean,
 preserves the rename-only summary and empty planned-name materialized
 diagnostics, and writes decompressed package entries matching the first renamed
-output before any later real mutation.
+output before any later real mutation. Mismatched `WorksheetEditorOptions`
+against that clean saved/reacquired renamed session now follows the same
+no-op-save boundary: planned-name access rejections keep diagnostics clear,
+leave handles and summaries clean, and a later no-op output still matches the
+prior renamed no-op package entries.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

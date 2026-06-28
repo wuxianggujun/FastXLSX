@@ -475,6 +475,12 @@ block the later safe save.
 Missing-sheet and old-source-name lookups now share that boundary: optional
 queries stay empty, throwing lookups fail, source formula scans remain on the
 original source XML tokens, and the dirty shifted session can still be saved.
+Mismatched options on the clean saved/reacquired session now round out the
+query-preflight family: rejected planned-name access with incompatible
+`WorksheetEditorOptions` leaves both handles clean, keeps `last_edit_error()`
+clear and materialized diagnostics empty, preserves source/materialized audits,
+and a later valid `set_cell()` still re-dirties then saves/reopens with the
+shifted formula, recovered text, `fullCalcOnLoad="1"`, and no calcChain.
 Invalid read preflights now follow the same rule: row-zero reads,
 column-overflow A1 reads, and reversed range reads fail without replacing the
 source scan or dirty materialized diagnostics.

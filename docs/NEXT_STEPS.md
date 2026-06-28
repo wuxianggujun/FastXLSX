@@ -3657,6 +3657,11 @@ The invalid-read retry branch has matching evidence: after the same
 missing-cell value-clear cleanup and failed-save recovery, invalid
 row/column/A1/range reads leave reacquired sessions clean before the next
 scoped mutation/save.
+The invalid-mutation retry branch now completes that retry set: after the same
+missing-cell value-clear cleanup and failed-save recovery, rejected coordinate
+and A1 mutations leave reacquired sessions clean, preserve diagnostics across a
+failed source-overwrite retry, and still allow the next valid scoped
+mutation/save.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

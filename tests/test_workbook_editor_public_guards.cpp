@@ -5540,6 +5540,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
         fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched", options);
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
+        const std::size_t initial_data_cell_count = data.cell_count();
+        const std::size_t initial_data_memory = data.estimated_memory_usage();
+        const std::size_t initial_untouched_cell_count = untouched.cell_count();
+        const std::size_t initial_untouched_memory = untouched.estimated_memory_usage();
+        check(!data.try_cell(5, 5).has_value(),
+            "read-only two-clean clear invalid-mutation retry setup should use a missing Data clear target");
 
         (void)check_public_same_sheet_guard_failure(
             editor,
@@ -5550,7 +5556,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             },
             PublicMaterializedGuardDiagnostic::ReplaceSheetData,
             "read-only two-clean invalid-mutation retry setup");
-        data.erase_cell(5, 5);
+        data.clear_cell_value(5, 5);
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear invalid-mutation retry no-op should clear diagnostic");
+        check_public_two_clean_preserved_clean_handles_state(
+            editor, data, untouched, initial_data_cell_count, initial_data_memory,
+            initial_untouched_cell_count, initial_untouched_memory, 0, true,
+            "read-only two-clean clear invalid-mutation retry no-op");
         data.set_cell(1, 1,
             fastxlsx::CellValue::text("readonly-two-clean-invalid-mutation-retry-data"));
         untouched.set_cell(1, 1,
@@ -5658,6 +5670,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             check_public_two_clean_retry_two_handle_save_state(
                 editor, data, untouched, 2,
                 "saved-clean two-clean invalid-mutation retry setup");
+        const std::size_t initial_data_cell_count = data.cell_count();
+        const std::size_t initial_data_memory = data.estimated_memory_usage();
+        const std::size_t initial_untouched_cell_count = untouched.cell_count();
+        const std::size_t initial_untouched_memory = untouched.estimated_memory_usage();
+        check(!data.try_cell("E5").has_value(),
+            "saved-clean two-clean clear invalid-mutation retry setup should use a missing Data A1 clear target");
 
         (void)check_public_same_sheet_guard_failure(
             editor,
@@ -5666,6 +5684,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_invalid_mutations_
             },
             PublicMaterializedGuardDiagnostic::RenameSheet,
             "saved-clean two-clean invalid-mutation retry setup");
+        data.clear_cell_value("E5");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear invalid-mutation retry no-op should clear diagnostic");
+        check_public_two_clean_preserved_clean_handles_state(
+            editor, data, untouched, initial_data_cell_count, initial_data_memory,
+            initial_untouched_cell_count, initial_untouched_memory, saved_pending_count, false,
+            "saved-clean two-clean clear invalid-mutation retry no-op");
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("saved-clean-two-clean-invalid-mutation-retry-data-recovered"));
         untouched.set_cell(2, 2,

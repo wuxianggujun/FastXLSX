@@ -106,6 +106,11 @@ and outside-coordinate sparse cells.
 The `contains_cell()` inspection path now also saves and reopens the dirty
 projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.
+The handle-level read-only inspection coverage now also snapshots source names,
+planned names, and the full worksheet catalog around `used_range()`,
+`contains_cell()`, `row_cells()`, `column_cells()`, and invalid
+`sparse_cells()` range reads after a prior mutation diagnostic, pinning that
+these inspections do not mutate workbook catalog views.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

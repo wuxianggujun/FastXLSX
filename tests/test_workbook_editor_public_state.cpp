@@ -4306,10 +4306,14 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     const std::optional<std::string> prior_error = editor.last_edit_error();
     check(prior_error.has_value(),
         "invalid mutation should populate last_edit_error before used_range inspection");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_used_range =
+        workbook_editor_public_catalog_snapshot(editor);
     check_cell_range_equals(sheet.used_range(), 1, 1, 1, 2,
         "used_range should remain available after a failed mutation");
     check(editor.last_edit_error() == prior_error,
         "used_range should preserve prior last_edit_error diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_used_range,
+        "used_range inspection after failed mutation");
 
     sheet.erase_cells(fastxlsx::CellRange {1, 1, 1, 2});
     check(!editor.last_edit_error().has_value(),
@@ -4320,10 +4324,14 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     const std::optional<std::string> empty_prior_error = editor.last_edit_error();
     check(empty_prior_error.has_value(),
         "invalid mutation should populate last_edit_error before empty used_range inspection");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_empty_used_range =
+        workbook_editor_public_catalog_snapshot(editor);
     check(!sheet.used_range().has_value(),
         "used_range should return nullopt for an empty materialized sparse store");
     check(editor.last_edit_error() == empty_prior_error,
         "used_range empty-store inspection should preserve prior diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_empty_used_range,
+        "empty used_range inspection after failed mutation");
 
     editor.save_as(output);
     check(editor.last_edit_error() == empty_prior_error,
@@ -4398,15 +4406,21 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
     const std::optional<std::string> prior_error = editor.last_edit_error();
     check(prior_error.has_value(),
         "invalid mutation should populate last_edit_error before contains_cell inspection");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_contains_cell =
+        workbook_editor_public_catalog_snapshot(editor);
     check(sheet.contains_cell("D4"),
         "contains_cell should remain available after a failed mutation");
     check(!sheet.contains_cell(2, 1),
         "contains_cell should keep erased cells missing after a failed mutation");
     check(editor.last_edit_error() == prior_error,
         "contains_cell should preserve prior last_edit_error diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_contains_cell,
+        "contains_cell inspection after failed mutation");
 
     const std::size_t cell_count_before_invalid_reads = sheet.cell_count();
     const std::size_t memory_before_invalid_reads = sheet.estimated_memory_usage();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_contains_cell =
+        workbook_editor_public_catalog_snapshot(editor);
     check(threw_fastxlsx_error([&] { (void)sheet.contains_cell(0, 1); }),
         "contains_cell(row, column) should reject row zero");
     check(threw_fastxlsx_error([&] { (void)sheet.contains_cell(1, 16385); }),
@@ -4417,6 +4431,8 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
         "contains_cell(A1) should reject ranges");
     check(editor.last_edit_error() == prior_error,
         "invalid contains_cell reads should not replace last_edit_error diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_contains_cell,
+        "invalid contains_cell reads");
     check(sheet.cell_count() == cell_count_before_invalid_reads,
         "invalid contains_cell reads should not mutate sparse store state");
     check(sheet.estimated_memory_usage() == memory_before_invalid_reads,
@@ -4608,6 +4624,8 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
     const std::optional<std::string> prior_error = editor.last_edit_error();
     check(prior_error.has_value(),
         "invalid coordinate mutation should record a prior diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_row_column_reads =
+        workbook_editor_public_catalog_snapshot(editor);
 
     check(threw_fastxlsx_error([&] { (void)sheet.row_cells(0); }),
         "row_cells should reject zero row reads");
@@ -4632,6 +4650,8 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
         "valid missing column_cells reads should return an empty snapshot");
     check(editor.last_edit_error() == prior_error,
         "valid row_cells and column_cells reads should also preserve prior diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_row_column_reads,
+        "row_cells and column_cells invalid reads");
 
     check(!sheet.has_pending_changes(),
         "row_cells and column_cells read failures should not dirty the materialized sheet");
@@ -4704,6 +4724,8 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
         check_contains(*prior_error, "WorksheetEditor cell coordinate is invalid",
             "prior diagnostic should be the seeded invalid coordinate failure");
     }
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_sparse_reads =
+        workbook_editor_public_catalog_snapshot(editor);
 
     check(!sheet.has_pending_changes(),
         "seeded invalid coordinate mutation should not dirty the materialized sheet");
@@ -4759,6 +4781,8 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
     const std::vector<fastxlsx::WorksheetCellSnapshot> cells_after = sheet.sparse_cells();
     check(editor.last_edit_error() == prior_error,
         "valid sparse_cells inspection after invalid ranges should still preserve prior diagnostic");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_sparse_reads,
+        "invalid range sparse_cells reads");
     check_source_snapshot(cells_after, "post-invalid-range sparse snapshot");
 
     editor.save_as(output);

@@ -3499,6 +3499,10 @@ Rejected source-overwrite saves are pinned on that path too: `save_as(source)`
 fails before flushing the renamed dirty materialized session, preserves the
 combined summary and planned dirty diagnostics, leaves the source workbook bytes
 unchanged, and does not block the later safe output save.
+Mismatched `WorksheetEditorOptions` preflights now follow the same boundary:
+planned-name `try_worksheet()` / `worksheet()` rejections leave diagnostics
+clear, keep the combined rename/materialized summary and dirty aggregates
+unchanged, and allow the later safe save to flush the existing handoff.
 Rejected `save_as()` preflight keeps that combined state intact: source-overwrite
 rejection does not flush the renamed dirty session, does not increment the
 materialized handoff count, does not update `last_edit_error()`, and leaves

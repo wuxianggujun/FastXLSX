@@ -39791,6 +39791,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.950 - Pin whole-store clear renamed option mismatch state
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove mismatched `WorksheetEditorOptions` access does not flush or corrupt
+  the renamed no-argument `clear_cell_values()` exact-budget dirty session.
+
+Output:
+- Extended the renamed whole-store value-clear summary regression to reject
+  planned-name `try_worksheet()` and `worksheet()` calls with mismatched
+  options while the materialized session is dirty.
+- The regression verifies option mismatch preflights keep `last_edit_error()`
+  clear, preserve the combined rename/materialized summary, planned dirty
+  materialized name, dirty sparse count, dirty handle contents, and
+  pending-change count.
+- The later safe `save_as(output)` path remains unchanged and still flushes the
+  existing materialized handoff.
+
+Non-goals:
+- No option migration, relaxed guardrails, session cloning, transaction
+  rollback, rename-aware formula repair, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

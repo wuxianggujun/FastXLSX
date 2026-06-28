@@ -9846,6 +9846,32 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_not_contains(source_after_rejected_save_worksheet_xml, "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary rejected save should not leak dirty D4 to source");
 
+    fastxlsx::WorksheetEditorOptions mismatched_options = options;
+    mismatched_options.max_cells = 2;
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("RenamedClearAll", mismatched_options);
+    }), "clear_cell_values() memory-budget renamed summary option mismatch try_worksheet should reject different options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("RenamedClearAll", mismatched_options);
+    }), "clear_cell_values() memory-budget renamed summary option mismatch worksheet should reject different options");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary option mismatch should keep diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary option mismatch should keep the planned handle dirty");
+    check(editor.pending_change_count() == 1,
+        "clear_cell_values() memory-budget renamed summary option mismatch should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string> {"RenamedClearAll"},
+        "clear_cell_values() memory-budget renamed summary option mismatch should preserve the planned dirty name");
+    check(editor.pending_materialized_cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary option mismatch should preserve dirty sparse count");
+    check(sheet.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary option mismatch should preserve handle sparse count");
+    check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary option mismatch should preserve D4");
+    check_renamed_clear_all_summary(true, 4,
+        "clear_cell_values() memory-budget renamed summary after option mismatch");
+
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary first save should clean the planned handle");

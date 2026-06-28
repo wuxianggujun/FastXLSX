@@ -5888,6 +5888,107 @@ void test_public_worksheet_editor_rename_back_materialized_query_noop_save()
         "rename-back query no-op output should match the first restored-name materialized output");
 }
 
+void test_public_worksheet_editor_rename_back_materialized_missing_erase_noop_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-erase-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-erase-output.xlsx");
+    const std::filesystem::path erase_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-erase-noop.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientData");
+    editor.rename_sheet("TransientData", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-missing-erase-saved"));
+    editor.save_as(output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before =
+        workbook_editor_public_catalog_snapshot(editor);
+    const std::size_t saved_cell_count = reacquired.cell_count();
+    const std::size_t saved_memory = reacquired.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(0, 1,
+            fastxlsx::CellValue::text("rename-back-missing-erase-rejected"));
+    }), "rename-back missing erase setup should reject row-zero mutation");
+    check(editor.last_edit_error().has_value(),
+        "rename-back missing erase setup should record invalid mutation diagnostics");
+
+    reacquired.erase_cell(5, 5);
+    reacquired.erase_cell("D4");
+
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing erase no-op should clear invalid mutation diagnostics");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing erase no-op should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing erase no-op should not add another materialized handoff");
+    check(reacquired.cell_count() == saved_cell_count &&
+            reacquired.estimated_memory_usage() == saved_memory,
+        "rename-back missing erase no-op should preserve sparse count and memory");
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back missing erase no-op should keep missing targets absent");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing erase no-op should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing erase no-op should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing erase no-op should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing erase no-op should keep current summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "rename-back missing erase no-op");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back missing erase no-op");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-missing-erase-saved",
+        "rename-back missing erase no-op");
+
+    editor.save_as(erase_no_op_output);
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing erase no-op save should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing erase no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing erase no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing erase no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing erase no-op save should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing erase no-op save should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing erase no-op save should keep current summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back missing erase no-op save");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back missing erase output should use the restored source name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back missing erase output should not leak the transient planned name");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-saved",
+        "rename-back missing erase output should contain the saved materialized edit");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-rejected",
+        "rename-back missing erase output should not leak rejected payloads");
+
+    const auto erase_no_op_entries =
+        fastxlsx::test::read_zip_entries(erase_no_op_output);
+    check(erase_no_op_entries == output_entries,
+        "rename-back missing erase no-op output should match the first restored-name materialized output");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -5939,6 +6040,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_materialized_diagnostics_use_source_name();
             test_public_worksheet_editor_rename_back_materialized_lookup_noop_save();
             test_public_worksheet_editor_rename_back_materialized_query_noop_save();
+            test_public_worksheet_editor_rename_back_materialized_missing_erase_noop_save();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

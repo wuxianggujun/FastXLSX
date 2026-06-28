@@ -3570,6 +3570,11 @@ Read-only catalog, pending-diagnostic, and formula-audit queries now have the
 same saved rename-back no-op-save guard: they leave diagnostics clear, preserve
 the restored catalog and empty materialized summaries, and a no-op save still
 matches the first restored-name output.
+Missing-cell erase no-ops cover the diagnostic-cleanup variant: after an
+invalid mutation records `last_edit_error()`, valid row/column and A1
+`erase_cell()` calls against absent cells clear the diagnostic without dirtying
+the clean rename-back session, preserve sparse count/memory, keep missing
+targets absent, and a no-op save still matches the first restored-name output.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

@@ -3653,6 +3653,10 @@ The query-failure retry branch now follows the same pattern: after the
 missing-cell value-clear cleanup and failed-save recovery, catalog/query and
 option-mismatch failures on reacquired sessions leave both handles clean, and a
 follow-up mutation/save still persists only the intended dirty handle.
+The invalid-read retry branch has matching evidence: after the same
+missing-cell value-clear cleanup and failed-save recovery, invalid
+row/column/A1/range reads leave reacquired sessions clean before the next
+scoped mutation/save.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

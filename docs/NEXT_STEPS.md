@@ -3712,6 +3712,12 @@ The invalid-read retry branch has matching evidence: after the same
 missing-cell value-clear cleanup and failed-save recovery, invalid
 row/column/A1/range reads leave reacquired sessions clean before the next
 scoped mutation/save.
+The post-cleanup invalid-mutation branch is pinned too: after that cleanup,
+lookup failures, invalid reads, and no-op retry output, rejected
+row/column/A1/clear mutations only record diagnostics. They keep both handles
+clean, preserve materialized diagnostics and sparse state, keep a no-op save
+byte-equivalent to the retry output, and the later valid mutation clears the
+diagnostic before saving.
 The invalid-mutation retry branch now completes that retry set: after the same
 missing-cell value-clear cleanup and failed-save recovery, rejected coordinate
 and A1 mutations leave reacquired sessions clean, preserve diagnostics across a

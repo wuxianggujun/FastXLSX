@@ -41612,6 +41612,48 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.995 - Pin rename-back missing-clear retry cleanup invalid mutations
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid mutation preflights after the rename-back missing-clear
+  failed-save retry cleanup do not dirty or otherwise re-pollute the clean
+  restored materialized session.
+
+Output:
+- Extended the public retry cleanup regression so, after retry-side invalid
+  mutation diagnostics are cleared by missing-cell `clear_cell_value()` no-ops,
+  lookup failures are rejected cleanly, invalid reads leave diagnostics clear,
+  and a no-op save matches the retry output, rejected row/column/A1/clear
+  mutations fail.
+- Those invalid mutations record `last_edit_error()` while preserving clean
+  handles, pending handoff count, materialized diagnostics, summaries,
+  catalog, saved/recovered values, sparse count/memory, and missing target
+  absence.
+- A following no-op `save_as()` preserves the diagnostic and still writes bytes
+  equivalent to the retry output, while the existing matching reacquire plus
+  follow-up mutation/save clears that diagnostic and remains valid.
+
+Non-goals:
+- No coordinate repair or clamping, tombstones, dense clear semantics,
+  missing-cell synthesis, source-name fallback, session cloning,
+  source-package mutation, transactional undo/redo, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

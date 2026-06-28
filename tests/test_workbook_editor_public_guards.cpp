@@ -2966,6 +2966,79 @@ void test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_invali
         "guard invalid-read-after-mutation rejected set_cell payload should not leak into output");
 }
 
+void test_public_worksheet_editor_same_sheet_guard_empty_batch_noops_clear_diagnostic()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-guard-empty-batch-noops-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-guard-empty-batch-noops-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = data.get_cell("A1");
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "guard empty-batch no-op setup should materialize Data from source");
+    check(!data.has_pending_changes(),
+        "guard empty-batch no-op setup should keep Data clean");
+
+    const std::size_t data_cell_count = data.cell_count();
+    const std::size_t data_memory = data.estimated_memory_usage();
+
+    (void)check_public_same_sheet_guard_failure(
+        editor,
+        [&] {
+            editor.replace_sheet_data("Data",
+                {{fastxlsx::CellValue::text("guard-empty-batch-noop-blocked")}});
+        },
+        PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+        "guard empty-batch no-op same-sheet replacement");
+
+    data.set_cells(std::span<const fastxlsx::WorksheetCellUpdate>());
+    data.append_row(std::span<const fastxlsx::CellValue>());
+    data.set_cell_values(std::span<const fastxlsx::WorksheetCellUpdate>());
+    data.set_row_values(5, std::span<const fastxlsx::CellValue>());
+    data.set_column_values(5, std::span<const fastxlsx::CellValue>());
+    data.clear_cell_values(std::span<const fastxlsx::WorksheetCellReference>());
+    data.erase_cells(std::span<const fastxlsx::WorksheetCellReference>());
+
+    check(!editor.last_edit_error().has_value(),
+        "guard empty-batch no-ops should clear the same-sheet diagnostic");
+    check(!data.has_pending_changes(),
+        "guard empty-batch no-ops should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "guard empty-batch no-ops should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "guard empty-batch no-ops should not queue public edits");
+    check(editor.pending_worksheet_edits().empty(),
+        "guard empty-batch no-ops should keep pending summaries empty");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "guard empty-batch no-ops should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "guard empty-batch no-ops should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "guard empty-batch no-ops should keep dirty materialized memory empty");
+    check_public_preserved_sheet_diagnostics(
+        data, data_cell_count, data_memory, "Data",
+        "guard empty-batch no-ops");
+    check(!data.try_cell(5, 5).has_value(),
+        "guard empty-batch no-ops should not synthesize missing cells");
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+
+    editor.save_as(output);
+    check(!editor.last_edit_error().has_value(),
+        "guard empty-batch no-op save_as should keep diagnostics clear");
+    check(!data.has_pending_changes(),
+        "guard empty-batch no-op save_as should keep Data clean");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "guard empty-batch no-op output should remain copy-original");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "guard-empty-batch-noop-blocked",
+        "guard empty-batch no-op rejected replacement should not leak into output");
+}
+
 void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic()
 {
     {
@@ -4738,6 +4811,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_diagnostic();
             test_public_worksheet_editor_same_sheet_guard_invalid_mutations_replace_diagnostic();
             test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_invalid_mutation_diagnostic();
+            test_public_worksheet_editor_same_sheet_guard_empty_batch_noops_clear_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clears_diagnostic();

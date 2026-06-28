@@ -3602,6 +3602,12 @@ contract pinned: row/column/A1/range/row snapshot/column snapshot failures still
 do not replace `last_edit_error()`, so the invalid-mutation diagnostic survives
 through inspection, no dirty materialized diagnostics appear, and the later
 copy-original no-op save continues to exclude both rejected payloads.
+Empty-batch mutation no-ops now cover the successful cleanup side of the same
+guard path: empty `set_cells()`, `append_row()`, `set_cell_values()`,
+`set_row_values()`, `set_column_values()`, coordinate-batch
+`clear_cell_values()`, and coordinate-batch `erase_cells()` clear the guard
+diagnostic, keep sparse diagnostics unchanged, avoid synthesizing missing cells,
+and still save as a copy-original package.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

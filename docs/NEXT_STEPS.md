@@ -287,6 +287,11 @@ Missing worksheet lookups now cover the same state hygiene: empty
 full-calculation dirty formula session, source/materialized audits, catalog
 state, materialized diagnostics, and later save-as output, without source-name
 fallback or aliasing.
+Invalid `WorksheetEditor` reads now have the same renamed full-calculation audit
+hygiene: row-zero, column-zero, lowercase-A1, overflow, reversed-range,
+invalid-batch, and missing-cell reads preserve the dirty shifted formula,
+source/materialized audits, catalog state, materialized diagnostics, and later
+save-as output, without coordinate repair, relaxed parsing, or session cloning.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

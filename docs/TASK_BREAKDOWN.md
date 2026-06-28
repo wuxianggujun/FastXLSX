@@ -38844,6 +38844,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.926 - Pin value-prefix memory-budget recovery save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorksheetEditor::set_row_values()` and `set_column_values()` can
+recover in the same exact-memory-budget session after a rejected oversized
+value-prefix payload.
+
+Output:
+- Extended the public-state value-prefix memory-budget regressions with
+  in-budget recovery writes after the rejected oversized payloads.
+- The regressions verify the recovery clears `last_edit_error()`, dirties the
+  editor/session, stays within the exact sparse-store estimate, preserves
+  prefix tails and non-target cells, and saves/reopens the recovered values
+  without leaking rejected payloads.
+- Updated API / next-step / task breakdown documentation to record the
+  value-prefix memory-budget recovery-save boundary.
+
+Non-goals / boundary:
+- No memory-budget auto-sizing, no process-RSS accounting, no style migration,
+  no sharedStrings migration, no row/column metadata synchronization, no
+  formula repair or evaluation, no calcChain rebuild, no rollback history, and
+  no low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

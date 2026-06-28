@@ -1170,6 +1170,9 @@ The value-prefix variants now mirror that exact-memory-budget path:
 oversized `set_row_values()` / `set_column_values()` payloads fail before
 replacing the first target, preserving prefix/tail cells, sparse counts, memory
 estimates, dirty state, and the memory-budget diagnostic.
+They now also recover in the same exact-budget session: a smaller prefix write
+clears the diagnostic, stays within the sparse-store estimate, saves cleanly,
+reopens with preserved tails, and keeps the rejected payload absent.
 `WorksheetEditor::set_row_values()` and `set_column_values()` now cover the
 style-preserving row/column prefix write convenience for small files: they write
 input values to columns 1..N or rows 1..N, preserve source styles on overwritten

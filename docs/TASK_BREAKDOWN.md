@@ -41693,6 +41693,44 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.997 - Pin rename-back cleanup matching reacquire hygiene
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove a matching-option reacquire after the P8.996 diagnostic cleanup remains
+  read-only and does not re-pollute the restored materialized session before
+  the follow-up mutation.
+
+Output:
+- Extended the public retry cleanup regression so, after late invalid-mutation
+  diagnostics are cleared and a no-op save matches the retry output, a fresh
+  `worksheet("Data")` with matching options reads the saved/recovered values
+  from a clean session.
+- The reacquire preserves clear diagnostics, clean existing handles, pending
+  handoff count, materialized diagnostics, summaries, catalog, sparse
+  count/memory, and missing target absence.
+- A following no-op `save_as()` still writes bytes equivalent to the retry
+  output before the existing valid follow-up mutation/save.
+
+Non-goals:
+- No session cloning, source-name fallback, transient-name aliasing,
+  source-package mutation, transactional undo/redo, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

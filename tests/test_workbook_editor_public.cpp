@@ -7547,6 +7547,8 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-cleanup-invalid-mutation-noop.xlsx");
     const std::filesystem::path cleanup_invalid_mutation_clear_no_op_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-cleanup-invalid-mutation-clear-noop.xlsx");
+    const std::filesystem::path cleanup_matching_reacquire_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-cleanup-matching-reacquire-noop.xlsx");
     const std::filesystem::path followup_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-cleanup-followup.xlsx");
 
@@ -7887,6 +7889,41 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_
         "rename-back missing clear cleanup matching reacquire should stay clean");
     check(editor.pending_change_count() == 4,
         "rename-back missing clear cleanup matching reacquire should not add a handoff");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear cleanup matching reacquire should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear cleanup matching reacquire should keep existing handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear cleanup matching reacquire should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear cleanup matching reacquire should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear cleanup matching reacquire should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear cleanup matching reacquire should keep summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_after_retry, "rename-back missing clear cleanup matching reacquire");
+    check(matching.cell_count() == saved_cell_count &&
+            matching.estimated_memory_usage() == saved_memory,
+        "rename-back missing clear cleanup matching reacquire should preserve sparse diagnostics");
+    check(!matching.try_cell(5, 5).has_value() &&
+            !matching.try_cell("D4").has_value() &&
+            !matching.try_cell(6, 6).has_value() &&
+            !matching.try_cell("E4").has_value(),
+        "rename-back missing clear cleanup matching reacquire should keep missing targets absent");
+
+    editor.save_as(cleanup_matching_reacquire_no_op_output);
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear cleanup matching reacquire no-op save should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "rename-back missing clear cleanup matching reacquire no-op save should keep handles clean");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear cleanup matching reacquire no-op save should not add a handoff");
+    const auto cleanup_matching_reacquire_no_op_entries =
+        fastxlsx::test::read_zip_entries(cleanup_matching_reacquire_no_op_output);
+    check(cleanup_matching_reacquire_no_op_entries == retry_entries,
+        "rename-back missing clear cleanup matching reacquire no-op output should match retry output");
 
     matching.set_cell(3, 3,
         fastxlsx::CellValue::text("rename-back-missing-clear-cleanup-followup"));

@@ -3503,6 +3503,11 @@ Mismatched `WorksheetEditorOptions` preflights now follow the same boundary:
 planned-name `try_worksheet()` / `worksheet()` rejections leave diagnostics
 clear, keep the combined rename/materialized summary and dirty aggregates
 unchanged, and allow the later safe save to flush the existing handoff.
+Missing-sheet and old source-name lookups now pin the adjacent preflight path:
+empty optional lookups and throwing `worksheet()` failures for `Missing` and
+the old `Data` source name keep diagnostics clear, preserve the dirty
+planned-name materialized session, and still allow the later safe save to flush
+the existing handoff.
 Rejected `save_as()` preflight keeps that combined state intact: source-overwrite
 rejection does not flush the renamed dirty session, does not increment the
 materialized handoff count, does not update `last_edit_error()`, and leaves

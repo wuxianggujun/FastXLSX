@@ -9872,6 +9872,38 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after option mismatch");
 
+    const std::optional<fastxlsx::WorksheetEditor> missing_lookup =
+        editor.try_worksheet("Missing", options);
+    check(!missing_lookup.has_value(),
+        "clear_cell_values() memory-budget renamed summary missing lookup should return empty optional");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), "clear_cell_values() memory-budget renamed summary missing worksheet should throw");
+    const std::optional<fastxlsx::WorksheetEditor> old_source_name_lookup =
+        editor.try_worksheet("Data", options);
+    check(!old_source_name_lookup.has_value(),
+        "clear_cell_values() memory-budget renamed summary old source lookup should return empty optional");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", options);
+    }), "clear_cell_values() memory-budget renamed summary old source worksheet should throw");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary missing lookup should keep diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary missing lookup should keep the planned handle dirty");
+    check(editor.pending_change_count() == 1,
+        "clear_cell_values() memory-budget renamed summary missing lookup should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string> {"RenamedClearAll"},
+        "clear_cell_values() memory-budget renamed summary missing lookup should preserve the planned dirty name");
+    check(editor.pending_materialized_cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary missing lookup should preserve dirty sparse count");
+    check(sheet.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary missing lookup should preserve handle sparse count");
+    check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary missing lookup should preserve D4");
+    check_renamed_clear_all_summary(true, 4,
+        "clear_cell_values() memory-budget renamed summary after missing/source-name lookup");
+
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary first save should clean the planned handle");

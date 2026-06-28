@@ -3628,6 +3628,11 @@ That scalar value-clear cleanup does not bypass the same-sheet guard: a later
 same-sheet `rename_sheet()` or `replace_sheet_data()` still fails after the
 no-op clear, keeps the materialized handle clean, preserves sparse diagnostics,
 and leaves the no-op save free of both rejected Patch payloads.
+The same scalar value-clear no-op is now pinned across two clean materialized
+handles: clearing a `Data` diagnostic through missing-cell value-clear does not
+dirty `Data`, does not dirty `Untouched`, and a later `Untouched` same-sheet
+guard failure reports `Untouched` context while output remains copy-original or
+first-saved.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

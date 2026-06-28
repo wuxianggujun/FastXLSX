@@ -40861,6 +40861,44 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.977 - Pin two-clean guard isolation after missing-cell clear no-op
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove single missing-cell `clear_cell_value()` no-op recovery on one clean
+  materialized handle does not pollute another clean handle's same-sheet Patch
+  guard or dirty-state accounting.
+
+Output:
+- Added a `public-guards` regression with clean materialized `Data` and
+  `Untouched` handles. `Data` first rejects same-sheet Patch, then a missing
+  `Data.clear_cell_value()` no-op clears that diagnostic.
+- The regression verifies the `Data` no-op clear keeps both handles clean,
+  preserves both sparse count/memory estimates, and a later same-sheet
+  `replace_sheet_data("Untouched", ...)` still fails with `Untouched` context.
+- Read-only output remains copy-original, and saved-clean output matches the
+  first saved workbook without leaking rejected `Data` or `Untouched` payloads
+  or adding materialized handoffs.
+
+Non-goals:
+- No cross-sheet Patch/materialized composition, shared session transaction
+  model, guard bypass, conflict resolution, rollback, metadata repair,
+  calcChain rebuild, sharedStrings/styles migration, or low-memory large-file
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

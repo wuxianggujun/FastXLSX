@@ -18014,6 +18014,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         }), "invalid mutation should seed last_edit_error before shift zero-count no-op");
         check(editor.last_edit_error().has_value(),
             "invalid mutation should populate last_edit_error before shift zero-count no-op");
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_zero_count_noops =
+            workbook_editor_public_catalog_snapshot(editor);
 
         sheet.insert_rows(2, 0);
         sheet.delete_rows(2, 0);
@@ -18025,6 +18027,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "zero-count row/column shifts should not dirty a clean materialized worksheet");
         check(sheet.cell_count() == 3,
             "zero-count row/column shifts should preserve sparse cell count");
+        check_workbook_editor_public_catalog_preserved(editor, catalog_before_zero_count_noops,
+            "zero-count row/column shifts");
     }
 
     {
@@ -18040,6 +18044,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         }), "invalid mutation should seed last_edit_error before shift nonzero no-op");
         check(editor.last_edit_error().has_value(),
             "invalid mutation should populate last_edit_error before shift nonzero no-op");
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_nonzero_noops =
+            workbook_editor_public_catalog_snapshot(editor);
 
         sheet.insert_rows(10, 1);
         sheet.insert_columns(10, 1);
@@ -18055,6 +18061,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "nonzero row/column shift no-ops should not contribute pending materialized cells");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "nonzero row/column shift no-ops should preserve source-backed cells");
+        check_workbook_editor_public_catalog_preserved(editor, catalog_before_nonzero_noops,
+            "nonzero row/column shift no-ops");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -18070,6 +18078,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_validation_failures =
+            workbook_editor_public_catalog_snapshot(editor);
 
         bool invalid_row_failed = false;
         try {
@@ -18131,6 +18141,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "delete_columns invalid-count failure should preserve source cells");
         check(editor.pending_materialized_cell_count() == 0,
             "shift validation failures should not contribute pending materialized cells");
+        check_workbook_editor_public_catalog_preserved(editor, catalog_before_validation_failures,
+            "shift validation failures");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -18148,6 +18160,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         sheet.set_cell(1048576, 1, fastxlsx::CellValue::text("row-edge"));
         const std::size_t dirty_count = sheet.cell_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_row_overflow =
+            workbook_editor_public_catalog_snapshot(editor);
         bool row_overflow_failed = false;
         try {
             sheet.insert_rows(1, 1);
@@ -18166,6 +18180,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows overflow failure should not shift earlier cells");
         check(sheet.has_pending_changes(),
             "insert_rows overflow failure should preserve prior dirty state");
+        check_workbook_editor_public_catalog_preserved(editor, catalog_before_row_overflow,
+            "insert_rows overflow failure");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -18213,6 +18229,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         sheet.set_cell(1, 16384, fastxlsx::CellValue::text("column-edge"));
         const std::size_t dirty_count = sheet.cell_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_column_overflow =
+            workbook_editor_public_catalog_snapshot(editor);
         bool column_overflow_failed = false;
         try {
             sheet.insert_columns(1, 1);
@@ -18231,6 +18249,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_columns overflow failure should not shift earlier cells");
         check(sheet.has_pending_changes(),
             "insert_columns overflow failure should preserve prior dirty state");
+        check_workbook_editor_public_catalog_preserved(editor, catalog_before_column_overflow,
+            "insert_columns overflow failure");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);

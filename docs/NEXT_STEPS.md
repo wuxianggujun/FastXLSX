@@ -118,6 +118,9 @@ The non-renamed shift reacquire failure paths now mirror the renamed-session
 coverage by preserving source names, planned names, and worksheet catalog
 entries across option mismatch, missing-query, invalid-read, and
 invalid-mutation checks after the first saved row/column shift.
+Row/column shift guard coverage now also preserves workbook catalog views
+around zero-count shifts, nonzero no-op shifts outside represented sparse
+records, validation failures, and row/column overflow failures.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -8904,6 +8904,43 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget recovery should omit cleared non-target text");
     check_not_contains(worksheet_xml, "clear-all-memory-rejected",
         "rejected memory-budget insertion before clear_cell_values() should not leak");
+    check(!sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget release save_as should clear the materialized handle dirty state");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release save_as should clear dirty materialized cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release save_as should clear dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release save_as should clear dirty materialized summaries");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    check(!reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release matching-option reacquire should be clean");
+    check(reacquired.cell_count() == 10,
+        "clear_cell_values() memory-budget release matching-option reacquire should keep sparse count");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget release matching-option reacquire should keep bounds");
+    const fastxlsx::CellValue reacquired_a1 = reacquired.get_cell("A1");
+    check(reacquired_a1.kind() == fastxlsx::CellValueKind::Blank,
+        "clear_cell_values() memory-budget release matching-option reacquire should keep A1 blank");
+    const fastxlsx::CellValue reacquired_c3 = reacquired.get_cell("C3");
+    check(reacquired_c3.kind() == fastxlsx::CellValueKind::Blank,
+        "clear_cell_values() memory-budget release matching-option reacquire should keep C3 blank");
+    const fastxlsx::CellValue reacquired_d4 = reacquired.get_cell("D4");
+    check(reacquired_d4.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_d4.text_value() == "clear-all-mb-release",
+        "clear_cell_values() memory-budget release matching-option reacquire should read D4");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release matching-option reacquire should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release matching-option reacquire should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release matching-option reacquire should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release matching-option reacquire should not dirty summaries");
+
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

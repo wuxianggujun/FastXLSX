@@ -39228,6 +39228,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.936 - Pin whole-store clear post-save reacquire state
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a saved no-argument `WorksheetEditor::clear_cell_values()`
+exact-memory-budget session clears dirty materialized diagnostics and can be
+reacquired with matching options as a clean saved materialized session.
+
+Output:
+- Extended the whole-store `clear_cell_values()` exact-budget public-state
+  regression after `save_as()` to assert the original handle is clean and the
+  owning editor has no dirty materialized names, counts, memory, or summaries.
+- Added same-options `worksheet("Data", options)` reacquire assertions that
+  reuse the saved blank records plus recovery cell without dirtying the editor
+  again.
+- Updated API / editing-model / next-step / task breakdown documentation to
+  record the post-save clean/reacquire state boundary.
+
+Non-goals / boundary:
+- No option migration, no session cloning, no clean-session commit semantics,
+  no memory-budget auto-sizing, no process-RSS accounting, no transaction
+  history, no formula repair or evaluation, no calcChain rebuild, no
+  sharedStrings/styles migration, and no low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

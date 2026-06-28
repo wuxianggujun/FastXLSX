@@ -1150,7 +1150,11 @@ and save/reopen a later recovery cell inside the same exact budget.
 No-argument `clear_cell_values()` now completes the value-clear exact-budget
 family: it clears all represented values to explicit blanks, releases all value
 payload estimates, and still saves/reopens a later recovery cell without
-dropping the blank sparse records.
+dropping the blank sparse records. The same exact-budget save path now also
+checks post-save state hygiene on the live editor: dirty materialized names,
+cell counts, memory, and summaries are cleared, and a same-options
+`worksheet()` reacquire is clean while reading the saved blank records plus the
+recovery cell.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

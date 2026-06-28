@@ -37,6 +37,9 @@ In-memory `WorksheetEditor` 首片：`worksheet()` / `try_worksheet()` 返回 bo
 handle，支持 source-backed `try_cell()` / `get_cell()`、`set_cell()`、`erase_cell()`、
 strict uppercase A1 overload、sparse snapshot、dirty-state inspection 和
 represented sparse row/column shift helpers，以及 `save_as()` auto-flush。
+这些 sparse / row / column snapshots 是 owning read-only views；same-sheet Patch guard
+失败后继续读取它们只保留诊断和 no-op-save 状态，不作为 session commit、rollback 或
+guard bypass。
 这些 shift helpers 只移动或删除已物化 sparse cells；moved formula cells 只通过窄
 A1-style translator 平移自身公式文本，删除或越界引用写成 `#REF!`，并随 moved cell
 保留 source-backed `StyleId`。它们不更新未物化 worksheet formulas、defined names、

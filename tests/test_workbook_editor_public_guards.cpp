@@ -2503,6 +2503,108 @@ void test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagno
     }
 }
 
+void test_public_worksheet_editor_same_sheet_guard_snapshot_reads_preserve_diagnostic()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-guard-snapshot-reads-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-guard-snapshot-reads-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = data.get_cell(1, 1);
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "guard snapshot-read setup should materialize Data from source");
+    check(!data.has_pending_changes(),
+        "guard snapshot-read setup should keep Data clean");
+
+    const std::size_t data_cell_count = data.cell_count();
+    const std::size_t data_memory = data.estimated_memory_usage();
+    const std::vector<fastxlsx::WorksheetCellSnapshot> full_snapshot =
+        data.sparse_cells();
+    const std::vector<fastxlsx::WorksheetCellSnapshot> range_snapshot =
+        data.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    const std::vector<fastxlsx::WorksheetCellSnapshot> a1_snapshot =
+        data.sparse_cells("A1:B2");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        data.row_cells(1);
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+        data.column_cells(1);
+
+    const std::optional<std::string> guard_error =
+        check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("guard-snapshot-read-blocked")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "guard snapshot-read same-sheet replacement");
+
+    const std::vector<fastxlsx::WorksheetCellReference> batch {
+        {1, 1},
+        {2, 1},
+        {5, 5},
+        {1, 1},
+    };
+    const std::vector<fastxlsx::WorksheetCellSnapshot> batch_snapshot =
+        data.sparse_cells(batch);
+
+    check(data.sparse_cells().size() == full_snapshot.size(),
+        "guard snapshot reads should preserve full sparse snapshot size");
+    check(data.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}).size()
+            == range_snapshot.size(),
+        "guard snapshot reads should preserve range sparse snapshot size");
+    check(data.sparse_cells("A1:B2").size() == a1_snapshot.size(),
+        "guard snapshot reads should preserve A1 range snapshot size");
+    check(data.row_cells(1).size() == row_one.size(),
+        "guard snapshot reads should preserve row snapshot size");
+    check(data.column_cells(1).size() == column_one.size(),
+        "guard snapshot reads should preserve column snapshot size");
+    check(batch_snapshot.size() == 3,
+        "guard snapshot reads should return requested existing cells and duplicate references");
+    if (batch_snapshot.size() == 3) {
+        check(batch_snapshot[0].reference.row == 1 && batch_snapshot[0].reference.column == 1 &&
+                batch_snapshot[1].reference.row == 2 && batch_snapshot[1].reference.column == 1 &&
+                batch_snapshot[2].reference.row == 1 && batch_snapshot[2].reference.column == 1,
+            "guard snapshot reads should keep batch source order and duplicates");
+    }
+    check(editor.last_edit_error() == guard_error,
+        "guard snapshot reads should preserve the same-sheet diagnostic");
+    check(!data.has_pending_changes(),
+        "guard snapshot reads should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "guard snapshot reads should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "guard snapshot reads should not queue public edits");
+    check(editor.pending_worksheet_edits().empty(),
+        "guard snapshot reads should keep pending summaries empty");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "guard snapshot reads should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "guard snapshot reads should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "guard snapshot reads should keep dirty materialized memory empty");
+    check_public_preserved_sheet_diagnostics(
+        data, data_cell_count, data_memory, "Data",
+        "guard snapshot reads");
+    check_public_inspection_preserves_last_edit_error(editor, guard_error);
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == guard_error,
+        "guard snapshot-read no-op save_as should preserve the diagnostic");
+    check(!data.has_pending_changes(),
+        "guard snapshot-read no-op save_as should keep Data clean");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "guard snapshot-read no-op output should remain copy-original");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "guard-snapshot-read-blocked",
+        "guard snapshot-read rejected replacement should not leak into output");
+}
+
 void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic()
 {
     {
@@ -4270,6 +4372,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_operations();
             test_public_worksheet_editor_clean_sessions_allow_cross_sheet_patch_operations();
             test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagnostics();
+            test_public_worksheet_editor_same_sheet_guard_snapshot_reads_preserve_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clears_diagnostic();

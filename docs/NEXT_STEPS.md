@@ -281,6 +281,12 @@ full-calculation audit hygiene: rejected matching-name `try_worksheet()` /
 `worksheet()` calls preserve the dirty shifted formula, source/materialized
 formula audits, catalog state, materialized diagnostics, and later save-as
 output, without option migration or session cloning.
+Missing worksheet lookups now cover the same state hygiene: empty
+`try_worksheet("Missing")` / `try_worksheet("Data")` results and throwing
+`worksheet("Missing")` / `worksheet("Data")` failures preserve the renamed
+full-calculation dirty formula session, source/materialized audits, catalog
+state, materialized diagnostics, and later save-as output, without source-name
+fallback or aliasing.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

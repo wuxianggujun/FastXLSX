@@ -3638,6 +3638,12 @@ after a `Data` guard diagnostic is cleared by a missing-cell value-clear no-op,
 `Untouched.set_cell()` remains legal, dirties only `Untouched`, and `save_as()`
 flushes only that current dirty handle while keeping the rejected `Data` Patch
 payload absent.
+The failed-save dirty-handle branch now has matching value-clear coverage:
+after a `Data` guard diagnostic is cleared by a missing-cell
+`clear_cell_value()` no-op, valid `Data` and `Untouched` mutations dirty both
+handles, `save_as(source)` fails before flushing them, and a later safe
+`save_as()` persists both dirty sessions without leaking the rejected `Data`
+Patch payload or rename.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

@@ -40938,6 +40938,46 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.979 - Pin failed-save retry after missing-cell clear no-op
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove single missing-cell `clear_cell_value()` no-op recovery before the
+  two-clean failed-save dirty-handle path preserves clean handles until real
+  mutations occur, and preserves dirty handles across source-overwrite
+  `save_as()` failure.
+
+Output:
+- Added a `public-guards` regression where clean materialized `Data` and
+  `Untouched` handles start read-only or saved-clean, `Data` first rejects
+  same-sheet Patch, then missing-cell `Data.clear_cell_value()` clears that
+  diagnostic without dirtying either handle.
+- The regression verifies later valid `Data.set_cell()` and
+  `Untouched.set_cell()` dirty both handles, materialized aggregates include
+  both dirty sessions, and `save_as(source)` fails before flushing or creating
+  a new `last_edit_error()`.
+- A later safe `save_as()` writes both materialized handoffs, excludes the
+  rejected `Data` replacement / rename, and preserves the saved-clean catalog
+  name.
+
+Non-goals:
+- No cross-handle transaction model, dense clear/write semantics,
+  Patch/materialized composition, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

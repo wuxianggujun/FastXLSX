@@ -4705,6 +4705,158 @@ void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty
     }
 }
 
+void test_public_worksheet_editor_two_clean_noop_clear_failed_save_preserves_dirty_handles()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-clear-failed-save-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-clear-failed-save-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        (void)data.get_cell(1, 1);
+        (void)untouched.get_cell(1, 1);
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        const std::size_t untouched_cell_count = untouched.cell_count();
+        const std::size_t untouched_memory = untouched.estimated_memory_usage();
+        check(!data.try_cell(5, 5).has_value(),
+            "read-only two-clean clear failed-save setup should use a missing Data clear target");
+
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-two-clean-clear-failed-save-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only two-clean clear failed-save setup");
+
+        data.clear_cell_value(5, 5);
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear failed-save no-op should clear the diagnostic");
+        check_public_two_clean_preserved_clean_handles_state(
+            editor, data, untouched, data_cell_count, data_memory,
+            untouched_cell_count, untouched_memory, 0, true,
+            "read-only two-clean clear failed-save no-op");
+
+        data.set_cell(3, 3,
+            fastxlsx::CellValue::text("readonly-two-clean-clear-failed-save-data"));
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("readonly-two-clean-clear-failed-save-untouched"));
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear failed-save mutations should keep diagnostics clear");
+
+        const std::size_t expected_dirty_cells =
+            data.cell_count() + untouched.cell_count();
+        const std::size_t expected_dirty_memory =
+            data.estimated_memory_usage() + untouched.estimated_memory_usage();
+        check_public_two_clean_both_dirty_materialized_state(
+            editor, data, untouched, expected_dirty_cells, expected_dirty_memory, 0,
+            "read-only two-clean clear failed-save dirty handles");
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "read-only two-clean clear save_as over source should fail before dirty flush");
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear failed save_as should not create last_edit_error");
+        check_public_two_clean_both_dirty_materialized_state(
+            editor, data, untouched, expected_dirty_cells, expected_dirty_memory, 0,
+            "read-only two-clean clear failed save_as");
+
+        editor.save_as(output);
+        check_public_two_clean_two_handle_clean_state(
+            editor, data, untouched, 2,
+            "read-only two-clean clear recovery safe save_as");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_public_two_clean_failed_save_readonly_output(
+            output_entries, "readonly-two-clean-clear-failed-save-data",
+            "readonly-two-clean-clear-failed-save-untouched",
+            "readonly-two-clean-clear-failed-save-blocked-data",
+            "read-only two-clean clear recovery safe output");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-clear-failed-save-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-clear-failed-save-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-clear-failed-save-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clean-clear-failed-save-data"));
+        untouched.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clean-clear-failed-save-untouched"));
+        editor.save_as(first_output);
+
+        const std::size_t saved_pending_count =
+            check_public_two_clean_two_handle_clean_state(
+                editor, data, untouched, 2,
+                "saved-clean two-clean clear failed-save setup");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        const std::size_t untouched_cell_count = untouched.cell_count();
+        const std::size_t untouched_memory = untouched.estimated_memory_usage();
+        check(!data.try_cell("E5").has_value(),
+            "saved-clean two-clean clear failed-save setup should use a missing Data A1 clear target");
+
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoCleanClearFailedSaveBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean two-clean clear failed-save setup");
+
+        data.clear_cell_value("E5");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear failed-save no-op should clear the diagnostic");
+        check_public_two_clean_preserved_clean_handles_state(
+            editor, data, untouched, data_cell_count, data_memory,
+            untouched_cell_count, untouched_memory, saved_pending_count, false,
+            "saved-clean two-clean clear failed-save no-op");
+
+        data.set_cell(3, 3,
+            fastxlsx::CellValue::text("saved-clean-two-clean-clear-failed-save-data-recovered"));
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("saved-clean-two-clean-clear-failed-save-untouched-recovered"));
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear failed-save mutations should keep diagnostics clear");
+
+        const std::size_t expected_dirty_cells =
+            data.cell_count() + untouched.cell_count();
+        const std::size_t expected_dirty_memory =
+            data.estimated_memory_usage() + untouched.estimated_memory_usage();
+        check_public_two_clean_both_dirty_materialized_state(
+            editor, data, untouched, expected_dirty_cells, expected_dirty_memory,
+            saved_pending_count, "saved-clean two-clean clear failed-save dirty handles");
+
+        check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+            "saved-clean two-clean clear save_as over source should fail before dirty flush");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear failed save_as should not create last_edit_error");
+        check_public_two_clean_both_dirty_materialized_state(
+            editor, data, untouched, expected_dirty_cells, expected_dirty_memory,
+            saved_pending_count, "saved-clean two-clean clear failed save_as");
+
+        editor.save_as(output);
+        check_public_two_clean_two_handle_clean_state(
+            editor, data, untouched, saved_pending_count + 2,
+            "saved-clean two-clean clear recovery safe save_as");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_public_two_clean_saved_clean_output(
+            output_entries, "SavedCleanTwoCleanClearFailedSaveBlockedData",
+            "saved-clean-two-clean-clear-failed-save-data-recovered",
+            "saved-clean-two-clean-clear-failed-save-untouched-recovered",
+            "saved-clean two-clean clear recovery safe output");
+    }
+}
+
 void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserves_sessions()
 {
     {
@@ -5566,6 +5718,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_other_mutation();
             test_public_worksheet_editor_two_clean_noop_clear_allows_scoped_other_mutation();
             test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty_handles();
+            test_public_worksheet_editor_two_clean_noop_clear_failed_save_preserves_dirty_handles();
             test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserves_sessions();
             test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_sessions();
             test_public_worksheet_editor_two_clean_failed_save_retry_invalid_reads_preserve_sessions();

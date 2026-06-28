@@ -245,6 +245,12 @@ a dirty shifted materialized session and queued full-calculation metadata are
 pending, reporting source `D2` tokens `Data!A1` / `Data!B1` even though the
 materialized save path later writes `D3` as `Data!A2+Data!B2` with
 `fullCalcOnLoad="1"` and no calcChain.
+DefinedName formula audit diagnostics now cover the same full-calculation
+mixing boundary: `defined_name_formula_reference_audits()` remains read-only
+while a dirty materialized `WorksheetEditor` shift and `request_full_calculation()`
+are pending, reports source workbook direct definedName text such as
+`Data!$A$1:$B$2`, and later `save_as()` keeps that definedName unchanged while
+writing the shifted worksheet cell plus `fullCalcOnLoad="1"` without calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

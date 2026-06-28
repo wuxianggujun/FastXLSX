@@ -1200,6 +1200,162 @@ void test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk
         "definedName audit should not silently repair workbook definedNames");
 }
 
+void test_defined_name_formula_reference_audits_preserve_full_calc_materialized_state()
+{
+    const std::filesystem::path source = write_defined_name_reference_source(
+        "fastxlsx-workbook-editor-defined-name-full-calc-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-defined-name-full-calc-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+
+    data.insert_rows(1, 1);
+    editor.request_full_calculation();
+
+    check(data.get_cell("A2").kind() == fastxlsx::CellValueKind::Number &&
+            data.get_cell("A2").number_value() == 1.0 &&
+            !data.try_cell("A1").has_value(),
+        "full-calc definedName audit setup should expose shifted Data source cell");
+    check(editor.pending_change_count() == 1 &&
+            editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 1 &&
+            editor.estimated_pending_materialized_memory_usage() > 0,
+        "full-calc definedName audit setup should keep metadata and materialized diagnostics pending");
+
+    const std::size_t pending_change_count_before_audit = editor.pending_change_count();
+    const bool has_pending_changes_before_audit = editor.has_pending_changes();
+    const std::vector<std::string> pending_replacement_names_before_audit =
+        editor.pending_replacement_worksheet_names();
+    const std::size_t pending_replacement_count_before_audit =
+        editor.pending_replacement_cell_count();
+    const std::size_t pending_replacement_memory_before_audit =
+        editor.estimated_pending_replacement_memory_usage();
+    const std::vector<std::string> pending_materialized_names_before_audit =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t pending_materialized_count_before_audit =
+        editor.pending_materialized_cell_count();
+    const std::size_t pending_materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_audit =
+        editor.pending_worksheet_edits();
+    check(summaries_before_audit.size() == 1,
+        "full-calc definedName audit setup should expose one dirty materialized summary");
+    if (summaries_before_audit.size() == 1) {
+        const fastxlsx::WorkbookEditorWorksheetEditSummary& before =
+            summaries_before_audit.front();
+        check(before.source_name == "Data" &&
+                before.planned_name == "Data" &&
+                !before.renamed &&
+                before.materialized_dirty &&
+                before.materialized_cell_count == 1,
+            "full-calc definedName audit setup should report the dirty Data summary");
+    }
+    const std::vector<std::string> source_names_before_audit =
+        editor.source_worksheet_names();
+    const std::vector<std::string> planned_names_before_audit =
+        editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before_audit =
+        editor.worksheet_catalog();
+    const std::optional<std::string> last_edit_error_before_audit =
+        editor.last_edit_error();
+
+    const std::vector<fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit> audits =
+        editor.defined_name_formula_reference_audits();
+
+    check(editor.pending_change_count() == pending_change_count_before_audit,
+        "full-calc definedName audit should not increment public edit count");
+    check(editor.has_pending_changes() == has_pending_changes_before_audit,
+        "full-calc definedName audit should not change pending-change state");
+    check(editor.pending_replacement_worksheet_names() ==
+            pending_replacement_names_before_audit,
+        "full-calc definedName audit should preserve replacement worksheet names");
+    check(editor.pending_replacement_cell_count() == pending_replacement_count_before_audit,
+        "full-calc definedName audit should preserve replacement cell count");
+    check(editor.estimated_pending_replacement_memory_usage() ==
+            pending_replacement_memory_before_audit,
+        "full-calc definedName audit should preserve replacement memory");
+    check(editor.pending_materialized_worksheet_names() ==
+            pending_materialized_names_before_audit,
+        "full-calc definedName audit should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == pending_materialized_count_before_audit,
+        "full-calc definedName audit should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            pending_materialized_memory_before_audit,
+        "full-calc definedName audit should preserve materialized memory");
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_after_audit =
+        editor.pending_worksheet_edits();
+    check(summaries_after_audit.size() == summaries_before_audit.size(),
+        "full-calc definedName audit should preserve pending edit summary count");
+    if (summaries_after_audit.size() == 1) {
+        const fastxlsx::WorkbookEditorWorksheetEditSummary& after =
+            summaries_after_audit.front();
+        check(after.source_name == "Data" &&
+                after.planned_name == "Data" &&
+                !after.renamed &&
+                after.materialized_dirty &&
+                after.materialized_cell_count == 1,
+            "full-calc definedName audit should preserve dirty Data summary fields");
+    }
+    check(editor.source_worksheet_names() == source_names_before_audit,
+        "full-calc definedName audit should preserve source worksheet names");
+    check(editor.worksheet_names() == planned_names_before_audit,
+        "full-calc definedName audit should preserve planned worksheet names");
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before_audit),
+        "full-calc definedName audit should preserve worksheet catalog");
+    check(editor.last_edit_error() == last_edit_error_before_audit,
+        "full-calc definedName audit should not update last_edit_error");
+    check(audits.size() == 4,
+        "full-calc definedName audit should expose all source definedName references");
+
+    const fastxlsx::WorkbookEditorDefinedNameFormulaReferenceAudit* report =
+        find_defined_name_formula_reference_audit(audits, "ReportRange", "Data");
+    check(report != nullptr,
+        "full-calc definedName audit should include workbook-scope Data reference");
+    if (report != nullptr) {
+        check(report->formula_text == "Data!$A$1:$B$2" &&
+                report->sheet_qualifier_text == "Data!" &&
+                report->reference_text == "$A$1:$B$2" &&
+                report->qualified_reference_text == "Data!$A$1:$B$2",
+            "full-calc definedName audit should report original definedName formula tokens");
+        check(report->matched_current_workbook_sheet &&
+                report->matched_source_sheet_name == "Data" &&
+                report->matched_planned_sheet_name == "Data" &&
+                !report->references_renamed_source_name &&
+                report->references_planned_sheet_name,
+            "full-calc definedName audit should keep the direct Data reference matched");
+    }
+
+    editor.save_as(output);
+
+    check(!data.has_pending_changes(),
+        "full-calc definedName audit save_as should clean the materialized Data sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc definedName audit save_as should count metadata edit plus materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc definedName audit save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "full-calc definedName audit save_as should persist fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc definedName audit save_as should not invent calcChain.xml");
+    check_contains(workbook_xml,
+        R"(<definedName name="ReportRange">Data!$A$1:$B$2</definedName>)",
+        "full-calc definedName audit save_as should preserve direct definedName text");
+    check_not_contains(workbook_xml, "Data!$A$2:$B$3",
+        "full-calc definedName audit save_as should not shift workbook definedNames");
+    check_contains(data_xml, R"(<c r="A2"><v>1</v></c>)",
+        "full-calc definedName audit save_as should write shifted source cell");
+    check_not_contains(data_xml, R"(<c r="A1")",
+        "full-calc definedName audit save_as should omit old source cell coordinate");
+}
+
 void test_rename_sheet_can_rewrite_defined_names_opt_in()
 {
     const std::filesystem::path source = write_defined_name_reference_source(
@@ -2262,6 +2418,7 @@ int main()
         test_source_formula_reference_audits_report_case_varied_default_rename_risk();
         test_source_formula_reference_audits_translate_shared_formula_followers();
         test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
+        test_defined_name_formula_reference_audits_preserve_full_calc_materialized_state();
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();

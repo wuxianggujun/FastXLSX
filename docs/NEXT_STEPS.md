@@ -3566,6 +3566,10 @@ beside it: mismatched `WorksheetEditorOptions`, missing-sheet lookups, and
 transient planned-name lookups leave diagnostics clear, keep both handles clean,
 preserve the restored `Data` catalog, and a no-op save still matches the first
 restored-name output.
+Read-only catalog, pending-diagnostic, and formula-audit queries now have the
+same saved rename-back no-op-save guard: they leave diagnostics clear, preserve
+the restored catalog and empty materialized summaries, and a no-op save still
+matches the first restored-name output.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

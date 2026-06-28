@@ -5792,6 +5792,102 @@ void test_public_worksheet_editor_rename_back_materialized_lookup_noop_save()
         "rename-back lookup no-op output should match the first restored-name materialized output");
 }
 
+void test_public_worksheet_editor_rename_back_materialized_query_noop_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-query-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-query-output.xlsx");
+    const std::filesystem::path query_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-query-noop.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientData");
+    editor.rename_sheet("TransientData", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-query-saved"));
+    editor.save_as(output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
+    check(editor.has_source_worksheet("Data") && editor.has_worksheet("Data"),
+        "rename-back query should keep the restored source/planned name visible");
+    check(!editor.has_source_worksheet("TransientData") &&
+            !editor.has_worksheet("TransientData"),
+        "rename-back query should not expose the transient planned name");
+    check(!editor.has_source_worksheet("Missing") &&
+            !editor.has_worksheet("Missing"),
+        "rename-back query should not invent missing sheets");
+    check(editor.formula_reference_audits().empty(),
+        "rename-back query should keep materialized formula audits empty");
+    check(editor.source_formula_reference_audits().empty(),
+        "rename-back query should keep source formula audits empty");
+    check(editor.defined_name_formula_reference_audits().empty(),
+        "rename-back query should keep defined-name formula audits empty");
+
+    check(!editor.last_edit_error().has_value(),
+        "rename-back read-only queries should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back read-only queries should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back read-only queries should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back read-only queries should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back read-only queries should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back read-only queries should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back read-only queries should keep current summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "rename-back read-only queries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back read-only queries");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-query-saved",
+        "rename-back read-only queries");
+
+    editor.save_as(query_no_op_output);
+    check(!editor.last_edit_error().has_value(),
+        "rename-back query no-op save should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back query no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back query no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back query no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back query no-op save should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back query no-op save should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back query no-op save should keep current summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back query no-op save");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back query output should use the restored source name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back query output should not leak the transient planned name");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-query-saved",
+        "rename-back query output should contain the saved materialized edit");
+
+    const auto query_no_op_entries =
+        fastxlsx::test::read_zip_entries(query_no_op_output);
+    check(query_no_op_entries == output_entries,
+        "rename-back query no-op output should match the first restored-name materialized output");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -5842,6 +5938,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planned_name();
             test_public_worksheet_editor_rename_back_materialized_diagnostics_use_source_name();
             test_public_worksheet_editor_rename_back_materialized_lookup_noop_save();
+            test_public_worksheet_editor_rename_back_materialized_query_noop_save();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

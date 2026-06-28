@@ -3633,6 +3633,11 @@ handles: clearing a `Data` diagnostic through missing-cell value-clear does not
 dirty `Data`, does not dirty `Untouched`, and a later `Untouched` same-sheet
 guard failure reports `Untouched` context while output remains copy-original or
 first-saved.
+The scoped other-handle mutation branch has the same value-clear coverage:
+after a `Data` guard diagnostic is cleared by a missing-cell value-clear no-op,
+`Untouched.set_cell()` remains legal, dirties only `Untouched`, and `save_as()`
+flushes only that current dirty handle while keeping the rejected `Data` Patch
+payload absent.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

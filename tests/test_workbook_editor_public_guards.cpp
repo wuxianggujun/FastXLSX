@@ -4446,6 +4446,140 @@ void test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_
     }
 }
 
+void test_public_worksheet_editor_two_clean_noop_clear_allows_scoped_other_mutation()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-clear-other-mutation-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-readonly-two-clean-clear-other-mutation-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        const fastxlsx::CellValue data_value = data.get_cell(1, 1);
+        const fastxlsx::CellValue untouched_value = untouched.get_cell(1, 1);
+        check(data_value.kind() == fastxlsx::CellValueKind::Text &&
+                data_value.text_value() == "placeholder-a1",
+            "read-only two-clean clear other-mutation setup should materialize Data");
+        check(untouched_value.kind() == fastxlsx::CellValueKind::Text &&
+                untouched_value.text_value() == "keep-me",
+            "read-only two-clean clear other-mutation setup should materialize Untouched");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        const std::size_t untouched_cell_count = untouched.cell_count();
+        check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+            "read-only two-clean clear other-mutation setup should keep both handles clean");
+        check(!data.try_cell(5, 5).has_value(),
+            "read-only two-clean clear other-mutation setup should use a missing Data clear target");
+
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("readonly-two-clean-clear-other-mutation-blocked-data")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "read-only two-clean Data failure before no-op clear other mutation");
+
+        data.clear_cell_value(5, 5);
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean Data no-op clear should clear diagnostic before other mutation");
+        check(!data.has_pending_changes(),
+            "read-only two-clean Data no-op clear should keep Data clean before other mutation");
+
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("readonly-two-clean-clear-untouched-mutated"));
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear Untouched mutation should keep last_edit_error clear");
+        check_public_two_clean_single_dirty_materialized_state(
+            editor, untouched, data, "Untouched", untouched_cell_count + 1, 0,
+            "read-only two-clean clear Untouched mutation");
+        check_public_preserved_sheet_diagnostics(
+            data, data_cell_count, data_memory, "Data",
+            "read-only two-clean clear Untouched mutation");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear other-mutation save_as should keep last_edit_error clear");
+        check_public_two_clean_two_handle_clean_state(
+            editor, data, untouched, 1,
+            "read-only two-clean clear other-mutation save_as");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_public_two_clean_other_mutation_readonly_output(
+            output_entries, source_entries, "readonly-two-clean-clear-other-mutation-blocked-data",
+            "readonly-two-clean-clear-untouched-mutated",
+            "read-only two-clean clear other-mutation output");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-clear-other-mutation-source.xlsx");
+        const std::filesystem::path first_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-clear-other-mutation-first.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-saved-clean-two-clean-clear-other-mutation-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+        data.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clear-other-mutation-data"));
+        untouched.set_cell(1, 1,
+            fastxlsx::CellValue::text("saved-clean-two-clear-other-mutation-untouched"));
+        editor.save_as(first_output);
+
+        const std::size_t saved_pending_count =
+            check_public_two_clean_two_handle_clean_state(
+                editor, data, untouched, 2,
+                "saved-clean two-clean clear other-mutation setup");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        const std::size_t untouched_cell_count = untouched.cell_count();
+        check(!data.try_cell("E5").has_value(),
+            "saved-clean two-clean clear other-mutation setup should use a missing Data A1 clear target");
+
+        (void)check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.rename_sheet("Data", "SavedCleanTwoClearOtherMutationBlockedData");
+            },
+            PublicMaterializedGuardDiagnostic::RenameSheet,
+            "saved-clean two-clean Data failure before no-op clear other mutation");
+
+        data.clear_cell_value("E5");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean Data no-op clear should clear diagnostic before other mutation");
+        check(!data.has_pending_changes(),
+            "saved-clean two-clean Data no-op clear should keep Data clean before other mutation");
+
+        untouched.set_cell(2, 2,
+            fastxlsx::CellValue::text("saved-clean-two-clear-untouched-after-data-noop"));
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear Untouched mutation should keep last_edit_error clear");
+        check_public_two_clean_single_dirty_materialized_state(
+            editor, untouched, data, "Untouched", untouched_cell_count + 1,
+            saved_pending_count, "saved-clean two-clean clear Untouched mutation");
+        check_public_preserved_sheet_diagnostics(
+            data, data_cell_count, data_memory, "Data",
+            "saved-clean two-clean clear Untouched mutation");
+
+        editor.save_as(output);
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear other-mutation save_as should keep last_edit_error clear");
+        check_public_two_clean_two_handle_clean_state(
+            editor, data, untouched, saved_pending_count + 1,
+            "saved-clean two-clean clear other-mutation save_as");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_public_two_clean_saved_clean_output(
+            output_entries, "SavedCleanTwoClearOtherMutationBlockedData",
+            "saved-clean-two-clear-other-mutation-data",
+            "saved-clean-two-clear-untouched-after-data-noop",
+            "saved-clean two-clean clear other-mutation output");
+    }
+}
+
 void test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty_handles()
 {
     {
@@ -5430,6 +5564,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_other_guard();
             test_public_worksheet_editor_two_clean_noop_clear_preserves_other_guard();
             test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_other_mutation();
+            test_public_worksheet_editor_two_clean_noop_clear_allows_scoped_other_mutation();
             test_public_worksheet_editor_two_clean_recovery_failed_save_preserves_dirty_handles();
             test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserves_sessions();
             test_public_worksheet_editor_two_clean_failed_save_retry_queries_preserve_sessions();

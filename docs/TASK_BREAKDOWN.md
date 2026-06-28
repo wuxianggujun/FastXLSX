@@ -40899,6 +40899,45 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.978 - Pin scoped other-handle mutation after missing-cell clear no-op
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove single missing-cell `clear_cell_value()` no-op recovery on one clean
+  materialized handle still permits a later scoped mutation on another clean
+  materialized handle.
+
+Output:
+- Added a `public-guards` regression where `Data` rejects same-sheet Patch,
+  then missing-cell `Data.clear_cell_value()` clears the diagnostic while
+  keeping `Data` clean.
+- The regression verifies a later `Untouched.set_cell()` remains legal, keeps
+  `last_edit_error()` clear, dirties only `Untouched`, preserves `Data` sparse
+  diagnostics, and reports only the current dirty handle in materialized
+  aggregates.
+- Read-only output preserves `Data` source bytes and persists the `Untouched`
+  mutation. Saved-clean output keeps the first saved `Data` value, persists the
+  `Untouched` mutation, and adds only one materialized handoff after the no-op
+  clear branch.
+
+Non-goals:
+- No cross-handle transaction model, dense clear/write semantics,
+  Patch/materialized composition, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

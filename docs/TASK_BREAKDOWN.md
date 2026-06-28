@@ -38469,6 +38469,55 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.917 - Pin saved renamed full-calc formula audit same-sheet guard recovery
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove same-sheet Patch operation-mixing guard failures against a clean
+saved/reacquired renamed full-calculation formula audit session stay
+guard-only, and that a later valid mutation clears the diagnostic, re-dirties,
+and saves normally.
+
+Output:
+- Added public-state shard coverage for the P8.910 saved-session setup followed
+  by rejected `rename_sheet("RenamedData", "BlockedData")` and
+  `replace_sheet_data("RenamedData", ...)` calls, materialized/source formula
+  audits, a later valid `set_cell()`, save-as, and reopened readback.
+- The regression verifies same-sheet guards leave both planned-name handles
+  clean, replace `last_edit_error()` with the expected replacement guard
+  diagnostic, avoid replacement/materialized dirty diagnostics, keep catalog
+  state unchanged, and preserve sparse count/bounds on the saved shifted
+  worksheet.
+- After the guard failures, `formula_reference_audits()` still reports shifted
+  tokens `Data!A2` / `Data!B2`, while `source_formula_reference_audits()` still
+  reports original source `D2` tokens `Data!A1` / `Data!B1` without adding any
+  dirty materialized diagnostics.
+- The later valid mutation clears `last_edit_error()`, re-dirties the shared
+  planned-name session, grows the sparse count with the recovered `C5` text
+  cell, and `save_as()` writes the renamed catalog, shifted formula, recovered
+  text, and `fullCalcOnLoad="1"` without creating `xl/calcChain.xml` or leaking
+  rejected sheet names/payloads.
+
+Non-goals / boundary:
+- No conflict resolution, no same-sheet Patch composition with materialized
+  sparse sessions, no source-name fallback, no default formula rewrite during
+  sheet rename, no formula evaluation or repair, no metadata synchronization,
+  no calcChain rebuild, no sharedStrings/styles migration, and no low-memory
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

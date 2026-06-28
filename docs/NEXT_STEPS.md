@@ -481,6 +481,12 @@ query-preflight family: rejected planned-name access with incompatible
 clear and materialized diagnostics empty, preserves source/materialized audits,
 and a later valid `set_cell()` still re-dirties then saves/reopens with the
 shifted formula, recovered text, `fullCalcOnLoad="1"`, and no calcChain.
+Same-sheet Patch guards are now covered on that clean saved/reacquired session
+as well: rejected planned-name `rename_sheet()` and `replace_sheet_data()` calls
+record only the guard diagnostic, do not leak rejected names or payloads into
+pending diagnostics or output, preserve source/materialized audits, and a later
+valid `set_cell()` clears the diagnostic before saving/reopening with the same
+full-calculation metadata boundary.
 Invalid read preflights now follow the same rule: row-zero reads,
 column-overflow A1 reads, and reversed range reads fail without replacing the
 source scan or dirty materialized diagnostics.

@@ -15367,6 +15367,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
         "shift reacquire option mismatch first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire option mismatch first save should keep diagnostics clear");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_option_mismatch =
+        workbook_editor_public_catalog_snapshot(editor);
 
     fastxlsx::WorksheetEditorOptions mismatched_options;
     mismatched_options.max_cells = 2;
@@ -15385,6 +15387,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "shift reacquire option mismatch should not dirty materialized diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_option_mismatch,
+        "shift reacquire option mismatch");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
         "shift reacquire option mismatch should preserve the saved shifted row");
     check(!sheet.try_cell("A2").has_value(),
@@ -15487,6 +15491,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
         "shift reacquire missing query first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing query first save should keep diagnostics clear");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_missing_query =
+        workbook_editor_public_catalog_snapshot(editor);
 
     const std::optional<fastxlsx::WorksheetEditor> missing = editor.try_worksheet("Missing");
     check(!missing.has_value(),
@@ -15502,6 +15508,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "shift reacquire missing query should not dirty materialized diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_missing_query,
+        "shift reacquire missing query");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
         "shift reacquire missing query should preserve the saved shifted row");
     check(!sheet.try_cell("A2").has_value(),
@@ -15617,6 +15625,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
     check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
             sheet.get_cell("A3").text_value() == "placeholder-a2",
         "shift reacquire invalid reads matching reacquire should reuse saved shifted state");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_reads =
+        workbook_editor_public_catalog_snapshot(editor);
 
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "shift reacquire invalid reads should reject row-zero try_cell on the original handle");
@@ -15657,6 +15667,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         "shift reacquire invalid reads should not dirty materialized diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid reads should keep worksheet edit summaries empty");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
+        "shift reacquire invalid reads");
     check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
         "shift reacquire invalid reads should preserve sparse counts");
     check_cell_range_equals(reacquired.used_range(), 1, 1, 3, 2,
@@ -15768,6 +15780,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
     check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
             sheet.get_cell("A3").text_value() == "placeholder-a2",
         "shift reacquire invalid mutations matching reacquire should reuse saved shifted state");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_mutations =
+        workbook_editor_public_catalog_snapshot(editor);
 
     check(threw_fastxlsx_error([&] {
         sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-shift-row-zero"));
@@ -15815,6 +15829,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
         "shift reacquire invalid mutations should not dirty materialized diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid mutations should keep worksheet edit summaries empty");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_mutations,
+        "shift reacquire invalid mutations");
     check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
         "shift reacquire invalid mutations should preserve sparse counts");
     check_cell_range_equals(reacquired.used_range(), 1, 1, 3, 2,

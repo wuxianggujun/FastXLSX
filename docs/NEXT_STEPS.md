@@ -270,6 +270,12 @@ The materialized formula audit side of that renamed boundary is covered too:
 `Data!B2`, preserves the queued rename/full-calc/materialized diagnostics, and
 still leaves default rename as audit-only stale-qualifier evidence until an
 explicit formula rewrite policy is requested.
+Failed-save retry hygiene now covers that same renamed full-calculation formula
+state: an exact source-overwrite `save_as()` rejection preserves the shifted
+materialized formula audit, the original source-formula audit, materialized
+diagnostics, `last_edit_error()`, and source package bytes; the later safe retry
+still writes the renamed catalog, shifted formula, and `fullCalcOnLoad="1"`
+without creating calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -3531,6 +3531,11 @@ prior renamed no-op package entries. Missing-sheet and old source-name lookups
 are pinned beside it: optional lookups stay empty, throwing lookups fail without
 dirtying the saved renamed session, and the next no-op output still matches the
 previous renamed no-op package entries.
+Read-only catalog and pending-diagnostic queries on that same clean
+saved/reacquired renamed session now have the matching no-op-save check:
+source/planned name lists, catalog entries, existence checks, pending summaries,
+and materialized aggregates preserve the rename-only clean state, and the next
+no-op output still matches the previous renamed no-op package entries.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

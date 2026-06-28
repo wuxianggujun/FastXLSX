@@ -9715,6 +9715,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     const std::filesystem::path missing_no_op_output =
         artifact(
             "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-missing-noop-output.xlsx");
+    const std::filesystem::path read_only_no_op_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-read-only-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-output.xlsx");
     const std::string clear_rename_a1 =
@@ -10166,6 +10169,58 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     const auto missing_no_op_entries = fastxlsx::test::read_zip_entries(missing_no_op_output);
     check(missing_no_op_entries == option_no_op_entries,
         "clear_cell_values() memory-budget renamed summary missing no-op output should match the prior no-op save");
+
+    check(editor.source_worksheet_names() == std::vector<std::string> {"Data", "Untouched"},
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should preserve source names");
+    check(editor.worksheet_names() == std::vector<std::string> {"RenamedClearAll", "Untouched"},
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should preserve planned names");
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> saved_catalog =
+        editor.worksheet_catalog();
+    check(saved_catalog.size() == 2,
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should preserve catalog size");
+    if (saved_catalog.size() == 2) {
+        check(saved_catalog[0].source_name == "Data" &&
+                saved_catalog[0].planned_name == "RenamedClearAll" &&
+                saved_catalog[0].renamed,
+            "clear_cell_values() memory-budget renamed summary saved read-only queries should preserve renamed entry");
+        check(saved_catalog[1].source_name == "Untouched" &&
+                saved_catalog[1].planned_name == "Untouched" &&
+                !saved_catalog[1].renamed,
+            "clear_cell_values() memory-budget renamed summary saved read-only queries should preserve untouched entry");
+    }
+    check(editor.has_source_worksheet("Data"),
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should keep the source sheet visible");
+    check(editor.has_worksheet("RenamedClearAll"),
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should keep the planned sheet visible");
+    check(!editor.has_worksheet("Data"),
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should keep the old source name unavailable");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary saved read-only queries should not add a materialized handoff");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary saved read-only queries lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after saved read-only queries");
+
+    editor.save_as(read_only_no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary read-only no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary read-only no-op save should not add a materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary read-only no-op save should keep diagnostics clear");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary read-only no-op save lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after read-only no-op save");
+
+    const auto read_only_no_op_entries =
+        fastxlsx::test::read_zip_entries(read_only_no_op_output);
+    check(read_only_no_op_entries == missing_no_op_entries,
+        "clear_cell_values() memory-budget renamed summary read-only no-op output should match the prior no-op save");
 
     reacquired.set_cell(5, 5,
         fastxlsx::CellValue::text("clear-all-renamed-summary-reacquire"));

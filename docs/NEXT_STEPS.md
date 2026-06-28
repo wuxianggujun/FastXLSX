@@ -1127,6 +1127,10 @@ The sparse range and coordinate-batch erase paths now also cover exact
 clean, `erase_cells(CellRange)` or initializer-list `erase_cells(...)` clears
 that diagnostic and drops the sparse store to empty, and a smaller recovery cell
 saves/reopens without resurrecting erased source cells or rejected payloads.
+The no-argument `erase_cells()` whole-store path now completes that exact-budget
+release family: after the same rejected oversized insertion, erasing the entire
+represented sparse store clears diagnostics, releases the estimate, and saves a
+single recovery cell without reviving erased source data.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

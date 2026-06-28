@@ -7574,6 +7574,94 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
     }
 }
 
+void test_public_worksheet_editor_erase_all_memory_budget_release()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-all-memory-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-memory-output.xlsx");
+    const std::string rejected_value =
+        "erase-all-memory-rejected-" + std::string(4096, 'a');
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_memory_budget;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(baseline_memory == exact_memory_budget,
+        "erase_cells() memory-budget precondition should load with an exact sparse budget");
+
+    bool failed = false;
+    try {
+        sheet.set_cell(3, 1, fastxlsx::CellValue::text(rejected_value));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "exact memory budget should reject insertion before erase_cells()");
+    }
+    check(failed,
+        "set_cell should fail before erase_cells() releases memory budget");
+    check(editor.last_edit_error().has_value(),
+        "failed insertion before erase_cells() should seed last_edit_error");
+    check(!sheet.has_pending_changes(),
+        "failed insertion before erase_cells() should keep the session clean");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "failed insertion before erase_cells() should preserve memory estimate");
+
+    sheet.erase_cells();
+    check(!editor.last_edit_error().has_value(),
+        "successful erase_cells() should clear the prior memory-budget diagnostic");
+    check(sheet.cell_count() == 0,
+        "erase_cells() should release all represented records under an exact memory budget");
+    check(sheet.estimated_memory_usage() < exact_memory_budget,
+        "erase_cells() should lower sparse memory usage under an exact memory budget");
+
+    sheet.set_cell(3, 1, fastxlsx::CellValue::text("all-cells-mb-release"));
+    check(!editor.last_edit_error().has_value(),
+        "successful set_cell after erase_cells() memory release should keep diagnostics clear");
+    check(sheet.cell_count() == 1,
+        "set_cell after erase_cells() should restore sparse count within memory budget");
+    check(sheet.estimated_memory_usage() <= exact_memory_budget,
+        "set_cell after erase_cells() should stay within the exact memory budget");
+    check(sheet.get_cell("A3").text_value() == "all-cells-mb-release",
+        "set_cell after erase_cells() should insert the memory-budget recovery cell");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "all-cells-mb-release",
+        "memory-budget insertion after erase_cells() should persist through save_as");
+    check_not_contains(worksheet_xml, "erase-all-memory-rejected",
+        "rejected memory-budget insertion before erase_cells() should not leak into output");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "memory-budget insertion after erase_cells() should not resurrect erased A1");
+    check_not_contains(worksheet_xml, "placeholder-a2",
+        "memory-budget insertion after erase_cells() should not resurrect erased A2");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "memory-budget insertion after erase_cells() should not resurrect erased B1");
+    check_reopened_clean_sheet_output(output, "Data", "erase_cells() memory-budget release",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "erase_cells() memory-budget release reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 3, 1, 3, 1,
+                "erase_cells() memory-budget release reopened output should keep compact bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "erase_cells() memory-budget release reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "erase_cells() memory-budget release reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "erase_cells() memory-budget release reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "all-cells-mb-release",
+                "erase_cells() memory-budget release reopened output should read inserted A3");
+        });
+}
+
 void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 {
     const std::filesystem::path source =
@@ -25405,6 +25493,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_set_row_values_preserves_styles_and_tail();
             test_public_worksheet_editor_set_column_values_noop_invalid_and_budget();
             test_public_worksheet_editor_clear_and_erase_all_cells();
+            test_public_worksheet_editor_erase_all_memory_budget_release();
             test_public_worksheet_editor_clear_row_preserves_sparse_records();
             test_public_worksheet_editor_clear_columns_noop_invalid_and_range();
             test_public_worksheet_editor_erase_row_removes_sparse_row();

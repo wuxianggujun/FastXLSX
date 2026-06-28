@@ -341,6 +341,12 @@ preserve the shift diagnostic without dirtying either handle or materialized
 diagnostics, keep source/materialized audits readable, and a later valid
 `set_cell()` clears the diagnostic before save/reopen persists the shifted
 formula, recovered text, `fullCalcOnLoad="1"`, and no calcChain.
+Missing-sheet and old-source-name queries on the clean saved/reacquired session
+are covered in the same family: empty optional lookups and throwing
+`worksheet()` failures leave both planned-name handles clean, keep
+`last_edit_error()` clear, preserve source/materialized audits, and a later
+valid `set_cell()` still re-dirties then saves/reopens with the shifted formula,
+recovered text, `fullCalcOnLoad="1"`, and no calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

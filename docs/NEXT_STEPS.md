@@ -121,6 +121,10 @@ invalid-mutation checks after the first saved row/column shift.
 Row/column shift guard coverage now also preserves workbook catalog views
 around zero-count shifts, nonzero no-op shifts outside represented sparse
 records, validation failures, and row/column overflow failures.
+Non-renamed delete-row/delete-column styled formula coverage now mirrors the
+renamed-session source-backed path: shifted formula cells keep the source
+`StyleId`, deleted references become `#REF!`, surviving references move, and
+saved/reopened workbooks preserve the same sparse cells without metadata repair.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

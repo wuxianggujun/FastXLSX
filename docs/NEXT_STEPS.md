@@ -111,6 +111,9 @@ planned names, and the full worksheet catalog around `used_range()`,
 `contains_cell()`, `row_cells()`, `column_cells()`, and invalid
 `sparse_cells()` range reads after a prior mutation diagnostic, pinning that
 these inspections do not mutate workbook catalog views.
+The base cell-read invalid paths now use the same catalog snapshot for A1 and
+row/column `try_cell()` / `get_cell()` failures, including the helper that runs
+after a prior mutation diagnostic.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

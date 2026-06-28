@@ -3465,6 +3465,8 @@ void test_public_worksheet_editor_a1_overloads_reject_invalid_references()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     const std::size_t cell_count_before_reads = sheet.cell_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_reads =
+        workbook_editor_public_catalog_snapshot(editor);
     const std::array<std::string_view, 8> invalid_references {
         "", "a1", "1A", "A0", "A01", "XFE1", "A1048577", "A1:B2"};
 
@@ -3481,6 +3483,8 @@ void test_public_worksheet_editor_a1_overloads_reject_invalid_references()
         "A1 try_cell overload should accept the last legal Excel cell reference");
     check(!editor.last_edit_error().has_value(),
         "invalid A1 read overloads should not update last_edit_error");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
+        "invalid A1 read overloads");
     check(sheet.get_cell("A1").text_value() == "placeholder-a1",
         "invalid A1 read overloads should preserve existing cells");
 
@@ -3685,6 +3689,8 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     const std::size_t cell_count_before_reads = sheet.cell_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_reads =
+        workbook_editor_public_catalog_snapshot(editor);
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "row/column try_cell should reject row zero");
     check(threw_fastxlsx_error([&] { (void)sheet.get_cell(1, 0); }),
@@ -3699,6 +3705,8 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
         "row/column try_cell should accept the last legal Excel coordinate");
     check(!editor.last_edit_error().has_value(),
         "invalid row/column reads should not update last_edit_error");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
+        "invalid row/column reads");
 
     const std::size_t cell_count_before_mutations = sheet.cell_count();
     check(threw_fastxlsx_error([&] {
@@ -3791,6 +3799,8 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
         check_contains(*prior_error, "WorksheetEditor cell coordinate is invalid",
             "prior diagnostic should be the seeded invalid coordinate failure");
     }
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_reads =
+        workbook_editor_public_catalog_snapshot(editor);
 
     const auto check_preserved = [&] (std::string_view prefix) {
         check(editor.last_edit_error() == prior_error,
@@ -3805,6 +3815,8 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
             std::string(prefix) + " should preserve sparse cell count");
         check(sheet.estimated_memory_usage() == memory_before,
             std::string(prefix) + " should preserve sparse memory estimate");
+        check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
+            prefix);
     };
 
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),

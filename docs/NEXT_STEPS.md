@@ -370,6 +370,11 @@ queries preserve saved edit summaries, keep `last_edit_error()` clear, and a
 second `save_as()` without a recovery mutation writes the same renamed/fullCalc
 shifted worksheet bytes as the pre-query save without rejected sheet names,
 recovery cells, or calcChain.
+Mismatched `WorksheetEditorOptions` access now has the same no-op save
+coverage: rejected planned-name option preflights and old-source optional
+lookups leave diagnostics clean, preserve saved edit summaries, and a second
+`save_as()` without a recovery mutation writes the same renamed/fullCalc
+shifted worksheet bytes as the pre-option save.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

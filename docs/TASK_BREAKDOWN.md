@@ -39190,6 +39190,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.935 - Pin whole-store clear memory-budget release
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove no-argument `WorksheetEditor::clear_cell_values()` releases
+value-payload memory under exact `memory_budget_bytes` while preserving every
+represented sparse record as an explicit blank.
+
+Output:
+- Added a public-state regression that first rejects an oversized `set_cell()`
+  insertion in an exact-memory-budget session, then uses
+  `clear_cell_values()` before inserting a smaller recovery cell.
+- The regression verifies whole-store clear clears the prior memory-budget
+  diagnostic, preserves all target records as blanks, lowers the sparse memory
+  estimate, and save/reopens without leaking rejected or cleared text payloads.
+- Updated API / next-step / task breakdown documentation to record the
+  whole-store value-clear estimate-release boundary.
+
+Non-goals / boundary:
+- No dense worksheet deletion, no memory-budget auto-sizing, no process-RSS
+  accounting, no tombstones, no transaction rollback, no formula repair or
+  evaluation, no calcChain rebuild, no sharedStrings/styles migration, and no
+  low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -881,8 +881,8 @@ public/full transformer boundary 仍是后续任务。
 - 当前 public `WorksheetEditor` 回归也把 clear 与 erase 的预算语义分开：erase 删除
   sparse records 并释放对应 estimate，`clear_row()` / `clear_rows()`、
   `clear_column()` / `clear_columns()`、`clear_cell_values(CellRange)` 和坐标
-  batch clear 保留 blank records，但释放被清空 value payload 的 estimate；这仍不是
-  进程 RSS 或保存阶段峰值承诺。
+  batch clear，以及 no-argument `clear_cell_values()` 都保留 blank records，但释放
+  被清空 value payload 的 estimate；这仍不是进程 RSS 或保存阶段峰值承诺。
 - P7.5 save-as handoff 草案要求 source-backed editor 通过 part-level plan 输出：
   未修改和 unknown entries 默认 copy-original，修改的 worksheet/workbook metadata 才
   rewrite；`save_as()` 不承诺原地覆盖。

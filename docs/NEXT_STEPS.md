@@ -1147,6 +1147,10 @@ Sparse range and coordinate-batch value clears now match that boundary too:
 release cleared text payload estimates, keep represented target coordinates as
 blanks, skip missing coordinates without synthesis, preserve non-target cells,
 and save/reopen a later recovery cell inside the same exact budget.
+No-argument `clear_cell_values()` now completes the value-clear exact-budget
+family: it clears all represented values to explicit blanks, releases all value
+payload estimates, and still saves/reopens a later recovery cell without
+dropping the blank sparse records.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

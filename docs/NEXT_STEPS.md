@@ -184,6 +184,13 @@ The same reverse ordering now covers Patch-to-in-memory guards: if
 `last_edit_error()`, preserve the queued Patch diagnostics and public edit
 counts, avoid dirty materialized diagnostics, and `save_as()` still writes both
 `fullCalcOnLoad="1"` and the queued Patch payload.
+That reverse ordering now covers catalog rename plus materialization as well:
+after `request_full_calculation()` and then `rename_sheet()`, `worksheet()` uses
+the current planned sheet name, read-only materialization adds no dirty
+diagnostics or handoff, and a later dirty `WorksheetEditor` edit saves alongside
+the workbook `fullCalcOnLoad="1"` request and renamed catalog entry without
+creating `xl/calcChain.xml`. The clean branch also proves the worksheet part
+stays byte-for-byte source-identical when no sparse edit is made.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -3059,6 +3059,216 @@ void test_public_request_full_calculation_preserves_later_clean_materialization(
         "full-calc-before-clean-materialize save should preserve source worksheet bytes");
 }
 
+void test_public_request_full_calculation_allows_later_rename_materialized_edit()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-full-calc-before-rename-materialize-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-before-rename-materialize-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.request_full_calculation();
+    check(editor.pending_change_count() == 1,
+        "full-calc-before-rename setup should count one metadata edit");
+
+    editor.rename_sheet("Data", "FullCalcRenamedData");
+    check(!editor.last_edit_error().has_value(),
+        "rename after full-calc request should keep diagnostics clear");
+    check(editor.pending_change_count() == 2,
+        "rename after full-calc request should count metadata plus catalog edit");
+    check(!editor.has_worksheet("Data"),
+        "rename after full-calc request should remove the old planned name");
+    check(editor.has_worksheet("FullCalcRenamedData"),
+        "rename after full-calc request should expose the planned name");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename after full-calc request should not create dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename after full-calc request should not create dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename after full-calc request should not create dirty materialized memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rename after full-calc request should expose one rename summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "FullCalcRenamedData",
+                "rename after full-calc request should keep source/planned names");
+            check(summary.renamed,
+                "rename after full-calc request should mark the summary as renamed");
+            check(!summary.sheet_data_replaced,
+                "rename after full-calc request should not invent replacement diagnostics");
+            check(!summary.materialized_dirty,
+                "rename after full-calc request should keep the summary clean");
+        }
+    }
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("FullCalcRenamedData");
+    const fastxlsx::CellValue original_a1 = sheet.get_cell(1, 1);
+    check(original_a1.kind() == fastxlsx::CellValueKind::Text &&
+            original_a1.text_value() == "placeholder-a1",
+        "materialization after full-calc rename should read the source worksheet");
+    check(!sheet.has_pending_changes(),
+        "materialization after full-calc rename should start clean");
+    check(editor.pending_change_count() == 2,
+        "clean materialization after full-calc rename should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialization after full-calc rename should keep dirty names empty");
+
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("full-calc-before-rename-materialize"));
+    check(sheet.has_pending_changes(),
+        "later edit after full-calc rename should dirty the materialized sheet");
+    check(editor.pending_change_count() == 2,
+        "dirty materialized edit after full-calc rename should not flush before save_as");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string>{"FullCalcRenamedData"},
+        "dirty materialized diagnostics after full-calc rename should use the planned name");
+    check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+        "dirty materialized diagnostics after full-calc rename should expose cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            sheet.estimated_memory_usage(),
+        "dirty materialized diagnostics after full-calc rename should expose memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "dirty materialized edit after full-calc rename should keep one summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "FullCalcRenamedData",
+                "dirty materialized summary after full-calc rename should keep source/planned names");
+            check(summary.renamed,
+                "dirty materialized summary after full-calc rename should keep rename flag");
+            check(summary.materialized_dirty,
+                "dirty materialized summary after full-calc rename should report dirty state");
+            check(summary.materialized_cell_count == sheet.cell_count(),
+                "dirty materialized summary after full-calc rename should report cell count");
+            check(summary.estimated_materialized_memory_usage ==
+                    sheet.estimated_memory_usage(),
+                "dirty materialized summary after full-calc rename should report memory");
+        }
+    }
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "save_as after full-calc rename materialized edit should clear dirty state");
+    check(editor.pending_change_count() == 3,
+        "save_as after full-calc rename materialized edit should count metadata, rename, and handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after full-calc rename materialized edit should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after full-calc rename materialized edit should clear dirty cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after full-calc rename materialized edit should clear dirty memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc rename materialized save should persist workbook calc metadata");
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="FullCalcRenamedData")",
+        "full-calc rename materialized save should persist the planned sheet name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "full-calc rename materialized save should not leak the old planned name");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc rename materialized save should not invent calcChain.xml");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "full-calc-before-rename-materialize",
+        "full-calc rename materialized save should persist the sparse projection");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "full-calc rename materialized save should replace the old source cell");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("FullCalcRenamedData"),
+        "reopened full-calc rename materialized output should expose the planned name");
+    check(!reopened.has_worksheet("Data"),
+        "reopened full-calc rename materialized output should not expose the old name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("FullCalcRenamedData");
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell(1, 1);
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a1.text_value() == "full-calc-before-rename-materialize",
+        "reopened full-calc rename materialized output should read the saved edit");
+    check(!reopened_sheet.has_pending_changes(),
+        "reopened full-calc rename materialized output should materialize cleanly");
+}
+
+void test_public_request_full_calculation_allows_later_rename_clean_materialization()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-full-calc-before-rename-clean-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-before-rename-clean-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.request_full_calculation();
+    editor.rename_sheet("Data", "FullCalcCleanRenamedData");
+    check(editor.pending_change_count() == 2,
+        "full-calc-before-clean-rename setup should count metadata plus rename");
+    check(editor.has_worksheet("FullCalcCleanRenamedData"),
+        "full-calc-before-clean-rename setup should expose the planned name");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("FullCalcCleanRenamedData");
+    const fastxlsx::CellValue original_a1 = sheet.get_cell(1, 1);
+    check(original_a1.kind() == fastxlsx::CellValueKind::Text &&
+            original_a1.text_value() == "placeholder-a1",
+        "clean materialization after full-calc rename should read source cells");
+    check(!sheet.has_pending_changes(),
+        "clean materialization after full-calc rename should keep the sheet clean");
+    check(editor.pending_change_count() == 2,
+        "clean materialization after full-calc rename should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialization after full-calc rename should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean materialization after full-calc rename should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialization after full-calc rename should keep dirty memory empty");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].renamed &&
+                !summaries[0].materialized_dirty,
+            "clean materialization after full-calc rename should keep only a rename summary");
+    }
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "save_as after clean full-calc rename materialization should keep the sheet clean");
+    check(editor.pending_change_count() == 2,
+        "save_as after clean full-calc rename materialization should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after clean full-calc rename materialization should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after clean full-calc rename materialization should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after clean full-calc rename materialization should keep dirty memory empty");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "clean full-calc rename save should persist workbook calc metadata");
+    check_contains(output_entries.at("xl/workbook.xml"), R"(name="FullCalcCleanRenamedData")",
+        "clean full-calc rename save should persist the planned sheet name");
+    check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "clean full-calc rename save should not leak the old planned name");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "clean full-calc rename save should not invent calcChain.xml");
+    check(output_entries.at("xl/worksheets/sheet1.xml") ==
+            source_entries.at("xl/worksheets/sheet1.xml"),
+        "clean full-calc rename save should preserve source worksheet bytes");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("FullCalcCleanRenamedData"),
+        "reopened clean full-calc rename output should expose the planned name");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("FullCalcCleanRenamedData");
+    const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell(1, 1);
+    check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_a1.text_value() == "placeholder-a1",
+        "reopened clean full-calc rename output should read the preserved source cell");
+    check(!reopened_sheet.has_pending_changes(),
+        "reopened clean full-calc rename output should materialize cleanly");
+}
+
 void test_public_request_full_calculation_preserves_later_replacement_guard()
 {
     const std::filesystem::path source =
@@ -4599,6 +4809,8 @@ int main(int argc, char* argv[])
             test_public_request_full_calculation_preserves_saved_clean_materialized_session();
             test_public_request_full_calculation_allows_later_materialized_edit();
             test_public_request_full_calculation_preserves_later_clean_materialization();
+            test_public_request_full_calculation_allows_later_rename_materialized_edit();
+            test_public_request_full_calculation_allows_later_rename_clean_materialization();
             test_public_request_full_calculation_preserves_later_replacement_guard();
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();

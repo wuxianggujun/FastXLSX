@@ -3541,6 +3541,12 @@ row/column/A1/range/batch/row_cells/column_cells reads plus missing `get_cell()`
 keep diagnostics clear, leave both handles clean, preserve the rename-only
 summary and empty materialized diagnostics, and the next no-op output still
 matches the previous renamed no-op package entries.
+The lighter public materialized-diagnostics shard now covers the adjacent
+invalid-mutation/no-op-save boundary for saved renamed sessions: rejected
+`set_cell()` / `erase_cell()` calls record the invalid-reference diagnostic
+without dirtying clean handles or materialized diagnostics, a no-op save matches
+the prior renamed output, and a later valid mutation clears the diagnostic and
+re-dirties the planned-name session.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

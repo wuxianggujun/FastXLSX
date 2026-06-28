@@ -5233,6 +5233,9 @@ void test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planne
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-source.xlsx");
     const std::filesystem::path first_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-first.xlsx");
+    const std::filesystem::path invalid_mutation_no_op_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-invalid-mutation-noop.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-diagnostics-second.xlsx");
 
@@ -5283,8 +5286,54 @@ void test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planne
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "clean renamed reacquire should not re-add dirty materialized memory");
 
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(0, 1,
+            fastxlsx::CellValue::text("renamed-diagnostic-invalid-row"));
+    }), "clean renamed reacquire invalid mutation should reject row zero");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("XFE1",
+            fastxlsx::CellValue::text("renamed-diagnostic-invalid-a1"));
+    }), "clean renamed reacquire invalid mutation should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell(1, 0); }),
+        "clean renamed reacquire invalid erase should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "clean renamed reacquire invalid mutation should record diagnostics");
+    check(!renamed.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clean renamed reacquire invalid mutation should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clean renamed reacquire invalid mutation should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean renamed reacquire invalid mutation should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean renamed reacquire invalid mutation should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean renamed reacquire invalid mutation should keep dirty materialized memory empty");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].renamed &&
+                !summaries[0].materialized_dirty,
+            "clean renamed reacquire invalid mutation should preserve the rename-only summary");
+    }
+
+    editor.save_as(invalid_mutation_no_op_output);
+    check(editor.last_edit_error().has_value(),
+        "clean renamed reacquire invalid mutation no-op save should preserve diagnostics");
+    check(!renamed.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clean renamed reacquire invalid mutation no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "clean renamed reacquire invalid mutation no-op save should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean renamed reacquire invalid mutation no-op save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean renamed reacquire invalid mutation no-op save should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean renamed reacquire invalid mutation no-op save should keep dirty materialized memory empty");
+
     reacquired.set_cell(2, 2,
         fastxlsx::CellValue::text("renamed-diagnostic-second"));
+    check(!editor.last_edit_error().has_value(),
+        "post-save renamed mutation should clear invalid mutation diagnostics");
     {
         const std::vector<std::string> names =
             editor.pending_materialized_worksheet_names();
@@ -5316,6 +5365,11 @@ void test_public_worksheet_editor_renamed_materialized_diagnostics_follow_planne
     check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
         "renamed-diagnostic-second",
         "first output should not contain the later renamed diagnostic edit");
+
+    const auto invalid_mutation_no_op_entries =
+        fastxlsx::test::read_zip_entries(invalid_mutation_no_op_output);
+    check(invalid_mutation_no_op_entries == first_entries,
+        "invalid mutation no-op output should match the first renamed diagnostics output");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check_contains(second_entries.at("xl/workbook.xml"), R"(name="RenamedDiagnostics")",

@@ -3608,6 +3608,11 @@ guard path: empty `set_cells()`, `append_row()`, `set_cell_values()`,
 `clear_cell_values()`, and coordinate-batch `erase_cells()` clear the guard
 diagnostic, keep sparse diagnostics unchanged, avoid synthesizing missing cells,
 and still save as a copy-original package.
+Non-empty missing-only erase no-ops now pin the same cleanup contract:
+`erase_cells(CellRange)`, strict A1 range `erase_cells()`, and coordinate-batch
+`erase_cells()` over absent targets clear the guard diagnostic, preserve sparse
+count/memory, avoid tombstones or missing-cell synthesis, and still save as a
+copy-original package without leaking the rejected replacement payload.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

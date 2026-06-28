@@ -3624,6 +3624,10 @@ row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
 failures clear diagnostics, preserve read-only or saved-clean sparse state,
 avoid explicit blank synthesis, and leave the later no-op save copy-original or
 without an additional materialized handoff.
+That scalar value-clear cleanup does not bypass the same-sheet guard: a later
+same-sheet `rename_sheet()` or `replace_sheet_data()` still fails after the
+no-op clear, keeps the materialized handle clean, preserves sparse diagnostics,
+and leaves the no-op save free of both rejected Patch payloads.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

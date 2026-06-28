@@ -40825,6 +40825,42 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.976 - Pin guard after single missing-cell clear no-op
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove single missing-cell `clear_cell_value()` no-ops clear stale diagnostics
+  without bypassing the same-sheet Patch/materialized guard.
+
+Output:
+- Added a `public-guards` regression that triggers same-sheet guard failures,
+  clears the diagnostic with row/column or strict A1 missing-cell
+  `clear_cell_value()` no-ops, then attempts same-sheet Patch operations again.
+- The regression verifies the later same-sheet `rename_sheet()` /
+  `replace_sheet_data()` attempts still fail, replace the stale diagnostic
+  context, keep read-only or saved-clean materialized handles clean, preserve
+  sparse count/memory, and leave materialized diagnostics empty.
+- Follow-up no-op `save_as()` calls preserve the latest guard diagnostic and
+  keep rejected Patch payloads absent from copy-original / first-saved output.
+
+Non-goals:
+- No Patch/materialized sparse-session composition, guard bypass, conflict
+  resolution, rollback, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

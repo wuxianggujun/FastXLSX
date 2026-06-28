@@ -8827,6 +8827,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-noop-output.xlsx");
     const std::filesystem::path option_mismatch_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-option-mismatch-output.xlsx");
+    const std::filesystem::path missing_query_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-missing-query-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -9018,6 +9020,61 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         fastxlsx::test::read_zip_entries(option_mismatch_output);
     check(option_mismatch_entries == output_entries,
         "clear_cell_values() memory-budget release option mismatch noop save should keep output entries stable");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_missing_query =
+        workbook_editor_public_catalog_snapshot(editor);
+    const std::optional<fastxlsx::WorksheetEditor> missing =
+        editor.try_worksheet("Missing", options);
+    check(!missing.has_value(),
+        "clear_cell_values() memory-budget release missing query try_worksheet should return empty");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), "clear_cell_values() memory-budget release missing query worksheet should throw");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release missing query should keep last_edit_error clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release missing query should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release missing query should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release missing query should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release missing query should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release missing query should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release missing query should not dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_missing_query,
+        "clear_cell_values() memory-budget release missing query");
+    check(sheet.cell_count() == 10 && reacquired.cell_count() == 10,
+        "clear_cell_values() memory-budget release missing query should preserve sparse count");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
+        "clear_cell_values() memory-budget release missing query should preserve saved D4");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank &&
+            reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_cell_values() memory-budget release missing query should preserve saved blanks");
+
+    editor.save_as(missing_query_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release missing query noop save should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release missing query noop save should not add a handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release missing query noop save should keep diagnostics clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release missing query noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release missing query noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release missing query noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release missing query noop save should not dirty summaries");
+    const auto missing_query_entries =
+        fastxlsx::test::read_zip_entries(missing_query_output);
+    check(missing_query_entries == output_entries,
+        "clear_cell_values() memory-budget release missing query noop save should keep output entries stable");
 
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",

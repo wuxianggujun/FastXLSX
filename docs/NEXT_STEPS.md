@@ -3446,6 +3446,9 @@ Post-save option mismatch is pinned as the corresponding failure path:
 still fail against an existing saved materialized session, without updating
 `last_edit_error()`, dirtying materialized diagnostics, losing saved values, or
 blocking later valid matching-option edits.
+Missing-sheet lookups against the same saved/reacquired session now match that
+boundary: empty optional lookup and throwing lookup preserve diagnostics,
+handles, saved cells, catalog state, and no-op-save output stability.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

@@ -38105,6 +38105,52 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.909 - Pin renamed full-calc formula audit invalid-diagnostic recovery
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a valid materialized mutation can recover the renamed
+full-calculation formula audit state after an invalid mutation diagnostic while
+a dirty shifted `WorksheetEditor` session is pending.
+
+Output:
+- Added public-state shard coverage for `rename_sheet("Data", "RenamedData")`,
+  `request_full_calculation()`, `worksheet("RenamedData").insert_rows(2, 1)`,
+  a rejected invalid formula `set_cell()` payload, a later valid `set_cell()`,
+  materialized/source formula audits, save-as, and reopened readback.
+- The regression verifies the invalid mutation first preserves the dirty
+  shifted `D3` formula, then the valid mutation clears `last_edit_error()`,
+  grows the dirty materialized count to include the recovered `C5` text cell,
+  and keeps replacement diagnostics, pending summaries, and catalog state
+  intact.
+- After recovery, `formula_reference_audits()` still reports shifted tokens
+  `Data!A2` / `Data!B2`, while `source_formula_reference_audits()` still
+  reports original source `D2` tokens `Data!A1` / `Data!B1`.
+- The saved package writes the renamed workbook catalog, `fullCalcOnLoad="1"`,
+  the shifted styled formula, the recovered text cell, and no
+  `xl/calcChain.xml`; rejected formula payloads do not leak into output, and
+  reopened output audits/readback remain clean.
+
+Non-goals / boundary:
+- No undo/rollback history, no rejected-payload staging, no coordinate repair
+  or clamping, no source-name fallback, no default formula rewrite during sheet
+  rename, no formula evaluation or repair, no metadata synchronization, no
+  calcChain rebuild, no sharedStrings/styles migration, and no low-memory
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

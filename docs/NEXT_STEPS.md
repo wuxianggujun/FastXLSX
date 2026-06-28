@@ -304,6 +304,11 @@ state: rejected `insert_rows()` / `delete_rows()` / `insert_columns()` /
 preserving the dirty shifted formula, source/materialized audits, catalog state,
 materialized diagnostics, and later save-as output, without range clamping or
 partial shift retry.
+Valid materialized mutation recovery is pinned on top of that diagnostic state:
+after a rejected invalid formula payload, a later valid `set_cell()` clears
+`last_edit_error()`, keeps the renamed full-calc dirty formula audit state,
+adds the recovered text cell, and saves/reopens without leaking the rejected
+formula payload or inventing calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

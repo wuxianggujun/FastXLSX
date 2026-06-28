@@ -3490,6 +3490,11 @@ rename and a dirty materialized session, `save_as()` clears only the
 materialized dirty fields while keeping the rename summary visible; clean
 matching reacquire keeps it rename-only, and later mutation re-adds the
 materialized dirty fields on that same source-order summary.
+The whole-store value-clear exact-budget path now has the same rename-context
+coverage: planned-name materialization after a queued rename reports combined
+rename/materialized summary fields while dirty, save/reacquire returns to a
+rename-only summary, and a later valid mutation re-adds the materialized fields
+before the next handoff.
 Rejected `save_as()` preflight keeps that combined state intact: source-overwrite
 rejection does not flush the renamed dirty session, does not increment the
 materialized handoff count, does not update `last_edit_error()`, and leaves

@@ -9701,6 +9701,242 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         });
 }
 
+void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-output.xlsx");
+    const std::string clear_rename_a1 =
+        "clear-rename-budget-a1-" + std::string(1024, 'a');
+    const std::string clear_rename_a2 =
+        "clear-rename-budget-a2-" + std::string(1024, 'b');
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text(clear_rename_a1),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text(clear_rename_a2)});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me")});
+    }
+    writer.close();
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_memory_budget;
+
+    const auto check_renamed_clear_all_summary =
+        [&](bool expected_materialized_dirty,
+            std::size_t expected_materialized_cell_count,
+            std::string_view label) {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1,
+                std::string(label) + " should report one renamed worksheet summary");
+            if (summaries.size() == 1) {
+                const auto& summary = summaries[0];
+                check(summary.source_name == "Data",
+                    std::string(label) + " should keep the source sheet name");
+                check(summary.planned_name == "RenamedClearAll",
+                    std::string(label) + " should report the planned sheet name");
+                check(summary.renamed,
+                    std::string(label) + " should report the queued rename");
+                check(!summary.sheet_data_replaced,
+                    std::string(label) + " should not report sheetData replacement");
+                check(summary.replacement_cell_count == 0,
+                    std::string(label) + " should report zero replacement cells");
+                check(summary.estimated_replacement_memory_usage == 0,
+                    std::string(label) + " should report zero replacement memory");
+                check(summary.materialized_dirty == expected_materialized_dirty,
+                    std::string(label) + " should report the expected materialized dirty flag");
+                check(summary.materialized_cell_count == expected_materialized_cell_count,
+                    std::string(label) + " should report the expected materialized cell count");
+                if (expected_materialized_dirty) {
+                    check(summary.estimated_materialized_memory_usage ==
+                            editor.estimated_pending_materialized_memory_usage(),
+                        std::string(label) + " should match aggregate materialized memory");
+                    check(summary.estimated_materialized_memory_usage > 0,
+                        std::string(label) + " should report positive materialized memory");
+                } else {
+                    check(summary.estimated_materialized_memory_usage == 0,
+                        std::string(label) + " should report zero materialized memory");
+                }
+            }
+        };
+
+    editor.rename_sheet("Data", "RenamedClearAll");
+    check(editor.pending_change_count() == 1,
+        "clear_cell_values() memory-budget renamed summary should count the queued rename");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget renamed summary should start without dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget renamed summary should start without dirty materialized cells");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary before materialization");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedClearAll", options);
+    check(sheet.name() == "RenamedClearAll",
+        "clear_cell_values() memory-budget renamed summary should materialize through the planned name");
+    check(sheet.estimated_memory_usage() == exact_memory_budget,
+        "clear_cell_values() memory-budget renamed summary should load with the exact sparse budget");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after clean materialization");
+
+    sheet.clear_cell_values();
+    sheet.set_cell(4, 4,
+        fastxlsx::CellValue::text("clear-all-renamed-mb-release"));
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary mutation should keep diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary mutation should dirty the planned handle");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string> {"RenamedClearAll"},
+        "clear_cell_values() memory-budget renamed summary mutation should report the planned dirty name");
+    check(editor.pending_materialized_cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary mutation should report recovered sparse count");
+    check(sheet.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary mutation should update sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget renamed summary mutation should expand bounds");
+    check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary mutation should insert D4");
+    check_renamed_clear_all_summary(true, 4,
+        "clear_cell_values() memory-budget renamed summary dirty mutation");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary first save should clean the planned handle");
+    check(editor.pending_change_count() == 2,
+        "clear_cell_values() memory-budget renamed summary first save should count rename plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget renamed summary first save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget renamed summary first save should clear dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget renamed summary first save should clear dirty materialized memory");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after first save");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_workbook_xml, R"(name="RenamedClearAll")",
+        "clear_cell_values() memory-budget renamed summary first save should write the planned catalog name");
+    check_not_contains(first_workbook_xml, R"(name="Data")",
+        "clear_cell_values() memory-budget renamed summary first save should omit the source catalog name");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "clear_cell_values() memory-budget renamed summary first save should persist expanded bounds");
+    check_contains(first_worksheet_xml, R"(<c r="A1"/>)",
+        "clear_cell_values() memory-budget renamed summary first save should persist A1 blank");
+    check_contains(first_worksheet_xml, R"(<c r="A2"/>)",
+        "clear_cell_values() memory-budget renamed summary first save should persist A2 blank");
+    check_contains(first_worksheet_xml, "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary first save should persist D4");
+    check_not_contains(first_worksheet_xml, "clear-rename-budget-a1-",
+        "clear_cell_values() memory-budget renamed summary first save should omit cleared A1 text");
+    check_not_contains(first_worksheet_xml, "clear-rename-budget-a2-",
+        "clear_cell_values() memory-budget renamed summary first save should omit cleared A2 text");
+    check_not_contains(first_worksheet_xml, R"(<v>1</v>)",
+        "clear_cell_values() memory-budget renamed summary first save should omit cleared B1 number");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedClearAll", options);
+    check(!reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary reacquire should be clean");
+    check(reacquired.name() == "RenamedClearAll",
+        "clear_cell_values() memory-budget renamed summary reacquire should keep the planned name");
+    check(reacquired.cell_count() == 4,
+        "clear_cell_values() memory-budget renamed summary reacquire should keep sparse count");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget renamed summary reacquire should keep bounds");
+    check(reacquired.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary reacquire should read D4");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after clean reacquire");
+
+    reacquired.set_cell(5, 5,
+        fastxlsx::CellValue::text("clear-all-renamed-summary-reacquire"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary later mutation should dirty shared handles");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string> {"RenamedClearAll"},
+        "clear_cell_values() memory-budget renamed summary later mutation should report planned dirty name");
+    check(editor.pending_materialized_cell_count() == 5,
+        "clear_cell_values() memory-budget renamed summary later mutation should report updated sparse count");
+    check(reacquired.cell_count() == 5 && sheet.cell_count() == 5,
+        "clear_cell_values() memory-budget renamed summary later mutation should update both handle counts");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 5, 5,
+        "clear_cell_values() memory-budget renamed summary later mutation should expand reacquired bounds");
+    check(sheet.get_cell("E5").text_value() == "clear-all-renamed-summary-reacquire" &&
+            reacquired.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary later mutation should preserve shared cells");
+    check_renamed_clear_all_summary(true, 5,
+        "clear_cell_values() memory-budget renamed summary later mutation");
+
+    editor.save_as(second_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary second save should clean both handles");
+    check(editor.pending_change_count() == 3,
+        "clear_cell_values() memory-budget renamed summary second save should count the later materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget renamed summary second save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget renamed summary second save should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget renamed summary second save should clear dirty memory");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after second save");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_workbook_xml, R"(name="RenamedClearAll")",
+        "clear_cell_values() memory-budget renamed summary second save should keep the planned catalog name");
+    check_not_contains(second_workbook_xml, R"(name="Data")",
+        "clear_cell_values() memory-budget renamed summary second save should omit the source catalog name");
+    check_contains(second_worksheet_xml, R"(<dimension ref="A1:E5"/>)",
+        "clear_cell_values() memory-budget renamed summary second save should persist expanded bounds");
+    check_contains(second_worksheet_xml, "clear-all-renamed-mb-release",
+        "clear_cell_values() memory-budget renamed summary second save should preserve D4");
+    check_contains(second_worksheet_xml, "clear-all-renamed-summary-reacquire",
+        "clear_cell_values() memory-budget renamed summary second save should persist E5");
+    check_not_contains(second_worksheet_xml, "clear-rename-budget-a1-",
+        "clear_cell_values() memory-budget renamed summary second save should omit cleared A1 text");
+    check_not_contains(second_worksheet_xml, "clear-rename-budget-a2-",
+        "clear_cell_values() memory-budget renamed summary second save should omit cleared A2 text");
+    check_not_contains(second_worksheet_xml, R"(<v>1</v>)",
+        "clear_cell_values() memory-budget renamed summary second save should omit cleared B1 number");
+
+    check_reopened_clean_sheet_output(second_output, "RenamedClearAll",
+        "clear_cell_values() memory-budget renamed summary",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "clear_cell_values() memory-budget renamed summary reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 5,
+                "clear_cell_values() memory-budget renamed summary reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "clear-all-renamed-mb-release",
+                "clear_cell_values() memory-budget renamed summary reopened output should read D4");
+            const fastxlsx::CellValue reopened_e5 = reopened_sheet.get_cell("E5");
+            check(reopened_e5.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e5.text_value() == "clear-all-renamed-summary-reacquire",
+                "clear_cell_values() memory-budget renamed summary reopened output should read E5");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                "clear_cell_values() memory-budget renamed summary reopened output should keep A1 blank");
+        });
+}
+
 void test_public_worksheet_editor_erase_row_removes_sparse_row()
 {
     const std::filesystem::path source =
@@ -27130,6 +27366,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_clear_row_column_range_memory_budget_release();
             test_public_worksheet_editor_clear_sparse_range_batch_memory_budget_release();
             test_public_worksheet_editor_clear_all_memory_budget_release();
+            test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary();
             test_public_worksheet_editor_erase_row_removes_sparse_row();
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();

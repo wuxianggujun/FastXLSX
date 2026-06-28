@@ -5691,6 +5691,11 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-memory-budget-recovery-output.xlsx");
+        const std::string rejected_value =
+            "set-row-memory-rejected-" + std::string(4096, 'r');
+
         fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
         const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
@@ -5706,7 +5711,7 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         bool failed = false;
         try {
             sheet.set_row(1, {
-                fastxlsx::CellValue::text(std::string(4096, 'r')),
+                fastxlsx::CellValue::text(rejected_value),
             });
         } catch (const fastxlsx::FastXlsxError& error) {
             failed = true;
@@ -5731,6 +5736,53 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "failed set_row memory-budget mutation should preserve target-row numeric tail");
         check(sheet.get_cell("A2").text_value() == "placeholder-a2",
             "failed set_row memory-budget mutation should preserve non-target rows");
+
+        sheet.set_row(1, {fastxlsx::CellValue::text("row-mb-ok")});
+        check(!editor.last_edit_error().has_value(),
+            "successful set_row recovery should clear memory-budget diagnostics");
+        check(sheet.has_pending_changes(),
+            "successful set_row recovery should dirty the session");
+        check(editor.has_pending_changes(),
+            "successful set_row recovery should dirty the editor");
+        check(sheet.cell_count() == 2,
+            "successful set_row recovery should replace the target row");
+        check(sheet.estimated_memory_usage() <= exact_memory_budget,
+            "successful set_row recovery should stay within the exact memory budget");
+        check(sheet.get_cell("A1").text_value() == "row-mb-ok",
+            "successful set_row recovery should update the target row");
+        check(!sheet.try_cell("B1").has_value(),
+            "successful set_row recovery should remove old target-row tail cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "successful set_row recovery should preserve non-target rows");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "row-mb-ok",
+            "set_row memory-budget recovery should persist through save_as");
+        check_contains(worksheet_xml, "placeholder-a2",
+            "set_row memory-budget recovery should persist non-target rows");
+        check_not_contains(worksheet_xml, "set-row-memory-rejected",
+            "rejected set_row memory-budget payload should not leak into saved output");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "set_row memory-budget recovery should not resurrect target-row tail cells");
+        check_reopened_clean_sheet_output(output, "Data", "set_row memory-budget recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "set_row memory-budget recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 1,
+                    "set_row memory-budget recovery reopened output should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "row-mb-ok",
+                    "set_row memory-budget recovery reopened output should read recovered A1");
+                check(!reopened_sheet.try_cell("B1").has_value(),
+                    "set_row memory-budget recovery reopened output should keep old B1 absent");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "placeholder-a2",
+                    "set_row memory-budget recovery reopened output should keep non-target A2");
+            });
     }
 }
 
@@ -6042,6 +6094,11 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-column-memory-budget-recovery-output.xlsx");
+        const std::string rejected_value =
+            "set-column-memory-rejected-" + std::string(4096, 'c');
+
         fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
         const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
@@ -6057,7 +6114,7 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         bool failed = false;
         try {
             sheet.set_column(1, {
-                fastxlsx::CellValue::text(std::string(4096, 'c')),
+                fastxlsx::CellValue::text(rejected_value),
             });
         } catch (const fastxlsx::FastXlsxError& error) {
             failed = true;
@@ -6082,6 +6139,53 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "failed set_column memory-budget mutation should preserve target-column row two");
         check(sheet.get_cell("B1").number_value() == 1.0,
             "failed set_column memory-budget mutation should preserve non-target columns");
+
+        sheet.set_column(1, {fastxlsx::CellValue::text("col-mb-ok")});
+        check(!editor.last_edit_error().has_value(),
+            "successful set_column recovery should clear memory-budget diagnostics");
+        check(sheet.has_pending_changes(),
+            "successful set_column recovery should dirty the session");
+        check(editor.has_pending_changes(),
+            "successful set_column recovery should dirty the editor");
+        check(sheet.cell_count() == 2,
+            "successful set_column recovery should replace the target column");
+        check(sheet.estimated_memory_usage() <= exact_memory_budget,
+            "successful set_column recovery should stay within the exact memory budget");
+        check(sheet.get_cell("A1").text_value() == "col-mb-ok",
+            "successful set_column recovery should update the target column");
+        check(!sheet.try_cell("A2").has_value(),
+            "successful set_column recovery should remove old target-column tail cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "successful set_column recovery should preserve non-target columns");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "col-mb-ok",
+            "set_column memory-budget recovery should persist through save_as");
+        check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "set_column memory-budget recovery should persist non-target columns");
+        check_not_contains(worksheet_xml, "set-column-memory-rejected",
+            "rejected set_column memory-budget payload should not leak into saved output");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "set_column memory-budget recovery should not resurrect target-column tail cells");
+        check_reopened_clean_sheet_output(output, "Data", "set_column memory-budget recovery",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "set_column memory-budget recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                    "set_column memory-budget recovery reopened output should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "col-mb-ok",
+                    "set_column memory-budget recovery reopened output should read recovered A1");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "set_column memory-budget recovery reopened output should keep old A2 absent");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "set_column memory-budget recovery reopened output should keep non-target B1");
+            });
     }
 }
 

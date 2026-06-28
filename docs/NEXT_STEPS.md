@@ -1166,6 +1166,10 @@ Public-state now also pins the exact-memory-budget failure path for those
 row/column replacements: oversized `set_row()` / `set_column()` payloads fail
 before deleting the old target records, preserving sparse counts, memory
 estimates, dirty state, and source-backed cells.
+Those row/column replacements now also recover in the same exact-budget
+session: a smaller replacement clears the diagnostic, stays within the
+sparse-store estimate, saves cleanly, reopens with compact replacement bounds,
+and keeps replaced tails plus rejected payloads absent.
 The value-prefix variants now mirror that exact-memory-budget path:
 oversized `set_row_values()` / `set_column_values()` payloads fail before
 replacing the first target, preserving prefix/tail cells, sparse counts, memory

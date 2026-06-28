@@ -40513,6 +40513,46 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.968 - Pin same-sheet guard scalar-read no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove `WorksheetEditor` scalar reads after a same-sheet Patch guard failure
+  preserve the guard diagnostic and no-op-save state.
+
+Output:
+- Added a `public-guards` regression that materializes `Data`, triggers a
+  same-sheet `replace_sheet_data()` guard failure, then calls existing-cell
+  `try_cell()` / `get_cell()`, missing-cell `try_cell()`, missing-cell
+  `get_cell()` failure behavior, `cell_count()`, and
+  `estimated_memory_usage()`.
+- The regression verifies those scalar reads preserve the same
+  `last_edit_error()` guard diagnostic, keep the borrowed handle clean,
+  preserve sparse count/memory, and leave materialized diagnostics and pending
+  summaries empty.
+- A follow-up no-op `save_as()` writes decompressed package entries matching
+  the source workbook and does not leak the rejected replacement payload.
+
+Non-goals:
+- No dense reads, missing-cell synthesis, read-side diagnostics,
+  clean-session commits, guard bypass, coordinate repair, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

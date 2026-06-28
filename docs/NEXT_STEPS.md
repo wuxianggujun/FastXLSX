@@ -3581,6 +3581,11 @@ row/column snapshots, and coordinate-batch snapshots preserve the guard
 diagnostic, keep the borrowed handle clean, leave materialized diagnostics and
 pending summaries empty, and a no-op save remains a source-entry copy without
 leaking the rejected payload.
+The scalar read side now has matching guard evidence: existing-cell
+`try_cell()` / `get_cell()`, missing-cell `try_cell()`, missing-cell
+`get_cell()` failure behavior, `cell_count()`, and `estimated_memory_usage()`
+also preserve the guard diagnostic and no-op save state after a rejected
+same-sheet replacement.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

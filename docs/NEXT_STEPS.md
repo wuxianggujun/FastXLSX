@@ -3552,6 +3552,10 @@ after `Data` is renamed to `TransientData`, renamed back, saved, and reacquired
 under the restored source/planned name, a second `save_as()` keeps handles clean,
 materialized diagnostics and summaries empty, and decompressed package entries
 identical to the first restored-name output without reviving the transient name.
+The recovery side of that no-op save is covered too: a later valid `set_cell()`
+clears no diagnostics because none were present, re-dirties the restored `Data`
+session, saves as one additional materialized handoff, preserves the first
+saved value, writes the later value, and still keeps `TransientData` absent.
 The lower-level materialized diagnostics now pin the same renamed lifecycle:
 `pending_materialized_worksheet_names()` reports the current planned sheet name
 while dirty, cell/memory aggregates match the borrowed session, successful

@@ -5390,6 +5390,8 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-output.xlsx");
     const std::filesystem::path no_op_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-noop.xlsx");
+    const std::filesystem::path recovery_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-materialized-recovery.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -5521,6 +5523,70 @@ void test_public_worksheet_editor_rename_back_materialized_diagnostics_use_sourc
     const auto no_op_entries = fastxlsx::test::read_zip_entries(no_op_output);
     check(no_op_entries == output_entries,
         "rename-back no-op output should match the first restored-name materialized output");
+
+    reacquired.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-materialized-second"));
+    check(!editor.last_edit_error().has_value(),
+        "rename-back mutation after no-op save should keep diagnostics clear");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "rename-back mutation after no-op save should dirty both handles");
+    check(editor.pending_change_count() == 3,
+        "rename-back mutation after no-op save should not count a handoff before save");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "rename-back mutation after no-op save should dirty the restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == reacquired.cell_count(),
+        "rename-back mutation after no-op save should expose current dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            reacquired.estimated_memory_usage(),
+        "rename-back mutation after no-op save should expose current dirty memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rename-back mutation after no-op save should expose one summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "rename-back mutation after no-op save summary should use restored names");
+            check(!summary.renamed,
+                "rename-back mutation after no-op save summary should not be marked renamed");
+            check(!summary.sheet_data_replaced,
+                "rename-back mutation after no-op save summary should not invent replacement");
+            check(summary.materialized_dirty,
+                "rename-back mutation after no-op save summary should report dirty materialized state");
+        }
+    }
+
+    editor.save_as(recovery_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back recovery save should clean both handles");
+    check(editor.pending_change_count() == 4,
+        "rename-back recovery save should count one more materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back recovery save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back recovery save should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back recovery save should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back recovery save should clear current summaries");
+
+    const auto recovery_entries =
+        fastxlsx::test::read_zip_entries(recovery_output);
+    check_contains(recovery_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back recovery output should keep the restored source name");
+    check_not_contains(recovery_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back recovery output should not leak the transient planned name");
+    check_contains(recovery_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-materialized-source-name",
+        "rename-back recovery output should keep the first materialized value");
+    check_contains(recovery_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-materialized-second",
+        "rename-back recovery output should include the post-no-op mutation");
 }
 
 } // namespace

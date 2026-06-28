@@ -40241,6 +40241,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.961 - Pin rename-back materialized post-no-op recovery
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove a valid materialized mutation after the basic rename-back no-op save
+  re-dirties and saves through the restored source/planned name.
+
+Output:
+- Extended the same public rename-back regression to call `set_cell()` after
+  the no-op `save_as()` and then save a third output.
+- The regression verifies the later mutation keeps diagnostics clear, marks
+  the restored `Data` session dirty, reports matching dirty materialized
+  aggregates and one restored-name summary, and records one additional
+  materialized handoff only at `save_as()` time.
+- The recovery output keeps the first saved value, writes the later value, and
+  still does not revive or leak `TransientData`.
+
+Non-goals:
+- No commit history, undo/rollback, source-package mutation,
+  transient-name aliasing, catalog repair, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

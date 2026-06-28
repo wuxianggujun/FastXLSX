@@ -487,6 +487,12 @@ record only the guard diagnostic, do not leak rejected names or payloads into
 pending diagnostics or output, preserve source/materialized audits, and a later
 valid `set_cell()` clears the diagnostic before saving/reopening with the same
 full-calculation metadata boundary.
+The guard-only save side is pinned too: after the same rejected
+same-sheet Patch sequence, a second `save_as()` with no new materialized
+mutation keeps both handles clean, keeps the guard diagnostic intact, preserves
+saved edit summaries and source/materialized audits, and writes the same
+renamed/fullCalc shifted worksheet bytes as the pre-guard save without leaking
+rejected sheet names, replacement payloads, recovery cells, or calcChain.
 Invalid read preflights now follow the same rule: row-zero reads,
 column-overflow A1 reads, and reversed range reads fail without replacing the
 source scan or dirty materialized diagnostics.

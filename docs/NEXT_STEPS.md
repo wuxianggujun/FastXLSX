@@ -257,6 +257,14 @@ the planned sheet name, the definedName audit maps stale source `Data` reference
 to planned `RenamedData` for diagnostics but `save_as()` still keeps direct
 workbook definedNames unchanged unless the caller opted into the explicit
 definedName rewrite policy.
+The matching renamed source-formula audit boundary is now pinned as well: after
+default `rename_sheet("Data", "RenamedData")`, queued full calculation, and a
+dirty materialized shift under the planned sheet name,
+`source_formula_reference_audits()` still scans original source worksheet XML,
+reports source `D2` tokens `Data!A1` / `Data!B1`, maps source `Data` to planned
+`RenamedData` as stale source-name diagnostics, and later `save_as()` writes the
+renamed catalog, shifted `D3` formula, and `fullCalcOnLoad="1"` without
+creating calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

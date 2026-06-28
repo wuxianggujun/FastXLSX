@@ -9359,6 +9359,93 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
         });
 }
 
+void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits_preserve_source_scan()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_qualified_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-source-formula-audit-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-source-formula-audit-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.rename_sheet("Data", "RenamedData");
+    editor.request_full_calculation();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
+    sheet.insert_rows(2, 1);
+
+    constexpr std::string_view shifted_formula = "Data!A2+Data!B2";
+    const std::optional<fastxlsx::CellValue> materialized_formula =
+        sheet.try_cell("D3");
+    check(materialized_formula.has_value() &&
+            materialized_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            materialized_formula->text_value() == shifted_formula &&
+            materialized_formula->has_style() &&
+            materialized_formula->style_id().value() == styled_formula_style.value(),
+        "renamed full-calc source formula audit setup should expose the translated styled formula");
+    check(editor.has_worksheet("RenamedData") &&
+            !editor.has_worksheet("Data") &&
+            editor.pending_change_count() == 2 &&
+            editor.pending_materialized_worksheet_names()
+                == std::vector<std::string>{"RenamedData"} &&
+            editor.pending_materialized_cell_count() == 7 &&
+            editor.estimated_pending_materialized_memory_usage() > 0,
+        "renamed full-calc source formula audit setup should keep rename, metadata, and materialized diagnostics pending");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "renamed full-calc source formula audit setup should expose one dirty materialized summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "RenamedData" &&
+                    summaries[0].renamed &&
+                    summaries[0].materialized_dirty &&
+                    summaries[0].materialized_cell_count == 7,
+                "renamed full-calc source formula audit setup should report the dirty renamed summary");
+        }
+    }
+
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed full-calc source formula audit");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "renamed full-calc source formula audit save_as should clean the materialized sheet");
+    check(editor.pending_change_count() == 3,
+        "renamed full-calc source formula audit save_as should count rename, metadata, and materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc source formula audit save_as should clear dirty materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D3" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>Data!A2+Data!B2</f></c>)";
+    check_contains(workbook_xml, R"(name="RenamedData")",
+        "renamed full-calc source formula audit save_as should persist the planned catalog name");
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "renamed full-calc source formula audit save_as should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "renamed full-calc source formula audit save_as should not invent calcChain.xml");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "renamed full-calc source formula audit save_as should write shifted qualified formula");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "renamed full-calc source formula audit save_as should omit old formula coordinate");
+
+    check_public_state_reopened_shift_formula_audit_output(
+        output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        "renamed full-calc source formula audit");
+}
+
 void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
 {
     const std::filesystem::path source =
@@ -20636,6 +20723,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift();
             test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics();
             test_public_worksheet_editor_full_calculation_source_formula_audits_preserve_source_scan();
+            test_public_worksheet_editor_full_calculation_renamed_source_formula_audits_preserve_source_scan();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();
             test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula();

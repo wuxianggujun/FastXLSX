@@ -3718,6 +3718,10 @@ row/column/A1/clear mutations only record diagnostics. They keep both handles
 clean, preserve materialized diagnostics and sparse state, keep a no-op save
 byte-equivalent to the retry output, and the later valid mutation clears the
 diagnostic before saving.
+That late diagnostic cleanup is now pinned directly as well: missing-cell
+value-clear no-ops after those rejected mutations clear `last_edit_error()`
+without dirtying handles, changing sparse diagnostics, or changing another
+no-op save output.
 The invalid-mutation retry branch now completes that retry set: after the same
 missing-cell value-clear cleanup and failed-save recovery, rejected coordinate
 and A1 mutations leave reacquired sessions clean, preserve diagnostics across a

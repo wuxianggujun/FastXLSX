@@ -41654,6 +41654,45 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.996 - Pin rename-back cleanup invalid-mutation diagnostic clear
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove missing-cell value-clear no-ops after the P8.995 post-cleanup invalid
+  mutations clear diagnostics without dirtying the restored materialized
+  session.
+
+Output:
+- Extended the public retry cleanup regression so, after the P8.995 rejected
+  row/column/A1/clear mutations and no-op save, missing-cell
+  `clear_cell_value()` calls clear `last_edit_error()`.
+- The cleanup preserves clean handles, pending handoff count, materialized
+  diagnostics, summaries, catalog, saved/recovered values, sparse count/memory,
+  and all missing target absence checks.
+- A following no-op `save_as()` keeps diagnostics clear and writes bytes
+  equivalent to the retry output, while the existing matching reacquire plus
+  follow-up mutation/save remains valid.
+
+Non-goals:
+- No tombstones, dense clear semantics, blank synthesis for absent cells,
+  coordinate repair or clamping, missing-cell creation, source-name fallback,
+  session cloning, metadata repair, Patch/materialized sparse-session
+  composition, calcChain rebuild, sharedStrings/styles migration, or
+  low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

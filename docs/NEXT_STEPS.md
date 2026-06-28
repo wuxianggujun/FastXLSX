@@ -3617,6 +3617,11 @@ rejected row/column/A1/clear operations record diagnostics without dirtying the
 clean restored session or changing saved sparse state, a no-op save stays byte
 equivalent to the retry output, and the next valid mutation clears diagnostics
 before the follow-up save.
+Successful missing-cell `clear_cell_value()` no-ops after those retry-side
+invalid mutations are pinned as the cleanup branch: they clear the diagnostic,
+keep the restored session clean, preserve sparse counts and missing targets,
+write a no-op package identical to the retry output, and still allow the next
+valid mutation/save to proceed.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

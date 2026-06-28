@@ -3279,6 +3279,111 @@ void test_public_worksheet_editor_rejects_catalog_edits_after_materialization()
         "safe save after dirty materialized catalog guard should not leak rejected replacement");
 }
 
+void test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-clean-rename-guard-source.xlsx");
+    const std::filesystem::path readonly_output =
+        artifact("fastxlsx-workbook-editor-public-clean-rename-guard-readonly-output.xlsx");
+    const std::filesystem::path first_saved_output =
+        artifact("fastxlsx-workbook-editor-public-clean-rename-guard-first-output.xlsx");
+    const std::filesystem::path second_saved_output =
+        artifact("fastxlsx-workbook-editor-public-clean-rename-guard-second-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const WorkbookEditorPublicCatalogSnapshot catalog_before =
+            workbook_editor_public_catalog_snapshot(editor);
+
+        const std::optional<std::string> guard_error =
+            check_public_same_sheet_rename_then_replacement_guard_sequence(
+                editor,
+                "Data",
+                "ReadonlyBlockedRename",
+                "readonly-blocked-replacement",
+                "read-only materialized catalog guard");
+
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before, "read-only materialized catalog guard");
+        check(!editor.has_worksheet("ReadonlyBlockedRename"),
+            "read-only materialized catalog guard should not expose rejected rename");
+        check(!editor.has_pending_replacement("Data") &&
+                !editor.has_pending_replacement("ReadonlyBlockedRename"),
+            "read-only materialized catalog guard should not queue replacements");
+        check_public_failed_same_sheet_patch_readonly_clean_state(
+            editor, sheet, guard_error, "Data", "read-only materialized catalog guard");
+
+        editor.save_as(readonly_output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(readonly_output);
+        check(output_entries == source_entries,
+            "read-only materialized catalog guard save_as should copy source entries");
+        check_not_contains(output_entries.at("xl/workbook.xml"), "ReadonlyBlockedRename",
+            "read-only materialized catalog guard output should not leak rejected rename");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "readonly-blocked-replacement",
+            "read-only materialized catalog guard output should not leak replacement");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        sheet.set_cell(1, 1, fastxlsx::CellValue::text("saved-clean-survives-guard"));
+        editor.save_as(first_saved_output);
+        check(!sheet.has_pending_changes(),
+            "saved-clean catalog guard precondition should start from a clean handle");
+
+        const std::size_t saved_pending_count = editor.pending_change_count();
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> saved_summaries =
+            editor.pending_worksheet_edits();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before =
+            workbook_editor_public_catalog_snapshot(editor);
+
+        const std::optional<std::string> guard_error =
+            check_public_same_sheet_rename_then_replacement_guard_sequence(
+                editor,
+                "Data",
+                "SavedBlockedRename",
+                "saved-blocked-replacement",
+                "saved-clean materialized catalog guard");
+
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before, "saved-clean materialized catalog guard");
+        check(!editor.has_worksheet("SavedBlockedRename"),
+            "saved-clean materialized catalog guard should not expose rejected rename");
+        check(!editor.has_pending_replacement("Data") &&
+                !editor.has_pending_replacement("SavedBlockedRename"),
+            "saved-clean materialized catalog guard should not queue replacements");
+        check_public_failed_same_sheet_patch_saved_clean_state(
+            editor,
+            sheet,
+            saved_pending_count,
+            saved_summaries,
+            guard_error,
+            "Data",
+            "saved-clean materialized catalog guard");
+
+        editor.save_as(second_saved_output);
+        check(editor.pending_change_count() == saved_pending_count,
+            "saved-clean materialized catalog guard save_as should not add handoffs");
+        const auto first_entries = fastxlsx::test::read_zip_entries(first_saved_output);
+        const auto second_entries = fastxlsx::test::read_zip_entries(second_saved_output);
+        check_contains(first_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-survives-guard",
+            "saved-clean materialized catalog guard first output should keep saved value");
+        check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-clean-survives-guard",
+            "saved-clean materialized catalog guard second output should keep saved value");
+        check_not_contains(second_entries.at("xl/workbook.xml"), "SavedBlockedRename",
+            "saved-clean materialized catalog guard output should not leak rejected rename");
+        check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+            "saved-blocked-replacement",
+            "saved-clean materialized catalog guard output should not leak replacement");
+    }
+}
+
 void test_public_worksheet_editor_reacquire_reuses_dirty_session()
 {
     const std::filesystem::path source =
@@ -4121,6 +4226,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rejects_non_default_style_id_a1_without_mutation();
             test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
+            test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_worksheet_editor_reacquire_reuses_dirty_session();
             test_public_worksheet_editor_reacquire_after_save_reuses_session();
             test_public_worksheet_editor_post_save_reacquire_preserves_clean_diagnostics();

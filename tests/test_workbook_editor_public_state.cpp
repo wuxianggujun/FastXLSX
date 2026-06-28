@@ -8708,6 +8708,107 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         });
 }
 
+void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.delete_rows(1, 1);
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(dirty_cell_count == 5,
+        "full-calc delete_rows setup should keep shifted sparse count");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D1");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "#REF!+#REF!" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "full-calc delete_rows setup should translate deleted references and preserve style id");
+
+    editor.request_full_calculation();
+
+    check(!editor.last_edit_error().has_value(),
+        "request_full_calculation after delete_rows should clear diagnostics");
+    check(editor.pending_change_count() == 1,
+        "request_full_calculation after delete_rows should add one metadata edit");
+    check(sheet.has_pending_changes(),
+        "request_full_calculation after delete_rows should keep the shifted sheet dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "request_full_calculation after delete_rows should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "request_full_calculation after delete_rows should preserve dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "request_full_calculation after delete_rows should preserve dirty sparse memory");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc delete_rows save_as should clean the shifted materialized sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc delete_rows save_as should count metadata edit plus materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "full-calc delete_rows save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "full-calc delete_rows save_as should clear dirty materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc delete_rows save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D1" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+#REF!</f></c>)";
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc delete_rows save_as should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc delete_rows save_as should not invent calcChain.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "full-calc delete_rows save_as should project shifted bounds");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc delete_rows save_as should write shifted #REF! formula with style id");
+    check_contains(worksheet_xml, R"(<c r="A1")",
+        "full-calc delete_rows save_as should write shifted source row");
+    check_contains(worksheet_xml, R"(<c r="A2")",
+        "full-calc delete_rows save_as should write shifted trailing row");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "full-calc delete_rows save_as should omit old formula coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "full-calc delete_rows save_as should omit old trailing coordinate");
+
+    check_reopened_shift_output(output, "full-calc delete_rows",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "full-calc delete_rows reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "full-calc delete_rows reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d1->text_value() == "#REF!+#REF!" &&
+                    reopened_d1->has_style() &&
+                    reopened_d1->style_id().value() == styled_formula_style.value(),
+                "full-calc delete_rows reopened output should read shifted #REF! formula");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("A2").text_value() == "extra-c3",
+                "full-calc delete_rows reopened output should read shifted source rows");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "full-calc delete_rows reopened output should keep old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -20091,6 +20192,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_full_calculation_before_insert_columns_shift();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
+            test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_shift_after_rename_uses_planned_name();
             test_public_worksheet_editor_shift_after_rename_preserves_formula_style();

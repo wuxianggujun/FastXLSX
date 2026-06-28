@@ -224,6 +224,11 @@ The reverse ordering is now covered for column shifts: a queued
 `WorksheetEditor::insert_columns()` sparse shift, and `save_as()` writes the
 workbook calc metadata plus shifted numeric/formula/text cells while omitting
 old coordinates and `xl/calcChain.xml`.
+The delete-side row-shift branch now has the same full-calculation guard:
+after dirty `WorksheetEditor::delete_rows()` shifts source-backed cells and a
+styled formula into `#REF!` references, queued `request_full_calculation()`
+preserves dirty diagnostics until `save_as()`, writes `fullCalcOnLoad="1"`,
+and still does not create `xl/calcChain.xml`.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

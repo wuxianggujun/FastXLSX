@@ -3592,6 +3592,11 @@ survives a rejected source-overwrite `save_as(source)` without flushing, keeps
 `last_edit_error()` clear, preserves dirty materialized diagnostics and missing
 clear targets, leaves the source package unchanged, and a later safe save still
 writes only the saved and recovered values.
+The post-retry reacquire side is now covered as well: after that safe retry, a
+fresh matching `worksheet("Data")` stays clean, reads both saved values from the
+restored materialized session, leaves diagnostics empty, and a later follow-up
+mutation/save preserves saved/recovered cells while still excluding rejected
+payloads, missing clear targets, and `TransientData`.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

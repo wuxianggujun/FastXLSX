@@ -37635,6 +37635,46 @@ Acceptance:
 - `git diff --check` passes.
 - `ctest --preset windows-nmake-release --output-on-failure` passes.
 
+### P8.898 - Pin full-calc source formula audit isolation
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorkbookEditor::source_formula_reference_audits()` remains a
+read-only source XML scan when a workbook-level full-calculation request is
+queued beside a dirty shifted `WorksheetEditor` formula session.
+
+Output:
+- Added public-state coverage for `worksheet("Data").insert_rows(2, 1)` followed
+  by `request_full_calculation()` and `source_formula_reference_audits()`.
+- The regression verifies the materialized formula moves to `D3` as
+  `Data!A2+Data!B2`, while the source audit still reports original source `D2`
+  references `Data!A1` and `Data!B1`.
+- The audit call snapshots pending edit count, materialized names/counts/memory,
+  summaries, catalog, replacement diagnostics, and `last_edit_error` to prove it
+  does not mutate public diagnostics.
+- The saved package still writes the shifted formula, persists
+  `fullCalcOnLoad="1"`, omits the old `D2` formula coordinate, and does not
+  create `xl/calcChain.xml`.
+
+Non-goals / boundary:
+- No source XML mutation, no merged source/materialized audit view, no formula
+  evaluation, no formula repair, no worksheet metadata synchronization, no
+  calcChain rebuild, no sharedStrings/styles migration, and no low-memory random
+  editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

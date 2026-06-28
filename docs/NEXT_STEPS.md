@@ -239,6 +239,12 @@ Formula audit diagnostics now sit on top of that full-calculation mixing state:
 formula and queued `request_full_calculation()`, reporting the shifted
 `Data!A2` / `Data!B2` tokens while preserving materialized diagnostics and later
 saving both the shifted formula and `fullCalcOnLoad="1"` without calcChain.
+Source formula audit diagnostics now share that full-calculation boundary:
+`source_formula_reference_audits()` still scans the original worksheet XML while
+a dirty shifted materialized session and queued full-calculation metadata are
+pending, reporting source `D2` tokens `Data!A1` / `Data!B1` even though the
+materialized save path later writes `D3` as `Data!A2+Data!B2` with
+`fullCalcOnLoad="1"` and no calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

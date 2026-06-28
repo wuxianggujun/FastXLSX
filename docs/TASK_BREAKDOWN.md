@@ -39150,6 +39150,46 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.934 - Pin sparse clear memory-budget release
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/EDITING_MODEL.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove `WorksheetEditor::clear_cell_values(CellRange)` and coordinate-batch
+`clear_cell_values(...)` release value-payload memory under exact
+`memory_budget_bytes` while preserving represented target coordinates as blanks.
+
+Output:
+- Added public-state regressions that first reject oversized `set_cell()`
+  insertions in exact-memory-budget sessions, then use
+  `clear_cell_values(CellRange)` or coordinate-list `clear_cell_values(...)`
+  before inserting a smaller recovery cell.
+- The regressions verify sparse range/batch clear operations clear the prior
+  memory-budget diagnostic, preserve target records as blanks, skip missing
+  coordinates without synthesis, lower the sparse memory estimate, preserve
+  non-target cells, and save/reopen without leaking rejected payloads.
+- Updated API / editing-model / next-step / task breakdown documentation to
+  record the sparse range/batch value-clear estimate-release boundary.
+
+Non-goals / boundary:
+- No dense range editing, no memory-budget auto-sizing, no process-RSS
+  accounting, no range metadata synchronization, no tombstones, no transaction
+  rollback, no formula repair or evaluation, no calcChain rebuild, no
+  sharedStrings/styles migration, and no low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

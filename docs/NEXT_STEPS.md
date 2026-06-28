@@ -1142,6 +1142,11 @@ The inclusive row/column range variants now carry the same evidence:
 explicit blank, preserve records outside the target row/column range, lower the
 value-payload estimate, and still allow a later recovery cell to save/reopen
 inside the exact budget.
+Sparse range and coordinate-batch value clears now match that boundary too:
+`clear_cell_values(CellRange)` and coordinate-list `clear_cell_values(...)`
+release cleared text payload estimates, keep represented target coordinates as
+blanks, skip missing coordinates without synthesis, preserve non-target cells,
+and save/reopen a later recovery cell inside the same exact budget.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

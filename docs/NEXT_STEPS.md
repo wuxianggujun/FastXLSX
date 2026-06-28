@@ -1122,6 +1122,11 @@ The range erase save/reacquire state path is also pinned: after
 the materialized session, matching `worksheet()` reacquire reuses the clean
 erased sparse state, missing-only range erase remains a no-op, and later
 mutation persists without resurrecting erased cells.
+The sparse range and coordinate-batch erase paths now also cover exact
+`memory_budget_bytes` release: a rejected oversized insertion keeps the session
+clean, `erase_cells(CellRange)` or initializer-list `erase_cells(...)` clears
+that diagnostic and drops the sparse store to empty, and a smaller recovery cell
+saves/reopens without resurrecting erased source cells or rejected payloads.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

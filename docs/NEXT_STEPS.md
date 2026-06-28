@@ -3581,6 +3581,12 @@ after an invalid mutation records `last_edit_error()`, valid row/column and A1
 dirtying either handle, preserve sparse count/memory, keep missing targets
 absent without synthesizing blank cells, and a no-op save still matches the
 first restored-name output.
+The post-cleanup recovery side is pinned as well: after that missing-cell
+value-clear no-op and matching no-op save, a later valid `set_cell()` re-dirties
+the restored `Data` session, reports matching dirty materialized aggregates and
+a restored-name summary, saves as one additional materialized handoff, preserves
+the first saved value, writes the later value, keeps missing clear targets
+absent, and still does not leak rejected payloads or `TransientData`.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

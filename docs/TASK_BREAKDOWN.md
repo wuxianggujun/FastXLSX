@@ -41731,6 +41731,44 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.998 - Pin rename-back cleanup follow-up dirty diagnostics
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove the first valid follow-up mutation after the P8.997 matching reacquire
+  re-exposes correct dirty materialized diagnostics after the long cleanup
+  chain.
+
+Output:
+- Extended the public retry cleanup regression so the follow-up `set_cell()`
+  after diagnostic cleanup, matching reacquire, and no-op save dirties all
+  borrowed handles while keeping diagnostics clear.
+- The mutation now asserts the restored `Data` pending materialized name,
+  aggregate dirty cell/memory totals, and one materialized-only worksheet
+  summary with restored source/planned names and matching sparse diagnostics.
+- The existing follow-up `save_as()` still clears handles, materialized
+  diagnostics, summaries, and writes the follow-up value without leaking
+  rejected payloads or `TransientData`.
+
+Non-goals:
+- No transaction history, session cloning, metadata repair,
+  Patch/materialized sparse-session composition, formula/range/table sync,
+  calcChain rebuild, sharedStrings/styles migration, or low-memory large-file
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

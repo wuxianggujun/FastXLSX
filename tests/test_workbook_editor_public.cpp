@@ -7940,6 +7940,30 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_
         check(names.size() == 1 && names[0] == "Data",
             "rename-back missing clear cleanup follow-up mutation should dirty the restored source name");
     }
+    check(editor.pending_materialized_cell_count() == matching.cell_count(),
+        "rename-back missing clear cleanup follow-up mutation should expose current dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            matching.estimated_memory_usage(),
+        "rename-back missing clear cleanup follow-up mutation should expose current dirty memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rename-back missing clear cleanup follow-up mutation should expose one summary");
+        if (summaries.size() == 1) {
+            const fastxlsx::WorkbookEditorWorksheetEditSummary& summary = summaries.front();
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "rename-back missing clear cleanup follow-up mutation summary should use restored names");
+            check(!summary.renamed && !summary.sheet_data_replaced &&
+                    !summary.targeted_cells_replaced && summary.materialized_dirty,
+                "rename-back missing clear cleanup follow-up mutation summary should only mark materialized dirty");
+            check(summary.materialized_cell_count == matching.cell_count(),
+                "rename-back missing clear cleanup follow-up mutation summary should report dirty cell count");
+            check(summary.estimated_materialized_memory_usage ==
+                    matching.estimated_memory_usage(),
+                "rename-back missing clear cleanup follow-up mutation summary should report dirty memory");
+        }
+    }
 
     editor.save_as(followup_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&

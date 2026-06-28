@@ -3726,6 +3726,10 @@ The matching reacquire after that cleanup is now covered before the follow-up
 write: a fresh `worksheet("Data")` with matching options reads the saved values
 as a clean session, preserves diagnostics/catalog/sparse state, and another
 no-op save remains byte-equivalent to the retry output.
+The follow-up mutation diagnostics now close that long cleanup chain: the first
+valid write after the matching reacquire dirties all borrowed handles, reports
+the restored `Data` dirty name, exposes aggregate materialized cell/memory
+totals, and emits one materialized-only summary before save clears everything.
 The invalid-mutation retry branch now completes that retry set: after the same
 missing-cell value-clear cleanup and failed-save recovery, rejected coordinate
 and A1 mutations leave reacquired sessions clean, preserve diagnostics across a

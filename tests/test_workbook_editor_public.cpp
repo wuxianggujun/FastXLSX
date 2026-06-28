@@ -2812,6 +2812,67 @@ void test_public_request_full_calculation_preserves_dirty_materialized_session()
         "request_full_calculation save_as should keep the materialized dimension refresh");
 }
 
+void test_public_request_full_calculation_preserves_clean_materialized_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-full-calc-clean-materialized-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-clean-materialized-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const fastxlsx::CellValue original_a1 = sheet.get_cell(1, 1);
+    check(original_a1.kind() == fastxlsx::CellValueKind::Text &&
+            original_a1.text_value() == "placeholder-a1",
+        "clean materialized full-calc setup should read source data");
+    check(!sheet.has_pending_changes(),
+        "clean materialized full-calc setup should keep the borrowed sheet clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialized full-calc setup should not report dirty names");
+
+    editor.request_full_calculation();
+    check(!editor.last_edit_error().has_value(),
+        "request_full_calculation with clean materialized state should clear diagnostics");
+    check(editor.has_pending_changes(),
+        "request_full_calculation with clean materialized state should queue workbook metadata");
+    check(editor.pending_change_count() == 1,
+        "request_full_calculation with clean materialized state should count one metadata edit");
+    check(!sheet.has_pending_changes(),
+        "request_full_calculation should not dirty the clean borrowed sheet");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "request_full_calculation should not report clean materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "request_full_calculation should not report clean materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "request_full_calculation should not report clean materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "request_full_calculation should not invent worksheet edit summaries");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "save_as after clean materialized full-calc request should keep the sheet clean");
+    check(editor.pending_change_count() == 1,
+        "save_as after clean materialized full-calc request should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after clean materialized full-calc request should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after clean materialized full-calc request should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after clean materialized full-calc request should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after clean materialized full-calc request should keep summaries empty");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "clean materialized full-calc save should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "clean materialized full-calc save should not invent calcChain.xml");
+    check(output_entries.at("xl/worksheets/sheet1.xml") ==
+            source_entries.at("xl/worksheets/sheet1.xml"),
+        "clean materialized full-calc save should preserve Data worksheet bytes");
+}
+
 void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
 {
     const std::filesystem::path source =
@@ -4285,6 +4346,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rejects_non_default_style_id_a1_without_mutation();
             test_public_try_worksheet_reuses_options_and_blocks_replacement_mix();
             test_public_request_full_calculation_preserves_dirty_materialized_session();
+            test_public_request_full_calculation_preserves_clean_materialized_session();
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_worksheet_editor_reacquire_reuses_dirty_session();

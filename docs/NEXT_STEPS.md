@@ -158,6 +158,11 @@ materialized sessions too: calling `request_full_calculation()` after a
 dirty materialized names/counts/memory until `save_as()`, and the save output
 contains both `fullCalcOnLoad="1"` and the materialized sparse projection
 without inventing `xl/calcChain.xml`.
+The same helper now has clean materialized-session coverage: read-only
+materialization followed by `request_full_calculation()` queues the workbook
+metadata request, leaves materialized diagnostics and worksheet edit summaries
+empty, and saves with the source worksheet bytes preserved while still writing
+`fullCalcOnLoad="1"`.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

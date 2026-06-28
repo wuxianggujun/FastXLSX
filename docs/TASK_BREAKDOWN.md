@@ -41571,6 +41571,47 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.994 - Pin rename-back missing-clear retry cleanup invalid reads
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid read preflights after the rename-back missing-clear failed-save
+  retry cleanup do not re-pollute the clean restored materialized session.
+
+Output:
+- Extended the public retry cleanup regression so, after retry-side invalid
+  mutation diagnostics are cleared by missing-cell `clear_cell_value()` no-ops
+  and lookup failures are rejected cleanly, invalid row/column scalar reads,
+  malformed or overflowing A1 reads, invalid/reversed range snapshots, and
+  invalid row/column snapshot reads fail.
+- Those invalid reads keep `last_edit_error()` clear, preserve clean handles,
+  pending handoff count, materialized diagnostics, summaries, catalog,
+  saved/recovered values, sparse count/memory, and missing target absence.
+- The following no-op `save_as()` still writes bytes equivalent to the retry
+  output, and the existing matching reacquire plus follow-up mutation/save
+  remains valid.
+
+Non-goals:
+- No tolerant coordinate parsing, coordinate repair or clamping, read-side
+  diagnostics, missing-cell synthesis, source-name fallback, session cloning,
+  source-package overwrite mode, source mutation, transactional undo/redo,
+  metadata repair, Patch/materialized sparse-session composition, calcChain
+  rebuild, sharedStrings/styles migration, or low-memory large-file random
+  editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

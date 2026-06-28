@@ -7706,6 +7706,53 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_
             !reacquired.try_cell("D4").has_value(),
         "rename-back missing clear cleanup lookup should keep missing targets absent");
 
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell(0, 1); }),
+        "rename-back missing clear cleanup invalid reads should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(1, 0); }),
+        "rename-back missing clear cleanup invalid reads should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.try_cell("a1"); }),
+        "rename-back missing clear cleanup invalid reads should reject lowercase A1 references");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("XFE1"); }),
+        "rename-back missing clear cleanup invalid reads should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "rename-back missing clear cleanup invalid reads should reject row-zero ranges");
+    check(threw_fastxlsx_error([&] {
+        (void)reacquired.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
+    }), "rename-back missing clear cleanup invalid reads should reject reversed ranges");
+    check(threw_fastxlsx_error([&] { (void)reacquired.row_cells(0); }),
+        "rename-back missing clear cleanup invalid reads should reject row snapshot zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.column_cells(0); }),
+        "rename-back missing clear cleanup invalid reads should reject column snapshot zero");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear cleanup invalid reads should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear cleanup invalid reads should keep handles clean");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear cleanup invalid reads should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear cleanup invalid reads should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear cleanup invalid reads should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear cleanup invalid reads should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear cleanup invalid reads should keep summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_after_retry, "rename-back missing clear cleanup invalid reads");
+    check(reacquired.cell_count() == saved_cell_count &&
+            reacquired.estimated_memory_usage() == saved_memory,
+        "rename-back missing clear cleanup invalid reads should preserve sparse diagnostics");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-missing-clear-cleanup-saved",
+        "rename-back missing clear cleanup invalid reads");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 2, 2, "rename-back-missing-clear-cleanup-recovered",
+        "rename-back missing clear cleanup invalid reads");
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back missing clear cleanup invalid reads should keep missing targets absent");
+
     editor.save_as(cleanup_no_op_output);
     check(!editor.last_edit_error().has_value(),
         "rename-back missing clear cleanup no-op save should keep diagnostics clear");

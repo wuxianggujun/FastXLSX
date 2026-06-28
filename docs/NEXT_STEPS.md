@@ -3626,6 +3626,10 @@ Missing-sheet and transient-name lookups after that cleanup are now pinned too:
 optional lookups return empty, throwing lookups fail, diagnostics stay clear,
 the restored `Data` session remains clean with saved sparse state intact, and
 the later no-op save still matches the retry output.
+Invalid reads after the same cleanup now cover the read-side failure surface:
+row/column/A1/range/row-snapshot/column-snapshot failures leave diagnostics
+clear, preserve the restored clean `Data` session and saved sparse state, and
+the later no-op save still matches the retry output.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

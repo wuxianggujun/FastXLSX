@@ -3458,6 +3458,9 @@ Invalid mutation preflights now cover the adjacent diagnostic branch: rejected
 `set_cell()` / `erase_cell()` calls preserve the invalid-reference
 `last_edit_error()` while keeping handles, saved cells, catalog state,
 materialized diagnostics, rejected payloads, and no-op-save output stable.
+The follow-up recovery path is pinned too: a later valid mutation clears that
+diagnostic, dirties the shared saved/reacquired session once, expands the
+persisted bounds, and reopens clean after the next materialized handoff.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

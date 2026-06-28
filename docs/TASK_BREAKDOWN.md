@@ -38195,6 +38195,50 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.911 - Pin saved renamed full-calc formula audit failed-save retry
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a later dirty saved/reacquired renamed full-calculation formula
+audit session survives a rejected `save_as()` preflight and can still be safely
+retried.
+
+Output:
+- Added public-state shard coverage for the P8.910 saved-session setup followed
+  by a valid `set_cell()` dirtying the reacquired planned-name session, an exact
+  source-overwrite `save_as()` rejection, materialized/source formula audits,
+  safe retry, and reopened readback.
+- The regression verifies rejected save-as does not record the later
+  materialized handoff, does not update `last_edit_error()`, preserves dirty
+  materialized diagnostics and summaries, keeps source/planned catalog state,
+  leaves source package bytes unchanged, and retains the shifted `D3` styled
+  formula plus dirty `C5` text cell.
+- After the rejection, `formula_reference_audits()` still reports shifted
+  tokens `Data!A2` / `Data!B2`, while `source_formula_reference_audits()` still
+  reports original source `D2` tokens `Data!A1` / `Data!B1`.
+- The safe retry records the next materialized handoff, clears dirty
+  diagnostics, writes the renamed catalog, shifted formula, dirty text cell,
+  and `fullCalcOnLoad="1"`, and still does not create `xl/calcChain.xml`.
+
+Non-goals / boundary:
+- No in-place save, no transaction rollback, no source-name fallback, no
+  default formula rewrite during sheet rename, no formula evaluation or repair,
+  no metadata synchronization, no calcChain rebuild, no sharedStrings/styles
+  migration, and no low-memory random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

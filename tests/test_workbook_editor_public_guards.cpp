@@ -2688,6 +2688,89 @@ void test_public_worksheet_editor_same_sheet_guard_scalar_reads_preserve_diagnos
         "guard scalar-read rejected replacement should not leak into output");
 }
 
+void test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_diagnostic()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-guard-invalid-reads-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-guard-invalid-reads-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    const fastxlsx::CellValue source_value = data.get_cell("A1");
+    check(source_value.kind() == fastxlsx::CellValueKind::Text &&
+            source_value.text_value() == "placeholder-a1",
+        "guard invalid-read setup should materialize Data from source");
+    check(!data.has_pending_changes(),
+        "guard invalid-read setup should keep Data clean");
+
+    const std::size_t data_cell_count = data.cell_count();
+    const std::size_t data_memory = data.estimated_memory_usage();
+
+    const std::optional<std::string> guard_error =
+        check_public_same_sheet_guard_failure(
+            editor,
+            [&] {
+                editor.replace_sheet_data("Data",
+                    {{fastxlsx::CellValue::text("guard-invalid-read-blocked")}});
+            },
+            PublicMaterializedGuardDiagnostic::ReplaceSheetData,
+            "guard invalid-read same-sheet replacement");
+
+    check(threw_fastxlsx_error([&] { (void)data.try_cell(0, 1); }),
+        "guard invalid reads should reject row zero");
+    check(threw_fastxlsx_error([&] { (void)data.get_cell(1, 0); }),
+        "guard invalid reads should reject column zero");
+    check(threw_fastxlsx_error([&] { (void)data.try_cell("a1"); }),
+        "guard invalid reads should reject lowercase A1 references");
+    check(threw_fastxlsx_error([&] { (void)data.get_cell("XFE1"); }),
+        "guard invalid reads should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] {
+        (void)data.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "guard invalid reads should reject invalid range coordinates");
+    check(threw_fastxlsx_error([&] {
+        (void)data.sparse_cells(fastxlsx::CellRange {2, 1, 1, 1});
+    }), "guard invalid reads should reject reversed ranges");
+    check(threw_fastxlsx_error([&] { (void)data.row_cells(0); }),
+        "guard invalid reads should reject row_cells row zero");
+    check(threw_fastxlsx_error([&] { (void)data.column_cells(16385); }),
+        "guard invalid reads should reject column_cells column overflow");
+
+    check(editor.last_edit_error() == guard_error,
+        "guard invalid reads should preserve the same-sheet diagnostic");
+    check(!data.has_pending_changes(),
+        "guard invalid reads should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "guard invalid reads should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "guard invalid reads should not queue public edits");
+    check(editor.pending_worksheet_edits().empty(),
+        "guard invalid reads should keep pending summaries empty");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "guard invalid reads should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "guard invalid reads should keep dirty materialized cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "guard invalid reads should keep dirty materialized memory empty");
+    check_public_preserved_sheet_diagnostics(
+        data, data_cell_count, data_memory, "Data",
+        "guard invalid reads");
+    check_public_inspection_preserves_last_edit_error(editor, guard_error);
+
+    editor.save_as(output);
+    check(editor.last_edit_error() == guard_error,
+        "guard invalid-read no-op save_as should preserve the diagnostic");
+    check(!data.has_pending_changes(),
+        "guard invalid-read no-op save_as should keep Data clean");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "guard invalid-read no-op output should remain copy-original");
+    check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        "guard-invalid-read-blocked",
+        "guard invalid-read rejected replacement should not leak into output");
+}
+
 void test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic()
 {
     {
@@ -4457,6 +4540,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_clean_same_sheet_patch_failures_replace_diagnostics();
             test_public_worksheet_editor_same_sheet_guard_snapshot_reads_preserve_diagnostic();
             test_public_worksheet_editor_same_sheet_guard_scalar_reads_preserve_diagnostic();
+            test_public_worksheet_editor_same_sheet_guard_invalid_reads_preserve_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_cross_sheet_success_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_worksheet_mutation_clears_diagnostic();
             test_public_worksheet_editor_clean_same_sheet_failure_then_noop_erase_clears_diagnostic();

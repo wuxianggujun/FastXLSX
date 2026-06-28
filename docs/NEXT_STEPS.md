@@ -3586,6 +3586,11 @@ The scalar read side now has matching guard evidence: existing-cell
 `get_cell()` failure behavior, `cell_count()`, and `estimated_memory_usage()`
 also preserve the guard diagnostic and no-op save state after a rejected
 same-sheet replacement.
+Invalid reads after that guard are pinned too: invalid row/column scalar
+reads, lowercase or overflowing A1 references, invalid/reversed sparse ranges,
+and invalid row/column snapshot reads still fail without replacing the guard
+diagnostic, dirtying the borrowed handle, or changing the copy-original no-op
+save output.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

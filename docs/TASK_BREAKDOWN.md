@@ -41531,6 +41531,46 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
 
+### P8.993 - Pin rename-back missing-clear retry cleanup lookups
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove missing-sheet and transient-name lookups after the rename-back
+  missing-clear failed-save retry cleanup do not re-pollute the clean restored
+  materialized session.
+
+Output:
+- Extended the public retry cleanup regression so, after retry-side invalid
+  mutation diagnostics are cleared by missing-cell `clear_cell_value()` no-ops,
+  optional `try_worksheet()` lookups for `Missing` and `TransientData` return
+  empty and throwing `worksheet()` lookups fail.
+- Those lookup failures keep `last_edit_error()` clear, preserve clean handles,
+  pending handoff count, materialized diagnostics, summaries, catalog,
+  saved/recovered values, sparse count/memory, and missing target absence.
+- The following no-op `save_as()` still writes bytes equivalent to the retry
+  output, and the existing matching reacquire plus follow-up mutation/save
+  remains valid.
+
+Non-goals:
+- No source-name fallback, transient-name aliasing, missing-sheet creation,
+  session cloning, source-package overwrite mode, source mutation,
+  transactional undo/redo, metadata repair, Patch/materialized sparse-session
+  composition, calcChain rebuild, sharedStrings/styles migration, or low-memory
+  large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

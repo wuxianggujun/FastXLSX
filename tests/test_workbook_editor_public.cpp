@@ -7663,6 +7663,49 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_failed_
             !reacquired.try_cell("D4").has_value(),
         "rename-back missing clear cleanup no-op after retry should keep missing targets absent");
 
+    const std::optional<fastxlsx::WorksheetEditor> missing_after_cleanup =
+        editor.try_worksheet("Missing", options);
+    check(!missing_after_cleanup.has_value(),
+        "rename-back missing clear cleanup lookup should return empty for missing try_worksheet");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Missing", options);
+    }), "rename-back missing clear cleanup lookup should throw for missing worksheet");
+    const std::optional<fastxlsx::WorksheetEditor> transient_after_cleanup =
+        editor.try_worksheet("TransientData", options);
+    check(!transient_after_cleanup.has_value(),
+        "rename-back missing clear cleanup lookup should return empty for transient try_worksheet");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("TransientData", options);
+    }), "rename-back missing clear cleanup lookup should throw for transient worksheet");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear cleanup lookup should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear cleanup lookup should keep handles clean");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear cleanup lookup should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear cleanup lookup should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear cleanup lookup should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear cleanup lookup should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear cleanup lookup should keep summaries empty");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_after_retry, "rename-back missing clear cleanup lookup");
+    check(reacquired.cell_count() == saved_cell_count &&
+            reacquired.estimated_memory_usage() == saved_memory,
+        "rename-back missing clear cleanup lookup should preserve sparse diagnostics");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-missing-clear-cleanup-saved",
+        "rename-back missing clear cleanup lookup");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 2, 2, "rename-back-missing-clear-cleanup-recovered",
+        "rename-back missing clear cleanup lookup");
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back missing clear cleanup lookup should keep missing targets absent");
+
     editor.save_as(cleanup_no_op_output);
     check(!editor.last_edit_error().has_value(),
         "rename-back missing clear cleanup no-op save should keep diagnostics clear");

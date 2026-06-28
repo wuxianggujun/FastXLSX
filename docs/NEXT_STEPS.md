@@ -329,6 +329,12 @@ source/materialized audits without staging rejected payloads, and a later valid
 `set_cell()` clears the diagnostic, re-dirties the shared session, then
 save/reopen keeps the shifted formula, recovered text cell,
 `fullCalcOnLoad="1"`, and no calcChain.
+The invalid-mutation no-op save path is covered too: rejected row-zero /
+column-overflow `set_cell()` calls and a range-form `erase_cell()` keep the
+clean saved/reacquired handles clean, preserve the invalid-reference diagnostic
+and source/materialized audits, and a second `save_as()` with no recovery
+mutation writes the same renamed/fullCalc shifted worksheet bytes as the
+pre-error save without rejected payloads, recovery cells, or calcChain.
 Invalid reads on the clean saved/reacquired session are pinned too: rejected
 coordinate/A1/range/batch reads and missing-cell `get_cell()` calls keep both
 planned-name handles clean, preserve source/materialized audits, leave dirty

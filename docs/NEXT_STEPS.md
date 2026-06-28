@@ -3619,6 +3619,11 @@ coordinate-batch `clear_cell_values()` over absent targets clear the guard
 diagnostic, preserve sparse count/memory, avoid explicit blank or missing-cell
 synthesis, and still save as a copy-original package without leaking the
 rejected replacement payload.
+Single missing-cell value-clear no-ops now cover the scalar cleanup branch too:
+row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
+failures clear diagnostics, preserve read-only or saved-clean sparse state,
+avoid explicit blank synthesis, and leave the later no-op save copy-original or
+without an additional materialized handoff.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

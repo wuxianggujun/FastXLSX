@@ -40787,6 +40787,44 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.975 - Pin guard single missing-cell clear no-op cleanup
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove single missing-cell `WorksheetEditor::clear_cell_value()` no-ops after
+  same-sheet Patch guard failures clear the guard diagnostic without dirtying
+  read-only or saved-clean materialized state.
+
+Output:
+- Added a `public-guards` regression that materializes `Data`, triggers
+  same-sheet guard failures, then calls row/column and strict A1
+  `clear_cell_value()` overloads over absent targets.
+- The regression verifies those successful no-ops clear `last_edit_error()`,
+  keep the borrowed handle clean, preserve sparse count/memory, avoid explicit
+  blank or missing-cell synthesis, and leave materialized diagnostics empty.
+- Follow-up no-op `save_as()` calls write decompressed package entries matching
+  the source or first saved workbook, without leaking rejected Patch payloads
+  or adding materialized handoffs.
+
+Non-goals:
+- No dense clear semantics, explicit blank synthesis for missing cells,
+  tombstones, rollback, coordinate repair, metadata repair,
+  Patch/materialized sparse-session composition, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

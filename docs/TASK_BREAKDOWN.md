@@ -39421,6 +39421,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.941 - Pin whole-store clear saved-session invalid mutations
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid mutation preflights against a saved/reacquired no-argument
+  `clear_cell_values()` exact-budget session remain no-op-save safe.
+
+Output:
+- Extended the public-state no-argument whole-store value-clear memory-budget
+  regression to run invalid `set_cell()` and `erase_cell()` calls after the
+  saved session has already passed matching-option reacquire, no-op save,
+  option mismatch, missing-query, and invalid-read checks.
+- The regression verifies the invalid-reference `last_edit_error()` is
+  populated and preserved, while both handles stay clean, sparse count and
+  bounds stay stable, blank/recovery cells remain readable, catalog state is
+  preserved, materialized diagnostics stay empty, pending handoff count remains
+  stable, rejected payloads do not leak, and a later no-op `save_as()` writes
+  decompressed package entries matching the first output.
+- Updated API and planning docs to record this as saved-session
+  invalid-mutation hygiene, not rollback or rejected-payload staging.
+
+Non-goals:
+- No coordinate repair or clamping, rejected-payload staging, rollback,
+  source-name fallback, session cloning, transaction history, formula repair or
+  evaluation, calcChain rebuild, sharedStrings/styles migration, metadata
+  repair, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

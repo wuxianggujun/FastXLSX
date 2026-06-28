@@ -8831,6 +8831,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-missing-query-output.xlsx");
     const std::filesystem::path invalid_read_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-read-output.xlsx");
+    const std::filesystem::path invalid_mutation_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-invalid-mutation-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -9156,6 +9158,100 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         fastxlsx::test::read_zip_entries(invalid_read_output);
     check(invalid_read_entries == output_entries,
         "clear_cell_values() memory-budget release invalid reads noop save should keep output entries stable");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_mutations =
+        workbook_editor_public_catalog_snapshot(editor);
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1,
+            fastxlsx::CellValue::text("clear-all-invalid-mutation-row-zero"));
+    }), "clear_cell_values() memory-budget release invalid mutations should reject row-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(1, 0,
+            fastxlsx::CellValue::text("clear-all-invalid-mutation-column-zero"));
+    }), "clear_cell_values() memory-budget release invalid mutations should reject column-zero set_cell");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(1048577, 1,
+            fastxlsx::CellValue::text("clear-all-invalid-mutation-row-overflow"));
+    }), "clear_cell_values() memory-budget release invalid mutations should reject row-overflow set_cell");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(1, 16385,
+            fastxlsx::CellValue::text("clear-all-invalid-mutation-column-overflow"));
+    }), "clear_cell_values() memory-budget release invalid mutations should reject column-overflow set_cell");
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1",
+            fastxlsx::CellValue::text("clear-all-invalid-mutation-lowercase-a1"));
+    }), "clear_cell_values() memory-budget release invalid mutations should reject lowercase A1 set_cell");
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("XFE1",
+            fastxlsx::CellValue::text("clear-all-invalid-mutation-a1-column-overflow"));
+    }), "clear_cell_values() memory-budget release invalid mutations should reject A1 column-overflow set_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell(0, 1); }),
+        "clear_cell_values() memory-budget release invalid mutations should reject row-zero erase_cell");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell(1, 16385); }),
+        "clear_cell_values() memory-budget release invalid mutations should reject column-overflow erase_cell");
+    check(threw_fastxlsx_error([&] { sheet.erase_cell("A1:B2"); }),
+        "clear_cell_values() memory-budget release invalid mutations should reject range erase_cell references");
+    check(threw_fastxlsx_error([&] { reacquired.erase_cell("a1"); }),
+        "clear_cell_values() memory-budget release invalid mutations should reject lowercase A1 erase_cell");
+
+    const std::optional<std::string> invalid_mutation_error = editor.last_edit_error();
+    check(invalid_mutation_error.has_value(),
+        "clear_cell_values() memory-budget release invalid mutations should populate last_edit_error");
+    if (invalid_mutation_error.has_value()) {
+        check_contains(*invalid_mutation_error, "WorksheetEditor cell reference is invalid",
+            "clear_cell_values() memory-budget release invalid mutations should expose invalid reference diagnostic");
+    }
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release invalid mutations should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release invalid mutations should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release invalid mutations should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release invalid mutations should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release invalid mutations should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release invalid mutations should not dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_invalid_mutations,
+        "clear_cell_values() memory-budget release invalid mutations");
+    check(sheet.cell_count() == 10 && reacquired.cell_count() == 10,
+        "clear_cell_values() memory-budget release invalid mutations should preserve sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget release invalid mutations should preserve original handle bounds");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 4, 4,
+        "clear_cell_values() memory-budget release invalid mutations should preserve reacquired bounds");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
+        "clear_cell_values() memory-budget release invalid mutations should preserve saved D4");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank &&
+            reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_cell_values() memory-budget release invalid mutations should preserve saved blanks");
+
+    editor.save_as(invalid_mutation_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release invalid mutations noop save should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release invalid mutations noop save should not add a handoff");
+    check(editor.last_edit_error() == invalid_mutation_error,
+        "clear_cell_values() memory-budget release invalid mutations noop save should preserve diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release invalid mutations noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release invalid mutations noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release invalid mutations noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release invalid mutations noop save should not dirty summaries");
+    const auto invalid_mutation_entries =
+        fastxlsx::test::read_zip_entries(invalid_mutation_output);
+    check(invalid_mutation_entries == output_entries,
+        "clear_cell_values() memory-budget release invalid mutations noop save should keep output entries stable");
+    const std::string invalid_mutation_xml =
+        invalid_mutation_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(invalid_mutation_xml, "clear-all-invalid-mutation",
+        "clear_cell_values() memory-budget release invalid mutations should not leak rejected payloads");
 
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",

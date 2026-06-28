@@ -3454,6 +3454,10 @@ whole-store value-clear session: invalid coordinates, invalid A1/range/batch
 reads, invalid row/column snapshots, and valid-but-missing `get_cell()` preserve
 diagnostics, handles, saved cells, catalog state, and no-op-save output
 stability.
+Invalid mutation preflights now cover the adjacent diagnostic branch: rejected
+`set_cell()` / `erase_cell()` calls preserve the invalid-reference
+`last_edit_error()` while keeping handles, saved cells, catalog state,
+materialized diagnostics, rejected payloads, and no-op-save output stable.
 Post-save worksheet summary diagnostics are pinned too:
 `pending_worksheet_edits()` omits dirty-only materialized summaries after a
 successful auto-flush, keeps them omitted after clean matching reacquire, adds

@@ -203,6 +203,12 @@ and dirty `WorksheetEditor` materialization. Dirty sparse edits save with the
 renamed workbook catalog and `fullCalcOnLoad="1"` without inventing
 `xl/calcChain.xml`, while clean materialization keeps the worksheet part
 byte-for-byte source-identical and adds no materialized handoff.
+That renamed/full-calc ordering now has same-sheet catalog guard coverage:
+after a planned rename and full-calculation request, dirty and clean
+materialized sessions reject later same-sheet `rename_sheet()` /
+`replace_sheet_data()` attempts under the current planned name, preserve the
+rename plus calc metadata edit count, and save without leaking rejected catalog
+names or replacement payloads.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -4396,6 +4396,222 @@ void test_public_request_full_calculation_preserves_materialized_catalog_guards(
     }
 }
 
+void test_public_renamed_full_calculation_preserves_materialized_catalog_guards()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-renamed-full-calc-dirty-catalog-guard-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-renamed-full-calc-dirty-catalog-guard-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.rename_sheet("Data", "RenamedFullCalcGuardData");
+        editor.request_full_calculation();
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedFullCalcGuardData");
+        sheet.set_cell(1, 1,
+            fastxlsx::CellValue::text("renamed-full-calc-dirty-catalog-guard"));
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before =
+            workbook_editor_public_catalog_snapshot(editor);
+        const std::size_t cell_count_before = sheet.cell_count();
+        const std::size_t memory_before = sheet.estimated_memory_usage();
+
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc dirty catalog guard setup should queue rename plus metadata");
+        check(!editor.has_worksheet("Data"),
+            "renamed full-calc dirty catalog guard setup should hide the source name");
+        check(editor.has_worksheet("RenamedFullCalcGuardData"),
+            "renamed full-calc dirty catalog guard setup should expose the planned name");
+        check(editor.pending_materialized_worksheet_names()
+                  == std::vector<std::string>{"RenamedFullCalcGuardData"},
+            "renamed full-calc dirty catalog guard setup should keep planned name dirty");
+
+        const std::optional<std::string> guard_error =
+            check_public_same_sheet_rename_then_replacement_guard_sequence(
+                editor,
+                "RenamedFullCalcGuardData",
+                "RenamedFullCalcBlockedName",
+                "renamed-full-calc-blocked-replacement",
+                "renamed full-calc dirty materialized catalog guard");
+
+        check(guard_error.has_value(),
+            "renamed full-calc dirty materialized catalog guard should report the replacement guard");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before, "renamed full-calc dirty materialized catalog guard");
+        check(!editor.has_worksheet("Data"),
+            "renamed full-calc dirty materialized catalog guard should not restore the source name");
+        check(editor.has_worksheet("RenamedFullCalcGuardData"),
+            "renamed full-calc dirty materialized catalog guard should keep the planned name");
+        check(!editor.has_worksheet("RenamedFullCalcBlockedName"),
+            "renamed full-calc dirty materialized catalog guard should not expose the rejected rename");
+        check(!editor.has_pending_replacement("RenamedFullCalcGuardData") &&
+                !editor.has_pending_replacement("RenamedFullCalcBlockedName"),
+            "renamed full-calc dirty materialized catalog guard should not queue replacement diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "renamed full-calc dirty materialized catalog guard");
+        check(sheet.has_pending_changes(),
+            "renamed full-calc dirty materialized catalog guard should keep the borrowed handle dirty");
+        check(sheet.cell_count() == cell_count_before,
+            "renamed full-calc dirty materialized catalog guard should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == memory_before,
+            "renamed full-calc dirty materialized catalog guard should preserve sparse memory");
+        check(editor.pending_materialized_worksheet_names()
+                  == std::vector<std::string>{"RenamedFullCalcGuardData"},
+            "renamed full-calc dirty materialized catalog guard should keep the planned name dirty");
+        check(editor.pending_materialized_cell_count() == cell_count_before,
+            "renamed full-calc dirty materialized catalog guard should preserve materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == memory_before,
+            "renamed full-calc dirty materialized catalog guard should preserve materialized memory");
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc dirty materialized catalog guard should preserve rename plus metadata count");
+
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1,
+                "renamed full-calc dirty materialized catalog guard should keep one summary");
+            if (summaries.size() == 1) {
+                const auto& summary = summaries[0];
+                check(summary.source_name == "Data" &&
+                        summary.planned_name == "RenamedFullCalcGuardData",
+                    "renamed full-calc dirty materialized catalog guard should keep source/planned names");
+                check(summary.renamed && !summary.sheet_data_replaced,
+                    "renamed full-calc dirty materialized catalog guard should keep only the rename flag");
+                check(summary.materialized_dirty &&
+                        summary.materialized_cell_count == cell_count_before &&
+                        summary.estimated_materialized_memory_usage == memory_before,
+                    "renamed full-calc dirty materialized catalog guard should keep materialized fields");
+            }
+        }
+
+        check_public_inspection_preserves_last_edit_error(editor, guard_error);
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "safe save after renamed full-calc dirty materialized catalog guard should clean the handle");
+        check(editor.pending_change_count() == 3,
+            "safe save after renamed full-calc dirty materialized catalog guard should count rename, metadata, and handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "safe save after renamed full-calc dirty materialized catalog guard should clear materialized diagnostics");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+            "safe save after renamed full-calc dirty catalog guard should persist calc metadata");
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedFullCalcGuardData")",
+            "safe save after renamed full-calc dirty catalog guard should preserve the planned name");
+        check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "safe save after renamed full-calc dirty catalog guard should not restore the source name");
+        check_not_contains(output_entries.at("xl/workbook.xml"), "RenamedFullCalcBlockedName",
+            "safe save after renamed full-calc dirty catalog guard should not leak rejected rename");
+        check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+            "safe save after renamed full-calc dirty catalog guard should not invent calcChain.xml");
+        check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "renamed-full-calc-dirty-catalog-guard",
+            "safe save after renamed full-calc dirty catalog guard should persist materialized cells");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "renamed-full-calc-blocked-replacement",
+            "safe save after renamed full-calc dirty catalog guard should not leak rejected replacement");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source("fastxlsx-workbook-editor-public-renamed-full-calc-clean-catalog-guard-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-renamed-full-calc-clean-catalog-guard-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        editor.rename_sheet("Data", "RenamedFullCalcCleanGuardData");
+        editor.request_full_calculation();
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedFullCalcCleanGuardData");
+        const fastxlsx::CellValue original = sheet.get_cell(1, 1);
+        check(original.kind() == fastxlsx::CellValueKind::Text &&
+                original.text_value() == "placeholder-a1",
+            "renamed full-calc clean catalog guard setup should materialize source cells");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before =
+            workbook_editor_public_catalog_snapshot(editor);
+        const std::optional<std::string> guard_error =
+            check_public_same_sheet_rename_then_replacement_guard_sequence(
+                editor,
+                "RenamedFullCalcCleanGuardData",
+                "RenamedFullCalcCleanBlockedName",
+                "renamed-full-calc-clean-blocked-replacement",
+                "renamed full-calc clean materialized catalog guard");
+
+        check(guard_error.has_value(),
+            "renamed full-calc clean materialized catalog guard should report the replacement guard");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before, "renamed full-calc clean materialized catalog guard");
+        check(!editor.has_worksheet("Data"),
+            "renamed full-calc clean materialized catalog guard should not restore the source name");
+        check(editor.has_worksheet("RenamedFullCalcCleanGuardData"),
+            "renamed full-calc clean materialized catalog guard should keep the planned name");
+        check(!editor.has_worksheet("RenamedFullCalcCleanBlockedName"),
+            "renamed full-calc clean materialized catalog guard should not expose rejected rename");
+        check(!editor.has_pending_replacement("RenamedFullCalcCleanGuardData") &&
+                !editor.has_pending_replacement("RenamedFullCalcCleanBlockedName"),
+            "renamed full-calc clean materialized catalog guard should not queue replacement diagnostics");
+        check(!sheet.has_pending_changes(),
+            "renamed full-calc clean materialized catalog guard should keep the borrowed handle clean");
+        check(editor.pending_change_count() == 2,
+            "renamed full-calc clean materialized catalog guard should preserve rename plus metadata count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "renamed full-calc clean materialized catalog guard should keep dirty names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "renamed full-calc clean materialized catalog guard should keep dirty cells empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "renamed full-calc clean materialized catalog guard should keep dirty memory empty");
+        {
+            const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+                editor.pending_worksheet_edits();
+            check(summaries.size() == 1,
+                "renamed full-calc clean materialized catalog guard should keep one rename summary");
+            if (summaries.size() == 1) {
+                const auto& summary = summaries[0];
+                check(summary.source_name == "Data" &&
+                        summary.planned_name == "RenamedFullCalcCleanGuardData",
+                    "renamed full-calc clean materialized catalog guard should keep source/planned names");
+                check(summary.renamed && !summary.materialized_dirty &&
+                        !summary.sheet_data_replaced,
+                    "renamed full-calc clean materialized catalog guard should keep a clean rename summary");
+            }
+        }
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "renamed full-calc clean materialized catalog guard");
+
+        check_public_inspection_preserves_last_edit_error(editor, guard_error);
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "safe save after renamed full-calc clean materialized catalog guard should keep the handle clean");
+        check(editor.pending_change_count() == 2,
+            "safe save after renamed full-calc clean materialized catalog guard should not add a handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "safe save after renamed full-calc clean materialized catalog guard should keep dirty names empty");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+            "safe save after renamed full-calc clean catalog guard should persist calc metadata");
+        check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedFullCalcCleanGuardData")",
+            "safe save after renamed full-calc clean catalog guard should preserve the planned name");
+        check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
+            "safe save after renamed full-calc clean catalog guard should not restore the source name");
+        check_not_contains(output_entries.at("xl/workbook.xml"), "RenamedFullCalcCleanBlockedName",
+            "safe save after renamed full-calc clean catalog guard should not leak rejected rename");
+        check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+            "safe save after renamed full-calc clean catalog guard should not invent calcChain.xml");
+        check(output_entries.at("xl/worksheets/sheet1.xml") ==
+                source_entries.at("xl/worksheets/sheet1.xml"),
+            "safe save after renamed full-calc clean catalog guard should preserve source worksheet bytes");
+        check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+            "renamed-full-calc-clean-blocked-replacement",
+            "safe save after renamed full-calc clean catalog guard should not leak rejected replacement");
+    }
+}
+
 void test_public_worksheet_editor_reacquire_reuses_dirty_session()
 {
     const std::filesystem::path source =
@@ -5250,6 +5466,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_request_full_calculation_preserves_materialized_catalog_guards();
+            test_public_renamed_full_calculation_preserves_materialized_catalog_guards();
             test_public_worksheet_editor_reacquire_reuses_dirty_session();
             test_public_worksheet_editor_reacquire_after_save_reuses_session();
             test_public_worksheet_editor_post_save_reacquire_preserves_clean_diagnostics();

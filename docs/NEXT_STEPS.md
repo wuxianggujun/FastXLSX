@@ -365,6 +365,11 @@ are covered in the same family: empty optional lookups and throwing
 `last_edit_error()` clear, preserve source/materialized audits, and a later
 valid `set_cell()` still re-dirties then saves/reopens with the shifted formula,
 recovered text, `fullCalcOnLoad="1"`, and no calcChain.
+Their no-op save side is pinned as well: the same missing-sheet and old-source
+queries preserve saved edit summaries, keep `last_edit_error()` clear, and a
+second `save_as()` without a recovery mutation writes the same renamed/fullCalc
+shifted worksheet bytes as the pre-query save without rejected sheet names,
+recovery cells, or calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

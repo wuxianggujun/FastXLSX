@@ -3587,6 +3587,11 @@ the restored `Data` session, reports matching dirty materialized aggregates and
 a restored-name summary, saves as one additional materialized handoff, preserves
 the first saved value, writes the later value, keeps missing clear targets
 absent, and still does not leak rejected payloads or `TransientData`.
+The failed-save side of that recovery is pinned too: the recovered dirty state
+survives a rejected source-overwrite `save_as(source)` without flushing, keeps
+`last_edit_error()` clear, preserves dirty materialized diagnostics and missing
+clear targets, leaves the source package unchanged, and a later safe save still
+writes only the saved and recovered values.
 Same-sheet guard snapshot reads now cover the lighter `public-guards` shard:
 after a rejected same-sheet replacement, full/range/A1 sparse snapshots,
 row/column snapshots, and coordinate-batch snapshots preserve the guard

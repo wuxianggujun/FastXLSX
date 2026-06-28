@@ -6255,6 +6255,217 @@ void test_public_worksheet_editor_rename_back_materialized_missing_clear_recover
         "rename-back missing clear recovery output should not synthesize A1 missing target");
 }
 
+void test_public_worksheet_editor_rename_back_materialized_missing_clear_recovery_failed_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-recovery-failed-save-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-recovery-failed-save-output.xlsx");
+    const std::filesystem::path clear_no_op_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-recovery-failed-save-noop.xlsx");
+    const std::filesystem::path recovery_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-missing-clear-recovery-failed-save-retry.xlsx");
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.rename_sheet("Data", "TransientData");
+    editor.rename_sheet("TransientData", "Data");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    sheet.set_cell(1, 1,
+        fastxlsx::CellValue::text("rename-back-missing-clear-failed-save-saved"));
+    editor.save_as(output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before =
+        workbook_editor_public_catalog_snapshot(editor);
+    const std::size_t saved_cell_count = reacquired.cell_count();
+    const std::size_t saved_memory = reacquired.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell(0, 1,
+            fastxlsx::CellValue::text("rename-back-missing-clear-failed-save-rejected"));
+    }), "rename-back missing clear recovery failed-save setup should reject row-zero mutation");
+    check(editor.last_edit_error().has_value(),
+        "rename-back missing clear recovery failed-save setup should record invalid mutation diagnostics");
+
+    reacquired.clear_cell_value(5, 5);
+    reacquired.clear_cell_value("D4");
+
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear recovery failed-save no-op should clear invalid mutation diagnostics");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear recovery failed-save no-op should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing clear recovery failed-save no-op should not add another materialized handoff");
+    check(reacquired.cell_count() == saved_cell_count &&
+            reacquired.estimated_memory_usage() == saved_memory,
+        "rename-back missing clear recovery failed-save no-op should preserve sparse count and memory");
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back missing clear recovery failed-save no-op should keep missing targets absent");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear recovery failed-save no-op should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear recovery failed-save no-op should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear recovery failed-save no-op should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear recovery failed-save no-op should keep current summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "rename-back missing clear recovery failed-save no-op");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before, "rename-back missing clear recovery failed-save no-op");
+    check_public_two_clean_retry_saved_value(
+        reacquired, 1, 1, "rename-back-missing-clear-failed-save-saved",
+        "rename-back missing clear recovery failed-save no-op");
+
+    editor.save_as(clear_no_op_output);
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear recovery failed-save no-op save should keep diagnostics clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear recovery failed-save no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing clear recovery failed-save no-op save should not add another materialized handoff");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const auto clear_no_op_entries =
+        fastxlsx::test::read_zip_entries(clear_no_op_output);
+    check(clear_no_op_entries == output_entries,
+        "rename-back missing clear recovery failed-save no-op output should match the first restored-name materialized output");
+
+    reacquired.set_cell(2, 2,
+        fastxlsx::CellValue::text("rename-back-missing-clear-failed-save-recovered"));
+    check(!editor.last_edit_error().has_value(),
+        "rename-back mutation after missing clear failed-save no-op should keep diagnostics clear");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "rename-back mutation after missing clear failed-save no-op should dirty both handles");
+    check(editor.pending_change_count() == 3,
+        "rename-back mutation after missing clear failed-save no-op should not count a handoff before save");
+
+    const std::size_t dirty_cell_count = reacquired.cell_count();
+    const std::size_t dirty_memory = reacquired.estimated_memory_usage();
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "rename-back mutation after missing clear failed-save no-op should dirty the restored source name");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "rename-back mutation after missing clear failed-save no-op should expose current dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "rename-back mutation after missing clear failed-save no-op should expose current dirty memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rename-back mutation after missing clear failed-save no-op should expose one summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "rename-back mutation after missing clear failed-save no-op summary should use restored names");
+            check(!summary.renamed,
+                "rename-back mutation after missing clear failed-save no-op summary should not be marked renamed");
+            check(!summary.sheet_data_replaced,
+                "rename-back mutation after missing clear failed-save no-op summary should not invent replacement");
+            check(summary.materialized_dirty,
+                "rename-back mutation after missing clear failed-save no-op summary should report dirty materialized state");
+            check(summary.materialized_cell_count == dirty_cell_count,
+                "rename-back mutation after missing clear failed-save no-op summary should report current cell count");
+            check(summary.estimated_materialized_memory_usage == dirty_memory,
+                "rename-back mutation after missing clear failed-save no-op summary should report current memory");
+        }
+    }
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back mutation after missing clear failed-save no-op should keep missing targets absent");
+
+    const auto source_entries_before_rejected_save =
+        fastxlsx::test::read_zip_entries(source);
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "rename-back missing clear recovery failed save_as should reject source overwrite");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear recovery failed save_as should not create last_edit_error");
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "rename-back missing clear recovery failed save_as should keep both handles dirty");
+    check(editor.pending_change_count() == 3,
+        "rename-back missing clear recovery failed save_as should not count a materialized handoff");
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "rename-back missing clear recovery failed save_as should preserve dirty materialized name");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "rename-back missing clear recovery failed save_as should preserve dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "rename-back missing clear recovery failed save_as should preserve dirty memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "rename-back missing clear recovery failed save_as should preserve one summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "rename-back missing clear recovery failed save_as summary should use restored names");
+            check(!summary.renamed,
+                "rename-back missing clear recovery failed save_as summary should not be marked renamed");
+            check(!summary.sheet_data_replaced,
+                "rename-back missing clear recovery failed save_as summary should not invent replacement");
+            check(summary.materialized_dirty,
+                "rename-back missing clear recovery failed save_as summary should preserve dirty flag");
+            check(summary.materialized_cell_count == dirty_cell_count,
+                "rename-back missing clear recovery failed save_as summary should preserve cell count");
+            check(summary.estimated_materialized_memory_usage == dirty_memory,
+                "rename-back missing clear recovery failed save_as summary should preserve memory");
+        }
+    }
+    check(!reacquired.try_cell(5, 5).has_value() &&
+            !reacquired.try_cell("D4").has_value(),
+        "rename-back missing clear recovery failed save_as should keep missing targets absent");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_rejected_save,
+        "rename-back missing clear recovery failed save_as should leave source package unchanged");
+
+    editor.save_as(recovery_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "rename-back missing clear recovery failed-save retry should clean both handles");
+    check(editor.pending_change_count() == 4,
+        "rename-back missing clear recovery failed-save retry should count one more materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "rename-back missing clear recovery failed-save retry should keep diagnostics clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "rename-back missing clear recovery failed-save retry should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "rename-back missing clear recovery failed-save retry should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "rename-back missing clear recovery failed-save retry should clear dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "rename-back missing clear recovery failed-save retry should clear current summaries");
+
+    const auto recovery_entries =
+        fastxlsx::test::read_zip_entries(recovery_output);
+    check_contains(recovery_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "rename-back missing clear recovery failed-save output should use the restored source name");
+    check_not_contains(recovery_entries.at("xl/workbook.xml"), "TransientData",
+        "rename-back missing clear recovery failed-save output should not leak the transient planned name");
+    check_contains(recovery_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-failed-save-saved",
+        "rename-back missing clear recovery failed-save output should keep the saved materialized edit");
+    check_contains(recovery_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-failed-save-recovered",
+        "rename-back missing clear recovery failed-save output should include the post-no-op mutation");
+    check_not_contains(recovery_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-clear-failed-save-rejected",
+        "rename-back missing clear recovery failed-save output should not leak rejected payloads");
+    check_not_contains(recovery_entries.at("xl/worksheets/sheet1.xml"), R"(r="E5")",
+        "rename-back missing clear recovery failed-save output should not synthesize row/column missing target");
+    check_not_contains(recovery_entries.at("xl/worksheets/sheet1.xml"), R"(r="D4")",
+        "rename-back missing clear recovery failed-save output should not synthesize A1 missing target");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -6309,6 +6520,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rename_back_materialized_missing_erase_noop_save();
             test_public_worksheet_editor_rename_back_materialized_missing_clear_noop_save();
             test_public_worksheet_editor_rename_back_materialized_missing_clear_recovery_save();
+            test_public_worksheet_editor_rename_back_materialized_missing_clear_recovery_failed_save();
         }
     } catch (const std::exception& error) {
         std::fprintf(stderr, "UNEXPECTED EXCEPTION: %s\n", error.what());

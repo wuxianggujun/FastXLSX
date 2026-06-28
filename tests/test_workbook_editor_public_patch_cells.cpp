@@ -656,13 +656,38 @@ void test_replace_cells_mode_mixing_guards_and_empty_noop()
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         editor.replace_cells("Data", {{{1, 1}, fastxlsx::CellValue::text("patched")}});
+        const std::size_t targeted_xml_bytes =
+            editor.estimated_pending_targeted_cell_replacement_xml_bytes();
+        check(editor.pending_change_count() == 1,
+            "replace_cells should queue one public edit before materialization guards");
+        check(editor.pending_targeted_cell_replacement_count() == 1,
+            "replace_cells should expose targeted diagnostics before materialization guards");
+        check(editor.pending_targeted_cell_replacement_worksheet_names()
+                == std::vector<std::string>{"Data"},
+            "replace_cells should expose Data targeted diagnostics before materialization guards");
+        check(targeted_xml_bytes > 0,
+            "replace_cells should expose targeted XML bytes before materialization guards");
         check(threw_fastxlsx_error([&] { (void)editor.worksheet("Data"); }),
             "worksheet() should reject a sheet after replace_cells");
+        check(!editor.last_edit_error().has_value(),
+            "worksheet() after replace_cells should not update last_edit_error");
+        check(threw_fastxlsx_error([&] { (void)editor.try_worksheet("Data"); }),
+            "try_worksheet() should reject a sheet after replace_cells");
+        check(!editor.last_edit_error().has_value(),
+            "try_worksheet() after replace_cells should not update last_edit_error");
         check(threw_fastxlsx_error([&] {
             editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("whole")}}); }),
             "replace_sheet_data should reject a sheet after replace_cells");
         check(editor.pending_targeted_cell_replacement_count() == 1,
             "mode guard failures should preserve targeted cell diagnostics");
+        check(editor.pending_targeted_cell_replacement_worksheet_names()
+                == std::vector<std::string>{"Data"},
+            "mode guard failures should preserve targeted cell worksheet names");
+        check(editor.estimated_pending_targeted_cell_replacement_xml_bytes()
+                == targeted_xml_bytes,
+            "mode guard failures should preserve targeted XML byte diagnostics");
+        check(editor.pending_change_count() == 1,
+            "mode guard failures should preserve targeted public edit count");
     }
 
     {

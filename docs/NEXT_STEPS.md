@@ -131,6 +131,11 @@ Operation-mixing guard coverage now also includes same-sheet targeted
 public targeted-cell wrapper diagnostic, leaves targeted patch diagnostics empty,
 preserves borrowed handles/catalog state, and does not leak rejected payloads
 into later `save_as()` output.
+The reverse targeted Patch to in-memory guard is now tightened as well:
+after `replace_cells()` queues a same-sheet targeted edit, both `worksheet()`
+and `try_worksheet()` reject materialization without updating
+`last_edit_error()`, while targeted cell counts, worksheet names, XML byte
+estimates, and pending public edit count remain intact.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

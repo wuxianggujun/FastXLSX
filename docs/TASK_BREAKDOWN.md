@@ -39266,6 +39266,43 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.937 - Pin whole-store clear reacquire no-op save
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a matching-option reacquired no-argument
+`WorksheetEditor::clear_cell_values()` exact-memory-budget session remains
+stable through a second no-op `save_as()`.
+
+Output:
+- Extended the whole-store `clear_cell_values()` exact-budget public-state
+  regression to save a second output after matching-option reacquire without
+  any new mutation.
+- The regression verifies both handles stay clean, no additional materialized
+  handoff is recorded, dirty materialized diagnostics stay empty, and the
+  second output's decompressed package entries match the first output.
+- Updated API / next-step / task breakdown documentation to record the
+  post-reacquire no-op-save stability boundary.
+
+Non-goals / boundary:
+- No clean-session commit semantics, no package timestamp preservation
+  guarantee, no transaction history, no formula repair or evaluation, no
+  calcChain rebuild, no sharedStrings/styles migration, and no low-memory
+  large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

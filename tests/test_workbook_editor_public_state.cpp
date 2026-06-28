@@ -8823,6 +8823,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-noop-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -8940,6 +8942,24 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release matching-option reacquire should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release matching-option reacquire should not dirty summaries");
+
+    const std::size_t pending_count_after_reacquire = editor.pending_change_count();
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release matching-option noop save should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release matching-option noop save should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release matching-option noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release matching-option noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release matching-option noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release matching-option noop save should not dirty summaries");
+    const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_output_entries == output_entries,
+        "clear_cell_values() memory-budget release matching-option noop save should keep output entries stable");
 
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",

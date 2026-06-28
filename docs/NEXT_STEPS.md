@@ -1154,7 +1154,9 @@ dropping the blank sparse records. The same exact-budget save path now also
 checks post-save state hygiene on the live editor: dirty materialized names,
 cell counts, memory, and summaries are cleared, and a same-options
 `worksheet()` reacquire is clean while reading the saved blank records plus the
-recovery cell.
+recovery cell. A no-op `save_as()` after that same-options reacquire is also
+pinned: it keeps both handles clean, does not add another materialized handoff,
+and writes the same decompressed package entries as the first output.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

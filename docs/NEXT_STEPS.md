@@ -298,6 +298,12 @@ reference diagnostic in `last_edit_error()`, but leave the renamed full-calc
 dirty formula session, source/materialized audits, catalog state, materialized
 diagnostics, and later save-as output intact, without rollback history or
 rejected payload leakage.
+Invalid row/column shift preflights now cover the same renamed full-calc audit
+state: rejected `insert_rows()` / `delete_rows()` / `insert_columns()` /
+`delete_columns()` bounds failures keep the expected shift diagnostic while
+preserving the dirty shifted formula, source/materialized audits, catalog state,
+materialized diagnostics, and later save-as output, without range clamping or
+partial shift retry.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

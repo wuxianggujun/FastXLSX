@@ -3597,6 +3597,11 @@ the prior same-sheet guard diagnostic with the invalid-coordinate diagnostic,
 keep the borrowed handle clean, leave materialized diagnostics and pending
 summaries empty, and a no-op save remains copy-original without leaking the
 rejected replacement or mutation payload.
+Invalid reads after that invalid-mutation diagnostic now keep the read-side
+contract pinned: row/column/A1/range/row snapshot/column snapshot failures still
+do not replace `last_edit_error()`, so the invalid-mutation diagnostic survives
+through inspection, no dirty materialized diagnostics appear, and the later
+copy-original no-op save continues to exclude both rejected payloads.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

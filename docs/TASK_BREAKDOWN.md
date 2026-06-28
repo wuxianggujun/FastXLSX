@@ -40629,6 +40629,47 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.971 - Pin guard invalid-read after invalid-mutation diagnostic
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove invalid `WorksheetEditor` reads after a same-sheet Patch guard failure
+  and a later invalid mutation preserve the invalid-mutation diagnostic and
+  no-op-save state.
+
+Output:
+- Added a `public-guards` regression that materializes `Data`, triggers a
+  same-sheet `replace_sheet_data()` guard failure, then rejects row-zero
+  `set_cell()` to replace the guard diagnostic with the invalid-coordinate
+  diagnostic.
+- The regression then rejects invalid row/column/A1/range/row snapshot/column
+  snapshot reads and verifies they preserve the invalid-mutation
+  `last_edit_error()`, keep the borrowed handle clean, and leave materialized
+  diagnostics and pending summaries empty.
+- A follow-up no-op `save_as()` writes decompressed package entries matching
+  the source workbook and does not leak either the rejected replacement payload
+  or rejected mutation payload.
+
+Non-goals:
+- No read-side diagnostics, tolerant coordinate parsing, coordinate repair or
+  clamping, rejected-payload staging, rollback, clean-session commits, guard
+  bypass, metadata repair, Patch/materialized sparse-session composition,
+  calcChain rebuild, sharedStrings/styles migration, or low-memory large-file
+  random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

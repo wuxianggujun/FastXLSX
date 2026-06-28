@@ -353,6 +353,12 @@ preserve the shift diagnostic without dirtying either handle or materialized
 diagnostics, keep source/materialized audits readable, and a later valid
 `set_cell()` clears the diagnostic before save/reopen persists the shifted
 formula, recovered text, `fullCalcOnLoad="1"`, and no calcChain.
+The invalid-shift no-op save side is pinned as well: the same rejected
+`insert_rows()` / `delete_rows()` / `insert_columns()` / `delete_columns()`
+bounds failures preserve the shift diagnostic and saved edit summaries while
+keeping both clean handles clean, and a second `save_as()` without a recovery
+mutation writes the same renamed/fullCalc shifted worksheet bytes as the
+pre-error save without recovery cells or calcChain.
 Missing-sheet and old-source-name queries on the clean saved/reacquired session
 are covered in the same family: empty optional lookups and throwing
 `worksheet()` failures leave both planned-name handles clean, keep

@@ -3524,6 +3524,11 @@ The lower-level materialized diagnostics now pin the same renamed lifecycle:
 while dirty, cell/memory aggregates match the borrowed session, successful
 `save_as()` and clean reacquire clear those aggregates, and a later mutation
 re-adds the planned dirty name until the next save.
+That guard is now checked directly against the active borrowed handle memory
+estimate across rejected save, option mismatch, missing/source-name lookup,
+read-only query, clean-reacquire, later-mutation, and second-save windows, so
+summary diagnostics and lower-level aggregates cannot diverge silently in that
+renamed whole-store clear path.
 Rename-back before materialization is pinned too: if a sheet is renamed to a
 temporary planned name and then renamed back to its source name, a later
 `WorksheetEditor` dirty session reports the restored source/planned name,

@@ -39912,6 +39912,47 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.953 - Pin whole-store clear renamed materialized diagnostics
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove the lower-level materialized diagnostics stay aligned with the active
+  borrowed materialized handle across the renamed no-argument
+  `clear_cell_values()` exact-budget lifecycle.
+
+Output:
+- Extended the renamed whole-store value-clear summary regression with shared
+  dirty/clean materialized diagnostic helpers.
+- The regression now verifies dirty planned-name aggregates match the active
+  borrowed handle's sparse count and memory estimate after the initial dirty
+  mutation, rejected source overwrite save, option mismatch, missing/source-name
+  lookup failures, read-only catalog/pending queries, and later clean-reacquire
+  mutation.
+- It also verifies successful `save_as()`, clean materialization/reacquire, and
+  the second save keep pending materialized names, counts, and memory empty or
+  zero until another real mutation dirties the shared session.
+
+Non-goals:
+- No memory-accounting change, historical dirty snapshot persistence, catalog
+  mutation, alias fallback, session cloning, rename-aware formula repair,
+  metadata repair, Patch/materialized sparse-session composition, calcChain
+  rebuild, sharedStrings/styles migration, or low-memory large-file random
+  editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

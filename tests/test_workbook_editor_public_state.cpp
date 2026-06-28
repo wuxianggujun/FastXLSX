@@ -9773,14 +9773,38 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
                 }
             }
         };
+    const auto check_renamed_clear_all_clean_materialized_diagnostics =
+        [&](std::string_view label) {
+            check(editor.pending_materialized_worksheet_names().empty(),
+                std::string(label) + " should report no dirty materialized names");
+            check(editor.pending_materialized_cell_count() == 0,
+                std::string(label) + " should report zero dirty materialized cells");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(label) + " should report zero dirty materialized memory");
+        };
+    const auto check_renamed_clear_all_dirty_materialized_diagnostics =
+        [&](fastxlsx::WorksheetEditor& active_sheet,
+            std::size_t expected_materialized_cell_count,
+            std::string_view label) {
+            check(editor.pending_materialized_worksheet_names() ==
+                    std::vector<std::string> {"RenamedClearAll"},
+                std::string(label) + " should report the planned dirty materialized name");
+            check(editor.pending_materialized_cell_count() == expected_materialized_cell_count,
+                std::string(label) + " should report the active dirty sparse count");
+            check(active_sheet.cell_count() == expected_materialized_cell_count,
+                std::string(label) + " should match the active handle sparse count");
+            check(editor.estimated_pending_materialized_memory_usage() ==
+                    active_sheet.estimated_memory_usage(),
+                std::string(label) + " should match the active handle memory estimate");
+            check(editor.estimated_pending_materialized_memory_usage() > 0,
+                std::string(label) + " should report positive dirty materialized memory");
+        };
 
     editor.rename_sheet("Data", "RenamedClearAll");
     check(editor.pending_change_count() == 1,
         "clear_cell_values() memory-budget renamed summary should count the queued rename");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "clear_cell_values() memory-budget renamed summary should start without dirty materialized names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "clear_cell_values() memory-budget renamed summary should start without dirty materialized cells");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary should start without dirty materialized diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary before materialization");
 
@@ -9789,6 +9813,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary should materialize through the planned name");
     check(sheet.estimated_memory_usage() == exact_memory_budget,
         "clear_cell_values() memory-budget renamed summary should load with the exact sparse budget");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary after clean materialization");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after clean materialization");
 
@@ -9810,6 +9836,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary mutation should expand bounds");
     check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary mutation should insert D4");
+    check_renamed_clear_all_dirty_materialized_diagnostics(sheet, 4,
+        "clear_cell_values() memory-budget renamed summary dirty mutation lower-level diagnostics");
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary dirty mutation");
 
@@ -9828,6 +9856,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary rejected save should preserve handle sparse count");
     check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary rejected save should preserve D4");
+    check_renamed_clear_all_dirty_materialized_diagnostics(sheet, 4,
+        "clear_cell_values() memory-budget renamed summary after rejected save lower-level diagnostics");
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after rejected save");
     const auto source_after_rejected_save_entries = fastxlsx::test::read_zip_entries(source);
@@ -9869,6 +9899,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary option mismatch should preserve handle sparse count");
     check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary option mismatch should preserve D4");
+    check_renamed_clear_all_dirty_materialized_diagnostics(sheet, 4,
+        "clear_cell_values() memory-budget renamed summary after option mismatch lower-level diagnostics");
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after option mismatch");
 
@@ -9901,6 +9933,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary missing lookup should preserve handle sparse count");
     check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary missing lookup should preserve D4");
+    check_renamed_clear_all_dirty_materialized_diagnostics(sheet, 4,
+        "clear_cell_values() memory-budget renamed summary after missing/source-name lookup lower-level diagnostics");
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after missing/source-name lookup");
 
@@ -9959,6 +9993,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve handle sparse count");
     check(sheet.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary read-only diagnostics should preserve D4");
+    check_renamed_clear_all_dirty_materialized_diagnostics(sheet, 4,
+        "clear_cell_values() memory-budget renamed summary after read-only diagnostics lower-level diagnostics");
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after read-only diagnostics");
 
@@ -9973,6 +10009,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary first save should clear dirty materialized cells");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "clear_cell_values() memory-budget renamed summary first save should clear dirty materialized memory");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary first save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after first save");
 
@@ -10009,6 +10047,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary reacquire should keep bounds");
     check(reacquired.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary reacquire should read D4");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary clean reacquire lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after clean reacquire");
 
@@ -10028,6 +10068,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check(sheet.get_cell("E5").text_value() == "clear-all-renamed-summary-reacquire" &&
             reacquired.get_cell("D4").text_value() == "clear-all-renamed-mb-release",
         "clear_cell_values() memory-budget renamed summary later mutation should preserve shared cells");
+    check_renamed_clear_all_dirty_materialized_diagnostics(reacquired, 5,
+        "clear_cell_values() memory-budget renamed summary later mutation lower-level diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == sheet.estimated_memory_usage(),
+        "clear_cell_values() memory-budget renamed summary later mutation should match older handle memory estimate");
     check_renamed_clear_all_summary(true, 5,
         "clear_cell_values() memory-budget renamed summary later mutation");
 
@@ -10042,6 +10086,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary second save should clear dirty cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "clear_cell_values() memory-budget renamed summary second save should clear dirty memory");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary second save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after second save");
 

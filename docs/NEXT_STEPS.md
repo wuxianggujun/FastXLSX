@@ -172,6 +172,11 @@ The reverse ordering is covered as well: a workbook-level
 `request_full_calculation()` queued before `worksheet()` does not block later
 materialization or dirty sparse edits, and `save_as()` writes both the existing
 workbook metadata request and the later materialized projection.
+The clean side of that reverse ordering is pinned too: if `worksheet()` only
+reads after a prior `request_full_calculation()`, the clean materialized session
+does not contribute dirty diagnostics, summaries, or a materialized handoff, and
+the saved worksheet bytes stay source-identical while workbook calc metadata is
+rewritten.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

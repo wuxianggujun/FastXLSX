@@ -3002,6 +3002,63 @@ void test_public_request_full_calculation_allows_later_materialized_edit()
         "full-calc-before-materialize save should not preserve the old source cell");
 }
 
+void test_public_request_full_calculation_preserves_later_clean_materialization()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-full-calc-before-clean-materialize-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-full-calc-before-clean-materialize-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.request_full_calculation();
+    check(editor.pending_change_count() == 1,
+        "full-calc-before-clean-materialize setup should count one metadata edit");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "full-calc-before-clean-materialize setup should not expose dirty materialized names");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const fastxlsx::CellValue original_a1 = sheet.get_cell(1, 1);
+    check(original_a1.kind() == fastxlsx::CellValueKind::Text &&
+            original_a1.text_value() == "placeholder-a1",
+        "worksheet() after request_full_calculation should read source cells");
+    check(!sheet.has_pending_changes(),
+        "worksheet() after request_full_calculation should keep clean materialized state");
+    check(editor.pending_change_count() == 1,
+        "clean materialization after request_full_calculation should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialization after request_full_calculation should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean materialization after request_full_calculation should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialization after request_full_calculation should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "clean materialization after request_full_calculation should not invent summaries");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "save_as after full-calc-before-clean-materialize should keep the sheet clean");
+    check(editor.pending_change_count() == 1,
+        "save_as after full-calc-before-clean-materialize should not add a materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after full-calc-before-clean-materialize should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after full-calc-before-clean-materialize should keep dirty cells empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after full-calc-before-clean-materialize should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after full-calc-before-clean-materialize should keep summaries empty");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc-before-clean-materialize save should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc-before-clean-materialize save should not invent calcChain.xml");
+    check(output_entries.at("xl/worksheets/sheet1.xml") ==
+            source_entries.at("xl/worksheets/sheet1.xml"),
+        "full-calc-before-clean-materialize save should preserve source worksheet bytes");
+}
+
 void test_public_try_worksheet_missing_returns_empty_and_preserves_diagnostics()
 {
     const std::filesystem::path source =
@@ -4478,6 +4535,7 @@ int main(int argc, char* argv[])
             test_public_request_full_calculation_preserves_clean_materialized_session();
             test_public_request_full_calculation_preserves_saved_clean_materialized_session();
             test_public_request_full_calculation_allows_later_materialized_edit();
+            test_public_request_full_calculation_preserves_later_clean_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_materialization();
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_worksheet_editor_reacquire_reuses_dirty_session();

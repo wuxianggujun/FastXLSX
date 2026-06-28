@@ -329,6 +329,12 @@ source/materialized audits without staging rejected payloads, and a later valid
 `set_cell()` clears the diagnostic, re-dirties the shared session, then
 save/reopen keeps the shifted formula, recovered text cell,
 `fullCalcOnLoad="1"`, and no calcChain.
+Invalid reads on the clean saved/reacquired session are pinned too: rejected
+coordinate/A1/range/batch reads and missing-cell `get_cell()` calls keep both
+planned-name handles clean, preserve source/materialized audits, leave dirty
+diagnostics empty and `last_edit_error()` clear, and a later valid `set_cell()`
+re-dirties then saves/reopens with the shifted formula, recovered text,
+`fullCalcOnLoad="1"`, and no calcChain.
 The `pending_materialized_worksheet_names()` dirty-session save path now
 reopens both auto-flushed worksheets, pinning clean multi-sheet readback after
 diagnostic and failed-save inspections.

@@ -40978,6 +40978,45 @@ Acceptance:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
 
+### P8.980 - Pin retry reacquire after missing-cell clear no-op
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_guards.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal:
+- Prove the two-clean failed-save retry reacquire path remains stable when the
+  initial same-sheet guard diagnostic is cleared by a single missing-cell
+  `clear_cell_value()` no-op.
+
+Output:
+- Extended the public retry reacquire regression so read-only and saved-clean
+  branches first clear the `Data` same-sheet guard diagnostic through missing
+  `Data.clear_cell_value()` before any real mutation.
+- The regression verifies the no-op clear keeps both materialized handles
+  clean and preserves sparse counts/memory, then valid `Data` / `Untouched`
+  mutations dirty both handles and survive source-overwrite `save_as()`
+  failure without flushing.
+- The safe-save/reacquire/follow-up mutation checks still prove matching-option
+  reacquired sessions are clean, saved values are visible, a later mutation
+  saves as one more handoff, and rejected `Data` Patch payloads or renames do
+  not leak into outputs.
+
+Non-goals:
+- No cross-handle transaction model, dense clear/write semantics,
+  Patch/materialized composition, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_guards_tests.exe --shard=public-guards` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-guards$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -3644,6 +3644,11 @@ after a `Data` guard diagnostic is cleared by a missing-cell
 handles, `save_as(source)` fails before flushing them, and a later safe
 `save_as()` persists both dirty sessions without leaking the rejected `Data`
 Patch payload or rename.
+The retry reacquire branch now uses that same value-clear cleanup: read-only and
+saved-clean failed-save retry paths clear the initial `Data` diagnostic through
+missing-cell `clear_cell_value()`, then dirty and save both handles, reacquire
+clean matching-option sessions, and accept a follow-up mutation/save while
+keeping rejected `Data` Patch payloads and renames out of both outputs.
 The recovery side of that no-op save is covered too: a later valid `set_cell()`
 clears no diagnostics because none were present, re-dirties the restored `Data`
 session, saves as one additional materialized handoff, preserves the first

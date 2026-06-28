@@ -4872,6 +4872,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
         fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
         (void)data.get_cell(1, 1);
         (void)untouched.get_cell(1, 1);
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        const std::size_t untouched_cell_count = untouched.cell_count();
+        const std::size_t untouched_memory = untouched.estimated_memory_usage();
+        check(!data.try_cell(5, 5).has_value(),
+            "read-only two-clean clear retry reacquire setup should use a missing Data clear target");
 
         (void)check_public_same_sheet_guard_failure(
             editor,
@@ -4883,7 +4889,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             PublicMaterializedGuardDiagnostic::ReplaceSheetData,
             "read-only two-clean retry reacquire setup");
 
-        data.erase_cell(5, 5);
+        data.clear_cell_value(5, 5);
+        check(!editor.last_edit_error().has_value(),
+            "read-only two-clean clear retry reacquire no-op should clear diagnostic");
+        check_public_two_clean_preserved_clean_handles_state(
+            editor, data, untouched, data_cell_count, data_memory,
+            untouched_cell_count, untouched_memory, 0, true,
+            "read-only two-clean clear retry reacquire no-op");
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("readonly-two-clean-reacquire-retry-data"));
         untouched.set_cell(2, 2,
@@ -4964,6 +4976,12 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             check_public_two_clean_retry_two_handle_save_state(
                 editor, data, untouched, 2,
                 "saved-clean two-clean retry reacquire setup");
+        const std::size_t data_cell_count = data.cell_count();
+        const std::size_t data_memory = data.estimated_memory_usage();
+        const std::size_t untouched_cell_count = untouched.cell_count();
+        const std::size_t untouched_memory = untouched.estimated_memory_usage();
+        check(!data.try_cell("E5").has_value(),
+            "saved-clean two-clean clear retry reacquire setup should use a missing Data A1 clear target");
 
         (void)check_public_same_sheet_guard_failure(
             editor,
@@ -4973,6 +4991,13 @@ void test_public_worksheet_editor_two_clean_failed_save_retry_reacquire_preserve
             PublicMaterializedGuardDiagnostic::RenameSheet,
             "saved-clean two-clean retry reacquire setup");
 
+        data.clear_cell_value("E5");
+        check(!editor.last_edit_error().has_value(),
+            "saved-clean two-clean clear retry reacquire no-op should clear diagnostic");
+        check_public_two_clean_preserved_clean_handles_state(
+            editor, data, untouched, data_cell_count, data_memory,
+            untouched_cell_count, untouched_memory, saved_pending_count, false,
+            "saved-clean two-clean clear retry reacquire no-op");
         data.set_cell(3, 3,
             fastxlsx::CellValue::text("saved-clean-two-clean-reacquire-retry-data-recovered"));
         untouched.set_cell(2, 2,

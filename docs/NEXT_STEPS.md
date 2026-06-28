@@ -1137,6 +1137,11 @@ but clearing large source text payloads lowers the sparse memory estimate enough
 for a later small insertion in the same exact-budget session. The saved output
 reopens with blank target records, preserved non-target cells, and no rejected
 payload leakage.
+The inclusive row/column range variants now carry the same evidence:
+`clear_rows()` and `clear_columns()` clear every represented target record to an
+explicit blank, preserve records outside the target row/column range, lower the
+value-payload estimate, and still allow a later recovery cell to save/reopen
+inside the exact budget.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

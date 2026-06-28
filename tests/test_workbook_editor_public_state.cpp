@@ -2412,6 +2412,35 @@ std::filesystem::path write_two_sheet_source_with_large_clear_payload(std::strin
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_large_clear_range_payload(
+    std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+    const std::string large_a1 = "large-clear-range-a1-" + std::string(4096, 'a');
+    const std::string large_a2 = "large-clear-range-a2-" + std::string(4096, 'b');
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text(large_a1),
+            fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::text("clear-range-c1")});
+        data.append_row({fastxlsx::CellView::text(large_a2),
+            fastxlsx::CellView::text("clear-range-b2"),
+            fastxlsx::CellView::text("clear-range-c2")});
+        data.append_row({fastxlsx::CellView::text("clear-range-a3"),
+            fastxlsx::CellView::text("clear-range-b3"),
+            fastxlsx::CellView::text("clear-range-c3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me")});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_styled_shift_formula(
     std::string_view name, fastxlsx::StyleId& formula_style)
 {
@@ -8317,6 +8346,239 @@ void test_public_worksheet_editor_clear_row_column_memory_budget_release()
                 check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_c3.text_value() == "clear-column-mb-release",
                     "clear_column memory-budget release reopened output should read inserted C3");
+            });
+    }
+}
+
+void test_public_worksheet_editor_clear_row_column_range_memory_budget_release()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_large_clear_range_payload(
+            "fastxlsx-workbook-editor-public-worksheet-clear-range-memory-source.xlsx");
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-memory-output.xlsx");
+        const std::string rejected_value =
+            "clear-rows-memory-rejected-" + std::string(4096, 'r');
+
+        fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+        const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.memory_budget_bytes = exact_memory_budget;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+        check(baseline_memory == exact_memory_budget,
+            "clear_rows memory-budget precondition should load with an exact sparse budget");
+
+        bool failed = false;
+        try {
+            sheet.set_cell(4, 4, fastxlsx::CellValue::text(rejected_value));
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+                "exact memory budget should reject insertion before clear_rows");
+        }
+        check(failed,
+            "set_cell should fail before clear_rows releases value payload memory");
+        check(editor.last_edit_error().has_value(),
+            "failed insertion before clear_rows should seed last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "failed insertion before clear_rows should keep the session clean");
+        check(sheet.cell_count() == 9,
+            "failed insertion before clear_rows should preserve sparse records");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed insertion before clear_rows should preserve memory estimate");
+        check(!sheet.try_cell("D4").has_value(),
+            "failed insertion before clear_rows should not leave rejected cells readable");
+
+        sheet.clear_rows(1, 2);
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_rows should clear the prior memory-budget diagnostic");
+        check(sheet.has_pending_changes(),
+            "clear_rows after memory-budget failure should dirty the session");
+        check(sheet.cell_count() == 9,
+            "clear_rows should keep represented records as explicit blanks");
+        check(sheet.estimated_memory_usage() < exact_memory_budget,
+            "clear_rows should lower sparse memory usage by releasing value payloads");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows memory-budget release should keep A1 as an explicit blank");
+        check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows memory-budget release should keep B1 as an explicit blank");
+        check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows memory-budget release should keep A2 as an explicit blank");
+        check(sheet.get_cell("C2").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_rows memory-budget release should keep C2 as an explicit blank");
+        check(sheet.get_cell("C3").text_value() == "clear-range-c3",
+            "clear_rows memory-budget release should preserve non-target row cells");
+
+        sheet.set_cell(4, 4, fastxlsx::CellValue::text("clear-rows-mb-release"));
+        check(!editor.last_edit_error().has_value(),
+            "successful set_cell after clear_rows memory release should keep diagnostics clear");
+        check(sheet.cell_count() == 10,
+            "set_cell after clear_rows should add one sparse recovery record");
+        check(sheet.estimated_memory_usage() <= exact_memory_budget,
+            "set_cell after clear_rows should stay within the exact memory budget");
+        check(sheet.get_cell("D4").text_value() == "clear-rows-mb-release",
+            "set_cell after clear_rows should insert the memory-budget recovery cell");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<c r="A1"/>)",
+            "clear_rows memory-budget recovery should persist A1 as a blank record");
+        check_contains(worksheet_xml, R"(<c r="C2"/>)",
+            "clear_rows memory-budget recovery should persist C2 as a blank record");
+        check_contains(worksheet_xml, "clear-range-c3",
+            "clear_rows memory-budget recovery should preserve non-target row cells");
+        check_contains(worksheet_xml, "clear-rows-mb-release",
+            "clear_rows memory-budget recovery should persist the inserted recovery cell");
+        check_not_contains(worksheet_xml, "large-clear-range-a1-",
+            "clear_rows memory-budget recovery should omit cleared A1 text payloads");
+        check_not_contains(worksheet_xml, "large-clear-range-a2-",
+            "clear_rows memory-budget recovery should omit cleared A2 text payloads");
+        check_not_contains(worksheet_xml, "clear-rows-memory-rejected",
+            "rejected memory-budget insertion before clear_rows should not leak into output");
+        check_reopened_clean_sheet_output(output, "Data", "clear_rows memory-budget release",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 10,
+                    "clear_rows memory-budget release reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                    "clear_rows memory-budget release reopened output should keep blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_rows memory-budget release reopened output should keep A1 blank");
+                const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+                check(reopened_c2.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_rows memory-budget release reopened output should keep C2 blank");
+                const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+                check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_c3.text_value() == "clear-range-c3",
+                    "clear_rows memory-budget release reopened output should keep C3 text");
+                const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+                check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_d4.text_value() == "clear-rows-mb-release",
+                    "clear_rows memory-budget release reopened output should read inserted D4");
+            });
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-memory-output.xlsx");
+        const std::string rejected_value =
+            "clear-columns-memory-rejected-" + std::string(4096, 'c');
+
+        fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+        const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.memory_budget_bytes = exact_memory_budget;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+        check(baseline_memory == exact_memory_budget,
+            "clear_columns memory-budget precondition should load with an exact sparse budget");
+
+        bool failed = false;
+        try {
+            sheet.set_cell(4, 4, fastxlsx::CellValue::text(rejected_value));
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+                "exact memory budget should reject insertion before clear_columns");
+        }
+        check(failed,
+            "set_cell should fail before clear_columns releases value payload memory");
+        check(editor.last_edit_error().has_value(),
+            "failed insertion before clear_columns should seed last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "failed insertion before clear_columns should keep the session clean");
+        check(sheet.cell_count() == 9,
+            "failed insertion before clear_columns should preserve sparse records");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed insertion before clear_columns should preserve memory estimate");
+        check(!sheet.try_cell("D4").has_value(),
+            "failed insertion before clear_columns should not leave rejected cells readable");
+
+        sheet.clear_columns(1, 2);
+        check(!editor.last_edit_error().has_value(),
+            "successful clear_columns should clear the prior memory-budget diagnostic");
+        check(sheet.has_pending_changes(),
+            "clear_columns after memory-budget failure should dirty the session");
+        check(sheet.cell_count() == 9,
+            "clear_columns should keep represented records as explicit blanks");
+        check(sheet.estimated_memory_usage() < exact_memory_budget,
+            "clear_columns should lower sparse memory usage by releasing value payloads");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns memory-budget release should keep A1 as an explicit blank");
+        check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns memory-budget release should keep B1 as an explicit blank");
+        check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns memory-budget release should keep A2 as an explicit blank");
+        check(sheet.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank,
+            "clear_columns memory-budget release should keep B3 as an explicit blank");
+        check(sheet.get_cell("C1").text_value() == "clear-range-c1",
+            "clear_columns memory-budget release should preserve non-target C1 text");
+        check(sheet.get_cell("C3").text_value() == "clear-range-c3",
+            "clear_columns memory-budget release should preserve non-target C3 text");
+
+        sheet.set_cell(4, 4, fastxlsx::CellValue::text("clear-columns-mb-release"));
+        check(!editor.last_edit_error().has_value(),
+            "successful set_cell after clear_columns memory release should keep diagnostics clear");
+        check(sheet.cell_count() == 10,
+            "set_cell after clear_columns should add one sparse recovery record");
+        check(sheet.estimated_memory_usage() <= exact_memory_budget,
+            "set_cell after clear_columns should stay within the exact memory budget");
+        check(sheet.get_cell("D4").text_value() == "clear-columns-mb-release",
+            "set_cell after clear_columns should insert the memory-budget recovery cell");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<c r="A1"/>)",
+            "clear_columns memory-budget recovery should persist A1 as a blank record");
+        check_contains(worksheet_xml, R"(<c r="B3"/>)",
+            "clear_columns memory-budget recovery should persist B3 as a blank record");
+        check_contains(worksheet_xml, "clear-range-c1",
+            "clear_columns memory-budget recovery should preserve non-target C1 text");
+        check_contains(worksheet_xml, "clear-range-c3",
+            "clear_columns memory-budget recovery should preserve non-target C3 text");
+        check_contains(worksheet_xml, "clear-columns-mb-release",
+            "clear_columns memory-budget recovery should persist the inserted recovery cell");
+        check_not_contains(worksheet_xml, "large-clear-range-a1-",
+            "clear_columns memory-budget recovery should omit cleared A1 text payloads");
+        check_not_contains(worksheet_xml, "large-clear-range-a2-",
+            "clear_columns memory-budget recovery should omit cleared A2 text payloads");
+        check_not_contains(worksheet_xml, "clear-columns-memory-rejected",
+            "rejected memory-budget insertion before clear_columns should not leak into output");
+        check_reopened_clean_sheet_output(output, "Data", "clear_columns memory-budget release",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 10,
+                    "clear_columns memory-budget release reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                    "clear_columns memory-budget release reopened output should keep blank bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_columns memory-budget release reopened output should keep A1 blank");
+                const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+                check(reopened_b3.kind() == fastxlsx::CellValueKind::Blank,
+                    "clear_columns memory-budget release reopened output should keep B3 blank");
+                const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+                check(reopened_c1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_c1.text_value() == "clear-range-c1",
+                    "clear_columns memory-budget release reopened output should keep C1 text");
+                const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+                check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_c3.text_value() == "clear-range-c3",
+                    "clear_columns memory-budget release reopened output should keep C3 text");
+                const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+                check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_d4.text_value() == "clear-columns-mb-release",
+                    "clear_columns memory-budget release reopened output should read inserted D4");
             });
     }
 }
@@ -25747,6 +26009,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_clear_row_preserves_sparse_records();
             test_public_worksheet_editor_clear_columns_noop_invalid_and_range();
             test_public_worksheet_editor_clear_row_column_memory_budget_release();
+            test_public_worksheet_editor_clear_row_column_range_memory_budget_release();
             test_public_worksheet_editor_erase_row_removes_sparse_row();
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();

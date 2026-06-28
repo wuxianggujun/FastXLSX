@@ -879,8 +879,9 @@ public/full transformer boundary 仍是后续任务。
 - `estimated_memory_usage()` 只能写成预算估算，覆盖 record、sparse index、string /
   formula pool、metadata model 和保存阶段 assembly 成本，不是精确 RSS profiler。
 - 当前 public `WorksheetEditor` 回归也把 clear 与 erase 的预算语义分开：erase 删除
-  sparse records 并释放对应 estimate，`clear_row()` / `clear_column()` 保留 blank
-  records，但释放被清空 value payload 的 estimate；这仍不是进程 RSS 或保存阶段峰值承诺。
+  sparse records 并释放对应 estimate，`clear_row()` / `clear_rows()`、
+  `clear_column()` / `clear_columns()` 保留 blank records，但释放被清空 value
+  payload 的 estimate；这仍不是进程 RSS 或保存阶段峰值承诺。
 - P7.5 save-as handoff 草案要求 source-backed editor 通过 part-level plan 输出：
   未修改和 unknown entries 默认 copy-original，修改的 worksheet/workbook metadata 才
   rewrite；`save_as()` 不承诺原地覆盖。

@@ -8825,6 +8825,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-noop-output.xlsx");
+    const std::filesystem::path option_mismatch_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-option-mismatch-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
 
@@ -8960,6 +8962,62 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_output_entries == output_entries,
         "clear_cell_values() memory-budget release matching-option noop save should keep output entries stable");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_option_mismatch =
+        workbook_editor_public_catalog_snapshot(editor);
+    fastxlsx::WorksheetEditorOptions mismatched_options = options;
+    mismatched_options.max_cells = 2;
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), "clear_cell_values() memory-budget release option mismatch try_worksheet should reject different options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", mismatched_options);
+    }), "clear_cell_values() memory-budget release option mismatch worksheet should reject different options");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release option mismatch should keep last_edit_error clear");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release option mismatch should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release option mismatch should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release option mismatch should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release option mismatch should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release option mismatch should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release option mismatch should not dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_option_mismatch,
+        "clear_cell_values() memory-budget release option mismatch");
+    check(sheet.cell_count() == 10 && reacquired.cell_count() == 10,
+        "clear_cell_values() memory-budget release option mismatch should preserve sparse count");
+    check(sheet.get_cell("D4").text_value() == "clear-all-mb-release" &&
+            reacquired.get_cell("D4").text_value() == "clear-all-mb-release",
+        "clear_cell_values() memory-budget release option mismatch should preserve saved D4");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank &&
+            reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_cell_values() memory-budget release option mismatch should preserve saved blanks");
+
+    editor.save_as(option_mismatch_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget release option mismatch noop save should keep handles clean");
+    check(editor.pending_change_count() == pending_count_after_reacquire,
+        "clear_cell_values() memory-budget release option mismatch noop save should not add a handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release option mismatch noop save should keep diagnostics clear");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release option mismatch noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release option mismatch noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release option mismatch noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release option mismatch noop save should not dirty summaries");
+    const auto option_mismatch_entries =
+        fastxlsx::test::read_zip_entries(option_mismatch_output);
+    check(option_mismatch_entries == output_entries,
+        "clear_cell_values() memory-budget release option mismatch noop save should keep output entries stable");
 
     check_reopened_clean_sheet_output(output, "Data",
         "clear_cell_values() memory-budget release",

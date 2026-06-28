@@ -1157,6 +1157,10 @@ cell counts, memory, and summaries are cleared, and a same-options
 recovery cell. A no-op `save_as()` after that same-options reacquire is also
 pinned: it keeps both handles clean, does not add another materialized handoff,
 and writes the same decompressed package entries as the first output.
+Mismatched `WorksheetEditorOptions` access against that saved/reacquired session
+is now pinned as well: rejected lookups keep diagnostics clear, preserve the
+saved blank/recovery cells and catalog state, and a later no-op save still
+matches the first output entries.
 `WorksheetEditor::set_cells()` now covers the matching sparse batch full-cell
 replacement case for small files: every update carries an explicit row/column
 coordinate and `CellValue`, duplicate coordinates are allowed with later input

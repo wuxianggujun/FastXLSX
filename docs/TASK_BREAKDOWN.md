@@ -39303,6 +39303,44 @@ Acceptance:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
 
+### P8.938 - Pin whole-store clear saved-session option mismatch
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove mismatched `WorksheetEditorOptions` access against a saved and
+matching-option reacquired no-argument `clear_cell_values()` exact-budget
+session remains no-op-save safe.
+
+Output:
+- Extended the whole-store `clear_cell_values()` exact-budget public-state
+  regression to reject `try_worksheet("Data", mismatched_options)` and
+  `worksheet("Data", mismatched_options)` after clean same-options reacquire.
+- The regression verifies the failures keep `last_edit_error()` clear, preserve
+  both handles, saved blank/recovery cells, catalog state, materialized
+  diagnostics, and pending handoff counts, then writes another no-op save whose
+  decompressed package entries match the first output.
+- Updated API / next-step / task breakdown documentation to record the
+  saved-session option-preflight boundary.
+
+Non-goals / boundary:
+- No option migration, no session cloning, no relaxed guardrails, no
+  clean-session commit semantics, no transaction history, no formula repair or
+  evaluation, no calcChain rebuild, no sharedStrings/styles migration, and no
+  low-memory large-file random editing.
+
+Acceptance:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

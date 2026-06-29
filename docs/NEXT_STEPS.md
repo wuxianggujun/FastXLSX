@@ -65,6 +65,11 @@ views, sparse used-range refresh, source-backed styled formula `StyleId`
 preservation, saved XML projection, and saved-file reopen readback for the
 plain/styled insert-shift, delete-shift sparse snapshot state, and row/column
 out-of-bounds `#REF!` formula translations. The retry/guard shard also pins that
+path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
+boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
+pending materialized diagnostics remain empty, and a later no-op `save_as()`
+reuses the retry output byte-for-byte without adding a materialized handoff.
+The retry/guard shard also pins that
 shift no-ops clear stale diagnostics without dirtying reacquired sessions, while
 invalid shift ranges preserve the saved sparse store until a later valid shift
 clears the diagnostic and flushes; it also reopens saved guard-recovery outputs

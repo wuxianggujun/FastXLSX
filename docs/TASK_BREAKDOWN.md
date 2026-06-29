@@ -42077,6 +42077,41 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1010 - Pin path-equivalent failed-save retry no-op save stability
+
+Type: public `WorksheetEditor` path-equivalent post-failed-save retry
+no-op-save stability regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove path-equivalent source-overwrite rejection has the same safe-retry
+and later no-op `save_as()` stability as direct source-overwrite rejection.
+
+Non-goals: overwrite mode, path repair, rollback, session cloning, source
+reload, formula repair/evaluation, metadata synchronization, calcChain rebuild,
+sharedStrings/styles migration, Patch/materialized sparse-session composition,
+or low-memory random editing.
+
+Acceptance: after a saved `insert_rows()` shift is dirtied again through a
+matching reacquired handle, rejected path-equivalent source-overwrite
+`save_as(source.parent_path() / "." / source.filename())` preserves the dirty
+materialized session, safe retry writes the combined row/column shift, a
+matching `worksheet("Data")` reacquire stays clean, a later no-op `save_as()`
+writes decompressed package entries identical to the retry output, adds no
+handoff, and reopens to the expected combined shifted sparse layout.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

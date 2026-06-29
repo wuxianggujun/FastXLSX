@@ -25537,6 +25537,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-path-equivalent-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-path-equivalent-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-path-equivalent-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_names = editor.worksheet_names();
@@ -25669,6 +25671,67 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire path-equivalent failed save reopened output should keep old coordinates absent");
+        });
+
+    fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire path-equivalent failed save matching reacquire after retry should stay clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire path-equivalent failed save matching reacquire after retry should not add handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire path-equivalent failed save matching reacquire after retry should keep diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire path-equivalent failed save matching reacquire after retry should keep diagnostics clear");
+    check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire path-equivalent failed save matching reacquire after retry should preserve shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "shift reacquire path-equivalent failed save matching reacquire after retry should expose shifted number");
+    check(!after_retry.try_cell("B1").has_value() &&
+            !after_retry.try_cell("A2").has_value(),
+        "shift reacquire path-equivalent failed save matching reacquire after retry should keep old coordinates absent");
+
+    editor.save_as(noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire path-equivalent failed save noop save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire path-equivalent failed save noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire path-equivalent failed save noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire path-equivalent failed save noop save should keep diagnostics clear");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "shift reacquire path-equivalent failed save noop output should match the safe retry output");
+    check_reopened_shift_output(noop_output, "shift reacquire path-equivalent failed save noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire path-equivalent failed save noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire path-equivalent failed save noop save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire path-equivalent failed save noop save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire path-equivalent failed save noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire path-equivalent failed save noop save reopened output should keep old coordinates absent");
         });
 }
 

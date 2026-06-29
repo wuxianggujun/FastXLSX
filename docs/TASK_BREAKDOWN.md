@@ -41980,6 +41980,34 @@ materialized diagnostics, write decompressed package entries identical to the
 first save on a later no-op `save_as()`, and still reopen to the expected
 shifted sparse layout.
 
+### P8.1007 - Pin invalid-mutation no-op save stability
+
+Type: public `WorksheetEditor` saved-session invalid-mutation no-op-save
+stability regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid mutation failures after a saved `insert_rows()` sparse shift
+do not poison the clean materialized session or a later no-op `save_as()`.
+
+Non-goals: coordinate repair or clamping, rejected-payload staging, rollback,
+session cloning, source reload, formula repair/evaluation, metadata
+synchronization, calcChain rebuild, sharedStrings/styles migration,
+Patch/materialized sparse-session composition, or low-memory random editing.
+
+Acceptance: rejected row/column/A1 `set_cell()` and `erase_cell()` calls record
+the invalid-reference diagnostic, keep saved/reacquired handles clean, preserve
+catalog views and pending materialized diagnostics, write decompressed package
+entries identical to the first save on a later no-op `save_as()`, preserve the
+invalid-reference diagnostic across that no-op save, omit rejected payloads, and
+still reopen to the expected shifted sparse layout.
+
 Verification:
 - `git diff --check` passes.
 - `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.

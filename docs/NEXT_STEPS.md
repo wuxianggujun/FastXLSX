@@ -817,6 +817,11 @@ row/column, A1, range, row/column snapshot, coordinate-batch, and valid-missing
 `get_cell()` reads keep saved/reacquired shifted handles clean, leave diagnostics
 and catalog state stable, and a later no-op `save_as()` reuses the first shifted
 output byte-for-byte.
+Invalid mutation failures now cover the mutation-side no-op-save boundary:
+rejected row/column/A1 `set_cell()` and `erase_cell()` calls preserve the
+invalid-reference diagnostic without dirtying saved/reacquired shifted handles,
+and a later no-op `save_as()` reuses the first shifted output byte-for-byte
+without leaking rejected payloads.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

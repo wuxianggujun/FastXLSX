@@ -45819,6 +45819,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1125 - Pin A1 overload second no-op public save state
+
+Type: public `WorksheetEditor` strict A1 overload dirty-flush second no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing strict uppercase A1 read/mutate/erase overload path
+remains stable across a second clean no-op `save_as()` after flushing the
+materialized worksheet once and saving a first no-op output.
+
+Coverage:
+- Keeps the existing A1 overload readback, `D4` text insertion, `A2` erase,
+  first dirty flush, reopened D4/A2 checks, and first clean no-op save.
+- Captures public catalog/save-state after the first no-op save, performs
+  `save_as(second_noop_output)`, and checks pending counts, replacement
+  diagnostics, clear `last_edit_error()`, catalog/save-state preservation, and
+  output-entry equality with the first no-op output.
+
+Non-goals:
+- Does not add relaxed/lowercase A1 parsing, coordinate repair or clamping,
+  missing-cell synthesis, dense range writes/deletes, metadata/range repair,
+  source reload, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition, or low-memory large-file
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

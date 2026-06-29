@@ -10757,6 +10757,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-output.xlsx");
+    const std::filesystem::path first_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-first-noop-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-noop-output.xlsx");
     const std::filesystem::path option_mismatch_output =
@@ -10901,6 +10903,64 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release save_as should clear dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release save_as should clear dirty materialized summaries");
+
+    const auto inspect_clear_all_memory_release_output =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 10,
+                "clear_cell_values() memory-budget release reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "clear_cell_values() memory-budget release reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                "clear_cell_values() memory-budget release reopened output should keep A1 blank");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Blank,
+                "clear_cell_values() memory-budget release reopened output should keep C3 blank");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "clear-all-mb-release",
+                "clear_cell_values() memory-budget release reopened output should read D4");
+            check(!reopened_sheet.try_cell("E5").has_value(),
+                "clear_cell_values() memory-budget release reopened output should keep missing E5 absent");
+        };
+    check_reopened_clean_sheet_output(output, "Data",
+        "clear_cell_values() memory-budget release",
+        inspect_clear_all_memory_release_output);
+
+    const std::size_t pending_count_after_first_save = editor.pending_change_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_first_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_first_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(first_noop_output);
+    check(!sheet.has_pending_changes(),
+        "clear_cell_values() memory-budget release first noop save should keep the handle clean");
+    check(editor.pending_change_count() == pending_count_after_first_save,
+        "clear_cell_values() memory-budget release first noop save should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clear_cell_values() memory-budget release first noop save should not dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clear_cell_values() memory-budget release first noop save should not dirty cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values() memory-budget release first noop save should not dirty memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values() memory-budget release first noop save should not dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "clear_cell_values() memory-budget release first noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget release first noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_first_noop,
+        "clear_cell_values() memory-budget release first noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_first_noop,
+        "clear_cell_values() memory-budget release first noop save");
+    const auto first_noop_entries = fastxlsx::test::read_zip_entries(first_noop_output);
+    check(first_noop_entries == output_entries,
+        "clear_cell_values() memory-budget release first noop save should keep output entries stable");
+    check_reopened_clean_sheet_output(first_noop_output, "Data",
+        "clear_cell_values() memory-budget release first noop save",
+        inspect_clear_all_memory_release_output);
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data", options);
     check(!reacquired.has_pending_changes(),

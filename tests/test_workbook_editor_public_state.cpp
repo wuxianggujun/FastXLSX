@@ -23159,6 +23159,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -23295,6 +23297,30 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
     check_not_contains(second_worksheet_xml, R"(r="A2")",
         "renamed shift option mismatch second output should keep old row coordinate absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift option mismatch no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed shift option mismatch no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift option mismatch no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift option mismatch no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed shift option mismatch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed shift option mismatch no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed shift option mismatch no-op output should match the second output");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed shift option mismatch reopened output should expose only the planned catalog name");
@@ -23325,6 +23351,8 @@ void test_public_worksheet_editor_shift_after_rename_missing_query_preserves_pla
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-missing-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-missing-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-missing-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -23445,6 +23473,30 @@ void test_public_worksheet_editor_shift_after_rename_missing_query_preserves_pla
     check_not_contains(second_worksheet_xml, R"(r="A2")",
         "renamed shift missing query second output should keep old row coordinate absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift missing query no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed shift missing query no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift missing query no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift missing query no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed shift missing query no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed shift missing query no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed shift missing query no-op output should match the second output");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed shift missing query reopened output should expose only the planned catalog name");
@@ -23475,6 +23527,8 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-read-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-read-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-read-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -23619,6 +23673,30 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
     check_not_contains(second_worksheet_xml, R"(r="A2")",
         "renamed shift invalid reads second output should keep old row coordinate absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift invalid reads no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed shift invalid reads no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift invalid reads no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift invalid reads no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed shift invalid reads no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed shift invalid reads no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed shift invalid reads no-op output should match the second output");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed shift invalid reads reopened output should expose only the planned catalog name");
@@ -23649,6 +23727,8 @@ void test_public_worksheet_editor_shift_after_rename_invalid_mutations_preserve_
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-mutation-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-mutation-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-mutation-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -23805,6 +23885,30 @@ void test_public_worksheet_editor_shift_after_rename_invalid_mutations_preserve_
         "renamed shift invalid mutations second output should keep old row coordinate absent");
     check_not_contains(second_worksheet_xml, "invalid-renamed-shift-",
         "renamed shift invalid mutations second output should not leak rejected payloads");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift invalid mutations no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed shift invalid mutations no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift invalid mutations no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift invalid mutations no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed shift invalid mutations no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed shift invalid mutations no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed shift invalid mutations no-op output should match the second output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

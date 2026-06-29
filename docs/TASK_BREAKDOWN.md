@@ -44159,6 +44159,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1075 - Pin renamed planned-session preflight no-op public save state
+
+Type: public `WorksheetEditor` plain renamed planned-session preflight
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove existing plain renamed planned-session option-mismatch,
+missing-sheet lookup, invalid-read, and invalid-mutation branches preserve
+public save-state snapshots across a clean no-op save after the second
+successful materialized flush.
+
+Acceptance:
+- The plain renamed planned-session option-mismatch, missing-sheet lookup,
+  invalid-read, and invalid-mutation tests now capture public catalog and
+  save-state snapshots after their second successful save.
+- The no-op saves verify the shared handles stay clean, pending materialized
+  diagnostics remain empty, pending counts and replacement diagnostics are
+  preserved, catalog views are unchanged, last-edit diagnostics stay clear, and
+  output entries remain byte-stable against the second output.
+- Documentation records this as narrow save-state coverage for existing plain
+  renamed planned-session preflight no-op saves, not option migration,
+  missing-sheet aliasing, tolerant reads, relaxed mutation validation, formula
+  evaluation, broader shift semantics, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

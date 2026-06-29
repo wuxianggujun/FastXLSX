@@ -10324,6 +10324,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -10362,7 +10364,7 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_rows should omit old row-two text payload");
         check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
             "clear_rows should omit old row-one numeric payload");
-        check_reopened_clean_sheet_output(output, "Data", "clear_rows",
+        const auto inspect_clear_rows_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "clear_rows reopened output should keep sparse count");
@@ -10381,7 +10383,37 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
                 check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_d4.text_value() == "clear-row-range-extra",
                     "clear_rows reopened output should keep non-target row edits");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "clear_rows",
+            inspect_clear_rows_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "clear_rows no-op save should keep the materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "clear_rows no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "clear_rows no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "clear_rows no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "clear_rows no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "clear_rows no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "clear_rows no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "clear_rows no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "clear_rows no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "clear_rows no-op save", inspect_clear_rows_output);
     }
 
     {
@@ -10863,6 +10895,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -10901,7 +10935,7 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "clear_columns should omit old first-column row-two text payload");
         check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
             "clear_columns should omit old second-column numeric payload");
-        check_reopened_clean_sheet_output(output, "Data", "clear_columns",
+        const auto inspect_clear_columns_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "clear_columns reopened output should keep sparse count");
@@ -10920,7 +10954,37 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
                 check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_d4.text_value() == "clear-column-range-extra",
                     "clear_columns reopened output should keep non-target column edits");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "clear_columns",
+            inspect_clear_columns_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "clear_columns no-op save should keep the materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "clear_columns no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "clear_columns no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "clear_columns no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "clear_columns no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "clear_columns no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "clear_columns no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "clear_columns no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "clear_columns no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "clear_columns no-op save", inspect_clear_columns_output);
     }
 
     {

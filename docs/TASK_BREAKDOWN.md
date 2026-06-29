@@ -42613,6 +42613,42 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1026 - Pin dirty invalid-to-valid shift no-op save stability
+
+Type: public `WorksheetEditor` dirty invalid-to-valid row/column shift recovery
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove dirty sparse cells survive invalid shift diagnostics, then move
+through valid `insert_rows()` / `insert_columns()`, a recovery save, and a
+second no-op `save_as()` without re-dirtying materialized state.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No broader shift validation policy, dense row/column operations,
+  cross-session transactions, metadata repair, formula repair beyond existing
+  moved-cell handling, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state()`
+  with no-op `save_as()` calls for both the row and column dirty
+  invalid-to-valid recovery branches.
+- The regressions verify no second materialized handoff is added, dirty
+  materialized diagnostics and summaries remain empty, public save state and
+  catalog state are preserved, output entries stay byte-stable, and reopened
+  shifted-output checks still pass.
+- Updated API documentation to pin this dirty invalid-to-valid shift recovery
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

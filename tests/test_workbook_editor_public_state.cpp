@@ -26775,6 +26775,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
     {
         const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -26817,7 +26819,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "valid insert_rows after dirty invalid shifts should remove old shifted coordinates");
 
         editor.save_as(output);
-        check_reopened_shift_output(output, "dirty invalid-to-valid row shift recovery",
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const auto inspect_reopened_dirty_row_shift_recovery =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "dirty invalid-to-valid row recovery reopened output should keep sparse count");
@@ -26838,12 +26841,45 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
                 check(!reopened_sheet.try_cell("A2").has_value() &&
                         !reopened_sheet.try_cell("B4").has_value(),
                     "dirty invalid-to-valid row recovery reopened output should keep old coordinates absent");
-            });
+            };
+        check_reopened_shift_output(output, "dirty invalid-to-valid row shift recovery",
+            inspect_reopened_dirty_row_shift_recovery);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "dirty invalid-to-valid row shift noop save should keep the materialized session clean");
+        check(editor.pending_change_count() == 1,
+            "dirty invalid-to-valid row shift noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "dirty invalid-to-valid row shift noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "dirty invalid-to-valid row shift noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "dirty invalid-to-valid row shift noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "dirty invalid-to-valid row shift noop save should not expose dirty summaries");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "dirty invalid-to-valid row shift noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "dirty invalid-to-valid row shift noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "dirty invalid-to-valid row shift noop save should keep output entries stable");
+        check_reopened_shift_output(noop_output, "dirty invalid-to-valid row shift noop save",
+            inspect_reopened_dirty_row_shift_recovery);
     }
 
     {
         const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -26888,7 +26924,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "valid insert_columns after dirty invalid shifts should remove old shifted coordinates");
 
         editor.save_as(output);
-        check_reopened_shift_output(output, "dirty invalid-to-valid column shift recovery",
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const auto inspect_reopened_dirty_column_shift_recovery =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "dirty invalid-to-valid column recovery reopened output should keep sparse count");
@@ -26909,7 +26946,39 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
                 check(!reopened_sheet.try_cell("B1").has_value() &&
                         !reopened_sheet.try_cell("D2").has_value(),
                     "dirty invalid-to-valid column recovery reopened output should keep old coordinates absent");
-            });
+            };
+        check_reopened_shift_output(output, "dirty invalid-to-valid column shift recovery",
+            inspect_reopened_dirty_column_shift_recovery);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "dirty invalid-to-valid column shift noop save should keep the materialized session clean");
+        check(editor.pending_change_count() == 1,
+            "dirty invalid-to-valid column shift noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "dirty invalid-to-valid column shift noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "dirty invalid-to-valid column shift noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "dirty invalid-to-valid column shift noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "dirty invalid-to-valid column shift noop save should not expose dirty summaries");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "dirty invalid-to-valid column shift noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "dirty invalid-to-valid column shift noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "dirty invalid-to-valid column shift noop save should keep output entries stable");
+        check_reopened_shift_output(noop_output,
+            "dirty invalid-to-valid column shift noop save",
+            inspect_reopened_dirty_column_shift_recovery);
     }
 }
 

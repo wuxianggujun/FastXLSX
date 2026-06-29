@@ -28623,6 +28623,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-source.xlsx");
     const std::filesystem::path max_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-output.xlsx");
+    const std::filesystem::path max_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor max_sizing_editor = fastxlsx::WorkbookEditor::open(max_source);
     const fastxlsx::WorksheetEditor max_sizing_sheet = max_sizing_editor.worksheet("Data");
@@ -28692,10 +28694,39 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "max_cells budget-release insertion",
         "after-erase-max-cells");
 
+    const WorkbookEditorPublicCatalogSnapshot max_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(max_editor);
+    max_editor.save_as(max_noop_output);
+    check(!max_sheet.has_pending_changes(),
+        "max_cells budget-release noop save should keep the materialized session clean");
+    check(max_editor.pending_change_count() == 1,
+        "max_cells budget-release noop save should not add another handoff");
+    check(max_editor.pending_materialized_worksheet_names().empty(),
+        "max_cells budget-release noop save should not expose dirty worksheet names");
+    check(max_editor.pending_materialized_cell_count() == 0,
+        "max_cells budget-release noop save should not expose dirty materialized cells");
+    check(max_editor.estimated_pending_materialized_memory_usage() == 0,
+        "max_cells budget-release noop save should not expose dirty materialized memory");
+    check(max_editor.pending_worksheet_edits().empty(),
+        "max_cells budget-release noop save should not expose dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        max_editor, max_catalog_before_noop,
+        "max_cells budget-release noop save");
+    const auto max_noop_entries = fastxlsx::test::read_zip_entries(max_noop_output);
+    check(max_noop_entries == max_output_entries,
+        "max_cells budget-release noop save should keep output entries stable");
+    check_reopened_guardrail_budget_release_output(
+        max_noop_output,
+        max_options,
+        "max_cells budget-release noop save",
+        "after-erase-max-cells");
+
     const std::filesystem::path memory_source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-source.xlsx");
     const std::filesystem::path memory_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-output.xlsx");
+    const std::filesystem::path memory_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor memory_sizing_editor =
         fastxlsx::WorkbookEditor::open(memory_source);
@@ -28761,6 +28792,34 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         memory_output,
         memory_options,
         "memory-budget budget-release insertion",
+        "mem-ok");
+
+    const WorkbookEditorPublicCatalogSnapshot memory_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(memory_editor);
+    memory_editor.save_as(memory_noop_output);
+    check(!memory_sheet.has_pending_changes(),
+        "memory-budget budget-release noop save should keep the materialized session clean");
+    check(memory_editor.pending_change_count() == 1,
+        "memory-budget budget-release noop save should not add another handoff");
+    check(memory_editor.pending_materialized_worksheet_names().empty(),
+        "memory-budget budget-release noop save should not expose dirty worksheet names");
+    check(memory_editor.pending_materialized_cell_count() == 0,
+        "memory-budget budget-release noop save should not expose dirty materialized cells");
+    check(memory_editor.estimated_pending_materialized_memory_usage() == 0,
+        "memory-budget budget-release noop save should not expose dirty materialized memory");
+    check(memory_editor.pending_worksheet_edits().empty(),
+        "memory-budget budget-release noop save should not expose dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        memory_editor, memory_catalog_before_noop,
+        "memory-budget budget-release noop save");
+    const auto memory_noop_entries =
+        fastxlsx::test::read_zip_entries(memory_noop_output);
+    check(memory_noop_entries == memory_output_entries,
+        "memory-budget budget-release noop save should keep output entries stable");
+    check_reopened_guardrail_budget_release_output(
+        memory_noop_output,
+        memory_options,
+        "memory-budget budget-release noop save",
         "mem-ok");
 }
 

@@ -42358,6 +42358,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1019 - Pin erase budget-release no-op save stability
+
+Type: public `WorksheetEditor` erase-driven guardrail budget-release
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove single-cell erase-driven budget release for exact `max_cells` and
+exact `memory_budget_bytes` remains stable after a recovery save followed by a
+second no-op `save_as()`.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No broader guardrail policy, max-cells auto-sizing, memory-budget
+  auto-sizing, process-RSS accounting, dense deletion, tombstones, rollback,
+  metadata repair, formula repair, calcChain rebuild, sharedStrings/styles
+  migration, Patch/materialized sparse-session composition, or low-memory
+  random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()`
+  so both the exact `max_cells` and exact `memory_budget_bytes` recovery saves
+  are followed by no-op `save_as()` calls.
+- The regressions verify the saved materialized session stays clean, no second
+  materialized handoff is added, dirty materialized diagnostics and summaries
+  remain empty, catalog state is preserved, output entries stay byte-stable,
+  and the existing reopened-output guardrail budget-release checks still pass.
+- Updated API documentation to pin this erase-driven budget-release
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

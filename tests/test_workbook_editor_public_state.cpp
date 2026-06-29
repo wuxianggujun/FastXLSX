@@ -5869,6 +5869,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first.xlsx");
     const std::filesystem::path first_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first-noop.xlsx");
+    const std::filesystem::path first_second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first-second-noop.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-second.xlsx");
     const std::filesystem::path noop_output =
@@ -5948,7 +5950,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_first_noop,
         "range erase first no-op save");
-    check(fastxlsx::test::read_zip_entries(first_noop_output) == first_entries,
+    const auto first_noop_entries = fastxlsx::test::read_zip_entries(first_noop_output);
+    check(first_noop_entries == first_entries,
         "range erase first no-op output should match the first materialized output");
     check_reopened_clean_sheet_output(first_noop_output, "Data", "range erase first no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -5963,6 +5966,32 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
             check(!reopened_sheet.try_cell("A2").has_value(),
                 "range erase first no-op reopened output should keep erased A2 absent");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_first_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_first_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(first_second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "range erase first second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "range erase first second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "range erase first second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range erase first second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "range erase first second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_first_second_noop,
+        "range erase first second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_first_second_noop,
+        "range erase first second no-op save");
+    check(fastxlsx::test::read_zip_entries(first_second_noop_output) == first_noop_entries,
+        "range erase first second no-op output should match the first no-op output");
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
     check(!reacquired.has_pending_changes(),

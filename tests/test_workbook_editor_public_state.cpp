@@ -23652,6 +23652,113 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
         });
 }
 
+void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-insert-columns-reacquire-noop-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-reacquire-noop-first-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-reacquire-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(2, 3, fastxlsx::CellValue::formula("A1+B1"));
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
+    sheet.insert_columns(2, 2);
+    check(sheet.has_pending_changes(),
+        "insert_columns reacquire noop save should dirty the borrowed handle before the first save");
+    check(sheet.cell_count() == 5,
+        "insert_columns reacquire noop save should keep sparse count after the first shift");
+    check(sheet.get_cell("D1").number_value() == 1.0,
+        "insert_columns reacquire noop save should expose the shifted source cell before save");
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("E2");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "C1+D1",
+        "insert_columns reacquire noop save should expose the translated formula before save");
+    check(sheet.get_cell("E3").text_value() == "extra-c3",
+        "insert_columns reacquire noop save should expose the shifted dirty cell before save");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns reacquire noop save first save should clean the original borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "insert_columns reacquire noop save first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns reacquire noop save first save should clear dirty materialized diagnostics");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "insert_columns reacquire noop save should return the saved clean materialized session");
+    check(reacquired.cell_count() == 5 && sheet.cell_count() == 5,
+        "insert_columns reacquire noop save should preserve sparse count on both handles");
+    check(reacquired.get_cell("D1").number_value() == 1.0 &&
+            sheet.get_cell("D1").number_value() == 1.0,
+        "insert_columns reacquire noop save should reuse the saved shifted source cell");
+    check(reacquired.get_cell("E3").text_value() == "extra-c3" &&
+            sheet.get_cell("E3").text_value() == "extra-c3",
+        "insert_columns reacquire noop save should reuse the saved shifted dirty cell");
+    const fastxlsx::CellValue reacquired_formula = reacquired.get_cell("E2");
+    check(reacquired_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reacquired_formula.text_value() == "C1+D1" &&
+            sheet.get_cell("E2").text_value() == "C1+D1",
+        "insert_columns reacquire noop save should reuse the saved translated formula");
+    check(!reacquired.try_cell("B1").has_value() && !sheet.try_cell("B1").has_value() &&
+            !reacquired.try_cell("C2").has_value() && !sheet.try_cell("C2").has_value() &&
+            !reacquired.try_cell("C3").has_value() && !sheet.try_cell("C3").has_value(),
+        "insert_columns reacquire noop save should keep inserted and old coordinates absent on both handles");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "insert_columns reacquire noop save should keep both handles clean");
+    check(editor.pending_change_count() == 1,
+        "insert_columns reacquire noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns reacquire noop save should keep dirty materialized diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns reacquire noop save should keep diagnostics clear");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == first_entries,
+        "insert_columns reacquire noop output should match the first save");
+    check_reopened_shift_output(noop_output, "insert_columns reacquire noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "insert_columns reacquire noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 5,
+                "insert_columns reacquire noop save reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "insert_columns reacquire noop save reopened output should keep source A1");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_d1.number_value() == 1.0,
+                "insert_columns reacquire noop save reopened output should keep shifted source B1");
+            const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+            check(reopened_e2.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_e2.text_value() == "C1+D1",
+                "insert_columns reacquire noop save reopened output should keep translated formula");
+            const fastxlsx::CellValue reopened_e3 = reopened_sheet.get_cell("E3");
+            check(reopened_e3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e3.text_value() == "extra-c3",
+                "insert_columns reacquire noop save reopened output should keep shifted dirty cell");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "insert_columns reacquire noop save reopened output should keep inserted and old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
 {
     const std::filesystem::path source =
@@ -28156,6 +28263,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_session();
             test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_saved_session();
             test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_saved_session();
+            test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_saved_session();
             test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session();

@@ -794,6 +794,11 @@ source-backed row, translated formula, and dirty tail, and after
 translated formula, and dirty tail, clean matching reacquire keeps pending
 materialized diagnostics empty and a later no-op `save_as()` reuses the first
 saved delete output byte-for-byte.
+The direct insert-column side now has the same no-op-save proof:
+`WorksheetEditor::insert_columns()` saves shifted source-backed cells, a
+translated formula, and a dirty tail, then clean matching reacquire keeps
+pending materialized diagnostics empty and a later no-op `save_as()` reuses the
+first insert-column output byte-for-byte.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

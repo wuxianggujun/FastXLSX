@@ -29750,6 +29750,8 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
 
     const WorkbookEditorPublicCatalogSnapshot max_catalog_before_noop =
         workbook_editor_public_catalog_snapshot(max_editor);
+    const WorkbookEditorPublicSaveStateSnapshot max_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(max_editor);
     max_editor.save_as(max_noop_output);
     check(!max_sheet.has_pending_changes(),
         "max_cells blank overwrite noop save should keep the materialized session clean");
@@ -29763,6 +29765,9 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "max_cells blank overwrite noop save should not expose dirty materialized memory");
     check(max_editor.pending_worksheet_edits().empty(),
         "max_cells blank overwrite noop save should not expose dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        max_editor, max_save_state_before_noop,
+        "max_cells blank overwrite noop save");
     check_workbook_editor_public_catalog_preserved(
         max_editor, max_catalog_before_noop,
         "max_cells blank overwrite noop save");
@@ -29860,6 +29865,8 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
 
     const WorkbookEditorPublicCatalogSnapshot memory_catalog_before_noop =
         workbook_editor_public_catalog_snapshot(memory_editor);
+    const WorkbookEditorPublicSaveStateSnapshot memory_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(memory_editor);
     memory_editor.save_as(memory_noop_output);
     check(!memory_sheet.has_pending_changes(),
         "memory-budget blank overwrite noop save should keep the materialized session clean");
@@ -29873,6 +29880,9 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "memory-budget blank overwrite noop save should not expose dirty materialized memory");
     check(memory_editor.pending_worksheet_edits().empty(),
         "memory-budget blank overwrite noop save should not expose dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        memory_editor, memory_save_state_before_noop,
+        "memory-budget blank overwrite noop save");
     check_workbook_editor_public_catalog_preserved(
         memory_editor, memory_catalog_before_noop,
         "memory-budget blank overwrite noop save");

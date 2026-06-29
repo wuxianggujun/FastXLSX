@@ -43126,6 +43126,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1042 - Pin explicit blank overwrite no-op public save state
+
+Type: public `WorksheetEditor` explicit-blank overwrite guardrail no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing max-cells and memory-budget explicit-blank overwrite
+recovery no-op saves also preserve the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()` now
+  captures public save state before both the max-cells and memory-budget blank
+  overwrite no-op `save_as()` calls and verifies it afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op saves still verify the materialized handles stay clean, no
+  additional materialized handoff is queued, catalog state is preserved, and
+  output entries remain byte-stable after accepted existing-cell blank
+  overwrites.
+- Documentation records this as narrow save-state coverage for existing
+  explicit-blank overwrite no-op saves, not new blank-cell semantics, guardrail
+  accounting, rollback, metadata repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -42286,6 +42286,78 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1017 - Pin source-load max-cells recovery no-op save stability
+
+Type: public `WorksheetEditor` source-load max-cells post-failure
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove a failing `worksheet(...max_cells=...)` source-load path can later
+be recovered by `replace_sheet_data("Data", ...)`, then written again with a
+follow-up no-op `save_as()` that stays byte-stable.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No broader guardrail policy, session cloning, clean-session commit semantics,
+  max-cells auto-sizing, transaction history, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_options_guard_failure_preserves_state()`
+  so the recovery save is followed by a second no-op `save_as()`.
+- The regression verifies the saved editor keeps `pending_materialized_*`
+  clean, preserves the existing public replacement summaries and workbook
+  catalog snapshot, does not add another public handoff, and writes
+  byte-stable output while retaining the recovered
+  `"after-options-failure"` payload.
+- Updated API documentation to pin this source-load max-cells no-op-save
+  boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
+### P8.1018 - Pin mutation max-cells recovery no-op save stability
+
+Type: public `WorksheetEditor` mutation max-cells post-recovery
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove an exact `WorksheetEditorOptions::max_cells` failure can be
+recovered by a later valid overwrite, then cleanly reacquired, and then
+written again with a follow-up no-op `save_as()` that stays byte-stable.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No broader guardrail policy, session cloning, clean-session commit semantics,
+  max-cells auto-sizing, transaction history, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()`
+  so a valid in-budget overwrite after the rejected mutation is followed by a
+  second no-op `save_as()`.
+- The regression verifies the saved clean materialized session keeps
+  `pending_materialized_*` and `pending_worksheet_edits()` empty, preserves the
+  workbook catalog snapshot, does not add another handoff, and writes
+  byte-stable output.
+- Updated API documentation to pin this mutation-side max-cells recovery
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

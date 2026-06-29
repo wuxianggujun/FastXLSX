@@ -6078,6 +6078,8 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-range-memory-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-range-memory-noop-output.xlsx");
         const std::string rejected_value =
             "erase-cells-range-memory-rejected-" + std::string(4096, 'r');
 
@@ -6141,7 +6143,7 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
             "memory-budget insertion after range erase_cells should not resurrect erased A2");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "memory-budget insertion after range erase_cells should not resurrect erased B1");
-        check_reopened_clean_sheet_output(output, "Data", "erase_cells range memory-budget release",
+        const auto inspect_erase_range_memory_release_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 1,
                     "erase_cells range memory-budget release reopened output should keep sparse count");
@@ -6157,12 +6159,51 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
                 check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_a3.text_value() == "range-cells-mb-release",
                     "erase_cells range memory-budget release reopened output should read inserted A3");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "erase_cells range memory-budget release",
+            inspect_erase_range_memory_release_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_cells range memory-budget release noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "erase_cells range memory-budget release noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_cells range memory-budget release noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_cells range memory-budget release noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_cells range memory-budget release noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "erase_cells range memory-budget release noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_cells range memory-budget release noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_cells range memory-budget release noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "erase_cells range memory-budget release noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "erase_cells range memory-budget release noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "erase_cells range memory-budget release noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "erase_cells range memory-budget release noop save",
+            inspect_erase_range_memory_release_output);
     }
 
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-batch-memory-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-batch-memory-noop-output.xlsx");
         const std::string rejected_value =
             "erase-cells-batch-memory-rejected-" + std::string(4096, 'b');
 
@@ -6232,7 +6273,7 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
             "memory-budget insertion after batch erase_cells should not resurrect erased A2");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "memory-budget insertion after batch erase_cells should not resurrect erased B1");
-        check_reopened_clean_sheet_output(output, "Data", "erase_cells batch memory-budget release",
+        const auto inspect_erase_batch_memory_release_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 1,
                     "erase_cells batch memory-budget release reopened output should keep sparse count");
@@ -6248,7 +6289,44 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
                 check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_a3.text_value() == "batch-cells-mb-release",
                     "erase_cells batch memory-budget release reopened output should read inserted A3");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "erase_cells batch memory-budget release",
+            inspect_erase_batch_memory_release_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_cells batch memory-budget release noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "erase_cells batch memory-budget release noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_cells batch memory-budget release noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_cells batch memory-budget release noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_cells batch memory-budget release noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "erase_cells batch memory-budget release noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_cells batch memory-budget release noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_cells batch memory-budget release noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "erase_cells batch memory-budget release noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "erase_cells batch memory-budget release noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "erase_cells batch memory-budget release noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "erase_cells batch memory-budget release noop save",
+            inspect_erase_batch_memory_release_output);
     }
 }
 

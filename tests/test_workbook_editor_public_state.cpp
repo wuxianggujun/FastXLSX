@@ -3803,6 +3803,8 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
         artifact("fastxlsx-workbook-editor-public-a1-range-mutation-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-a1-range-mutation-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-a1-range-mutation-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -3909,8 +3911,35 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "A1 range mutation no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "A1 range mutation no-op output should match the first materialized output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "A1 range mutation second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "A1 range mutation second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "A1 range mutation second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "A1 range mutation second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "A1 range mutation second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "A1 range mutation second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "A1 range mutation second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "A1 range mutation second no-op output should match the first no-op output");
 }
 
 void test_public_worksheet_editor_a1_range_mutations_invalid_references()

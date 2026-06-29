@@ -6429,6 +6429,10 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-append-row-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-append-row-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -6475,7 +6479,7 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
         "append_row should persist explicit blank cells in input order");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "append_row should preserve untouched worksheets");
-    check_reopened_clean_sheet_output(output, "Data", "append_row",
+    const auto inspect_append_row_output =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 7,
                 "append_row reopened output should keep sparse count");
@@ -6508,7 +6512,67 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
             const fastxlsx::CellValue reopened_d3 = reopened_sheet.get_cell("D3");
             check(reopened_d3.kind() == fastxlsx::CellValueKind::Blank,
                 "append_row reopened output should read appended explicit blank");
-        });
+        };
+    check_reopened_clean_sheet_output(output, "Data", "append_row",
+        inspect_append_row_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "append_row no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "append_row no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "append_row no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "append_row no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "append_row no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "append_row no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "append_row no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "append_row no-op output should match the first materialized output");
+    check_reopened_clean_sheet_output(noop_output, "Data", "append_row no-op save",
+        inspect_append_row_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "append_row second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "append_row second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "append_row second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "append_row second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "append_row second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "append_row second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "append_row second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "append_row second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Data", "append_row second no-op save",
+        inspect_append_row_output);
 }
 
 void test_public_worksheet_editor_append_row_noop_and_guardrails()

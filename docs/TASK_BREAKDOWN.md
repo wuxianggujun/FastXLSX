@@ -47137,6 +47137,36 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1164 - Pin styled clear-rows no-op public save state
+
+Type: public `WorksheetEditor` styled-source `clear_rows()` range
+blank-projection no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the styled row-range clear path remains stable across a clean no-op
+`save_as()` call after its successful materialized flush.
+
+Coverage:
+- Adds a styled source workbook with styled target `A1`, unstyled targets `B1`
+  and `A2`, and non-target `A3`, then clears rows 1:2.
+- Checks the materialized session, saved XML, clean reopened workbook, and
+  no-op save preserve the styled blank, unstyled blanks, non-target row cell,
+  catalog/save-state snapshots, output-entry equality, replacement diagnostics,
+  clear `last_edit_error()`, and reopened used-range stability.
+
+Non-goals:
+- Does not add broader row metadata synchronization, style migration/merge,
+  styles.xml repair, sharedStrings migration, formula repair,
+  metadata/range repair, calcChain rebuild, relationship repair,
+  Patch/materialized composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

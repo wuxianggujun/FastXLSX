@@ -10354,6 +10354,126 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 
     {
         const std::filesystem::path style_source =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-style-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-style-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-style-noop-output.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
+            {
+                fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+                non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+                styled_sheet.append_row({
+                    fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                    fastxlsx::CellView::text("unstyled-row-target"),
+                });
+                styled_sheet.append_row({fastxlsx::CellView::text("unstyled-row-two-target")});
+                styled_sheet.append_row({fastxlsx::CellView::text("row-non-target")});
+            }
+            writer.close();
+        }
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+        sheet.clear_rows(1, 2);
+
+        const fastxlsx::CellValue cleared_a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue cleared_b1 = sheet.get_cell("B1");
+        const fastxlsx::CellValue cleared_a2 = sheet.get_cell("A2");
+        check(cleared_a1.kind() == fastxlsx::CellValueKind::Blank && cleared_a1.has_style()
+                && cleared_a1.style_id().value() == non_default_style.value(),
+            "clear_rows should preserve source style ids on blank records");
+        check(cleared_b1.kind() == fastxlsx::CellValueKind::Blank && !cleared_b1.has_style(),
+            "clear_rows should keep unstyled first-row source cells unstyled");
+        check(cleared_a2.kind() == fastxlsx::CellValueKind::Blank && !cleared_a2.has_style(),
+            "clear_rows should keep unstyled second-row source cells unstyled");
+        check(sheet.get_cell("A3").text_value() == "row-non-target",
+            "clear_rows should keep non-target row source cells");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_blank =
+            R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+            "clear_rows should keep the projected dimension over styled blanks");
+        check_contains(worksheet_xml, styled_blank,
+            "clear_rows should persist styled blanks with the source style id");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_rows should persist first-row unstyled source cells as unstyled blanks");
+        check_contains(worksheet_xml, R"(<c r="A2"/>)",
+            "clear_rows should persist second-row unstyled source cells as unstyled blanks");
+        check_contains(worksheet_xml, "row-non-target",
+            "clear_rows should persist non-target row cells");
+        check_not_contains(worksheet_xml, "unstyled-row-target",
+            "clear_rows should omit old first-row target payloads");
+        check_not_contains(worksheet_xml, "unstyled-row-two-target",
+            "clear_rows should omit old second-row target payloads");
+        check_not_contains(worksheet_xml, R"(<v>1</v>)",
+            "clear_rows should omit old target-row numeric payloads");
+        const auto inspect_styled_clear_rows_output =
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "styled clear_rows reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                    "styled clear_rows reopened output should keep cleared row bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "styled clear_rows reopened output should preserve blank source style id");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank &&
+                        !reopened_b1.has_style(),
+                    "styled clear_rows reopened output should keep first-row unstyled blank");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Blank &&
+                        !reopened_a2.has_style(),
+                    "styled clear_rows reopened output should keep second-row unstyled blank");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "row-non-target",
+                    "styled clear_rows reopened output should keep non-target row cells");
+            };
+        check_reopened_clean_sheet_output(output, "Styled", "styled clear_rows",
+            inspect_styled_clear_rows_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_rows no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_rows no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_rows no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_rows no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_rows no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_rows no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "styled clear_rows no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "styled clear_rows no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "styled clear_rows no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(
+            noop_output, "Styled", "styled clear_rows no-op save",
+            inspect_styled_clear_rows_output);
+    }
+
+    {
+        const std::filesystem::path style_source =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-source.xlsx");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-output.xlsx");

@@ -44192,6 +44192,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1076 - Pin renamed planned-session reacquire no-op public save state
+
+Type: public `WorksheetEditor` plain renamed planned-session reacquire
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing plain renamed planned-session saved-name reacquire path
+preserves public save-state snapshots across a clean no-op save after the second
+successful materialized flush.
+
+Acceptance:
+- The plain renamed planned-session reacquire test now captures public catalog
+  and save-state snapshots after the follow-on column shift save.
+- The no-op save verifies both shared planned-name handles stay clean, pending
+  materialized diagnostics remain empty, pending counts and replacement
+  diagnostics are preserved, catalog views are unchanged, last-edit diagnostics
+  stay clear, and output entries remain byte-stable against the second output.
+- Documentation records this as narrow save-state coverage for the existing
+  plain renamed planned-session reacquire no-op save, not session cloning policy
+  changes, source-name fallback, rename transaction history, formula evaluation,
+  broader shift semantics, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

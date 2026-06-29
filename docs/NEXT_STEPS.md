@@ -69,6 +69,9 @@ path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`
 reuses the retry output byte-for-byte without adding a materialized handoff.
+Empty-output-path save failures now follow that same boundary: after safe retry,
+matching reacquire stays clean, dirty diagnostics remain empty, and no-op
+`save_as()` reuses the retry output byte-for-byte.
 The retry/guard shard also pins that
 shift no-ops clear stale diagnostics without dirtying reacquired sessions, while
 invalid shift ranges preserve the saved sparse store until a later valid shift

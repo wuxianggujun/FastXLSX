@@ -26290,6 +26290,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-second-output.xlsx");
     const std::filesystem::path third_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-third-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-third-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_names = editor.worksheet_names();
@@ -26430,6 +26432,31 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
         "shift reacquire after retry third output should keep old B1 absent");
     check_not_contains(third_xml, R"(r="A2")",
         "shift reacquire after retry third output should keep old A2 absent");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire after retry third no-op save should keep all shared handles clean");
+    check(editor.pending_change_count() == 3,
+        "shift reacquire after retry third no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift reacquire after retry third no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire after retry third no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire after retry third no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "shift reacquire after retry third no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == third_entries,
+        "shift reacquire after retry third no-op output should match the third output");
 
     check_reopened_shift_output(third_output, "shift reacquire after retry third save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

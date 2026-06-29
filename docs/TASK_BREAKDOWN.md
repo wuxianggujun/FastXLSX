@@ -44476,6 +44476,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1085 - Pin after-failed-save retry third-flush no-op public save state
+
+Type: public `WorksheetEditor` non-renamed saved-session after-failed-save
+retry plus later mutation no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing after-failed-save retry path preserves public
+catalog/save-state snapshots across a clean no-op save after a fresh reacquire
+and later third materialized flush.
+
+Acceptance:
+- The shift reacquire after-failed-save retry test now captures public catalog
+  and save-state after the rejected source-overwrite save is safely retried, a
+  fresh handle reuses the saved shifted session, a later row delete succeeds,
+  and the third save flushes that mutation.
+- The no-op save verifies all shared handles stay clean, pending materialized
+  diagnostics remain empty, pending counts and replacement diagnostics are
+  preserved, catalog views are unchanged, last-edit diagnostics stay clear, and
+  output entries remain byte-stable against the third output.
+- Documentation records this as narrow save-state coverage for the existing
+  after-failed-save retry plus later mutation third-flush no-op save, not
+  rollback transactions, overwrite-in-place support, source reload, formula
+  evaluation, broader shift semantics, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

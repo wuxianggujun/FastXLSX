@@ -9872,6 +9872,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
             "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-invalid-read-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-output.xlsx");
+    const std::filesystem::path second_no_op_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-all-memory-rename-summary-second-noop-output.xlsx");
     const std::string clear_rename_a1 =
         "clear-rename-budget-a1-" + std::string(1024, 'a');
     const std::string clear_rename_a2 =
@@ -10547,6 +10550,55 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
                 "clear_cell_values() memory-budget renamed summary reopened output should keep A1 blank");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot second_no_op_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot second_no_op_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_no_op_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "clear_cell_values() memory-budget renamed summary second no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "clear_cell_values() memory-budget renamed summary second no-op save should not add a materialized handoff");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values() memory-budget renamed summary second no-op save should keep diagnostics clear");
+    check_renamed_clear_all_clean_materialized_diagnostics(
+        "clear_cell_values() memory-budget renamed summary second no-op save lower-level diagnostics");
+    check_renamed_clear_all_summary(false, 0,
+        "clear_cell_values() memory-budget renamed summary after second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        second_no_op_save_state_before_noop,
+        "clear_cell_values() memory-budget renamed summary second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        second_no_op_catalog_before_noop,
+        "clear_cell_values() memory-budget renamed summary second no-op save");
+
+    const auto second_no_op_entries =
+        fastxlsx::test::read_zip_entries(second_no_op_output);
+    check(second_no_op_entries == second_entries,
+        "clear_cell_values() memory-budget renamed summary second no-op output should match the second save");
+    check_reopened_clean_sheet_output(second_no_op_output, "RenamedClearAll",
+        "clear_cell_values() memory-budget renamed summary second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "clear_cell_values() memory-budget renamed summary second no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 5,
+                "clear_cell_values() memory-budget renamed summary second no-op reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "clear-all-renamed-mb-release",
+                "clear_cell_values() memory-budget renamed summary second no-op reopened output should read D4");
+            const fastxlsx::CellValue reopened_e5 = reopened_sheet.get_cell("E5");
+            check(reopened_e5.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e5.text_value() == "clear-all-renamed-summary-reacquire",
+                "clear_cell_values() memory-budget renamed summary second no-op reopened output should read E5");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank,
+                "clear_cell_values() memory-budget renamed summary second no-op reopened output should keep A1 blank");
         });
 }
 

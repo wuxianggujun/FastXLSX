@@ -6792,6 +6792,8 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -6838,7 +6840,7 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
         check_not_contains(worksheet_xml, "placeholder-a2",
             "append_row after erase should not resurrect erased source cells");
 
-        check_reopened_clean_sheet_output(output, "Data", "append_row guardrail recovery",
+        const auto inspect_append_row_guardrail_recovery_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "append_row guardrail recovery reopened output should keep sparse count");
@@ -6858,7 +6860,44 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
                     "append_row guardrail recovery reopened output should read appended A2");
                 check(!reopened_sheet.try_cell("A3").has_value(),
                     "append_row guardrail recovery reopened output should keep rejected A3 absent");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "append_row guardrail recovery",
+            inspect_append_row_guardrail_recovery_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "append_row guardrail recovery noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "append_row guardrail recovery noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row guardrail recovery noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row guardrail recovery noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row guardrail recovery noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row guardrail recovery noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row guardrail recovery noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "append_row guardrail recovery noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "append_row guardrail recovery noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "append_row guardrail recovery noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "append_row guardrail recovery noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "append_row guardrail recovery noop save",
+            inspect_append_row_guardrail_recovery_output);
     }
 }
 
@@ -7243,6 +7282,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-guards-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-row-guards-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -7294,7 +7335,7 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         check_not_contains(worksheet_xml, R"(r="B1")",
             "in-budget set_row should not persist old target-row tail cells");
 
-        check_reopened_clean_sheet_output(output, "Data", "set_row guardrail recovery",
+        const auto inspect_set_row_guardrail_recovery_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "set_row guardrail recovery reopened output should keep sparse count");
@@ -7312,7 +7353,44 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
                     "set_row guardrail recovery reopened output should keep non-target A2");
                 check(!reopened_sheet.try_cell("A3").has_value(),
                     "set_row guardrail recovery reopened output should keep rejected A3 absent");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "set_row guardrail recovery",
+            inspect_set_row_guardrail_recovery_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "set_row guardrail recovery noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "set_row guardrail recovery noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row guardrail recovery noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row guardrail recovery noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row guardrail recovery noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "set_row guardrail recovery noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row guardrail recovery noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "set_row guardrail recovery noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "set_row guardrail recovery noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "set_row guardrail recovery noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "set_row guardrail recovery noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "set_row guardrail recovery noop save",
+            inspect_set_row_guardrail_recovery_output);
     }
 
     {
@@ -7771,6 +7849,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-budget-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-column-budget-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -7825,7 +7905,7 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         check_not_contains(worksheet_xml, "placeholder-a2",
             "in-budget set_column should not persist old target-column tail cells");
 
-        check_reopened_clean_sheet_output(output, "Data", "set_column guardrail recovery",
+        const auto inspect_set_column_guardrail_recovery_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "set_column guardrail recovery reopened output should keep sparse count");
@@ -7845,7 +7925,44 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
                     "set_column guardrail recovery reopened output should keep rejected C1 absent");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "set_column guardrail recovery reopened output should keep rejected C2 absent");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "set_column guardrail recovery",
+            inspect_set_column_guardrail_recovery_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "set_column guardrail recovery noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "set_column guardrail recovery noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_column guardrail recovery noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_column guardrail recovery noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_column guardrail recovery noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "set_column guardrail recovery noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_column guardrail recovery noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "set_column guardrail recovery noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "set_column guardrail recovery noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "set_column guardrail recovery noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "set_column guardrail recovery noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "set_column guardrail recovery noop save",
+            inspect_set_column_guardrail_recovery_output);
     }
 
     {

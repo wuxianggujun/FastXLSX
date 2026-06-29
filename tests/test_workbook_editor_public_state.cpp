@@ -28016,6 +28016,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-memory-options-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditorOptions options;
@@ -28058,6 +28060,31 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "after-memory-budget-failure",
         "recovered WorksheetEditor session should save after memory-budget failure");
     check_reopened_default_data_overwrite_output(output, "memory-budget source-load recovery",
+        "after-memory-budget-failure");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    editor.save_as(noop_output);
+    check(recovered.has_value() && !recovered->has_pending_changes(),
+        "memory-budget source-load recovery noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "memory-budget source-load recovery noop save should not add a second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "memory-budget source-load recovery noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "memory-budget source-load recovery noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "memory-budget source-load recovery noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "memory-budget source-load recovery noop save should not leave dirty summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "memory-budget source-load recovery noop save");
+
+    const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_output_entries == output_entries,
+        "memory-budget source-load recovery noop save should keep output entries stable");
+    check_reopened_default_data_overwrite_output(noop_output, "memory-budget source-load recovery noop",
         "after-memory-budget-failure");
 }
 

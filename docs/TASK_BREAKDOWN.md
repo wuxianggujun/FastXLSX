@@ -42230,7 +42230,7 @@ Scope:
 Type: public `WorksheetEditor` mutation memory-budget post-recovery
 no-op-save stability regression.
 
-Status: planned.
+Status: completed.
 
 Goal: prove an exact `WorksheetEditorOptions::memory_budget_bytes` failure can
 be recovered by a later valid overwrite, then cleanly reacquired, and then
@@ -42243,6 +42243,42 @@ Scope:
   memory-budget auto-sizing, transaction history, formula repair, calcChain
   rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
   composition, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()` so a valid in-budget overwrite after the rejected mutation is followed by a second no-op `save_as()`.
+- The regression verifies the saved clean materialized session keeps `pending_materialized_*` and `pending_worksheet_edits()` empty, preserves the workbook catalog snapshot, does not add another handoff, and writes byte-stable output.
+- Updated API documentation to pin this mutation-side memory-budget recovery no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
+### P8.1016 - Pin source-load memory-budget recovery no-op save stability
+
+Type: public `WorksheetEditor` source-load memory-budget post-recovery
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove a failing `try_worksheet(...memory_budget_bytes=...)` source-load
+path can later be recovered by default-options materialization and a valid
+overwrite, then written again with a follow-up no-op `save_as()` that stays
+byte-stable.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No broader guardrail policy, session cloning, clean-session commit semantics,
+  memory-budget auto-sizing, transaction history, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()` so the recovered default-options materialized session performs a second no-op `save_as()` after the first successful save.
+- The regression verifies the saved clean session keeps `pending_materialized_*` and `pending_worksheet_edits()` empty, preserves the workbook catalog snapshot, does not add another handoff, and writes byte-stable output while retaining the recovered `"after-memory-budget-failure"` payload.
+- Updated API documentation to pin this source-load memory-budget recovery no-op-save boundary.
 
 Verification:
 - `git diff --check` passes.

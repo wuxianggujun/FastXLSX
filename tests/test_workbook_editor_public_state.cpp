@@ -7975,6 +7975,10 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-values-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-row-values-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-values-second-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -8022,7 +8026,7 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "set_row_values should omit overwritten numeric payloads");
         check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
             "set_row_values should preserve untouched worksheets");
-        check_reopened_clean_sheet_output(output, "Data", "set_row_values",
+        const auto inspect_set_row_values_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "set_row_values reopened output should keep sparse count");
@@ -8043,7 +8047,67 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
                 check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_a2.text_value() == "placeholder-a2",
                     "set_row_values reopened output should keep non-target row cells");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "set_row_values",
+            inspect_set_row_values_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "set_row_values no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "set_row_values no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row_values no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "set_row_values no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "set_row_values no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "set_row_values no-op save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "set_row_values no-op output should match the first materialized output");
+        check_reopened_clean_sheet_output(noop_output, "Data", "set_row_values no-op save",
+            inspect_set_row_values_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "set_row_values second no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "set_row_values second no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values second no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row_values second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "set_row_values second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "set_row_values second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "set_row_values second no-op save");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+            "set_row_values second no-op output should match the first no-op output");
+        check_reopened_clean_sheet_output(
+            second_noop_output, "Data", "set_row_values second no-op save",
+            inspect_set_row_values_output);
     }
 
     {

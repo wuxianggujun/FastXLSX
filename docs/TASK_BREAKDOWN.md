@@ -42468,6 +42468,42 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1022 - Pin mutation last-error recovery no-op save stability
+
+Type: public `WorksheetEditor` mutation-side diagnostic replacement
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove invalid-reference, memory-budget, and invalid-coordinate mutation
+diagnostics can replace one another, then recover through an in-budget overwrite,
+a recovery save, and a second no-op `save_as()` without re-dirtying materialized
+state.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No diagnostic history, transaction rollback, broader validation recovery,
+  metadata repair, formula repair, calcChain rebuild, sharedStrings/styles
+  migration, Patch/materialized sparse-session composition, or low-memory random
+  editing.
+
+Output:
+- Extended `test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics()`
+  with a no-op `save_as()` after the successful `A1` recovery overwrite save.
+- The regression verifies the no-op save keeps the materialized session clean,
+  does not add another handoff, leaves dirty materialized diagnostics and
+  summaries empty, keeps diagnostics clear, preserves catalog state, keeps output
+  entries byte-stable, and still passes reopened-output recovery checks.
+- Updated API documentation to pin this mutation diagnostic-replacement
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

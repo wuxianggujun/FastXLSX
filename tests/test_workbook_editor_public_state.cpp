@@ -25357,6 +25357,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -25483,6 +25485,30 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         "shift reacquire invalid reads second output should omit old B1");
     check_not_contains(second_xml, R"(r="A2")",
         "shift reacquire invalid reads second output should keep old row coordinate absent");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire invalid reads second no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire invalid reads second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift reacquire invalid reads second no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire invalid reads second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire invalid reads second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "shift reacquire invalid reads second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "shift reacquire invalid reads second no-op output should match the second output");
 
     check_reopened_shift_output(second_output, "shift reacquire invalid reads second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

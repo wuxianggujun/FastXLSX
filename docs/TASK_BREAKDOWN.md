@@ -46655,6 +46655,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1150 - Pin row and column range clear memory-budget no-op public save state
+
+Type: public `WorksheetEditor` row-range `clear_rows()` and column-range
+`clear_columns()` exact `memory_budget_bytes` release no-op-save public state
+regression.
+
+Status: completed.
+
+Goal: prove the existing row/column range value-clear memory-budget recovery
+paths remain stable across clean no-op `save_as()` calls after their successful
+materialized flushes.
+
+Coverage:
+- Keeps the existing exact-memory-budget source loads, rejected oversized
+  insertions, inclusive row/column range value clears to explicit blanks,
+  recovery cell insertions within budget, dirty flushes, package XML checks,
+  and reopened readback checks.
+- Captures public catalog/save-state after each recovery save, performs
+  `save_as(noop_output)`, and checks handles stay clean, pending counts,
+  replacement diagnostics, clear `last_edit_error()`, catalog/save-state
+  preservation, output-entry equality with the recovery saves, blank target
+  range records, preserved non-target records, rejected payload absence, and
+  reopened recovery-cell stability.
+
+Non-goals:
+- Does not add memory-budget auto-sizing, process-RSS accounting, range
+  metadata synchronization, session cloning, source reload, tombstones, dense
+  range clearing, transaction history, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

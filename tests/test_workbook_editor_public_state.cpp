@@ -28263,6 +28263,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     {
         const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-row-overflow-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-row-overflow-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -28291,8 +28293,13 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows overflow failure should preserve prior dirty state");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_row_overflow,
             "insert_rows overflow failure");
+        const std::optional<std::string> row_overflow_error = editor.last_edit_error();
+        check(row_overflow_error.has_value(),
+            "insert_rows overflow failure should retain the shift overflow diagnostic");
 
         editor.save_as(output);
+        check(editor.last_edit_error() == row_overflow_error,
+            "insert_rows overflow save_as should preserve the shift overflow diagnostic");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:B1048576"/>)",
@@ -28303,7 +28310,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows overflow save_as should keep source cells unshifted");
         check_not_contains(worksheet_xml, R"(r="A1048577")",
             "insert_rows overflow save_as should not write an out-of-bounds row");
-        check_reopened_clean_sheet_output(output, "Data", "insert_rows overflow recovery",
+        const auto inspect_reopened_row_overflow =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "insert_rows overflow recovery reopened output should keep sparse count");
@@ -28326,7 +28333,39 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
                 check(reopened_edge.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_edge.text_value() == "row-edge",
                     "insert_rows overflow recovery reopened output should keep edge A1048576");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "insert_rows overflow recovery",
+            inspect_reopened_row_overflow);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_rows overflow noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "insert_rows overflow noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "insert_rows overflow noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "insert_rows overflow noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "insert_rows overflow noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "insert_rows overflow noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "insert_rows overflow noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "insert_rows overflow noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "insert_rows overflow noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "insert_rows overflow noop save", inspect_reopened_row_overflow);
     }
 
     {

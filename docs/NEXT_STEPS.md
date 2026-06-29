@@ -854,6 +854,11 @@ After that safe retry, same-editor optional reacquire is pinned too: the saved
 combined shifted session remains clean and reusable, a later `delete_rows()`
 shrinks the sparse state through every borrowed handle, and the third output
 reopens with the deleted row absent.
+That post-retry clean reacquire path now has no-op-save coverage as well: after
+the safe retry writes the combined shifted sparse state, a matching
+`worksheet("Data")` reacquire keeps all handles clean, pending materialized
+diagnostics empty, and a later no-op `save_as()` reuses the retry output
+byte-for-byte.
 The direct invalid-to-valid shift recovery path now covers row and column
 validation failures followed by a valid shift on the same clean borrowed
 `WorksheetEditor`, proving the later mutation clears diagnostics, dirties only

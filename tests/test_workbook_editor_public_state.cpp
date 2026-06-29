@@ -7965,6 +7965,12 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-column-values-empty-noop-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-column-values-empty-noop-second-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -7982,6 +7988,67 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "empty set_column_values should not dirty a clean materialized worksheet");
         check(sheet.cell_count() == 3,
             "empty set_column_values should not create sparse column metadata");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "empty set_column_values no-op save should keep the materialized sheet clean");
+        check(!editor.has_pending_changes(),
+            "empty set_column_values no-op save should keep the editor clean");
+        check(editor.pending_change_count() == 0,
+            "empty set_column_values no-op save should not record a materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "empty set_column_values no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "empty set_column_values no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "empty set_column_values no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save,
+            "empty set_column_values no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save,
+            "empty set_column_values no-op save");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "empty set_column_values no-op save should copy source entries");
+        check_reopened_default_data_sheet_output(
+            output, "empty set_column_values no-op save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "empty set_column_values second no-op save should keep the materialized sheet clean");
+        check(!editor.has_pending_changes(),
+            "empty set_column_values second no-op save should keep the editor clean");
+        check(editor.pending_change_count() == 0,
+            "empty set_column_values second no-op save should not record a materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "empty set_column_values second no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "empty set_column_values second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "empty set_column_values second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "empty set_column_values second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "empty set_column_values second no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "empty set_column_values second no-op output should match the first no-op output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "empty set_column_values second no-op save");
 
         bool invalid_failed = false;
         try {

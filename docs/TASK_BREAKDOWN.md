@@ -44063,6 +44063,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1072 - Pin renamed snapshot-read no-op public save state
+
+Type: public `WorksheetEditor` renamed styled-formula snapshot-read
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove existing renamed styled-formula snapshot-read paths preserve
+public save-state snapshots across a clean no-op save after the follow-on
+flush.
+
+Acceptance:
+- The insert-row, delete-column, and delete-row renamed styled-formula
+  snapshot-read tests now capture public catalog and save-state snapshots after
+  the second successful save, before a no-op `save_as(noop_output)`.
+- The no-op saves verify both borrowed handles stay clean, pending materialized
+  diagnostics remain empty, pending counts and replacement diagnostics are
+  preserved, catalog views are unchanged, and output entries remain byte-stable
+  against the second save.
+- Documentation records this as narrow save-state coverage for existing
+  renamed styled-formula snapshot-read no-op saves, not snapshot lifetime
+  changes, borrowed iterator exposure, dense reads, formula evaluation, broader
+  formula rewrite, new shift semantics, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

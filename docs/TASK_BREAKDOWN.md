@@ -42432,6 +42432,42 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1021 - Pin explicit blank overwrite no-op save stability
+
+Type: public `WorksheetEditor` explicit-blank guardrail recovery
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove explicit blank insertion failures followed by existing-cell blank
+overwrite recovery for exact `max_cells` and exact `memory_budget_bytes` remain
+stable through a recovery save and a second no-op `save_as()`.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No tombstones, dense blank synthesis, broader blank-cell policy, guard bypass,
+  rollback, metadata repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()`
+  so both the exact `max_cells` and exact `memory_budget_bytes` blank-overwrite
+  recovery saves are followed by no-op `save_as()` calls.
+- The regressions verify rejected missing-cell blank insertions do not leak,
+  explicit blank `A1` output remains byte-stable, no second materialized handoff
+  is added, dirty materialized diagnostics and summaries remain empty, catalog
+  state is preserved, and reopened-output blank checks still pass.
+- Updated API documentation to pin this explicit-blank overwrite recovery
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

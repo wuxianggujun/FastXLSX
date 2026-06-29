@@ -9224,6 +9224,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-noop-output.xlsx");
+        const std::filesystem::path second_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-second-noop-output.xlsx");
         const std::filesystem::path output_after_reacquire =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-output.xlsx");
 
@@ -9326,9 +9328,39 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
         check_workbook_editor_public_catalog_preserved(
             editor, catalog_before_noop,
             "erase_cells() no-op save");
-        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
             "erase_cells() no-op output should match the first materialized output");
         check_reopened_clean_sheet_output(noop_output, "Data", "erase_cells() no-op save",
+            inspect_erase_all_empty_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_cells() second no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "erase_cells() second no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_cells() second no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_cells() second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_cells() second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "erase_cells() second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "erase_cells() second no-op save");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+            "erase_cells() second no-op output should match the first no-op output");
+        check_reopened_clean_sheet_output(
+            second_noop_output, "Data", "erase_cells() second no-op save",
             inspect_erase_all_empty_output);
 
         check(threw_fastxlsx_error([&] {

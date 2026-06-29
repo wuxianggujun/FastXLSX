@@ -42147,6 +42147,90 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1012 - Pin missing-parent failed-save retry no-op save stability
+
+Type: public `WorksheetEditor` missing-parent post-failed-save retry no-op-save
+stability regression.
+
+Status: completed.
+
+Goal: prove a missing-parent output rejection after a dirty post-save
+reacquire/retry chain keeps the combined shifted sparse session usable. The
+regression saves an insert-row shift, dirties the materialized session again,
+rejects `save_as()` into a missing parent, verifies a clean matching
+`worksheet("Data")` reacquire, then writes a no-op output that matches the safe
+retry byte-for-byte.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No overwrite mode, path repair, rollback history, session cloning, source
+  reload, formula repair/evaluation, metadata synchronization, calcChain
+  rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
+### P8.1013 - Pin non-directory-parent failed-save retry no-op save stability
+
+Type: public `WorksheetEditor` non-directory-parent post-failed-save retry
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove a non-directory-parent output rejection after a dirty post-save
+reacquire/retry chain keeps the combined shifted sparse session usable. The
+regression saves an insert-row shift, dirties the materialized session again,
+rejects `save_as()` into a path whose parent is a file, verifies a clean
+matching `worksheet("Data")` reacquire, then writes a no-op output that
+matches the safe retry byte-for-byte.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No parent-file repair, path repair, rollback history, session cloning, source
+  reload, formula repair/evaluation, metadata synchronization, calcChain
+  rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
+### P8.1014 - Pin existing-directory failed-save retry no-op save stability
+
+Type: public `WorksheetEditor` existing-directory post-failed-save retry
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove an existing-directory output rejection after a dirty post-save
+reacquire/retry chain keeps the combined shifted sparse session usable. The
+regression saves an insert-row shift, dirties the materialized session again,
+rejects `save_as()` into an existing directory, verifies a clean matching
+`worksheet("Data")` reacquire, then writes a no-op output that matches the safe
+retry byte-for-byte.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No directory replacement, path repair, rollback history, session cloning,
+  source reload, formula repair/evaluation, metadata synchronization,
+  calcChain rebuild, sharedStrings/styles migration, Patch/materialized
+  sparse-session composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -72,6 +72,10 @@ reuses the retry output byte-for-byte without adding a materialized handoff.
 Empty-output-path save failures now follow that same boundary: after safe retry,
 matching reacquire stays clean, dirty diagnostics remain empty, and no-op
 `save_as()` reuses the retry output byte-for-byte.
+Missing-parent, non-directory-parent, and existing-directory output failures now
+follow that same boundary too: after safe retry, matching reacquire stays
+clean, dirty diagnostics remain empty, and no-op `save_as()` reuses the retry
+output byte-for-byte.
 The retry/guard shard also pins that
 shift no-ops clear stale diagnostics without dirtying reacquired sessions, while
 invalid shift ranges preserve the saved sparse store until a later valid shift

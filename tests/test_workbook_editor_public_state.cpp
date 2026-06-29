@@ -25952,6 +25952,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-noop-output.xlsx");
     std::filesystem::remove_all(missing_parent_output.parent_path());
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -26088,6 +26090,67 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire missing-parent failed save reopened output should keep old coordinates absent");
         });
+
+    fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire missing-parent failed save matching reacquire after retry should stay clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire missing-parent failed save matching reacquire after retry should not add handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire missing-parent failed save matching reacquire after retry should keep diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire missing-parent failed save matching reacquire after retry should keep diagnostics clear");
+    check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire missing-parent failed save matching reacquire after retry should preserve shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "shift reacquire missing-parent failed save matching reacquire after retry should expose shifted number");
+    check(!after_retry.try_cell("B1").has_value() &&
+            !after_retry.try_cell("A2").has_value(),
+        "shift reacquire missing-parent failed save matching reacquire after retry should keep old coordinates absent");
+
+    editor.save_as(noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire missing-parent failed save noop save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire missing-parent failed save noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire missing-parent failed save noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire missing-parent failed save noop save should keep diagnostics clear");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "shift reacquire missing-parent failed save noop output should match the safe retry output");
+    check_reopened_shift_output(noop_output, "shift reacquire missing-parent failed save noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire missing-parent failed save noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire missing-parent failed save noop save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire missing-parent failed save noop save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire missing-parent failed save noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire missing-parent failed save noop save reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_save_preserves_dirty_session()
@@ -26101,6 +26164,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-noop-output.xlsx");
     std::filesystem::remove_all(file_parent);
     fastxlsx::test::write_file(file_parent, "not a directory");
 
@@ -26239,6 +26304,67 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire file-parent failed save reopened output should keep old coordinates absent");
         });
+
+    fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire file-parent failed save matching reacquire after retry should stay clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire file-parent failed save matching reacquire after retry should not add handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire file-parent failed save matching reacquire after retry should keep diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire file-parent failed save matching reacquire after retry should keep diagnostics clear");
+    check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire file-parent failed save matching reacquire after retry should preserve shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "shift reacquire file-parent failed save matching reacquire after retry should expose shifted number");
+    check(!after_retry.try_cell("B1").has_value() &&
+            !after_retry.try_cell("A2").has_value(),
+        "shift reacquire file-parent failed save matching reacquire after retry should keep old coordinates absent");
+
+    editor.save_as(noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire file-parent failed save noop save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire file-parent failed save noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire file-parent failed save noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire file-parent failed save noop save should keep diagnostics clear");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "shift reacquire file-parent failed save noop output should match the safe retry output");
+    check_reopened_shift_output(noop_output, "shift reacquire file-parent failed save noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire file-parent failed save noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire file-parent failed save noop save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire file-parent failed save noop save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire file-parent failed save noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire file-parent failed save noop save reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save_preserves_dirty_session()
@@ -26251,6 +26377,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-noop-output.xlsx");
     std::filesystem::remove_all(directory_output);
     std::filesystem::create_directories(directory_output);
 
@@ -26387,6 +26515,67 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire directory-output failed save reopened output should keep old coordinates absent");
+        });
+
+    fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire directory-output failed save matching reacquire after retry should stay clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire directory-output failed save matching reacquire after retry should not add handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire directory-output failed save matching reacquire after retry should keep diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire directory-output failed save matching reacquire after retry should keep diagnostics clear");
+    check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire directory-output failed save matching reacquire after retry should preserve shifted source row");
+    check(after_retry.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "shift reacquire directory-output failed save matching reacquire after retry should expose shifted number");
+    check(!after_retry.try_cell("B1").has_value() &&
+            !after_retry.try_cell("A2").has_value(),
+        "shift reacquire directory-output failed save matching reacquire after retry should keep old coordinates absent");
+
+    editor.save_as(noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire directory-output failed save noop save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire directory-output failed save noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire directory-output failed save noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire directory-output failed save noop save should keep diagnostics clear");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "shift reacquire directory-output failed save noop output should match the safe retry output");
+    check_reopened_shift_output(noop_output, "shift reacquire directory-output failed save noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire directory-output failed save noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire directory-output failed save noop save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire directory-output failed save noop save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire directory-output failed save noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire directory-output failed save noop save reopened output should keep old coordinates absent");
         });
 }
 

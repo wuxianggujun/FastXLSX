@@ -5759,6 +5759,8 @@ void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -5819,7 +5821,8 @@ void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "erase_cell no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "erase_cell no-op output should match the first materialized output");
     check_reopened_clean_sheet_output(noop_output, "Data", "erase_cell no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -5830,6 +5833,32 @@ void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
             check(!reopened_sheet.try_cell("A2").has_value(),
                 "erase_cell no-op reopened output should keep erased A2 absent");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "erase_cell second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "erase_cell second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "erase_cell second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "erase_cell second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "erase_cell second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "erase_cell second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "erase_cell second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "erase_cell second no-op output should match the first no-op output");
 }
 
 void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()

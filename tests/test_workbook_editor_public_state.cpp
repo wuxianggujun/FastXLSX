@@ -4991,6 +4991,8 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
         artifact("fastxlsx-workbook-editor-public-used-range-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-used-range-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-used-range-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -5099,8 +5101,35 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "used_range no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "used_range no-op output should match the first materialized output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "used_range second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "used_range second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "used_range second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "used_range second no-op save should not queue replacement diagnostics");
+    check(editor.last_edit_error() == empty_prior_error,
+        "used_range second no-op save should preserve the prior diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "used_range second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "used_range second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "used_range second no-op output should match the first no-op output");
 }
 
 void test_public_worksheet_editor_contains_cell_tracks_represented_state()

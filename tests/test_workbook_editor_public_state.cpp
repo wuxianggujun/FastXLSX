@@ -10740,6 +10740,114 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
     }
 
     {
+        const std::filesystem::path style_source =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-style-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-style-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-columns-style-noop-output.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
+            {
+                fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+                non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+                styled_sheet.append_row({
+                    fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                    fastxlsx::CellView::text("unstyled-range-target"),
+                    fastxlsx::CellView::text("range-non-target"),
+                });
+            }
+            writer.close();
+        }
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+        sheet.clear_columns(1, 2);
+
+        const fastxlsx::CellValue cleared_a1 = sheet.get_cell("A1");
+        const fastxlsx::CellValue cleared_b1 = sheet.get_cell("B1");
+        check(cleared_a1.kind() == fastxlsx::CellValueKind::Blank && cleared_a1.has_style()
+                && cleared_a1.style_id().value() == non_default_style.value(),
+            "clear_columns should preserve source style ids on blank records");
+        check(cleared_b1.kind() == fastxlsx::CellValueKind::Blank && !cleared_b1.has_style(),
+            "clear_columns should keep unstyled source cells unstyled");
+        check(sheet.get_cell("C1").text_value() == "range-non-target",
+            "clear_columns should keep non-target column source cells");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_blank =
+            R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
+        check_contains(worksheet_xml, R"(<dimension ref="A1:C1"/>)",
+            "clear_columns should keep the projected dimension over styled blanks");
+        check_contains(worksheet_xml, styled_blank,
+            "clear_columns should persist styled blanks with the source style id");
+        check_contains(worksheet_xml, R"(<c r="B1"/>)",
+            "clear_columns should persist unstyled source cells as unstyled blanks");
+        check_contains(worksheet_xml, "range-non-target",
+            "clear_columns should persist non-target column cells");
+        check_not_contains(worksheet_xml, "unstyled-range-target",
+            "clear_columns should omit old target-column text payloads");
+        check_not_contains(worksheet_xml, R"(<v>1</v>)",
+            "clear_columns should omit old target-column numeric payloads");
+        const auto inspect_styled_clear_columns_output =
+            [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "styled clear_columns reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                    "styled clear_columns reopened output should keep cleared column bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Blank &&
+                        reopened_a1.has_style() &&
+                        reopened_a1.style_id().value() == non_default_style.value(),
+                    "styled clear_columns reopened output should preserve blank source style id");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank &&
+                        !reopened_b1.has_style(),
+                    "styled clear_columns reopened output should keep unstyled blank unstyled");
+                const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+                check(reopened_c1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_c1.text_value() == "range-non-target",
+                    "styled clear_columns reopened output should keep non-target column cells");
+            };
+        check_reopened_clean_sheet_output(output, "Styled", "styled clear_columns",
+            inspect_styled_clear_columns_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_columns no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_columns no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_columns no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_columns no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_columns no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_columns no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "styled clear_columns no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "styled clear_columns no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "styled clear_columns no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(
+            noop_output, "Styled", "styled clear_columns no-op save",
+            inspect_styled_clear_columns_output);
+    }
+
+    {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 

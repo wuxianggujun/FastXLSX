@@ -42941,6 +42941,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1036 - Pin shift validation failure no-op save stability
+
+Type: public `WorksheetEditor` row/column shift validation-failure no-op-save
+stability regression.
+
+Status: completed.
+
+Goal: prove rejected row/column shift coordinates keep the materialized session
+clean, preserve the validation diagnostic, copy source entries on `save_as()`,
+and stay stable through a second no-op `save_as()`.
+
+Acceptance:
+- `test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()`
+  now covers the invalid row/column shift validation branch with a second no-op
+  `save_as()` after the initial clean save.
+- The no-op save verifies the materialized handle stays clean, pending edit
+  counts and materialized summaries remain empty, public save state including
+  the validation diagnostic is preserved, catalog state is preserved, and
+  source-copied output entries remain byte-stable.
+- Documentation records this as narrow validation-failure no-op-save hygiene for
+  existing shift guards, not broader validation policy, coordinate repair,
+  dense row/column operations, metadata repair, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

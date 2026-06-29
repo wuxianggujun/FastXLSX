@@ -28144,6 +28144,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     {
         const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-invalid-noop-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-invalid-noop-save-output.xlsx");
         const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -28213,12 +28215,49 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "shift validation failures should not contribute pending materialized cells");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_validation_failures,
             "shift validation failures");
+        const std::optional<std::string> shift_validation_error = editor.last_edit_error();
+        check(shift_validation_error.has_value(),
+            "shift validation failures should retain the last validation diagnostic");
 
         editor.save_as(output);
+        check(editor.last_edit_error() == shift_validation_error,
+            "save_as after shift validation failures should preserve the validation diagnostic");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "save_as after shift validation failures should copy source entries");
         check_reopened_default_data_sheet_output(output, "shift validation failure");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "shift validation failure noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 0,
+            "shift validation failure noop save should keep edit count empty");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "shift validation failure noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "shift validation failure noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "shift validation failure noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "shift validation failure noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "shift validation failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "shift validation failure noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "shift validation failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "shift validation failure noop save should keep output entries stable");
+        check_reopened_default_data_sheet_output(noop_output,
+            "shift validation failure noop save");
     }
 
     {

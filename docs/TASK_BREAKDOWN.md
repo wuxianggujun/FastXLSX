@@ -47043,6 +47043,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1161 - Pin styled clear-row no-op public save state
+
+Type: public `WorksheetEditor` styled-source `clear_row()` blank-projection
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing styled row-clear path remains stable across a clean
+no-op `save_as()` call after its successful materialized flush.
+
+Coverage:
+- Keeps the existing styled source workbook, source non-default style id on the
+  blank `A1` record, unstyled blank `B1`, dirty flush, package XML checks, and
+  reopened readback checks.
+- Captures public catalog/save-state after the styled row-clear save, performs
+  `save_as(noop_output)`, and checks the handle stays clean, pending counts,
+  replacement diagnostics, clear `last_edit_error()`, catalog/save-state
+  preservation, output-entry equality with the styled save, preserved blank
+  style id, preserved unstyled blank, and reopened used-range stability.
+
+Non-goals:
+- Does not add `clear_column()` styled-source coverage, row/column metadata
+  synchronization, style migration/merge, styles.xml repair,
+  sharedStrings migration, formula repair, metadata/range repair,
+  calcChain rebuild, relationship repair, Patch/materialized composition, or
+  low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

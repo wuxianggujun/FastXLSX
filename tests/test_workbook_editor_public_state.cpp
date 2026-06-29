@@ -10357,6 +10357,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-source.xlsx");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -10392,7 +10394,7 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_row should persist styled blanks with the source style id");
         check_contains(worksheet_xml, R"(<c r="B1"/>)",
             "clear_row should persist unstyled source cells as unstyled blanks");
-        check_reopened_clean_sheet_output(output, "Styled", "styled clear_row",
+        const auto inspect_styled_clear_row_output =
             [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "styled clear_row reopened output should keep sparse count");
@@ -10407,7 +10409,40 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
                 check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank &&
                         !reopened_b1.has_style(),
                     "styled clear_row reopened output should keep unstyled blank unstyled");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Styled", "styled clear_row",
+            inspect_styled_clear_row_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_row no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_row no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_row no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_row no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_row no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_row no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "styled clear_row no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "styled clear_row no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "styled clear_row no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(
+            noop_output, "Styled", "styled clear_row no-op save",
+            inspect_styled_clear_row_output);
     }
 
     {

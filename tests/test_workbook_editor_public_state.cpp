@@ -26988,6 +26988,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -27079,7 +27081,7 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
     check_not_contains(untouched_xml, R"(r="A2")",
         "cross-handle shift save_as should not shift or synthesize Untouched rows");
 
-    check_reopened_shift_output(output, "cross-handle shift Data",
+    const auto inspect_reopened_cross_handle_data =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,
                 "cross-handle shift Data reopened output should keep sparse count");
@@ -27096,9 +27098,9 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
             check(!reopened_sheet.try_cell("A2").has_value() &&
                     !reopened_sheet.try_cell("B4").has_value(),
                 "cross-handle shift Data reopened output should keep old coordinates absent");
-        });
+        };
 
-    check_reopened_clean_sheet_output(output, "Untouched", "cross-handle shift Untouched",
+    const auto inspect_reopened_cross_handle_untouched =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "cross-handle shift Untouched reopened output should keep sparse count");
@@ -27118,7 +27120,45 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
                 "cross-handle shift Untouched reopened output should keep dirty coordinate");
             check(!reopened_sheet.try_cell("A2").has_value(),
                 "cross-handle shift Untouched reopened output should not synthesize shifted rows");
-        });
+        };
+
+    check_reopened_shift_output(output, "cross-handle shift Data",
+        inspect_reopened_cross_handle_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "cross-handle shift Untouched",
+        inspect_reopened_cross_handle_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle shift noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle shift noop save should keep both flushed handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "cross-handle shift noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "cross-handle shift noop save should keep aggregate dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle shift noop save should keep dirty memory estimate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "cross-handle shift noop save should keep materialized summaries empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "cross-handle shift noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "cross-handle shift noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "cross-handle shift noop save should keep output entries stable");
+    check_reopened_shift_output(noop_output, "cross-handle shift Data noop save",
+        inspect_reopened_cross_handle_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "cross-handle shift Untouched noop save",
+        inspect_reopened_cross_handle_untouched);
 }
 
 void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state()

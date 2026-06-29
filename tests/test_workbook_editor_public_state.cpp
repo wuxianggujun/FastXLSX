@@ -23516,6 +23516,8 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "delete_columns reacquire noop save should keep both handles clean");
@@ -23528,6 +23530,9 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
         "delete_columns reacquire noop save should keep dirty materialized diagnostics clear");
     check(!editor.last_edit_error().has_value(),
         "delete_columns reacquire noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "delete_columns reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == first_entries,

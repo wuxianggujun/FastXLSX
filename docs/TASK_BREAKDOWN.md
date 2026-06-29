@@ -43004,6 +43004,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1038 - Pin column overflow shift no-op save stability
+
+Type: public `WorksheetEditor` column-shift overflow guard no-op-save stability
+regression.
+
+Status: completed.
+
+Goal: prove a rejected `insert_columns()` that would move a dirty edge column
+past the Excel column limit preserves the dirty state and diagnostic, persists
+the unshifted edge-cell worksheet on `save_as()`, and remains stable through a
+second no-op `save_as()`.
+
+Acceptance:
+- `test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()`
+  now covers the dirty column overflow branch with a second no-op `save_as()`
+  after the initial materialized save.
+- The no-op save verifies the materialized handle stays clean, no additional
+  materialized handoff is queued, public save state including the overflow
+  diagnostic is preserved, catalog state is preserved, and output entries remain
+  byte-stable.
+- Documentation records this as narrow column overflow guard no-op-save hygiene,
+  not column-limit expansion, coordinate clamping, broader rollback, dense
+  column operations, metadata repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

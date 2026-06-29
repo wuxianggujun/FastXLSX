@@ -24668,6 +24668,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preser
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire invalid reads noop save should keep both handles clean after no-op save");
@@ -24680,6 +24682,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preser
         "shift reacquire invalid reads noop save should keep dirty diagnostics clear");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid reads noop save should keep diagnostics clear after save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire invalid reads noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == first_entries,

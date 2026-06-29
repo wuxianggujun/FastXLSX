@@ -43522,6 +43522,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1055 - Pin invalid-read reacquire no-op public save state
+
+Type: public `WorksheetEditor` row-shift reacquire invalid-read no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing invalid-read reacquire no-op save also preserves the
+full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preserves_saved_session()`
+  now captures public save state before the no-op `save_as()` and verifies it
+  afterward with `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies invalid coordinate, A1, range, batch,
+  row, column, and missing-cell reads fail across the original and reacquired
+  clean materialized handles without queuing another materialized handoff,
+  dirtying diagnostics, or changing byte-stable output.
+- Documentation records this as narrow save-state coverage for the existing
+  invalid-read reacquire no-op save, not new read semantics, tolerant A1
+  parsing, range repair, sheet creation, shift semantics, session cloning
+  policy, rollback, metadata repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

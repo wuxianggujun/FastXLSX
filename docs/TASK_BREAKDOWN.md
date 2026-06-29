@@ -46941,6 +46941,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1158 - Pin row and column setter clear no-op public save state
+
+Type: public `WorksheetEditor` empty-vector `set_row()` and `set_column()`
+represented-row/column clear no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing row/column setter clear paths remain stable across
+clean no-op `save_as()` calls after their successful materialized flushes.
+
+Coverage:
+- Keeps the existing empty-vector `set_row()` and `set_column()` clears of
+  represented source-backed rows/columns, dirty flushes, package XML checks,
+  and reopened readback checks.
+- Captures public catalog/save-state after each clear save, performs
+  `save_as(noop_output)`, and checks handles stay clean, pending counts,
+  replacement diagnostics, clear `last_edit_error()`, catalog/save-state
+  preservation, output-entry equality with the clear saves, cleared cell
+  absence, preserved non-target records, and reopened used-range stability.
+
+Non-goals:
+- Does not add row/column metadata synchronization, dense row/column editing,
+  tombstones, transaction history, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

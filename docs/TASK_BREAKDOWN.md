@@ -42719,6 +42719,41 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1029 - Pin cross-handle row delete no-op save stability
+
+Type: public `WorksheetEditor` cross-handle row delete no-op-save stability
+regression.
+
+Status: completed.
+
+Goal: prove a row deletion on one dirty materialized worksheet handle and an
+independent dirty handle on another worksheet flush together, then remain
+stable through a second no-op `save_as()`.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No cross-session transactions, dense row operations, metadata repair,
+  formula repair beyond existing moved-cell handling, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Output:
+- Extended `test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state()`
+  with a second no-op `save_as()` after the row-delete save.
+- The regression verifies both materialized handles stay clean, dirty
+  materialized diagnostics and summaries remain empty, public save state and
+  catalog state are preserved, output entries stay byte-stable, and reopened
+  `Data` / `Untouched` checks still pass.
+- Updated API documentation to pin this cross-handle row-delete no-op-save
+  boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

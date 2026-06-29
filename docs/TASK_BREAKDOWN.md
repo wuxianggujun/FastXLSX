@@ -43157,6 +43157,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1043 - Pin last-error replacement no-op public save state
+
+Type: public `WorksheetEditor` last-edit-error replacement recovery no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing last-edit-error replacement recovery no-op save also
+preserves the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics()`
+  now captures public save state before the diagnostic-replacement recovery
+  no-op `save_as()` and verifies it afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies the materialized handle stays clean, no
+  additional materialized handoff is queued, diagnostics remain clear, catalog
+  state is preserved, and output entries remain byte-stable after the accepted
+  in-budget mutation.
+- Documentation records this as narrow save-state coverage for the existing
+  diagnostic-replacement recovery no-op save, not new diagnostic categories,
+  guardrail accounting, rollback, metadata repair, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

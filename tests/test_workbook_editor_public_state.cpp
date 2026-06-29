@@ -30018,6 +30018,8 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes(),
         "last-error replacement noop save should keep the materialized session clean");
@@ -30033,6 +30035,9 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "last-error replacement noop save should not expose dirty summaries");
     check(!editor.last_edit_error().has_value(),
         "last-error replacement noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "last-error replacement noop save");
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "last-error replacement noop save");

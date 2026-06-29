@@ -45352,6 +45352,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1112 - Pin erase_cell first-flush no-op public save state
+
+Type: public `WorksheetEditor` single-cell erase first materialized flush
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing `erase_cell()` dirty-projection path preserves public
+catalog/save-state snapshots across a clean no-op save after the first
+materialized flush.
+
+Acceptance:
+- The erase-cell test now snapshots catalog/save-state after one represented
+  source cell is erased, the first save projects the shrunk dimension, and
+  reopened output confirms the erased cell remains absent.
+- The no-op save verifies the materialized handle stays clean, pending
+  materialized diagnostics remain empty, pending counts and replacement
+  diagnostics are preserved, catalog views are unchanged, `last_edit_error()`
+  remains clear, sparse bounds stay shrunk, and output entries remain
+  byte-stable against the first materialized output.
+- Documentation records this as narrow save-state coverage for the existing
+  single-cell erase first-flush no-op save, not tombstones, dense erase
+  semantics, metadata/range repair, source reload, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, undo/redo, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

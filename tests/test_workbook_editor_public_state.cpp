@@ -5819,6 +5819,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-init-list-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-init-list-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-init-list-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -5886,7 +5888,7 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         "initializer-list erase_cells should omit erased formula text");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "initializer-list batch overloads should preserve untouched worksheets");
-    check_reopened_clean_sheet_output(output, "Data", "initializer-list batch overloads",
+    const auto inspect_initializer_list_batch_output =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "initializer-list reopened output should keep sparse count");
@@ -5911,7 +5913,37 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
                 "initializer-list reopened output should not synthesize clear-only F6");
             check(!reopened_sheet.try_cell("H8").has_value(),
                 "initializer-list reopened output should not synthesize erase-only H8");
-        });
+        };
+    check_reopened_clean_sheet_output(output, "Data", "initializer-list batch overloads",
+        inspect_initializer_list_batch_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "initializer-list batch no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "initializer-list batch no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "initializer-list batch no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "initializer-list batch no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "initializer-list batch no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "initializer-list batch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "initializer-list batch no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "initializer-list batch no-op output should match the first materialized output");
+    check_reopened_clean_sheet_output(noop_output, "Data", "initializer-list batch no-op save",
+        inspect_initializer_list_batch_output);
 }
 
 void check_reopened_clean_sheet_output(

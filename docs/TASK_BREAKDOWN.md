@@ -46278,6 +46278,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1139 - Pin set_row dirty-flush no-op public save state
+
+Type: public `WorksheetEditor` non-empty `set_row()` dirty-flush no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing represented-row replacement path remains stable across
+clean no-op `save_as()` calls after flushing the replaced sparse projection.
+
+Coverage:
+- Keeps the existing row-1 replacement with text, number, formula, and explicit
+  blank cells, non-target row preservation, first dirty flush, worksheet XML
+  checks, untouched-sheet preservation, and reopened readback checks.
+- Captures public catalog/save-state before a first and second no-op save,
+  then checks pending counts, replacement diagnostics, clear `last_edit_error()`,
+  catalog/save-state preservation, output-entry equality, and reopened output
+  stability.
+
+Non-goals:
+- Does not add row metadata creation, dense row writes, row transactions, source
+  reload, formula evaluation, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

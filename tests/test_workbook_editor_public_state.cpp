@@ -29313,6 +29313,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
 
     const WorkbookEditorPublicCatalogSnapshot max_catalog_before_noop =
         workbook_editor_public_catalog_snapshot(max_editor);
+    const WorkbookEditorPublicSaveStateSnapshot max_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(max_editor);
     max_editor.save_as(max_noop_output);
     check(!max_sheet.has_pending_changes(),
         "max_cells budget-release noop save should keep the materialized session clean");
@@ -29326,6 +29328,9 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "max_cells budget-release noop save should not expose dirty materialized memory");
     check(max_editor.pending_worksheet_edits().empty(),
         "max_cells budget-release noop save should not expose dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        max_editor, max_save_state_before_noop,
+        "max_cells budget-release noop save");
     check_workbook_editor_public_catalog_preserved(
         max_editor, max_catalog_before_noop,
         "max_cells budget-release noop save");

@@ -43036,6 +43036,36 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1039 - Pin max-cells budget-release no-op public save state
+
+Type: public `WorksheetEditor` max-cells budget-release no-op-save public state
+regression.
+
+Status: completed.
+
+Goal: prove the existing max-cells erase-and-reinsert budget-release no-op save
+also preserves the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()`
+  now captures public save state before the max-cells budget-release no-op
+  `save_as()` and verifies it afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies the materialized handle stays clean,
+  no additional handoff is queued, catalog state is preserved, and output entries
+  remain byte-stable.
+- Documentation records this as narrow save-state coverage for the existing
+  max-cells budget-release no-op save, not new guardrail accounting, budget
+  recovery policy, rollback, metadata repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

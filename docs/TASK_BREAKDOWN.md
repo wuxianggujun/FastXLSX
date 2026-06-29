@@ -44803,6 +44803,40 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1096 - Pin renamed formula-audit same-sheet guard recovery no-op public save state
+
+Type: public `WorksheetEditor` renamed full-calculation formula-audit
+same-sheet guard recovery no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing renamed full-calculation formula-audit same-sheet guard
+recovery path preserves public catalog/save-state snapshots across a clean
+no-op save after the recovery materialized flush.
+
+Acceptance:
+- The renamed formula-audit same-sheet guard recovery test now snapshots
+  catalog/save-state after a rejected same-sheet rename-plus-replacement guard
+  preserves the clean session and diagnostic, a valid C5 mutation clears that
+  diagnostic, and the recovery save flushes the materialized session.
+- The no-op save verifies both shared handles stay clean, pending materialized
+  diagnostics remain empty, pending counts and replacement diagnostics are
+  preserved, catalog views are unchanged, last-edit diagnostics stay clear,
+  rejected replacement payload remains absent, and output entries remain
+  byte-stable against the recovery output.
+- Documentation records this as narrow save-state coverage for the existing
+  renamed formula-audit same-sheet guard recovery no-op save, not
+  Patch/materialized composition, guard bypass, conflict resolution, rejected
+  replacement staging, formula evaluation or repair, calcChain rebuild, metadata
+  repair, sharedStrings/styles migration, relationship repair, or low-memory
+  large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

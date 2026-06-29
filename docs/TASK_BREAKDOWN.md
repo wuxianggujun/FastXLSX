@@ -43797,6 +43797,41 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1064 - Pin invalid-preflight clean no-op public save state
+
+Type: public `WorksheetEditor` invalid-preflight clean no-op-save public state
+regression.
+
+Status: completed.
+
+Goal: prove older clean copy-original no-op saves after invalid/missing
+preflights also preserve the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_a1_range_mutations_invalid_references()`,
+  `test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()`,
+  `test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics()`,
+  and
+  `test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic()`
+  now capture public save state before their no-op `save_as(output)` and verify
+  it afterward with `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op saves still verify invalid A1 range mutations, invalid
+  scalar cell reads, invalid row/column snapshot reads, and invalid sparse range
+  reads do not dirty the materialized session, preserve diagnostics, and write
+  source-equivalent package entries.
+- Documentation records this as narrow save-state coverage for existing
+  invalid-preflight clean no-op saves, not tolerant coordinate parsing,
+  coordinate repair or clamping, missing-cell synthesis, read-side mutation,
+  new dirty-session semantics, metadata repair, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

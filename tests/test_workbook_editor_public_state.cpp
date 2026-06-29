@@ -3789,7 +3789,13 @@ void test_public_worksheet_editor_a1_range_mutations_invalid_references()
     check(sheet.cell_count() == cell_count_before,
         "valid missing-only A1 range mutations should not synthesize cells");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(output);
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "invalid A1 range mutation no-op save");
+
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid A1 range mutations should copy source entries");
@@ -3983,9 +3989,14 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
     check(editor.last_edit_error() == prior_error,
         "final sparse snapshot after invalid reads should preserve prior diagnostic");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(output);
     check(editor.last_edit_error() == prior_error,
         "no-op save_as after invalid cell reads should preserve the prior diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "invalid cell read no-op save");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -4794,9 +4805,14 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
     check(sheet.estimated_memory_usage() == memory_before,
         "row_cells and column_cells read failures should preserve sparse memory estimate");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(output);
     check(editor.last_edit_error() == prior_error,
         "no-op save_as after row/column read failures should preserve the prior diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "row/column read failure no-op save");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -4915,9 +4931,14 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
         "invalid range sparse_cells reads");
     check_source_snapshot(cells_after, "post-invalid-range sparse snapshot");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(output);
     check(editor.last_edit_error() == prior_error,
         "no-op save_as after invalid range reads should preserve the prior diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "invalid sparse range read no-op save");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,

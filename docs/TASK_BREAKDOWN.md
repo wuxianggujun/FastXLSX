@@ -45489,6 +45489,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1116 - Pin whole-store clear first-flush no-op public save state
+
+Type: public `WorksheetEditor` no-argument whole-store value-clear first
+materialized flush no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing no-argument `clear_cell_values()` whole-store explicit
+blank projection preserves public catalog/save-state snapshots across a clean
+no-op save after the first materialized flush, before the existing saved-session
+reacquire branch mutates the blank records.
+
+Acceptance:
+- The styled whole-store clear subcase now creates a no-op output after the
+  first materialized explicit-blank projection save and reuses one reopened
+  blank-record inspector for the first and no-op outputs.
+- The first save still verifies explicit blank records, source style id
+  preservation on the styled blank, unstyled blank output, removed source
+  payloads, clean dirty diagnostics, and reopened blank bounds.
+- The no-op save snapshots catalog/save-state, keeps the materialized handle
+  clean, preserves pending counts and replacement diagnostics, leaves dirty
+  materialized diagnostics empty, keeps `last_edit_error()` clear, writes
+  byte-stable package entries matching the first materialized output, and
+  reopens with the same styled/unstyled blank records.
+- Documentation records this as narrow save-state coverage for the existing
+  whole-store value-clear first-flush no-op save, not new style migration, dense
+  worksheet clearing, tombstones, metadata/range repair, source reload,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, undo/redo, or low-memory large-file random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

@@ -44095,6 +44095,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1073 - Pin renamed failed-save retry no-op public save state
+
+Type: public `WorksheetEditor` renamed styled-formula failed-save safe-retry
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove existing renamed styled-formula failed-save safe-retry paths
+preserve public save-state snapshots across a clean no-op save after the safe
+retry flush.
+
+Acceptance:
+- The insert-row, delete-column, and delete-row renamed styled-formula
+  source-overwrite rejection tests now capture public catalog and save-state
+  snapshots after the safe retry save, before a no-op `save_as(noop_output)`.
+- The no-op saves verify the materialized handle stays clean, pending
+  materialized diagnostics remain empty, pending counts and replacement
+  diagnostics are preserved, catalog views are unchanged, last-edit diagnostics
+  stay clear, and output entries remain byte-stable against the safe retry.
+- Documentation records this as narrow save-state coverage for existing
+  renamed styled-formula failed-save safe-retry no-op saves, not in-place save,
+  rollback, transaction replay, source overwrite support, formula evaluation,
+  broader formula rewrite, new shift semantics, metadata repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

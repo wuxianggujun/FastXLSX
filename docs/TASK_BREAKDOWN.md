@@ -45384,6 +45384,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1113 - Pin range erase first-flush no-op public save state
+
+Type: public `WorksheetEditor` range erase first materialized flush no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing `erase_cells(CellRange)` all-represented-cell
+dirty-projection path preserves public catalog/save-state snapshots across a
+clean no-op save after the first materialized flush, before the existing
+saved-session reacquire branch runs.
+
+Acceptance:
+- The range-erase reacquire test now snapshots catalog/save-state after all
+  represented cells are erased, the first save projects an empty sparse store,
+  and reopened output confirms erased source cells remain absent.
+- The first no-op save verifies the original materialized handle stays clean,
+  pending materialized diagnostics remain empty, pending counts and replacement
+  diagnostics are preserved, catalog views are unchanged, `last_edit_error()`
+  remains clear, sparse bounds stay empty, and output entries remain byte-stable
+  against the first materialized output.
+- Documentation records this as narrow save-state coverage for the existing
+  range erase first-flush no-op save, not dense range semantics, tombstones,
+  metadata/range repair, source reload, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, Patch/materialized composition, undo/redo, or
+  low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

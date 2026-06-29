@@ -12984,6 +12984,8 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-budget-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-budget-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -13012,7 +13014,7 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "budget-released insertion should not resurrect erased row text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "budget-released insertion should not resurrect erased row numeric cells");
-        check_reopened_clean_sheet_output(output, "Data", "erase_row budget release",
+        const auto inspect_erase_row_budget_release_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "erase_row budget release reopened output should keep sparse count");
@@ -13030,7 +13032,44 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
                 check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_a3.text_value() == "after-erase-row-budget",
                     "erase_row budget release reopened output should read inserted A3");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "erase_row budget release",
+            inspect_erase_row_budget_release_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_row budget release noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "erase_row budget release noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_row budget release noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_row budget release noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_row budget release noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "erase_row budget release noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_row budget release noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_row budget release noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "erase_row budget release noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "erase_row budget release noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "erase_row budget release noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "erase_row budget release noop save",
+            inspect_erase_row_budget_release_output);
     }
 
     {
@@ -13462,6 +13501,8 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-budget-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-budget-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -13490,7 +13531,7 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "budget-released insertion should not resurrect erased column row-one text cells");
         check_not_contains(worksheet_xml, "placeholder-a2",
             "budget-released insertion should not resurrect erased column row-two text cells");
-        check_reopened_clean_sheet_output(output, "Data", "erase_column budget release",
+        const auto inspect_erase_column_budget_release_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "erase_column budget release reopened output should keep sparse count");
@@ -13508,7 +13549,44 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
                 check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_a3.text_value() == "after-erase-column-budget",
                     "erase_column budget release reopened output should read inserted A3");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "erase_column budget release",
+            inspect_erase_column_budget_release_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_column budget release noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "erase_column budget release noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_column budget release noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_column budget release noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_column budget release noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "erase_column budget release noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_column budget release noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_column budget release noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "erase_column budget release noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "erase_column budget release noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "erase_column budget release noop save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "erase_column budget release noop save",
+            inspect_erase_column_budget_release_output);
     }
 
     {

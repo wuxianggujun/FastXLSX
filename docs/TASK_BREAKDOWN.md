@@ -43188,6 +43188,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1044 - Pin memory-budget source-load no-op public save state
+
+Type: public `WorksheetEditor` memory-budget source-load recovery no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing memory-budget source-load failure recovery no-op save
+also preserves the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()` now
+  captures public save state before the memory-budget source-load recovery
+  no-op `save_as()` and verifies it afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies the recovered materialized handle stays
+  clean, no additional materialized handoff is queued, catalog state is
+  preserved, and output entries remain byte-stable after the accepted default
+  materialization overwrite.
+- Documentation records this as narrow save-state coverage for the existing
+  memory-budget source-load recovery no-op save, not new guardrail policy,
+  budget auto-sizing, session cloning, rollback, metadata repair, formula
+  repair, calcChain rebuild, sharedStrings/styles migration, relationship
+  repair, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

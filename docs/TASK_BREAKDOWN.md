@@ -45787,6 +45787,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1124 - Pin explicit blank second no-op public save state
+
+Type: public `WorksheetEditor` explicit blank dirty-flush second no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing `get_cell()` blank-semantics path remains stable across
+a second clean no-op `save_as()` after inserting an explicit blank with
+`set_cell()`, flushing once, and saving a first no-op output.
+
+Coverage:
+- Keeps the existing missing-cell `get_cell()` failure check, explicit `D4`
+  blank insertion, first dirty flush, reopened explicit-blank readback, and
+  first clean no-op save.
+- Captures public catalog/save-state after the first no-op save, performs
+  `save_as(second_noop_output)`, and checks pending counts, replacement
+  diagnostics, clear `last_edit_error()`, catalog/save-state preservation, and
+  output-entry equality with the first no-op output.
+
+Non-goals:
+- Does not add missing-cell synthesis, blank tombstones, dense worksheet
+  clearing, metadata/range repair, source reload, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

@@ -5219,6 +5219,8 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
         write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-range-error-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-sparse-range-error-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-sparse-range-error-noop-output.xlsx");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
@@ -5337,6 +5339,35 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
     check(output_entries == source_entries,
         "no-op save_as after invalid range reads should copy source entries");
     check_reopened_default_data_sheet_output(output, "invalid sparse range read no-op");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "invalid sparse range read second no-op save should keep the materialized sheet clean");
+    check(!editor.has_pending_changes(),
+        "invalid sparse range read second no-op save should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "invalid sparse range read second no-op save should not record a handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "invalid sparse range read second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "invalid sparse range read second no-op save should not queue replacement diagnostics");
+    check(editor.last_edit_error() == prior_error,
+        "invalid sparse range read second no-op save should preserve the prior diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "invalid sparse range read second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "invalid sparse range read second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "invalid sparse range read second no-op output should match the first no-op output");
+    check_reopened_default_data_sheet_output(noop_output, "invalid sparse range read second no-op");
 }
 
 void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()

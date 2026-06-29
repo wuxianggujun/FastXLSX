@@ -43766,6 +43766,37 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1063 - Pin existing-directory failed-save no-op public save state
+
+Type: public `WorksheetEditor` row-shift reacquire existing-directory
+failed-save retry no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing existing-directory failed-save retry no-op save also
+preserves the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save_preserves_dirty_session()`
+  now captures public save state before the no-op `save_as()` and verifies it
+  afterward with `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies saving to an existing directory fails
+  without replacing that directory or flushing dirty state, a safe retry
+  records the second materialized handoff, a final matching reacquire returns
+  clean combined shift state, and output entries remain byte-stable.
+- Documentation records this as narrow save-state coverage for the existing
+  existing-directory failed-save retry no-op save, not rollback, transaction
+  replay, directory replacement, directory-as-workbook output support, new
+  shift semantics, session cloning policy, metadata repair, formula repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

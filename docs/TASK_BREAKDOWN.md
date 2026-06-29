@@ -43866,6 +43866,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1066 - Pin renamed clear-all no-op public save state
+
+Type: public `WorksheetEditor` renamed saved `clear_cell_values()` memory-budget
+release no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the renamed saved-session no-op saves in the existing clear-all
+memory-budget release summary path preserve the full public save-state
+snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary()`
+  now captures public save state before the plain no-op, option-mismatch
+  no-op, missing-name no-op, read-only-query no-op, and invalid-read no-op
+  `save_as()` calls and verifies each afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing branches still verify both materialized handles stay clean, the
+  renamed materialized diagnostics and summaries remain clean, diagnostics stay
+  clear, and output entries remain stable across repeated no-op saves.
+- Documentation records this as narrow save-state coverage for existing renamed
+  saved-session no-op saves, not rename transaction history, source-name
+  fallback, option migration, missing-sheet aliasing, tolerant reads, metadata
+  repair, formula repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

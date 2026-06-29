@@ -10134,6 +10134,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after clean reacquire");
 
+    const WorkbookEditorPublicSaveStateSnapshot no_op_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(no_op_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary no-op save should keep both handles clean");
@@ -10145,6 +10148,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary no-op save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        no_op_save_state_before_noop,
+        "clear_cell_values() memory-budget renamed summary no-op save");
 
     const auto no_op_entries = fastxlsx::test::read_zip_entries(no_op_output);
     check(no_op_entries == first_entries,
@@ -10184,6 +10191,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after saved option mismatch");
 
+    const WorkbookEditorPublicSaveStateSnapshot option_no_op_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(option_no_op_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary option no-op save should keep both handles clean");
@@ -10195,6 +10205,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary option no-op save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after option no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        option_no_op_save_state_before_noop,
+        "clear_cell_values() memory-budget renamed summary option no-op save");
 
     const auto option_no_op_entries = fastxlsx::test::read_zip_entries(option_no_op_output);
     check(option_no_op_entries == no_op_entries,
@@ -10225,6 +10239,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after saved missing lookup");
 
+    const WorkbookEditorPublicSaveStateSnapshot missing_no_op_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(missing_no_op_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary missing no-op save should keep both handles clean");
@@ -10236,6 +10253,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary missing no-op save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after missing no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        missing_no_op_save_state_before_noop,
+        "clear_cell_values() memory-budget renamed summary missing no-op save");
 
     const auto missing_no_op_entries = fastxlsx::test::read_zip_entries(missing_no_op_output);
     check(missing_no_op_entries == option_no_op_entries,
@@ -10276,6 +10297,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after saved read-only queries");
 
+    const WorkbookEditorPublicSaveStateSnapshot read_only_no_op_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(read_only_no_op_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary read-only no-op save should keep both handles clean");
@@ -10287,6 +10311,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary read-only no-op save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after read-only no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        read_only_no_op_save_state_before_noop,
+        "clear_cell_values() memory-budget renamed summary read-only no-op save");
 
     const auto read_only_no_op_entries =
         fastxlsx::test::read_zip_entries(read_only_no_op_output);
@@ -10337,6 +10365,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after saved invalid reads");
 
+    const WorkbookEditorPublicSaveStateSnapshot invalid_read_no_op_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(invalid_read_no_op_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary invalid-read no-op save should keep both handles clean");
@@ -10348,6 +10379,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary invalid-read no-op save lower-level diagnostics");
     check_renamed_clear_all_summary(false, 0,
         "clear_cell_values() memory-budget renamed summary after invalid-read no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        invalid_read_no_op_save_state_before_noop,
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save");
 
     const auto invalid_read_no_op_entries =
         fastxlsx::test::read_zip_entries(invalid_read_no_op_output);

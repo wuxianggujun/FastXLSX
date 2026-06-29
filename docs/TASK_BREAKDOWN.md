@@ -42504,6 +42504,42 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1023 - Pin mixed public diagnostic recovery no-op save stability
+
+Type: public `WorkbookEditor` mixed public-edit diagnostic replacement
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove failed replacement, failed rename, and failed `WorksheetEditor`
+mutation diagnostics can replace one another, then recover through
+`replace_sheet_data("Untouched", ...)`, a recovery save, and a second no-op
+`save_as()` while preserving public replacement state.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No Patch/materialized composition, guard bypass, diagnostic history, rollback,
+  metadata repair, formula repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, or low-memory random editing.
+
+Output:
+- Extended `test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics()`
+  with a no-op `save_as()` after the successful `Untouched` replacement save.
+- The regression verifies the clean `Data` materialized handle stays clean, no
+  second public handoff is added, dirty materialized diagnostics remain empty,
+  public replacement save state and pending summaries are preserved, catalog
+  state is preserved, output entries stay byte-stable, and reopened mixed-output
+  checks still pass.
+- Updated API documentation to pin this mixed public diagnostic-recovery
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -29401,6 +29401,8 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
         write_two_sheet_source("fastxlsx-workbook-editor-public-mixed-last-error-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-mixed-last-error-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-mixed-last-error-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -29515,6 +29517,37 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
     check_not_contains(output_entries.at("xl/workbook.xml"), "Bad/Name",
         "failed rename target should not leak into workbook catalog");
     check_reopened_mixed_last_error_recovery_output(output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_noop =
+        editor.pending_worksheet_edits();
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "mixed diagnostic recovery noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "mixed diagnostic recovery noop save should not add a second public handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "mixed diagnostic recovery noop save should not expose dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "mixed diagnostic recovery noop save should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "mixed diagnostic recovery noop save should not expose dirty materialized memory");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "mixed diagnostic recovery noop save");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_noop),
+        "mixed diagnostic recovery noop save should preserve pending summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "mixed diagnostic recovery noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "mixed diagnostic recovery noop save should keep output entries stable");
+    check_reopened_mixed_last_error_recovery_output(noop_output);
 }
 
 

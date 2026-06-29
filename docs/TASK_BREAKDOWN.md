@@ -44936,6 +44936,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1100 - Pin A1 overload first-flush no-op public save state
+
+Type: public `WorksheetEditor` strict A1 overload first materialized flush
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing strict A1 read/mutate/save overload path preserves
+public catalog/save-state snapshots across a clean no-op save after the first
+materialized flush.
+
+Acceptance:
+- The A1 overload test now snapshots catalog/save-state after reading
+  source-backed A1/B1, writing D4 through A1 coordinates, erasing A2, saving
+  once, and reopening output to verify the inserted and erased sparse records.
+- The no-op save verifies the materialized handle stays clean, pending
+  materialized diagnostics remain empty, pending counts and replacement
+  diagnostics are preserved, catalog views are unchanged, last-edit diagnostics
+  stay clear, and output entries remain byte-stable against the first
+  materialized output.
+- Documentation records this as narrow save-state coverage for the existing
+  strict A1 overload first-flush no-op save, not new coordinate parsing policy,
+  lowercase A1 support, dense range semantics, metadata repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

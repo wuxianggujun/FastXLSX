@@ -14647,6 +14647,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(editor.last_edit_error() == invalid_error,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save audits should preserve last_edit_error");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save should keep both handles clean");
@@ -14665,6 +14668,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.worksheet_names() == expected_planned_names &&
             workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save should preserve catalog diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_entries == first_entries,
@@ -15057,6 +15064,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid reads noop-save audits should keep diagnostics clear");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "renamed full-calc formula audit saved reacquire invalid reads noop-save second save should keep both handles clean");
@@ -15077,6 +15087,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.worksheet_names() == expected_planned_names &&
             workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
         "renamed full-calc formula audit saved reacquire invalid reads noop-save second save should preserve catalog diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire invalid reads noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_entries == first_entries,
@@ -15433,6 +15447,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(editor.last_edit_error() == invalid_shift_error,
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save audits should preserve last_edit_error");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save second save should keep both handles clean");
@@ -15453,6 +15470,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.worksheet_names() == expected_planned_names &&
             workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save second save should preserve catalog diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire invalid shifts noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_entries == first_entries,
@@ -15807,6 +15828,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire missing query noop-save audits should keep diagnostics clear");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "renamed full-calc formula audit saved reacquire missing query noop-save second save should keep both handles clean");
@@ -15827,6 +15851,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.worksheet_names() == expected_planned_names &&
             workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
         "renamed full-calc formula audit saved reacquire missing query noop-save second save should preserve catalog diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire missing query noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_entries == first_entries,
@@ -16183,6 +16211,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch noop-save audits should keep diagnostics clear");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "renamed full-calc formula audit saved reacquire option mismatch noop-save second save should keep both handles clean");
@@ -16203,6 +16234,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.worksheet_names() == expected_planned_names &&
             workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
         "renamed full-calc formula audit saved reacquire option mismatch noop-save second save should preserve catalog diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire option mismatch noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_entries == first_entries,
@@ -16570,6 +16605,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(editor.last_edit_error() == guard_error,
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save audits should preserve guard diagnostic");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(second_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second save should keep both handles clean");
@@ -16590,6 +16628,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.worksheet_names() == expected_planned_names &&
             workbook_editor_catalog_entries_equal(editor.worksheet_catalog(), expected_catalog),
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second save should preserve catalog diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check(second_entries == first_entries,

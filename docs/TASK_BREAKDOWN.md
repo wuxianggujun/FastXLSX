@@ -43898,6 +43898,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1067 - Pin formula-audit saved-reacquire no-op public save state
+
+Type: public `WorksheetEditor` full-calculation renamed formula-audit
+saved-reacquire no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove existing formula-audit saved-session no-op saves preserve the full
+public save-state snapshot after saved-reacquire preflights.
+
+Acceptance:
+- The full-calculation renamed formula-audit saved-reacquire no-op tests for
+  invalid mutation, invalid reads, invalid shifts, missing query, option
+  mismatch, and same-sheet guard now capture public save state before the
+  second `save_as(second_output)` and verify it afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing branches still verify both handles stay clean, pending
+  materialized diagnostics remain empty, saved edit summaries and catalog
+  diagnostics remain stable, formula audits preserve editor diagnostics, and
+  the second output remains byte-stable against the first save.
+- Documentation records this as narrow save-state coverage for existing
+  formula-audit saved-session no-op saves, not formula repair/evaluation,
+  dependency rewrite, option migration, missing-sheet aliasing, same-sheet
+  Patch/materialized composition, rename transaction history, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

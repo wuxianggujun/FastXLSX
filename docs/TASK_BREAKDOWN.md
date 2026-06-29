@@ -44412,6 +44412,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1083 - Pin shift reacquire invalid-mutation second-flush no-op public save state
+
+Type: public `WorksheetEditor` non-renamed saved-session invalid-mutation
+second-flush no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing saved-session invalid-mutation branch preserves public
+catalog/save-state snapshots across a clean no-op save after the second
+successful materialized flush.
+
+Acceptance:
+- The shift reacquire invalid-mutation test now captures public catalog and
+  save-state after invalid `set_cell()` / `erase_cell()` calls fail, a later
+  valid insert-column shift clears diagnostics, and the second save succeeds.
+- The no-op save verifies both shared handles stay clean, pending materialized
+  diagnostics remain empty, pending counts and replacement diagnostics are
+  preserved, catalog views are unchanged, last-edit diagnostics stay clear, and
+  output entries remain byte-stable against the second output.
+- Documentation records this as narrow save-state coverage for the existing
+  saved-session invalid-mutation second-flush no-op save, not relaxed mutation
+  validation, rejected payload staging, source reload, formula evaluation,
+  broader shift semantics, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

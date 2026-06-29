@@ -29525,6 +29525,8 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
 
     const WorkbookEditorPublicCatalogSnapshot max_catalog_before_noop =
         workbook_editor_public_catalog_snapshot(max_editor);
+    const WorkbookEditorPublicSaveStateSnapshot max_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(max_editor);
     max_editor.save_as(max_noop_output);
     check(!max_sheet.has_pending_changes() && !max_editor.has_pending_changes(),
         "max_cells missing-erase noop save should keep sheet and editor clean");
@@ -29540,6 +29542,9 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "max_cells missing-erase noop save should not expose dirty summaries");
     check(!max_editor.last_edit_error().has_value(),
         "max_cells missing-erase noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        max_editor, max_save_state_before_noop,
+        "max_cells missing-erase noop save");
     check_workbook_editor_public_catalog_preserved(
         max_editor, max_catalog_before_noop,
         "max_cells missing-erase noop save");
@@ -29630,6 +29635,8 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
 
     const WorkbookEditorPublicCatalogSnapshot memory_catalog_before_noop =
         workbook_editor_public_catalog_snapshot(memory_editor);
+    const WorkbookEditorPublicSaveStateSnapshot memory_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(memory_editor);
     memory_editor.save_as(memory_noop_output);
     check(!memory_sheet.has_pending_changes() && !memory_editor.has_pending_changes(),
         "memory-budget missing-erase noop save should keep sheet and editor clean");
@@ -29645,6 +29652,9 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "memory-budget missing-erase noop save should not expose dirty summaries");
     check(!memory_editor.last_edit_error().has_value(),
         "memory-budget missing-erase noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        memory_editor, memory_save_state_before_noop,
+        "memory-budget missing-erase noop save");
     check_workbook_editor_public_catalog_preserved(
         memory_editor, memory_catalog_before_noop,
         "memory-budget missing-erase noop save");

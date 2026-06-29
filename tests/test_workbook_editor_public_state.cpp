@@ -23966,6 +23966,8 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -24013,6 +24015,26 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         "shift handle reuse second save should record a second materialized handoff");
     check(editor.pending_materialized_cell_count() == 0,
         "shift handle reuse second save should clear aggregate dirty materialized count");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "shift handle reuse no-op save should keep the reused handle clean");
+    check(editor.pending_change_count() == 2,
+        "shift handle reuse no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift handle reuse no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "shift handle reuse no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift handle reuse no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "shift handle reuse no-op output should match the second output");
 
     check_reopened_shift_output(first_output, "shift handle reuse first save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

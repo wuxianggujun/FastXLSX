@@ -24166,6 +24166,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire option mismatch noop save should keep the original handle clean");
@@ -24178,6 +24180,9 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
         "shift reacquire option mismatch noop save should keep dirty diagnostics clear");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire option mismatch noop save should keep diagnostics clear after save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire option mismatch noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == first_entries,

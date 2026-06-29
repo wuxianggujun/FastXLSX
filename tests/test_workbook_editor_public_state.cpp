@@ -27792,6 +27792,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-noop-output.xlsx");
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -27815,7 +27817,7 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns save_as should persist translated rich formula references");
         check_not_contains(worksheet_xml, R"(r="C2")",
             "insert_columns rich formula save_as should not keep the old coordinate");
-        check_reopened_shift_output(output, "insert_columns rich formula",
+        const auto inspect_reopened_column_formula =
             [&expected](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 4,
                     "insert_columns rich formula reopened output should keep sparse count");
@@ -27835,7 +27837,39 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula reopened output should read shifted source columns");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_columns rich formula reopened output should keep old coordinate absent");
-            });
+            };
+        check_reopened_shift_output(output, "insert_columns rich formula",
+            inspect_reopened_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_columns rich formula noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "insert_columns rich formula noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "insert_columns rich formula noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "insert_columns rich formula noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "insert_columns rich formula noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "insert_columns rich formula noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "insert_columns rich formula noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "insert_columns rich formula noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "insert_columns rich formula noop save should keep output entries stable");
+        check_reopened_shift_output(noop_output, "insert_columns rich formula noop save",
+            inspect_reopened_column_formula);
     }
 }
 

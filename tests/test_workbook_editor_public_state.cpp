@@ -16235,6 +16235,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-option-mismatch-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-option-mismatch-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-option-mismatch-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -16426,6 +16428,32 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             reopened_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
             reopened_recovered_cell->text_value() == "option-mismatch-recovery-c5",
         "renamed full-calc formula audit saved reacquire option mismatch reopened output should read recovered text");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 4,
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed full-calc formula audit saved reacquire option mismatch no-op output should match the recovery output");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_option_mismatch_noop_save()

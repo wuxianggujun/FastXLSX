@@ -3552,6 +3552,10 @@ after `Data` is renamed to `TransientData`, renamed back, saved, and reacquired
 under the restored source/planned name, a second `save_as()` keeps handles clean,
 materialized diagnostics and summaries empty, and decompressed package entries
 identical to the first restored-name output without reviving the transient name.
+That stability now also covers a clean matching-option reacquire after the first
+dirty follow-up on the restored session: a later no-op `save_as()` keeps both
+handles clean, leaves pending materialized diagnostics empty, and reuses the
+first saved shift output byte-for-byte before the next valid mutation.
 Invalid reads on that clean rename-back session are no-op-save safe as well:
 row/column/A1/range preflight failures leave `last_edit_error()` clear, keep both
 handles clean, leave materialized diagnostics and summaries empty, and a later

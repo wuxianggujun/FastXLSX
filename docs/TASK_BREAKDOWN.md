@@ -41757,6 +41757,33 @@ Output:
   diagnostics, summaries, and writes the follow-up value without leaking
   rejected payloads or `TransientData`.
 
+### P8.999 - Pin rename-back cleanup reacquire no-op save stability
+
+Type: public `WorksheetEditor` rename-back cleanup no-op-save stability
+regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+
+Goal: prove a clean matching-option `worksheet("Data")` reacquire after the
+P8.998 dirty follow-up remains no-op-save stable, reuses the first saved shift
+output byte-for-byte, keeps pending materialized diagnostics empty, and does
+not add another materialized handoff before the next valid mutation.
+
+Non-goals: session cloning, source-name fallback, transient-name aliasing,
+source-package mutation, transactional undo/redo, metadata repair,
+Patch/materialized sparse-session composition, calcChain rebuild,
+sharedStrings/styles migration, or low-memory large-file random editing.
+
+Acceptance: after the first saved shift output is reacquired cleanly, a later
+no-op `save_as()` keeps both handles clean, leaves `last_edit_error()` clear,
+keeps pending worksheet edits and materialized diagnostics empty, writes
+decompressed package entries identical to the first save, and still reopens to
+the expected shifted cell layout.
+
 Non-goals:
 - No transaction history, session cloning, metadata repair,
   Patch/materialized sparse-session composition, formula/range/table sync,

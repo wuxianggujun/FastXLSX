@@ -18062,6 +18062,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_pre
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-options-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-options-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-options-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -18198,6 +18200,28 @@ void test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_pre
     check_not_contains(second_worksheet_xml, R"(r="B4")",
         "renamed formula option mismatch second output should omit inserted blank B4");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula option mismatch no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula option mismatch no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula option mismatch no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula option mismatch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula option mismatch no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula option mismatch no-op save should keep output entries stable");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed formula option mismatch reopened output should expose only the planned catalog name");
@@ -18241,6 +18265,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_mutations_p
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-invalid-mutation-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-invalid-mutation-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-invalid-mutation-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -18384,6 +18410,28 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_mutations_p
     check_not_contains(second_worksheet_xml, R"(r="D2")",
         "renamed formula invalid mutations second output should omit the old formula coordinate");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula invalid mutations no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula invalid mutations no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula invalid mutations no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula invalid mutations no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula invalid mutations no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula invalid mutations no-op save should keep output entries stable");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed formula invalid mutations reopened output should expose only the planned catalog name");
@@ -18427,6 +18475,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_missing_query_prese
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-missing-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-missing-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-missing-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -18561,6 +18611,28 @@ void test_public_worksheet_editor_shift_after_rename_formula_missing_query_prese
     check_not_contains(second_worksheet_xml, R"(r="B4")",
         "renamed formula missing query second output should omit inserted blank B4");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula missing query no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula missing query no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula missing query no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula missing query no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula missing query no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula missing query no-op save should keep output entries stable");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed formula missing query reopened output should expose only the planned catalog name");
@@ -18604,6 +18676,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_prese
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-invalid-read-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-invalid-read-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-invalid-read-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -18762,6 +18836,28 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_prese
         "renamed formula invalid reads second output should omit the old formula coordinate");
     check_not_contains(second_worksheet_xml, R"(r="B4")",
         "renamed formula invalid reads second output should omit inserted blank B4");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula invalid reads no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula invalid reads no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula invalid reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula invalid reads no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula invalid reads no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula invalid reads no-op save should keep output entries stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

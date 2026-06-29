@@ -4176,6 +4176,8 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
         write_two_sheet_source("fastxlsx-workbook-editor-public-sparse-cells-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-sparse-cells-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-sparse-cells-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -4247,6 +4249,32 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
                     reopened_d4.text_value() == "snapshot-new",
                 "sparse_cells reopened output should read inserted D4 text");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "sparse_cells snapshot no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "sparse_cells snapshot no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "sparse_cells snapshot no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "sparse_cells snapshot no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "sparse_cells snapshot no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "sparse_cells snapshot no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "sparse_cells snapshot no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "sparse_cells snapshot no-op output should match the first materialized output");
 }
 
 void test_public_worksheet_editor_sparse_cells_range_snapshot()

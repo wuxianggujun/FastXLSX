@@ -41868,6 +41868,35 @@ cleanly, a later no-op `save_as()` keeps both handles clean, leaves
 diagnostics empty, writes decompressed package entries identical to the first
 save, and still reopens to the expected insert-column shifted sparse layout.
 
+### P8.1003 - Pin optional reacquire no-op save stability
+
+Type: public `WorksheetEditor` optional saved-session no-op-save stability
+regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove an optional matching `try_worksheet("Data")` reacquire after a
+saved `insert_rows()` sparse shift remains no-op-save stable, reuses the first
+saved output byte-for-byte, keeps pending materialized diagnostics empty, and
+does not add another materialized handoff before the next valid mutation.
+
+Non-goals: session cloning, source reload, missing-sheet creation,
+formula repair/evaluation, metadata synchronization, calcChain rebuild,
+sharedStrings/styles migration, Patch/materialized sparse-session composition,
+or low-memory random editing.
+
+Acceptance: after the first saved insert-row shift output is reacquired cleanly
+through `try_worksheet("Data")`, a later no-op `save_as()` keeps both handles
+clean, leaves `last_edit_error()` clear, keeps pending worksheet edits and
+materialized diagnostics empty, writes decompressed package entries identical to
+the first save, and still reopens to the expected shifted sparse layout.
+
 Non-goals:
 - No transaction history, session cloning, metadata repair,
   Patch/materialized sparse-session composition, formula/range/table sync,

@@ -43279,6 +43279,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1047 - Pin clear-all memory-budget matching-option no-op state
+
+Type: public `WorksheetEditor` range-clear memory-budget release matching-option
+reacquire no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing `clear_cell_values()` memory-budget release
+matching-option reacquire no-op save also preserves the full public save-state
+snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_clear_all_memory_budget_release()` now captures
+  public save state before the matching-option reacquire no-op `save_as()` and
+  verifies it afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies the original and reacquired
+  materialized handles stay clean, no additional materialized handoff is queued,
+  dirty materialized diagnostics stay empty, and output entries remain
+  byte-stable.
+- Documentation records this as narrow save-state coverage for the existing
+  matching-option reacquire no-op save, not new range-clear semantics, guardrail
+  accounting, memory compaction, session cloning policy, rollback, metadata
+  repair, formula repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

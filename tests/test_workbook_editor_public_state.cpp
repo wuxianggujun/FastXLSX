@@ -8995,6 +8995,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release matching-option reacquire should not dirty summaries");
 
     const std::size_t pending_count_after_reacquire = editor.pending_change_count();
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release matching-option noop save should keep handles clean");
@@ -9008,6 +9010,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release matching-option noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release matching-option noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "clear_cell_values() memory-budget release matching-option noop save");
     const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_output_entries == output_entries,
         "clear_cell_values() memory-budget release matching-option noop save should keep output entries stable");

@@ -9260,6 +9260,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-second-noop-output.xlsx");
         const std::filesystem::path output_after_reacquire =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-output.xlsx");
+        const std::filesystem::path noop_output_after_reacquire =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -9470,8 +9472,7 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "second save_as should clear dirty memory after whole-store erase handle reuse");
         check(editor.pending_worksheet_edits().empty(),
             "second save_as should clear summaries after whole-store erase handle reuse");
-        check_reopened_clean_sheet_output(output_after_reacquire, "Data",
-            "erase_cells reacquired save",
+        const auto inspect_erase_all_reacquired_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "erase_cells reacquired save reopened output should keep appended sparse count");
@@ -9487,7 +9488,37 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
                     "erase_cells reacquired save reopened output should read appended number");
                 check(!reopened_sheet.try_cell("D4").has_value(),
                     "erase_cells reacquired save reopened output should keep erased dirty D4 absent");
-            });
+            };
+        check_reopened_clean_sheet_output(output_after_reacquire, "Data",
+            "erase_cells reacquired save", inspect_erase_all_reacquired_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_reacquire_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_reacquire_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output_after_reacquire);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+            "erase_cells reacquired no-op save should keep both handles clean");
+        check(editor.pending_change_count() == 2,
+            "erase_cells reacquired no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_cells reacquired no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_cells reacquired no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_cells reacquired no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_reacquire_noop,
+            "erase_cells reacquired no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_reacquire_noop,
+            "erase_cells reacquired no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output_after_reacquire) == reacquired_entries,
+            "erase_cells reacquired no-op output should match the reacquired save output");
+        check_reopened_clean_sheet_output(noop_output_after_reacquire, "Data",
+            "erase_cells reacquired no-op save", inspect_erase_all_reacquired_output);
     }
 }
 

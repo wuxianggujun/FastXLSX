@@ -808,6 +808,10 @@ rejected mismatched `WorksheetEditorOptions` leave `last_edit_error()` clear,
 keep the saved shifted handle clean, preserve catalog and materialized
 diagnostics, and a later no-op `save_as()` reuses the first shifted output
 byte-for-byte.
+Missing-sheet query failures now carry the same no-op-save boundary: missing
+`try_worksheet("Missing")` and throwing `worksheet("Missing")` leave the saved
+shifted handle clean, keep diagnostics and catalog state stable, and a later
+no-op `save_as()` reuses the first shifted output byte-for-byte.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

@@ -41925,6 +41925,33 @@ saved handle clean, preserve catalog views and pending materialized diagnostics,
 write decompressed package entries identical to the first save on a later no-op
 `save_as()`, and still reopen to the expected shifted sparse layout.
 
+### P8.1005 - Pin missing-query no-op save stability
+
+Type: public `WorksheetEditor` saved-session missing-query no-op-save stability
+regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove missing worksheet lookups after a saved `insert_rows()` sparse
+shift do not poison the clean materialized session or a later no-op `save_as()`.
+
+Non-goals: missing-sheet creation, session cloning, source-name fallback,
+source reload, formula repair/evaluation, metadata synchronization, calcChain
+rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+composition, or low-memory random editing.
+
+Acceptance: missing `try_worksheet("Missing")` and throwing
+`worksheet("Missing")` calls leave `last_edit_error()` clear, keep the saved
+handle clean, preserve catalog views and pending materialized diagnostics, write
+decompressed package entries identical to the first save on a later no-op
+`save_as()`, and still reopen to the expected shifted sparse layout.
+
 Non-goals:
 - No transaction history, session cloning, metadata repair,
   Patch/materialized sparse-session composition, formula/range/table sync,

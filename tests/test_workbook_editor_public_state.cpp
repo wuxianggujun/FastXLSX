@@ -28930,6 +28930,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes(),
         "successful max-cells recovery noop save should keep the materialized session clean");
@@ -28943,6 +28945,9 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "successful max-cells recovery noop save should not leave dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "successful max-cells recovery noop save should not leave dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "mutation max-cells recovery noop save");
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "mutation max-cells recovery noop save");

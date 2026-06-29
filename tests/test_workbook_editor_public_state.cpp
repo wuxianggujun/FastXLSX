@@ -21085,6 +21085,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-options-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-options-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-options-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -21238,6 +21240,28 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_
     check_not_contains(second_worksheet_xml, R"(r="D2")",
         "renamed formula delete-row option mismatch second output should omit the old formula coordinate");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row option mismatch no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-row option mismatch no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row option mismatch no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula delete-row option mismatch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula delete-row option mismatch no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula delete-row option mismatch no-op save should keep output entries stable");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed formula delete-row option mismatch reopened output should expose only the planned catalog name");
@@ -21281,6 +21305,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-mutation-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-mutation-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-mutation-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -21446,6 +21472,28 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
     check_not_contains(second_worksheet_xml, R"(r="D2")",
         "renamed formula delete-row invalid mutations second output should omit the old formula coordinate");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row invalid mutations no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-row invalid mutations no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row invalid mutations no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula delete-row invalid mutations no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula delete-row invalid mutations no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula delete-row invalid mutations no-op save should keep output entries stable");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed formula delete-row invalid mutations reopened output should expose only the planned catalog name");
@@ -21489,6 +21537,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-missing-query-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-missing-query-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-missing-query-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -21642,6 +21692,28 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing
     check_not_contains(second_worksheet_xml, R"(r="D2")",
         "renamed formula delete-row missing query second output should omit the old formula coordinate");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row missing query no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-row missing query no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row missing query no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula delete-row missing query no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula delete-row missing query no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula delete-row missing query no-op save should keep output entries stable");
+
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
         "renamed formula delete-row missing query reopened output should expose only the planned catalog name");
@@ -21685,6 +21757,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-read-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-read-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-invalid-read-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -21861,6 +21935,28 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
         "renamed formula delete-row invalid reads second output should omit inserted blank B1");
     check_not_contains(second_worksheet_xml, R"(r="D2")",
         "renamed formula delete-row invalid reads second output should omit the old formula coordinate");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row invalid reads no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-row invalid reads no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row invalid reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula delete-row invalid reads no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula delete-row invalid reads no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula delete-row invalid reads no-op save should keep output entries stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

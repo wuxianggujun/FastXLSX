@@ -42225,6 +42225,25 @@ Scope:
   calcChain rebuild, sharedStrings/styles migration, Patch/materialized
   sparse-session composition, or low-memory random editing.
 
+### P8.1015 - Pin mutation memory-budget recovery no-op save stability
+
+Type: public `WorksheetEditor` mutation memory-budget post-recovery
+no-op-save stability regression.
+
+Status: planned.
+
+Goal: prove an exact `WorksheetEditorOptions::memory_budget_bytes` failure can
+be recovered by a later valid overwrite, then cleanly reacquired, and then
+written again with a follow-up no-op `save_as()` that stays byte-stable.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No broader guardrail policy, session cloning, clean-session commit semantics,
+  memory-budget auto-sizing, transaction history, formula repair, calcChain
+  rebuild, sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
 Verification:
 - `git diff --check` passes.
 - `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.

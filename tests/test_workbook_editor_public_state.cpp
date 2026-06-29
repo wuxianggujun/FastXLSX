@@ -29418,6 +29418,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
 
     const WorkbookEditorPublicCatalogSnapshot memory_catalog_before_noop =
         workbook_editor_public_catalog_snapshot(memory_editor);
+    const WorkbookEditorPublicSaveStateSnapshot memory_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(memory_editor);
     memory_editor.save_as(memory_noop_output);
     check(!memory_sheet.has_pending_changes(),
         "memory-budget budget-release noop save should keep the materialized session clean");
@@ -29431,6 +29433,9 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "memory-budget budget-release noop save should not expose dirty materialized memory");
     check(memory_editor.pending_worksheet_edits().empty(),
         "memory-budget budget-release noop save should not expose dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        memory_editor, memory_save_state_before_noop,
+        "memory-budget budget-release noop save");
     check_workbook_editor_public_catalog_preserved(
         memory_editor, memory_catalog_before_noop,
         "memory-budget budget-release noop save");

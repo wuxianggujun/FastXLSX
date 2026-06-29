@@ -23421,6 +23421,8 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire noop save should keep both handles clean");
@@ -23433,6 +23435,9 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
         "shift reacquire noop save should keep dirty materialized diagnostics clear");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == first_entries,

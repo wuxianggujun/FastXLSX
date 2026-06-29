@@ -43553,6 +43553,36 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1056 - Pin invalid-mutation reacquire no-op public save state
+
+Type: public `WorksheetEditor` row-shift reacquire invalid-mutation no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing invalid-mutation reacquire no-op save also preserves
+the full public save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_preserves_saved_session()`
+  now captures public save state before the no-op `save_as()` and verifies it
+  afterward with `check_workbook_editor_public_save_state_preserved()`.
+- The existing no-op save still verifies invalid `set_cell()` / `erase_cell()`
+  calls across the original and reacquired clean materialized handles do not
+  queue another materialized handoff, dirty materialized diagnostics, or leak
+  rejected payloads, while preserving the retained invalid-reference diagnostic.
+- Documentation records this as narrow save-state coverage for the existing
+  invalid-mutation reacquire no-op save, not new mutation semantics, tolerant A1
+  parsing, rollback, payload staging, shift semantics, session cloning policy,
+  metadata repair, formula repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

@@ -28071,6 +28071,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     {
         const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-nonzero-noop-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-nonzero-noop-save-output.xlsx");
         const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -28106,6 +28108,37 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         check(output_entries == source_entries,
             "save_as after nonzero row/column shift no-ops should copy source entries");
         check_reopened_default_data_sheet_output(output, "shift nonzero no-op");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "nonzero row/column shift no-op save should keep materialized handle clean");
+        check(editor.pending_change_count() == 0,
+            "nonzero row/column shift no-op save should keep edit count empty");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "nonzero row/column shift no-op save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "nonzero row/column shift no-op save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "nonzero row/column shift no-op save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "nonzero row/column shift no-op save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "nonzero row/column shift no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "nonzero row/column shift no-op save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "nonzero row/column shift no-op save should still copy source entries");
+        check(noop_entries == output_entries,
+            "nonzero row/column shift no-op save should keep output entries stable");
+        check_reopened_default_data_sheet_output(noop_output, "shift nonzero no-op save");
     }
 
     {

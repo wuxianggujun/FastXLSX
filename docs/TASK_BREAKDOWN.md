@@ -42912,6 +42912,35 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1035 - Pin nonzero shift clean no-op save stability
+
+Type: public `WorksheetEditor` row/column shift clean no-op-save stability
+regression.
+
+Status: completed.
+
+Goal: prove nonzero row/column shift requests that do not touch existing sparse
+cells can clear prior diagnostics, copy source entries on `save_as()`, and stay
+stable through a second no-op `save_as()`.
+
+Acceptance:
+- `test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()`
+  now covers the nonzero out-of-range row/column shift no-op branch with a
+  second no-op `save_as()` after the initial clean save.
+- The no-op save verifies the materialized handle stays clean, pending edit
+  counts and materialized summaries remain empty, public save state and catalog
+  state are preserved, and source-copied output entries remain byte-stable.
+- Documentation records this as narrow clean no-op shift/save hygiene, not dense
+  row/column operations, shift planning, metadata repair, formula repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

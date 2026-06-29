@@ -8466,6 +8466,8 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-values-style-source.xlsx");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-values-style-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-values-style-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -8503,7 +8505,7 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "set_row_values should persist value-only edits with the source style id");
         check_contains(worksheet_xml, "row-tail",
             "set_row_values should persist untouched row tail cells");
-        check_reopened_clean_sheet_output(output, "Styled", "styled set_row_values",
+        const auto inspect_styled_set_row_values_output =
             [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "styled set_row_values reopened output should keep sparse count");
@@ -8519,7 +8521,40 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
                 check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_b1.text_value() == "row-tail",
                     "styled set_row_values reopened output should keep row tail");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Styled", "styled set_row_values",
+            inspect_styled_set_row_values_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled set_row_values no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled set_row_values no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled set_row_values no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled set_row_values no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled set_row_values no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled set_row_values no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "styled set_row_values no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "styled set_row_values no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "styled set_row_values no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(
+            noop_output, "Styled", "styled set_row_values no-op save",
+            inspect_styled_set_row_values_output);
 
         fastxlsx::WorkbookEditor style_reject_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor reject_sheet = style_reject_editor.worksheet("Data");
@@ -9045,6 +9080,8 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-values-style-source.xlsx");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-values-style-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-column-values-style-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -9082,7 +9119,7 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "set_column_values should persist value-only edits with the source style id");
         check_contains(worksheet_xml, "column-tail",
             "set_column_values should persist untouched column tail cells");
-        check_reopened_clean_sheet_output(output, "Styled", "styled set_column_values",
+        const auto inspect_styled_set_column_values_output =
             [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "styled set_column_values reopened output should keep sparse count");
@@ -9098,7 +9135,40 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
                 check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_a2.text_value() == "column-tail",
                     "styled set_column_values reopened output should keep column tail");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Styled", "styled set_column_values",
+            inspect_styled_set_column_values_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled set_column_values no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled set_column_values no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled set_column_values no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled set_column_values no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled set_column_values no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled set_column_values no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "styled set_column_values no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "styled set_column_values no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "styled set_column_values no-op output should match the materialized output");
+        check_reopened_clean_sheet_output(
+            noop_output, "Styled", "styled set_column_values no-op save",
+            inspect_styled_set_column_values_output);
 
         fastxlsx::WorkbookEditor style_reject_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor reject_sheet = style_reject_editor.worksheet("Data");

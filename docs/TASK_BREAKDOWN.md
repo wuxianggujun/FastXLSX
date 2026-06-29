@@ -47010,6 +47010,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1160 - Pin styled value-prefix no-op public save state
+
+Type: public `WorksheetEditor` styled-source `set_row_values()` and
+`set_column_values()` value-prefix no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing styled value-prefix update paths remain stable across
+clean no-op `save_as()` calls after their successful materialized flushes.
+
+Coverage:
+- Keeps the existing styled source workbooks, source non-default style ids on
+  overwritten prefix cells, preserved row/column tails, dirty flushes, package
+  XML checks, and reopened readback checks.
+- Captures public catalog/save-state after each styled value-prefix save,
+  performs `save_as(noop_output)`, and checks handles stay clean, pending
+  counts, replacement diagnostics, clear `last_edit_error()`,
+  catalog/save-state preservation, output-entry equality with the styled saves,
+  preserved source style ids, preserved tails, and reopened used-range
+  stability.
+
+Non-goals:
+- Does not add caller-supplied non-default style writes, style migration/merge,
+  styles.xml repair, sharedStrings migration, formula repair,
+  metadata/range repair, calcChain rebuild, relationship repair,
+  Patch/materialized composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

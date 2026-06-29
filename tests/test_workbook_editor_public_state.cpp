@@ -27900,6 +27900,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
             "fastxlsx-workbook-editor-public-worksheet-shift-memory-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-memory-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-memory-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -27949,7 +27951,7 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "save_as after failed insert_rows memory-budget mutation should copy source entries");
-    check_reopened_clean_sheet_output(output, "Data", "shift memory guard failure",
+    const auto inspect_reopened_shift_memory_guard_failure =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 2,
                 "shift memory guard failure reopened output should keep source sparse count");
@@ -27965,7 +27967,39 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
                 "shift memory guard failure reopened output should read original formula");
             check(!reopened_sheet.try_cell("A3").has_value(),
                 "shift memory guard failure reopened output should keep rejected shift absent");
-        });
+        };
+    check_reopened_clean_sheet_output(output, "Data", "shift memory guard failure",
+        inspect_reopened_shift_memory_guard_failure);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "shift memory guard failure noop save should keep sheet and editor clean");
+    check(editor.pending_change_count() == 0,
+        "shift memory guard failure noop save should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "shift memory guard failure noop save should not expose dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "shift memory guard failure noop save should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift memory guard failure noop save should not expose dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "shift memory guard failure noop save should not expose dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift memory guard failure noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "shift memory guard failure noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "shift memory guard failure noop save should keep output entries stable");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "shift memory guard failure noop save",
+        inspect_reopened_shift_memory_guard_failure);
 }
 
 void test_public_worksheet_editor_options_guard_failure_preserves_state()

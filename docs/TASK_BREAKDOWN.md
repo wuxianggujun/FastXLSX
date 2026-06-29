@@ -42540,6 +42540,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1024 - Pin failed shift memory-guard no-op save stability
+
+Type: public `WorksheetEditor` failed shift memory-guard no-op-save
+stability regression.
+
+Status: completed.
+
+Goal: prove a rejected `insert_rows()` formula-translation shift that exceeds
+the exact memory budget leaves sheet/editor state clean, preserves diagnostics,
+copies source output on clean save, and remains stable through a second no-op
+`save_as()`.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No formula expansion policy, automatic memory-budget sizing, rollback,
+  metadata repair, formula repair beyond existing translation attempts,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair, or
+  low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()`
+  with a no-op `save_as()` after the clean save following the rejected
+  `insert_rows()` memory-budget failure.
+- The regression verifies no pending handoff is added, dirty materialized
+  diagnostics and summaries remain empty, save-state diagnostics are preserved,
+  catalog state is preserved, output entries stay byte-stable, and reopened
+  clean-output checks still pass.
+- Updated API documentation to pin this failed shift memory-guard no-op-save
+  boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

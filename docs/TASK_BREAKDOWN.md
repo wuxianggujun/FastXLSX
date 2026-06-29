@@ -44509,6 +44509,36 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1086 - Pin basic second-flush no-op public save state
+
+Type: public `WorksheetEditor` basic materialized second-flush no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the basic dirty-state and same-handle saved-session paths preserve
+public catalog/save-state snapshots across clean no-op saves after their second
+successful materialized flush.
+
+Acceptance:
+- The dirty-state test now snapshots catalog/save-state after a post-save dirty
+  mutation is flushed to its second output and verifies a no-op save keeps the
+  materialized handle clean and output entries byte-stable.
+- The same-handle test now snapshots catalog/save-state after a post-save edit
+  on the original borrowed handle is flushed to its second output and verifies a
+  no-op save keeps the handle clean and output entries byte-stable.
+- Documentation records this as narrow save-state coverage for existing basic
+  materialized second-flush no-op saves, not new mutation semantics, source
+  reload, formula evaluation, broader shift semantics, metadata repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

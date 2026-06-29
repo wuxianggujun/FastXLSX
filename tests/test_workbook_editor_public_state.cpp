@@ -2663,6 +2663,8 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-dirty-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-dirty-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-dirty-second-noop.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -2761,6 +2763,31 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "dirty-again",
         "post-save dirty WorksheetEditor mutation should persist on a later save_as");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "dirty state second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "dirty state second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "dirty state second no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "dirty state second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "dirty state second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "dirty state second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "dirty state second no-op output should match the second output");
+
     check_reopened_clean_sheet_output(second_output, "Data", "dirty state second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
@@ -2792,6 +2819,8 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
         artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-second-noop.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -2849,6 +2878,31 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
         "second output should retain prior materialized sparse state");
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
         "second output should contain the post-save same-handle edit");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "same-handle second no-op save should keep the handle clean");
+    check(editor.pending_change_count() == 2,
+        "same-handle second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "same-handle second no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "same-handle second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "same-handle second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "same-handle second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "same-handle second no-op output should match the second output");
+
     check_reopened_clean_sheet_output(second_output, "Data", "same-handle second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,

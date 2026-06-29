@@ -46211,6 +46211,42 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1137 - Pin initializer-list batch second no-op public save state
+
+Type: public `WorksheetEditor` initializer-list batch dirty-flush second
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing initializer-list batch overload path remains stable
+across a second clean no-op `save_as()` after flushing the materialized
+worksheet once and saving a first no-op output.
+
+Coverage:
+- Keeps the existing initializer-list `set_cells()`, `set_cell_values()`,
+  `clear_cell_values()`, and `erase_cells()` sequence, duplicate-coordinate
+  later-wins semantics, explicit B1 blank, inserted D4 boolean, missing-only
+  F6/H8 behavior, first dirty flush, reopened readback checks, and first clean
+  no-op save.
+- Captures public catalog/save-state after the first no-op save, performs
+  `save_as(second_noop_output)`, and checks pending counts, replacement
+  diagnostics, clear `last_edit_error()`, catalog/save-state preservation,
+  output-entry equality with the first no-op output, and reopened output
+  stability.
+
+Non-goals:
+- Does not add transaction batching, duplicate coalescing beyond existing
+  later-wins behavior, dense batch writes, missing-cell synthesis, source
+  reload, metadata/range repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, Patch/materialized composition, or low-memory
+  large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

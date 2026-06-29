@@ -46082,6 +46082,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1133 - Pin contains_cell second no-op public save state
+
+Type: public `WorksheetEditor` `contains_cell()` dirty-flush second no-op-save
+public state regression.
+
+Status: completed.
+
+Goal: prove the existing `contains_cell()` represented-state inspection path
+remains stable across a second clean no-op `save_as()` after flushing the
+materialized worksheet once and saving a first no-op output.
+
+Coverage:
+- Keeps the existing source-backed, missing, inserted, explicit-blank, erased,
+  invalid row/column, strict A1 lookup, prior diagnostic preservation, dirty
+  projection save, reopened readback/membership checks, and first clean no-op
+  save.
+- Captures public catalog/save-state after the first no-op save, performs
+  `save_as(second_noop_output)`, and checks pending counts, replacement
+  diagnostics, preserved prior diagnostic, catalog/save-state preservation, and
+  output-entry equality with the first no-op output.
+
+Non-goals:
+- Does not add dense membership indexes, missing-cell synthesis, coordinate
+  repair or clamping, source reload, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

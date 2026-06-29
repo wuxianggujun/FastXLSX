@@ -27526,6 +27526,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -27615,7 +27617,7 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
     check_not_contains(untouched_xml, R"(r="D2")",
         "cross-handle delete_columns save_as should not shift Untouched dirty columns");
 
-    check_reopened_shift_output(output, "cross-handle delete_columns Data",
+    const auto inspect_reopened_cross_handle_delete_columns_data =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 2,
                 "cross-handle delete_columns Data reopened output should keep sparse count");
@@ -27633,10 +27635,9 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
                     !reopened_sheet.try_cell("A2").has_value() &&
                     !reopened_sheet.try_cell("D2").has_value(),
                 "cross-handle delete_columns Data reopened output should keep old coordinates absent");
-        });
+        };
 
-    check_reopened_clean_sheet_output(output, "Untouched",
-        "cross-handle delete_columns Untouched",
+    const auto inspect_reopened_cross_handle_delete_columns_untouched =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "cross-handle delete_columns Untouched reopened output should keep sparse count");
@@ -27656,7 +27657,46 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
                 "cross-handle delete_columns Untouched reopened output should keep dirty coordinate");
             check(!reopened_sheet.try_cell("D2").has_value(),
                 "cross-handle delete_columns Untouched reopened output should not shift columns");
-        });
+        };
+
+    check_reopened_shift_output(output, "cross-handle delete_columns Data",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "cross-handle delete_columns Untouched",
+        inspect_reopened_cross_handle_delete_columns_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_columns noop save should keep both flushed handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "cross-handle delete_columns noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "cross-handle delete_columns noop save should keep aggregate dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_columns noop save should keep dirty memory estimate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_columns noop save should keep materialized summaries empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "cross-handle delete_columns noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "cross-handle delete_columns noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "cross-handle delete_columns noop save should keep output entries stable");
+    check_reopened_shift_output(noop_output, "cross-handle delete_columns Data noop save",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "cross-handle delete_columns Untouched noop save",
+        inspect_reopened_cross_handle_delete_columns_untouched);
 }
 
 void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()

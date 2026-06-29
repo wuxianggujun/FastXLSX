@@ -787,11 +787,13 @@ handle, and both first/second outputs reopen with isolated shifted sparse state.
 The optional `try_worksheet("Data")` matching reacquire path now carries the
 same saved-session proof, including later shared-session shift/save and reopened
 combined sparse readback.
-That saved-session no-op-save stability now has a delete-column counterpart as
-well: after `WorksheetEditor::delete_columns()` saves the shifted source-backed
-number, translated formula, and dirty tail, a clean matching reacquire keeps
-pending materialized diagnostics empty and a later no-op `save_as()` reuses the
-first saved delete-column output byte-for-byte.
+That saved-session no-op-save stability now has delete-side row and column
+counterparts as well: after `WorksheetEditor::delete_rows()` saves the shifted
+source-backed row, translated formula, and dirty tail, and after
+`WorksheetEditor::delete_columns()` saves the shifted source-backed number,
+translated formula, and dirty tail, clean matching reacquire keeps pending
+materialized diagnostics empty and a later no-op `save_as()` reuses the first
+saved delete output byte-for-byte.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

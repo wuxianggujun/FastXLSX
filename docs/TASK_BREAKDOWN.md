@@ -41811,6 +41811,34 @@ cleanly, a later no-op `save_as()` keeps both handles clean, leaves
 diagnostics empty, writes decompressed package entries identical to the first
 save, and still reopens to the expected delete-column shifted sparse layout.
 
+### P8.1001 - Pin delete-row reacquire no-op save stability
+
+Type: public `WorksheetEditor` delete-row saved-session no-op-save stability
+regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove a clean matching-option `worksheet("Data")` reacquire after a saved
+`delete_rows()` sparse shift remains no-op-save stable, reuses the first saved
+delete-row output byte-for-byte, keeps pending materialized diagnostics empty,
+and does not add another materialized handoff before the next valid mutation.
+
+Non-goals: session cloning, source reload, formula repair/evaluation, metadata
+synchronization, calcChain rebuild, sharedStrings/styles migration,
+Patch/materialized sparse-session composition, or low-memory random editing.
+
+Acceptance: after the first saved delete-row shift output is reacquired cleanly,
+a later no-op `save_as()` keeps both handles clean, leaves `last_edit_error()`
+clear, keeps pending worksheet edits and materialized diagnostics empty, writes
+decompressed package entries identical to the first save, and still reopens to
+the expected delete-row shifted sparse layout.
+
 Non-goals:
 - No transaction history, session cloning, metadata repair,
   Patch/materialized sparse-session composition, formula/range/table sync,

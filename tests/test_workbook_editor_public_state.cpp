@@ -23547,6 +23547,111 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
         });
 }
 
+void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-rows-reacquire-noop-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-reacquire-noop-first-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-reacquire-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(4, 3, fastxlsx::CellValue::formula("A2+B4"));
+    sheet.set_cell(4, 2, fastxlsx::CellValue::text("tail-b4"));
+    sheet.delete_rows(1, 1);
+    check(sheet.has_pending_changes(),
+        "delete_rows reacquire noop save should dirty the borrowed handle before the first save");
+    check(sheet.cell_count() == 3,
+        "delete_rows reacquire noop save should keep sparse count after the first shift");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a2",
+        "delete_rows reacquire noop save should expose the shifted source row before save");
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "A1+B3",
+        "delete_rows reacquire noop save should expose the translated formula before save");
+    check(sheet.get_cell("B3").text_value() == "tail-b4",
+        "delete_rows reacquire noop save should expose the shifted dirty cell before save");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows reacquire noop save first save should clean the original borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "delete_rows reacquire noop save first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "delete_rows reacquire noop save first save should clear dirty materialized diagnostics");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "delete_rows reacquire noop save should return the saved clean materialized session");
+    check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
+        "delete_rows reacquire noop save should preserve sparse count on both handles");
+    check(reacquired.get_cell("A1").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A1").text_value() == "placeholder-a2",
+        "delete_rows reacquire noop save should reuse the saved shifted source row");
+    check(reacquired.get_cell("B3").text_value() == "tail-b4" &&
+            sheet.get_cell("B3").text_value() == "tail-b4",
+        "delete_rows reacquire noop save should reuse the saved shifted dirty cell");
+    const fastxlsx::CellValue reacquired_formula = reacquired.get_cell("C3");
+    check(reacquired_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reacquired_formula.text_value() == "A1+B3" &&
+            sheet.get_cell("C3").text_value() == "A1+B3",
+        "delete_rows reacquire noop save should reuse the saved translated formula");
+    check(!reacquired.try_cell("B1").has_value() && !sheet.try_cell("B1").has_value() &&
+            !reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value() &&
+            !reacquired.try_cell("B4").has_value() && !sheet.try_cell("B4").has_value() &&
+            !reacquired.try_cell("C4").has_value() && !sheet.try_cell("C4").has_value(),
+        "delete_rows reacquire noop save should keep deleted and old coordinates absent on both handles");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "delete_rows reacquire noop save should keep both handles clean");
+    check(editor.pending_change_count() == 1,
+        "delete_rows reacquire noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "delete_rows reacquire noop save should keep dirty materialized diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows reacquire noop save should keep diagnostics clear");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == first_entries,
+        "delete_rows reacquire noop output should match the first save");
+    check_reopened_shift_output(noop_output, "delete_rows reacquire noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "delete_rows reacquire noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "delete_rows reacquire noop save reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a2",
+                "delete_rows reacquire noop save reopened output should keep shifted source A2");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b3.text_value() == "tail-b4",
+                "delete_rows reacquire noop save reopened output should keep shifted dirty cell");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "A1+B3",
+                "delete_rows reacquire noop save reopened output should keep translated formula");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value() &&
+                    !reopened_sheet.try_cell("C4").has_value(),
+                "delete_rows reacquire noop save reopened output should keep deleted and old coordinates absent");
+        });
+}
+
 void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
 {
     const std::filesystem::path source =
@@ -28050,6 +28155,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_session();
             test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_saved_session();
+            test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_saved_session();
             test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session();

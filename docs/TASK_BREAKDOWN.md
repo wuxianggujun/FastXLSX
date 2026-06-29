@@ -41952,17 +41952,39 @@ handle clean, preserve catalog views and pending materialized diagnostics, write
 decompressed package entries identical to the first save on a later no-op
 `save_as()`, and still reopen to the expected shifted sparse layout.
 
-Non-goals:
-- No transaction history, session cloning, metadata repair,
-  Patch/materialized sparse-session composition, formula/range/table sync,
-  calcChain rebuild, sharedStrings/styles migration, or low-memory large-file
-  random editing.
+### P8.1006 - Pin invalid-read no-op save stability
 
-Acceptance:
+Type: public `WorksheetEditor` saved-session invalid-read no-op-save stability
+regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove invalid read failures after a saved `insert_rows()` sparse shift do
+not poison the clean materialized session or a later no-op `save_as()`.
+
+Non-goals: tolerant coordinate parsing, range clamping, session cloning, source
+reload, formula repair/evaluation, metadata synchronization, calcChain rebuild,
+sharedStrings/styles migration, Patch/materialized sparse-session composition,
+or low-memory random editing.
+
+Acceptance: rejected row/column, A1, range, row/column snapshot,
+coordinate-batch, and valid-missing `get_cell()` reads leave `last_edit_error()`
+clear, keep saved/reacquired handles clean, preserve catalog views and pending
+materialized diagnostics, write decompressed package entries identical to the
+first save on a later no-op `save_as()`, and still reopen to the expected
+shifted sparse layout.
+
+Verification:
 - `git diff --check` passes.
 - `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
-- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_shard_tests.exe --shard=public` passes.
-- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public$" --output-on-failure` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
 ## 并行拆分建议
 

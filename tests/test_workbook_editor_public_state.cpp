@@ -24541,6 +24541,129 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preserves_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-noop-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-noop-first-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire invalid reads noop save first save should clean the borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire invalid reads noop save first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire invalid reads noop save first save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire invalid reads noop save first save should keep diagnostics clear");
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "shift reacquire invalid reads noop save matching reacquire should stay clean before failures");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire invalid reads noop save matching reacquire should reuse saved shifted state");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_reads =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
+        "shift reacquire invalid reads noop save should reject row-zero try_cell on the original handle");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell(1, 0); }),
+        "shift reacquire invalid reads noop save should reject column-zero get_cell on the reacquired handle");
+    check(threw_fastxlsx_error([&] { (void)sheet.try_cell("a1"); }),
+        "shift reacquire invalid reads noop save should reject lowercase A1 reads");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("XFE1"); }),
+        "shift reacquire invalid reads noop save should reject A1 column overflow");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "shift reacquire invalid reads noop save should reject invalid CellRange reads");
+    check(threw_fastxlsx_error([&] { (void)reacquired.sparse_cells("B2:A1"); }),
+        "shift reacquire invalid reads noop save should reject reversed A1 range reads");
+    check(threw_fastxlsx_error([&] {
+        const std::array<fastxlsx::WorksheetCellReference, 2> invalid_batch {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1048577, 1},
+        };
+        (void)sheet.sparse_cells(invalid_batch);
+    }), "shift reacquire invalid reads noop save should reject invalid coordinate batch reads");
+    check(threw_fastxlsx_error([&] { (void)sheet.row_cells(0); }),
+        "shift reacquire invalid reads noop save should reject row_cells row zero");
+    check(threw_fastxlsx_error([&] { (void)reacquired.column_cells(16385); }),
+        "shift reacquire invalid reads noop save should reject column_cells column overflow");
+    check(threw_fastxlsx_error([&] { (void)reacquired.get_cell("D4"); }),
+        "shift reacquire invalid reads noop save should reject valid but missing get_cell reads");
+
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire invalid reads noop save should not update last_edit_error");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire invalid reads noop save should keep both handles clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire invalid reads noop save should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire invalid reads noop save should not dirty materialized diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
+        "shift reacquire invalid reads noop save");
+    check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
+        "shift reacquire invalid reads noop save should preserve sparse counts");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 3, 2,
+        "shift reacquire invalid reads noop save should preserve shifted bounds");
+    check(reacquired.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire invalid reads noop save should preserve shifted source cells");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "shift reacquire invalid reads noop save should keep old row coordinates absent");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire invalid reads noop save should keep both handles clean after no-op save");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire invalid reads noop save should still not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire invalid reads noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire invalid reads noop save should keep diagnostics clear after save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == first_entries,
+        "shift reacquire invalid reads noop output should match the first save");
+    check_reopened_shift_output(noop_output, "shift reacquire invalid reads noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire invalid reads noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "shift reacquire invalid reads noop save reopened output should expose first-shift bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "shift reacquire invalid reads noop save reopened output should keep B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire invalid reads noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire invalid reads noop save reopened output should omit later and old coordinates");
+        });
+}
+
 void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session()
 {
     const std::filesystem::path source =
@@ -28529,6 +28652,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_session();
+            test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session();
             test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_session();
             test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses_session();

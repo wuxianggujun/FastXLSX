@@ -42789,6 +42789,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1031 - Pin row rich-formula shift no-op save stability
+
+Type: public `WorksheetEditor` row formula-translation no-op-save stability
+regression.
+
+Status: completed.
+
+Goal: prove a dirty rich formula moved by `insert_rows()` persists translated
+formula XML, then remains stable through a second no-op `save_as()`.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No formula evaluation, broad parser semantics, unsupported-reference repair,
+  metadata repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()`
+  row-shift branch with a second no-op `save_as()`.
+- The regression verifies the materialized handle stays clean, dirty
+  materialized diagnostics and summaries remain empty, public save state and
+  catalog state are preserved, output entries stay byte-stable, and reopened
+  translated-formula checks still pass.
+- Updated API documentation to pin this row formula-translation no-op-save
+  boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

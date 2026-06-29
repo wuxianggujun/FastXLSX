@@ -17724,6 +17724,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-reacquire-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-reacquire-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-reacquire-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -17838,6 +17840,28 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         "renamed formula reacquire second output should omit inserted blank B1");
     check_not_contains(second_worksheet_xml, R"(r="B4")",
         "renamed formula reacquire second output should omit inserted blank B4");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula reacquire no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula reacquire no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula reacquire no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula reacquire no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula reacquire no-op save should keep output entries stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -20385,6 +20409,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-reacquire-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-reacquire-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-reacquire-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -20529,6 +20555,28 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
         "renamed formula delete-column reacquire second output should omit the old formula coordinate");
     check_not_contains(second_worksheet_xml, R"(r="A2")",
         "renamed formula delete-column reacquire second output should omit inserted blank A2");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-column reacquire no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-column reacquire no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-column reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula delete-column reacquire no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula delete-column reacquire no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula delete-column reacquire no-op save should keep output entries stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -21936,6 +21984,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-reacquire-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-reacquire-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-reacquire-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -22082,6 +22132,28 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
         "renamed formula delete-row reacquire second output should omit inserted blank B1");
     check_not_contains(second_worksheet_xml, R"(r="D2")",
         "renamed formula delete-row reacquire second output should omit the old formula coordinate");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula delete-row reacquire no-op save should keep both styled handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed formula delete-row reacquire no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed formula delete-row reacquire no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed formula delete-row reacquire no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "renamed formula delete-row reacquire no-op save should keep output entries stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

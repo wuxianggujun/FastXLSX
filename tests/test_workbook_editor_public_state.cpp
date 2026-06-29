@@ -4815,6 +4815,8 @@ void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
         artifact("fastxlsx-workbook-editor-public-sparse-batch-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-sparse-batch-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sparse-batch-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -4950,8 +4952,35 @@ void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "batch sparse_cells no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "batch sparse_cells no-op output should match the first materialized output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "batch sparse_cells second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "batch sparse_cells second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "batch sparse_cells second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "batch sparse_cells second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "batch sparse_cells second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "batch sparse_cells second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "batch sparse_cells second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "batch sparse_cells second no-op output should match the first no-op output");
 }
 
 void test_public_worksheet_editor_used_range_tracks_sparse_bounds()

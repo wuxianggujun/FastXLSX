@@ -4492,6 +4492,8 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         artifact("fastxlsx-workbook-editor-public-sparse-range-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-sparse-range-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sparse-range-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -4605,8 +4607,35 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "range sparse_cells no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "range sparse_cells no-op output should match the first materialized output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "range sparse_cells second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "range sparse_cells second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "range sparse_cells second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range sparse_cells second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "range sparse_cells second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "range sparse_cells second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "range sparse_cells second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "range sparse_cells second no-op output should match the first no-op output");
 }
 
 void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()

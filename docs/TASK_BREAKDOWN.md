@@ -45948,6 +45948,39 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1129 - Pin sparse_cells range second no-op public save state
+
+Type: public `WorksheetEditor` `sparse_cells(CellRange)` dirty-flush second
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing `sparse_cells(CellRange)` owning snapshot path remains
+stable across a second clean no-op `save_as()` after flushing the materialized
+worksheet once and saving a first no-op output.
+
+Coverage:
+- Keeps the existing in-range sparse snapshot, invalid range rejection checks,
+  outside-range D4 record, explicit B3 blank, inserted C3, erased A2,
+  post-snapshot B1 mutation, first dirty flush, reopened readback/absence
+  checks, and first clean no-op save.
+- Captures public catalog/save-state after the first no-op save, performs
+  `save_as(second_noop_output)`, and checks pending counts, replacement
+  diagnostics, clear `last_edit_error()`, catalog/save-state preservation, and
+  output-entry equality with the first no-op output.
+
+Non-goals:
+- Does not add dense range snapshots, missing-cell synthesis, range repair or
+  clamping, source reload, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, Patch/materialized
+  composition, or low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

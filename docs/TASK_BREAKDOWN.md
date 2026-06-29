@@ -46973,6 +46973,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1159 - Pin value-prefix guardrail recovery no-op public save state
+
+Type: public `WorksheetEditor` `set_row_values()` and `set_column_values()`
+exact `max_cells` / `memory_budget_bytes` recovery no-op-save public state
+regression.
+
+Status: completed.
+
+Goal: prove the existing row/column value-prefix guardrail recovery paths
+remain stable across clean no-op `save_as()` calls after their successful
+materialized flushes.
+
+Coverage:
+- Keeps the existing exact `max_cells` and exact source memory-budget
+  value-prefix failures, smaller in-budget recovery prefix writes, dirty
+  flushes, package XML checks, and reopened readback checks for
+  `set_row_values()` and `set_column_values()`.
+- Captures public catalog/save-state after each recovery save, performs
+  `save_as(noop_output)`, and checks handles stay clean, pending counts,
+  replacement diagnostics, clear `last_edit_error()`, catalog/save-state
+  preservation, output-entry equality with the recovery saves, rejected payload
+  absence, preserved source-backed tails/non-target cells, and reopened
+  recovery-prefix stability.
+
+Non-goals:
+- Does not add value-prefix transactions, dense row/column writes, guardrail
+  auto-sizing, process-RSS accounting, row/column metadata synchronization,
+  style migration, sharedStrings migration, formula repair, calcChain rebuild,
+  relationship repair, Patch/materialized composition, or low-memory large-file
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

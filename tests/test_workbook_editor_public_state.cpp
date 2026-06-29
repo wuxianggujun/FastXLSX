@@ -25545,6 +25545,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
 
     const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
             !reacquired.has_pending_changes(),
@@ -25558,6 +25560,9 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
         "shift reacquire after retry noop save should keep dirty diagnostics clear");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire after retry noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire after retry noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == retry_entries,

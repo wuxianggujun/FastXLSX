@@ -4815,6 +4815,8 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
         write_two_sheet_source("fastxlsx-workbook-editor-public-contains-cell-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-contains-cell-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-contains-cell-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -4929,6 +4931,32 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
                     reopened_d4.text_value() == "contains-new",
                 "contains_cell reopened output should read inserted D4 text");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "contains_cell no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "contains_cell no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "contains_cell no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "contains_cell no-op save should not queue replacement diagnostics");
+    check(editor.last_edit_error() == prior_error,
+        "contains_cell no-op save should preserve the prior diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "contains_cell no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "contains_cell no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "contains_cell no-op output should match the first materialized output");
 }
 
 void test_public_worksheet_editor_row_and_column_cells_snapshot()

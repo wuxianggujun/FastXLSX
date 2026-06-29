@@ -45214,6 +45214,40 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1108 - Pin contains_cell dirty-projection first-flush no-op public save state
+
+Type: public `WorksheetEditor` contains-cell dirty-projection first
+materialized flush no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing `contains_cell()` dirty-projection path preserves
+public catalog/save-state snapshots across a clean no-op save after the first
+materialized flush.
+
+Acceptance:
+- The contains-cell test now snapshots catalog/save-state after source-backed
+  membership, explicit blanks, erased records, legal misses, failed mutations,
+  and invalid membership reads have already exercised the existing represented
+  sparse-cell semantics.
+- The no-op save verifies the materialized handle stays clean, pending
+  materialized diagnostics remain empty, pending counts and replacement
+  diagnostics are preserved, catalog views are unchanged, the prior
+  `last_edit_error()` stays stable, and output entries remain byte-stable
+  against the first materialized output.
+- Documentation records this as narrow save-state coverage for the existing
+  `contains_cell()` first-flush no-op save, not dense membership indexes,
+  missing-cell synthesis, relaxed A1 parsing, diagnostic clearing policy
+  changes, metadata repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition, or low-memory large-file
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

@@ -822,6 +822,11 @@ rejected row/column/A1 `set_cell()` and `erase_cell()` calls preserve the
 invalid-reference diagnostic without dirtying saved/reacquired shifted handles,
 and a later no-op `save_as()` reuses the first shifted output byte-for-byte
 without leaking rejected payloads.
+Invalid row/column shift failures now close the same no-op-save shape: rejected
+`insert_rows()` / `delete_rows()` / `insert_columns()` / `delete_columns()`
+bounds preserve the shift diagnostic without dirtying saved/reacquired handles,
+and a later no-op `save_as()` still reuses the first shifted output
+byte-for-byte.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

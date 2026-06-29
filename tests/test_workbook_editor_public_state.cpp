@@ -14055,6 +14055,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -14273,6 +14275,58 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             reopened_post_save_cell->kind() == fastxlsx::CellValueKind::Text &&
             reopened_post_save_cell->text_value() == "post-save-c5",
         "renamed full-calc formula audit saved reacquire reopened output should read the later text cell");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed full-calc formula audit saved reacquire no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 4,
+        "renamed full-calc formula audit saved reacquire no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc formula audit saved reacquire no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "renamed full-calc formula audit saved reacquire no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "renamed full-calc formula audit saved reacquire no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "renamed full-calc formula audit saved reacquire no-op output should match the second output");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "renamed full-calc formula audit saved reacquire no-op materialized audit");
+    check(noop_audits.size() == 2,
+        "renamed full-calc formula audit saved reacquire no-op should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        "renamed full-calc formula audit saved reacquire no-op shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire no-op shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed full-calc formula audit saved reacquire no-op source audit");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire no-op output");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
+    const std::optional<fastxlsx::CellValue> reopened_noop_post_save_cell =
+        reopened_noop_sheet.try_cell("C5");
+    check(reopened_noop_post_save_cell.has_value() &&
+            reopened_noop_post_save_cell->kind() == fastxlsx::CellValueKind::Text &&
+            reopened_noop_post_save_cell->text_value() == "post-save-c5",
+        "renamed full-calc formula audit saved reacquire no-op reopened output should read the later text cell");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_failed_save_preserve_state()

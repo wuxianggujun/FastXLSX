@@ -42855,6 +42855,34 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1033 - Pin row #REF formula shift no-op save stability
+
+Type: public `WorksheetEditor` row formula-translation boundary no-op-save
+stability regression.
+
+Status: completed.
+
+Goal: prove a dirty formula moved by `delete_rows()` persists row-out-of-bounds
+`#REF!` references, then remains stable through a second no-op `save_as()`.
+
+Acceptance:
+- `test_public_worksheet_editor_shift_formula_out_of_bounds_references()` now
+  covers the row-delete `#REF!` branch with a second no-op `save_as()` after the
+  initial materialized save.
+- The no-op save verifies the materialized handle stays clean, no additional
+  materialized handoff is queued, public save state and catalog state are
+  preserved, and output entries remain byte-stable.
+- Documentation records this as narrow no-op-save hygiene for the existing row
+  formula-translation boundary, not formula evaluation, broad parser semantics,
+  metadata repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

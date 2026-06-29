@@ -26405,6 +26405,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire file-parent failed save matching reacquire after retry should keep old coordinates absent");
 
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
     check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
             !reacquired.has_pending_changes(),
@@ -26418,6 +26420,9 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
         "shift reacquire file-parent failed save noop save should keep dirty diagnostics clear");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire file-parent failed save noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift reacquire file-parent failed save noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == second_entries,

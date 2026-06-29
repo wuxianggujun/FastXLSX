@@ -3511,6 +3511,8 @@ void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
         write_two_sheet_source("fastxlsx-workbook-editor-public-get-cell-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-get-cell-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-get-cell-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -3562,6 +3564,32 @@ void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
             check(!reopened_sheet.try_cell("E5").has_value(),
                 "get_cell explicit blank reopened output should keep unrelated missing cells absent");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "get_cell explicit blank no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "get_cell explicit blank no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "get_cell explicit blank no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "get_cell explicit blank no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "get_cell explicit blank no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "get_cell explicit blank no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "get_cell explicit blank no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "get_cell explicit blank no-op output should match the first materialized output");
 }
 
 void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()

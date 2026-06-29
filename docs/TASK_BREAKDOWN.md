@@ -41897,6 +41897,34 @@ clean, leaves `last_edit_error()` clear, keeps pending worksheet edits and
 materialized diagnostics empty, writes decompressed package entries identical to
 the first save, and still reopens to the expected shifted sparse layout.
 
+### P8.1004 - Pin option-mismatch no-op save stability
+
+Type: public `WorksheetEditor` saved-session option-mismatch no-op-save
+stability regression.
+
+Status: completed.
+
+Touched files:
+- `tests/test_workbook_editor_public_state.cpp`
+- `docs/API_DESIGN_AND_DOCUMENTATION.md`
+- `docs/NEXT_STEPS.md`
+- `docs/TASK_BREAKDOWN.md`
+
+Goal: prove mismatched `WorksheetEditorOptions` failures after a saved
+`insert_rows()` sparse shift do not poison the clean materialized session or a
+later no-op `save_as()`.
+
+Non-goals: option migration, session cloning, source reload,
+formula repair/evaluation, metadata synchronization, calcChain rebuild,
+sharedStrings/styles migration, Patch/materialized sparse-session composition,
+or low-memory random editing.
+
+Acceptance: rejected `try_worksheet("Data", options)` and
+`worksheet("Data", options)` calls leave `last_edit_error()` clear, keep the
+saved handle clean, preserve catalog views and pending materialized diagnostics,
+write decompressed package entries identical to the first save on a later no-op
+`save_as()`, and still reopen to the expected shifted sparse layout.
+
 Non-goals:
 - No transaction history, session cloning, metadata repair,
   Patch/materialized sparse-session composition, formula/range/table sync,

@@ -803,6 +803,11 @@ The direct insert-column side now has the same no-op-save proof:
 translated formula, and a dirty tail, then clean matching reacquire keeps
 pending materialized diagnostics empty and a later no-op `save_as()` reuses the
 first insert-column output byte-for-byte.
+Saved-session option-mismatch failures now cover the same no-op-save boundary:
+rejected mismatched `WorksheetEditorOptions` leave `last_edit_error()` clear,
+keep the saved shifted handle clean, preserve catalog and materialized
+diagnostics, and a later no-op `save_as()` reuses the first shifted output
+byte-for-byte.
 The corresponding post-save shift option-mismatch path is pinned too:
 mismatched `WorksheetEditorOptions` fail against the saved shifted session
 without updating `last_edit_error()`, dirtying materialized diagnostics, losing

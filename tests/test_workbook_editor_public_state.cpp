@@ -24082,6 +24082,96 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
         });
 }
 
+void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_preserves_saved_session()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-noop-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-noop-first-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire option mismatch noop save first save should clean the borrowed handle");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire option mismatch noop save first save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire option mismatch noop save first save should clear dirty diagnostics");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_option_mismatch =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    fastxlsx::WorksheetEditorOptions mismatched_options;
+    mismatched_options.max_cells = 2;
+    check(threw_fastxlsx_error([&] {
+        (void)editor.try_worksheet("Data", mismatched_options);
+    }), "shift reacquire option mismatch noop save try_worksheet should reject different options");
+    check(threw_fastxlsx_error([&] {
+        (void)editor.worksheet("Data", mismatched_options);
+    }), "shift reacquire option mismatch noop save worksheet should reject different options");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire option mismatch noop save should not update last_edit_error");
+    check(!sheet.has_pending_changes(),
+        "shift reacquire option mismatch noop save should leave the saved handle clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire option mismatch noop save should not add materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire option mismatch noop save should not dirty materialized diagnostics");
+    check_workbook_editor_public_catalog_preserved(editor, catalog_before_option_mismatch,
+        "shift reacquire option mismatch noop save");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire option mismatch noop save should preserve the saved shifted row");
+    check(!sheet.try_cell("A2").has_value(),
+        "shift reacquire option mismatch noop save should keep old shifted rows absent");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire option mismatch noop save should keep the original handle clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire option mismatch noop save should still not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire option mismatch noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire option mismatch noop save should keep diagnostics clear after save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == first_entries,
+        "shift reacquire option mismatch noop output should match the first save");
+    check_reopened_shift_output(noop_output, "shift reacquire option mismatch noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire option mismatch noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "shift reacquire option mismatch noop save reopened output should expose first-shift bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "shift reacquire option mismatch noop save reopened output should keep B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire option mismatch noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire option mismatch noop save reopened output should omit later and old coordinates");
+        });
+}
+
 void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session()
 {
     const std::filesystem::path source =
@@ -28348,6 +28438,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session();
             test_public_worksheet_editor_shift_try_reacquire_noop_save_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_saved_session();
+            test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session();
             test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_session();
             test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session();

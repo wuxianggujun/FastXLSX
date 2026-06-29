@@ -42395,6 +42395,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1020 - Pin missing-erase guardrail no-op save stability
+
+Type: public `WorksheetEditor` missing-erase guardrail cleanup
+no-op-save stability regression.
+
+Status: completed.
+
+Goal: prove missing-cell erase after exact `max_cells` and exact
+`memory_budget_bytes` insertion failures stays clean through a clean save and a
+second no-op `save_as()`.
+
+Scope:
+- public `WorkbookEditor` / `WorksheetEditor` state only.
+- No production logic changes.
+- No tombstones, missing-cell synthesis, dense deletion, guard bypass,
+  rollback, metadata repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, Patch/materialized sparse-session
+  composition, or low-memory random editing.
+
+Output:
+- Extended `test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_clean()`
+  so both the exact `max_cells` and exact `memory_budget_bytes` missing-erase
+  clean-save paths are followed by no-op `save_as()` calls.
+- The regressions verify the rejected insertion does not leak, the missing
+  erase leaves sheet and editor clean, no pending handoff or dirty
+  materialized diagnostics appear after the no-op save, catalog state is
+  preserved, output entries stay byte-stable, and reopened clean-output checks
+  still pass.
+- Updated API documentation to pin this missing-erase guardrail cleanup
+  no-op-save boundary.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

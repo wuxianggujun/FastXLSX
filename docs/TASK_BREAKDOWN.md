@@ -46547,6 +46547,40 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1147 - Pin whole-store erase memory-budget no-op public save state
+
+Type: public `WorksheetEditor` whole-store `erase_cells()` exact
+`memory_budget_bytes` release no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing whole-store sparse erase memory-budget recovery path
+remains stable across a clean no-op `save_as()` after its successful
+materialized flush.
+
+Coverage:
+- Keeps the existing exact-memory-budget source load, rejected oversized
+  insertion, whole-store sparse erase, recovery A3 insertion within budget,
+  dirty flush, package XML checks, and reopened readback checks.
+- Captures public catalog/save-state after the recovery save, performs
+  `save_as(noop_output)`, and checks the handle stays clean, pending counts,
+  replacement diagnostics, clear `last_edit_error()`, catalog/save-state
+  preservation, output-entry equality with the recovery save, erased source
+  cells, rejected payload absence, and reopened A3 stability.
+
+Non-goals:
+- Does not add memory-budget auto-sizing, process-RSS accounting, session
+  cloning, source reload, tombstones, dense worksheet deletion, transaction
+  history, metadata/range repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, Patch/materialized composition, or
+  low-memory large-file random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

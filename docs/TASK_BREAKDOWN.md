@@ -45673,6 +45673,44 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1121 - Pin empty set-column missing-column second no-op public save state
+
+Type: public `WorksheetEditor` missing-column empty `set_column()` clean
+second no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove the existing empty-input `set_column()` path on a missing column
+clears a prior public mutation diagnostic without dirtying a clean materialized
+source worksheet, and that repeated no-op `save_as()` calls preserve public
+catalog/save-state snapshots and source-copy output.
+
+Coverage:
+- Seeds `last_edit_error()` with an invalid lowercase A1 mutation, then calls
+  `set_column(3, empty_column)` and verifies the diagnostic is cleared without
+  dirtying the materialized sheet or editor and without creating sparse column
+  metadata.
+- Performs a first clean copy-original `save_as(output)` and checks clean
+  pending counts, replacement diagnostics, empty `last_edit_error()`,
+  catalog/save-state preservation, source-entry equality, and reopened
+  source-backed Data cells.
+- Performs a second `save_as(noop_output)` from the same clean state and checks
+  the same public-state invariants plus output-entry equality with the first
+  no-op output.
+
+Non-goals:
+- Does not change represented-column clear semantics, synthesize missing
+  columns, create column metadata, add dense column writes, source reload,
+  metadata repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition, or low-memory large-file
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

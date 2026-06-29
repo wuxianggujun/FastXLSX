@@ -24642,6 +24642,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-try-reacquire-first-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-try-reacquire-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-try-reacquire-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -24731,6 +24733,25 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
         "shift try-reacquire second output should omit the old column coordinate");
     check_not_contains(second_xml, R"(r="A2")",
         "shift try-reacquire second output should keep the old row coordinate absent");
+
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift try-reacquire second no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift try-reacquire second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift try-reacquire second no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "shift try-reacquire second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "shift try-reacquire second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "shift try-reacquire second no-op output should match the second output");
 
     check_reopened_shift_output(second_output, "shift try-reacquire second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

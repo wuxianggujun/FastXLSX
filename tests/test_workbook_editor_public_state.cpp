@@ -9074,6 +9074,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
         "clear_cell_values() memory-budget release option mismatch should preserve saved blanks");
 
+    const WorkbookEditorPublicSaveStateSnapshot option_mismatch_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(option_mismatch_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release option mismatch noop save should keep handles clean");
@@ -9089,6 +9092,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release option mismatch noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release option mismatch noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        option_mismatch_save_state_before_noop,
+        "clear_cell_values() memory-budget release option mismatch noop save");
     const auto option_mismatch_entries =
         fastxlsx::test::read_zip_entries(option_mismatch_output);
     check(option_mismatch_entries == output_entries,
@@ -9129,6 +9136,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
         "clear_cell_values() memory-budget release missing query should preserve saved blanks");
 
+    const WorkbookEditorPublicSaveStateSnapshot missing_query_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(missing_query_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release missing query noop save should keep handles clean");
@@ -9144,6 +9154,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release missing query noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release missing query noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        missing_query_save_state_before_noop,
+        "clear_cell_values() memory-budget release missing query noop save");
     const auto missing_query_entries =
         fastxlsx::test::read_zip_entries(missing_query_output);
     check(missing_query_entries == output_entries,
@@ -9208,6 +9222,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
         "clear_cell_values() memory-budget release invalid reads should preserve saved blanks");
 
+    const WorkbookEditorPublicSaveStateSnapshot invalid_read_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(invalid_read_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid reads noop save should keep handles clean");
@@ -9223,6 +9240,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid reads noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release invalid reads noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        invalid_read_save_state_before_noop,
+        "clear_cell_values() memory-budget release invalid reads noop save");
     const auto invalid_read_entries =
         fastxlsx::test::read_zip_entries(invalid_read_output);
     check(invalid_read_entries == output_entries,
@@ -9298,6 +9319,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             reacquired.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
         "clear_cell_values() memory-budget release invalid mutations should preserve saved blanks");
 
+    const WorkbookEditorPublicSaveStateSnapshot invalid_mutation_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(invalid_mutation_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid mutations noop save should keep handles clean");
@@ -9313,6 +9337,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid mutations noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release invalid mutations noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        invalid_mutation_save_state_before_noop,
+        "clear_cell_values() memory-budget release invalid mutations noop save");
     const auto invalid_mutation_entries =
         fastxlsx::test::read_zip_entries(invalid_mutation_output);
     check(invalid_mutation_entries == output_entries,
@@ -9424,6 +9452,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             reacquired.get_cell("E5").text_value() == "clear-all-invalid-mutation-recovery",
         "clear_cell_values() memory-budget release invalid shifts should preserve saved cells");
 
+    const WorkbookEditorPublicSaveStateSnapshot invalid_shift_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(invalid_shift_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid shifts noop save should keep handles clean");
@@ -9439,6 +9470,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid shifts noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release invalid shifts noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        invalid_shift_save_state_before_noop,
+        "clear_cell_values() memory-budget release invalid shifts noop save");
     const auto invalid_shift_entries =
         fastxlsx::test::read_zip_entries(invalid_shift_output);
     check(invalid_shift_entries == invalid_mutation_recovery_entries,
@@ -9553,6 +9588,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
             reacquired.get_cell("E6").text_value() == "clear-all-invalid-mutation-recovery",
         "clear_cell_values() memory-budget release same-sheet guard should preserve saved cells");
 
+    const WorkbookEditorPublicSaveStateSnapshot same_sheet_guard_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
     editor.save_as(same_sheet_guard_output);
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release same-sheet guard noop save should keep handles clean");
@@ -9568,6 +9606,10 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release same-sheet guard noop save should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clear_cell_values() memory-budget release same-sheet guard noop save should not dirty summaries");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        same_sheet_guard_save_state_before_noop,
+        "clear_cell_values() memory-budget release same-sheet guard noop save");
     const auto same_sheet_guard_entries =
         fastxlsx::test::read_zip_entries(same_sheet_guard_output);
     check(same_sheet_guard_entries == invalid_shift_recovery_entries,

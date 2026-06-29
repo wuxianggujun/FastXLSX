@@ -43832,6 +43832,40 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1065 - Pin clear-all budget-release follow-on no-op public save state
+
+Type: public `WorksheetEditor` saved `clear_cell_values()` memory-budget release
+follow-on no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove saved-session preflight and same-sheet guard no-op saves after the
+existing clear-all memory-budget release path preserve the full public
+save-state snapshot.
+
+Acceptance:
+- `test_public_worksheet_editor_clear_all_memory_budget_release()` now captures
+  public save state before the option-mismatch, missing-query, invalid-read,
+  invalid-mutation, invalid-shift, and same-sheet guard no-op `save_as()` calls
+  and verifies each afterward with
+  `check_workbook_editor_public_save_state_preserved()`.
+- The existing branches still verify both materialized handles stay clean,
+  pending materialized diagnostics remain empty, `last_edit_error()` is kept or
+  preserved according to each branch, and output entries remain stable against
+  the relevant prior save.
+- Documentation records this as narrow save-state coverage for existing
+  saved-session preflight/guard no-op saves, not option migration,
+  missing-sheet creation, coordinate repair or clamping, relaxed shift
+  validation, Patch/materialized composition, new clear semantics, metadata
+  repair, formula repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ## 并行拆分建议
 
 可以并行：

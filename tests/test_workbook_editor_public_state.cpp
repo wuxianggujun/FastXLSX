@@ -18508,6 +18508,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         editor, "renamed full-calc formula audit saved reacquire source audit");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("post-save-c5"));
+    const std::size_t post_save_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire later mutation should keep diagnostics clear");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -18517,6 +18518,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire later mutation should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire later mutation should grow the sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == post_save_memory,
+        "renamed full-calc formula audit saved reacquire later mutation should report dirty memory");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -18527,7 +18530,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
                     summaries[0].planned_name == "RenamedData" &&
                     summaries[0].renamed &&
                     summaries[0].materialized_dirty &&
-                    summaries[0].materialized_cell_count == 8,
+                    summaries[0].materialized_cell_count == 8 &&
+                    summaries[0].estimated_materialized_memory_usage == post_save_memory,
                 "renamed full-calc formula audit saved reacquire later mutation summary should retain planned dirty state");
         }
     }
@@ -18707,6 +18711,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire failed save should keep old source name unavailable");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("failed-save-c5"));
+    const std::size_t failed_save_memory = reacquired.estimated_memory_usage();
     const auto check_dirty_reacquired_state = [&](std::string_view scenario) {
         const std::string label = std::string(scenario);
 
@@ -18720,7 +18725,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
                   == std::vector<std::string>{"RenamedData"},
             label + " should report the dirty planned-name session once");
         check(editor.pending_materialized_cell_count() == 8 &&
-                editor.estimated_pending_materialized_memory_usage() > 0,
+                editor.estimated_pending_materialized_memory_usage() == failed_save_memory,
             label + " should keep the dirty sparse count and memory");
         {
             const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
@@ -18732,7 +18737,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 8,
+                        summaries[0].materialized_cell_count == 8 &&
+                        summaries[0].estimated_materialized_memory_usage == failed_save_memory,
                     label + " summary should keep renamed dirty materialized state");
             }
         }

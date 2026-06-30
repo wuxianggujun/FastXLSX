@@ -1475,6 +1475,9 @@ fixture memory estimate in both aggregate diagnostics and edit summaries.
 The renamed formula-audit preserve-state helpers now carry that memory estimate
 through option, missing-query, invalid-read, invalid-mutation, invalid-shift,
 and diagnostic-recovery checks as well.
+Saved-session formula-audit reacquire paths now pin post-save mutation memory in
+both aggregate materialized diagnostics and edit summaries, including the
+failed-save retry route.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

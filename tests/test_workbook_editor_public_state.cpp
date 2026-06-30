@@ -829,6 +829,45 @@ void check_public_state_renamed_shift_formula_audit_noop_save(
         "Data!A2", "A2", "Data!B2", "B2", noop_scenario);
 }
 
+void check_public_state_renamed_clean_noop_save(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    const std::filesystem::path& noop_output,
+    const std::map<std::string, std::string>& output_entries,
+    std::string_view scenario,
+    std::size_t expected_pending_change_count,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect)
+{
+    const std::string noop_scenario = std::string(scenario) + " no-op save";
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes(),
+        noop_scenario + " should keep the materialized sheet clean");
+    check(editor.pending_change_count() == expected_pending_change_count,
+        noop_scenario + " should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        noop_scenario + " should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, noop_scenario + " should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        noop_scenario + " should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, noop_scenario);
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, noop_scenario);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        noop_scenario + " output should match the first materialized output");
+    check_reopened_clean_sheet_output(
+        noop_output, "RenamedData", noop_scenario, inspect);
+}
+
 void check_workbook_editor_no_replacement_payload_size_diagnostics(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
@@ -21136,6 +21175,8 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -21222,6 +21263,19 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
         "shift after rename reopened output should read shifted source A2");
     check(!reopened_sheet.try_cell("A2").has_value(),
         "shift after rename reopened output should keep old source coordinate absent");
+
+    check_public_state_renamed_clean_noop_save(
+        editor, sheet, noop_output, output_entries, "shift after rename", 2,
+        [](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 3,
+                "shift after rename no-op save reopened output should keep sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 3, 2,
+                "shift after rename no-op save reopened output should expose shifted bounds");
+            check(noop_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "shift after rename no-op save reopened output should read shifted source A2");
+            check(!noop_sheet.try_cell("A2").has_value(),
+                "shift after rename no-op save reopened output should keep old source coordinate absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
@@ -21233,6 +21287,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -21317,6 +21373,29 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
     check(!reopened_sheet.try_cell("D2").has_value() &&
             !reopened_sheet.try_cell("A2").has_value(),
         "renamed formula shift reopened output should keep old coordinates absent");
+
+    check_public_state_renamed_clean_noop_save(
+        editor, sheet, noop_output, output_entries, "renamed formula shift", 2,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 7,
+                "renamed formula shift no-op save reopened output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 5, 4,
+                "renamed formula shift no-op save reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_d4 =
+                noop_sheet.try_cell("D4");
+            check(noop_d4.has_value() &&
+                    noop_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_d4->text_value() == "A3+B3" &&
+                    noop_d4->has_style() &&
+                    noop_d4->style_id().value() == styled_formula_style.value(),
+                "renamed formula shift no-op save reopened output should read translated styled formula");
+            check(noop_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+                    noop_sheet.get_cell("A5").text_value() == "extra-c3",
+                "renamed formula shift no-op save reopened output should read shifted source rows");
+            check(!noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A2").has_value(),
+                "renamed formula shift no-op save reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula()
@@ -22064,6 +22143,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -22167,6 +22248,34 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
     check(!reopened_sheet.try_cell("B1").has_value() &&
             !reopened_sheet.try_cell("B2").has_value(),
         "renamed column formula shift reopened output should keep inserted blank column absent");
+
+    check_public_state_renamed_clean_noop_save(
+        editor, sheet, noop_output, output_entries, "renamed column formula shift", 2,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 7,
+                "renamed column formula shift no-op save reopened output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 3, 5,
+                "renamed column formula shift no-op save reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_e2 =
+                noop_sheet.try_cell("E2");
+            check(noop_e2.has_value() &&
+                    noop_e2->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_e2->text_value() == "B1+C1" &&
+                    noop_e2->has_style() &&
+                    noop_e2->style_id().value() == styled_formula_style.value(),
+                "renamed column formula shift no-op save reopened output should read translated styled formula");
+            const fastxlsx::CellValue noop_c1 = noop_sheet.get_cell("C1");
+            check(noop_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    noop_c1.number_value() == 1.0,
+                "renamed column formula shift no-op save reopened output should read shifted B1");
+            check(noop_sheet.get_cell("C2").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("D2").text_value() == "row2-gap-c2" &&
+                    noop_sheet.get_cell("A3").text_value() == "extra-c3",
+                "renamed column formula shift no-op save reopened output should read shifted source columns");
+            check(!noop_sheet.try_cell("B1").has_value() &&
+                    !noop_sheet.try_cell("B2").has_value(),
+                "renamed column formula shift no-op save reopened output should keep inserted blank column absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session()

@@ -52457,6 +52457,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1305 - Pin post-noop third-stage dirty memory diagnostics
+
+Type: public `WorkbookEditor` / `WorksheetEditor` post-noop dirty-memory
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Pin the dirty memory estimate before the third-stage save in the existing
+single-worksheet and multi-worksheet retry/reopen/no-op public-state paths.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`
+  and
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- Verifies post-noop single-sheet edits report
+  `estimated_pending_materialized_memory_usage()` equal to the dirty `Data`
+  session estimate.
+- Verifies post-noop multi-sheet edits report
+  `estimated_pending_materialized_memory_usage()` equal to the aggregate dirty
+  `Data` plus `Untouched` estimate.
+- Reuses the existing third-stage save, final byte-identical no-op save, and
+  source/intermediate output preservation assertions.
+
+Non-goals:
+- No save behavior change, memory-budget changes, memory-accounting redesign,
+  rollback, transaction replay, formula evaluation, cached value preservation,
+  cross-sheet dependency synchronization, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -4144,6 +4144,12 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     check(reopened.pending_materialized_cell_count() ==
             noop_data_reacquired.cell_count() + noop_untouched_reacquired.cell_count(),
         "multi-sheet retry reopen post-noop edit should aggregate dirty cell count");
+    const std::size_t post_noop_dirty_memory_usage =
+        noop_data_reacquired.estimated_memory_usage() +
+        noop_untouched_reacquired.estimated_memory_usage();
+    check(reopened.estimated_pending_materialized_memory_usage() ==
+            post_noop_dirty_memory_usage,
+        "multi-sheet retry reopen post-noop edit should aggregate dirty memory usage");
 
     reopened.save_as(third_output);
     check(!reopened_data.has_pending_changes() &&
@@ -4526,6 +4532,11 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen post-noop edit should expose Data as dirty");
     check(reopened.pending_materialized_cell_count() == after_noop_data.cell_count(),
         "single-sheet reopen post-noop edit should expose dirty cell count");
+    const std::size_t post_noop_dirty_memory_usage =
+        after_noop_data.estimated_memory_usage();
+    check(reopened.estimated_pending_materialized_memory_usage() ==
+            post_noop_dirty_memory_usage,
+        "single-sheet reopen post-noop edit should expose dirty memory usage");
 
     reopened.save_as(third_output);
     check(!reopened_data.has_pending_changes() &&

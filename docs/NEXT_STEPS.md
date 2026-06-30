@@ -154,6 +154,10 @@ unchanged.
 Fresh-reopen second-stage edits now also keep dirty memory diagnostics explicit
 for both the single-worksheet and multi-worksheet paths before their next safe
 `save_as()`.
+Post-noop third-stage edits now mirror that memory diagnostic coverage before
+their later save: single-sheet dirtiness reports the `Data` session estimate,
+while multi-sheet dirtiness reports the aggregate `Data` plus `Untouched`
+estimate.
 That same multi-worksheet public-state path now also mutates both clean sheets
 again after the no-op save, writes a third output without changing the retry,
 second-stage, or prior no-op outputs, and verifies a third no-op save remains

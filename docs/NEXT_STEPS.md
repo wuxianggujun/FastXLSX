@@ -59,6 +59,11 @@ The same generated single-sheet lane now also has
 `generated_in_memory_reopen_modify_noop_save`, which requires the final no-op
 `save_as()` output to be byte-identical to the second-stage save before running
 the same ZIP/XML, `openpyxl`, optional XlsxWriter, and optional Excel COM checks.
+Default public-state coverage now pins the same single-sheet
+edit/save/reopen/edit/save/no-op boundary: the original source and intermediate
+output remain unchanged, the second-stage output is byte-equivalent to the
+final no-op output, and the reopened final workbook exposes clean materialized
+diagnostics.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

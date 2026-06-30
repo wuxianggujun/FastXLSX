@@ -2574,6 +2574,59 @@ std::filesystem::path write_two_sheet_source_with_stationary_formula(
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_delete_row_ref_formula(
+    std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("row1-a"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("row2-a")});
+        data.append_row({fastxlsx::CellView::text("row3-a")});
+        data.append_row({fastxlsx::CellView::text("row4-a"),
+            fastxlsx::CellView::text("row4-b"),
+            fastxlsx::CellView::formula("Data!A1+Data!A:A+Data!1:1+Data!B4")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_delete_column_ref_formula(
+    std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("row1-a"),
+            fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::text("row1-c"),
+            fastxlsx::CellView::formula("Data!A1+Data!A:A+Data!1:1+Data!D2")});
+        data.append_row({fastxlsx::CellView::text("row2-a"),
+            fastxlsx::CellView::text("row2-b"),
+            fastxlsx::CellView::text("row2-c"),
+            fastxlsx::CellView::text("row2-d")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 template <typename ShiftOperation>
 void check_public_stationary_formula_shift_case(
     std::string_view source_name,
@@ -16866,6 +16919,155 @@ void test_public_worksheet_editor_stationary_formula_range_source_audits_preserv
         [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(4, 1); },
         {"Data!E1:F1", "Data!E:F"},
         {{"Data!D1:E1", "D1:E1"}, {"Data!D:E", "D:E"}});
+}
+
+void test_public_worksheet_editor_delete_ref_formula_source_audits_preserve_source_scan()
+{
+    const auto check_source_audit =
+        [](const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& source_audits,
+            std::uint32_t formula_row,
+            std::uint32_t formula_column,
+            std::string_view source_formula,
+            std::string_view qualified_reference_text,
+            std::string_view reference_text,
+            std::string_view message_prefix) {
+            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+                find_public_state_formula_audit(
+                    source_audits, formula_row, formula_column, qualified_reference_text);
+            check(audit != nullptr,
+                std::string(message_prefix) + " should expose the source audit entry");
+            if (audit == nullptr) {
+                return;
+            }
+
+            check(audit->formula_sheet_source_name == "Data" &&
+                    audit->formula_sheet_planned_name == "Data" &&
+                    audit->formula_text == source_formula,
+                std::string(message_prefix) + " should report the source formula cell");
+            check(audit->sheet_qualifier_text == "Data!" &&
+                    audit->reference_text == reference_text &&
+                    audit->referenced_sheet_name == "Data",
+                std::string(message_prefix) + " should report source formula tokens");
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Data",
+                std::string(message_prefix) + " should match the current Data sheet");
+            check(!audit->references_renamed_source_name &&
+                    audit->references_planned_sheet_name &&
+                    !audit->external_workbook_qualifier &&
+                    !audit->sheet_range_qualifier,
+                std::string(message_prefix) + " should keep qualifier flags clean");
+        };
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source_with_delete_row_ref_formula(
+                "fastxlsx-workbook-editor-public-worksheet-delete-row-ref-source-audit-source.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.delete_rows(1, 1);
+
+        constexpr std::string_view source_formula =
+            "Data!A1+Data!A:A+Data!1:1+Data!B4";
+        constexpr std::string_view materialized_formula =
+            "Data!#REF!+Data!A:A+Data!#REF!+Data!B3";
+        const fastxlsx::CellValue current_formula = sheet.get_cell("C3");
+        check(current_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                current_formula.text_value() == materialized_formula,
+            "delete-row #REF source audit setup should expose the rewritten formula");
+        check(!sheet.try_cell("C4").has_value(),
+            "delete-row #REF source audit setup should move the formula cell");
+        check(sheet.has_pending_changes(),
+            "delete-row #REF source audit setup should dirty the materialized sheet");
+        check(sheet.cell_count() == 5,
+            "delete-row #REF source audit setup should drop cells from the deleted row");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 3, 3,
+            "delete-row #REF source audit setup should refresh sparse bounds");
+        const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+        check(editor.pending_change_count() == 0 &&
+                editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+                editor.pending_materialized_cell_count() == 5 &&
+                editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+            "delete-row #REF source audit setup should keep only materialized diagnostics dirty");
+
+        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+            check_public_state_source_formula_audits_preserve_editor_diagnostics(
+                editor, "delete-row #REF source audit");
+        check(source_audits.size() == 4,
+            "delete-row #REF source audit should report the original source references");
+        check(find_public_state_formula_audit(source_audits, 3, 3, "Data!A:A") == nullptr,
+            "delete-row #REF source audit should not report the materialized formula cell");
+        check(find_public_state_formula_audit(source_audits, 4, 3, "Data!#REF!") == nullptr,
+            "delete-row #REF source audit should not report materialized #REF! tokens");
+        check(find_public_state_formula_audit(source_audits, 4, 3, "Data!B3") == nullptr,
+            "delete-row #REF source audit should not report the materialized shifted B reference");
+
+        check_source_audit(source_audits, 4, 3, source_formula, "Data!A1", "A1",
+            "delete-row #REF source audit original A1 reference");
+        check_source_audit(source_audits, 4, 3, source_formula, "Data!A:A", "A:A",
+            "delete-row #REF source audit original whole-column reference");
+        check_source_audit(source_audits, 4, 3, source_formula, "Data!1:1", "1:1",
+            "delete-row #REF source audit original whole-row reference");
+        check_source_audit(source_audits, 4, 3, source_formula, "Data!B4", "B4",
+            "delete-row #REF source audit original B4 reference");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source_with_delete_column_ref_formula(
+                "fastxlsx-workbook-editor-public-worksheet-delete-column-ref-source-audit-source.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.delete_columns(1, 1);
+
+        constexpr std::string_view source_formula =
+            "Data!A1+Data!A:A+Data!1:1+Data!D2";
+        constexpr std::string_view materialized_formula =
+            "Data!#REF!+Data!#REF!+Data!1:1+Data!C2";
+        const fastxlsx::CellValue current_formula = sheet.get_cell("C1");
+        check(current_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                current_formula.text_value() == materialized_formula,
+            "delete-column #REF source audit setup should expose the rewritten formula");
+        check(!sheet.try_cell("D1").has_value(),
+            "delete-column #REF source audit setup should move the formula cell");
+        check(sheet.has_pending_changes(),
+            "delete-column #REF source audit setup should dirty the materialized sheet");
+        check(sheet.cell_count() == 6,
+            "delete-column #REF source audit setup should drop cells from the deleted column");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+            "delete-column #REF source audit setup should refresh sparse bounds");
+        const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+        check(editor.pending_change_count() == 0 &&
+                editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+                editor.pending_materialized_cell_count() == 6 &&
+                editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+            "delete-column #REF source audit setup should keep only materialized diagnostics dirty");
+
+        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+            check_public_state_source_formula_audits_preserve_editor_diagnostics(
+                editor, "delete-column #REF source audit");
+        check(source_audits.size() == 4,
+            "delete-column #REF source audit should report the original source references");
+        check(find_public_state_formula_audit(source_audits, 1, 3, "Data!1:1") == nullptr,
+            "delete-column #REF source audit should not report the materialized formula cell");
+        check(find_public_state_formula_audit(source_audits, 1, 4, "Data!#REF!") == nullptr,
+            "delete-column #REF source audit should not report materialized #REF! tokens");
+        check(find_public_state_formula_audit(source_audits, 1, 4, "Data!C2") == nullptr,
+            "delete-column #REF source audit should not report the materialized shifted C reference");
+
+        check_source_audit(source_audits, 1, 4, source_formula, "Data!A1", "A1",
+            "delete-column #REF source audit original A1 reference");
+        check_source_audit(source_audits, 1, 4, source_formula, "Data!A:A", "A:A",
+            "delete-column #REF source audit original whole-column reference");
+        check_source_audit(source_audits, 1, 4, source_formula, "Data!1:1", "1:1",
+            "delete-column #REF source audit original whole-row reference");
+        check_source_audit(source_audits, 1, 4, source_formula, "Data!D2", "D2",
+            "delete-column #REF source audit original D2 reference");
+    }
 }
 
 void test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_rewrite()
@@ -38709,6 +38911,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_stationary_formula_source_audits_preserve_source_scan();
             test_public_worksheet_editor_stationary_formula_delete_source_audits_preserve_source_scan();
             test_public_worksheet_editor_stationary_formula_range_source_audits_preserve_source_scan();
+            test_public_worksheet_editor_delete_ref_formula_source_audits_preserve_source_scan();
             test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_rewrite();
             test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_skip_ref();
             test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_saved_rewrite();

@@ -50578,6 +50578,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1262 - Pin delete REF formula dirty source audit boundary
+
+Type: public `WorksheetEditor` in-memory source-audit regression.
+
+Status: completed.
+
+Goal: prove delete-side formula rewrites that produce materialized `#REF!`
+tokens still leave `source_formula_reference_audits()` anchored to the original
+source worksheet XML while dirty.
+
+Coverage:
+- Adds a source-backed row-delete case where formula cell `C4` rewrites to
+  materialized `C3` as `Data!#REF!+Data!A:A+Data!#REF!+Data!B3`.
+- Adds a source-backed column-delete case where formula cell `D1` rewrites to
+  materialized `C1` as `Data!#REF!+Data!#REF!+Data!1:1+Data!C2`.
+- Verifies `source_formula_reference_audits()` reports the original source
+  formula-cell coordinates and tokens, including `Data!A1`, `Data!A:A`,
+  `Data!1:1`, `Data!B4`, and `Data!D2`, while skipping materialized `#REF!`
+  and shifted `Data!B3` / `Data!C2` tokens.
+
+Non-goals:
+- No `#REF!` repair, source/materialized audit merging, source worksheet XML
+  mutation, formula evaluation, worksheet metadata range synchronization,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

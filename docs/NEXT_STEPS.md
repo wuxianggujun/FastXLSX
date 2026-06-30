@@ -99,7 +99,10 @@ coverage mirrors that boundary for surviving `Data!1:1` and shifted `Data!C2`.
 Range dirty-source coverage also keeps `source_formula_reference_audits()` on
 the original `Data!A3:B3` / `Data!3:3` and `Data!D1:E1` / `Data!D:E` tokens
 while the materialized formulas have already shifted to `Data!A4:B4` /
-`Data!4:4` and `Data!E1:F1` / `Data!E:F`.
+`Data!4:4` and `Data!E1:F1` / `Data!E:F`. Delete-side dirty-source coverage
+now also keeps delete-row/delete-column `#REF!` rewrites on original source
+formula coordinates and tokens, rather than the materialized `Data!#REF!` /
+`Data!B3` / `Data!C2` tokens.
 The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,

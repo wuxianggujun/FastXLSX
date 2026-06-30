@@ -1552,6 +1552,9 @@ and second saves and aggregate dirty memory for the shared recovery column
 shift.
 The `try_worksheet()` shift reacquire path now pins the same first/second save
 cleanup and aggregate dirty memory for its shared recovery column shift.
+Saved-session option-mismatch, missing-query, invalid-read, and
+invalid-mutation reacquire paths now pin clean materialized memory around
+rejected access and aggregate dirty memory for their recovery column shifts.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

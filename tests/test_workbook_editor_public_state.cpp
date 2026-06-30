@@ -30403,7 +30403,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
     check(editor.pending_change_count() == 1,
         "shift reacquire option mismatch first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire option mismatch first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire option mismatch first save should keep diagnostics clear");
@@ -30425,7 +30426,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
     check(editor.pending_change_count() == 1,
         "shift reacquire option mismatch should not add materialized handoffs");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire option mismatch should not dirty materialized diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_option_mismatch,
         "shift reacquire option mismatch");
@@ -30444,6 +30446,7 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
         "shift reacquire option mismatch matching reacquire should keep old row absent");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "shift reacquire option mismatch later shift should dirty the shared session");
     const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
@@ -30451,6 +30454,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
         "shift reacquire option mismatch later shift should report Data dirty once");
     check(editor.pending_materialized_cell_count() == 3,
         "shift reacquire option mismatch later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "shift reacquire option mismatch later shift should report the shared memory estimate");
     const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
     check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
             shifted_number.number_value() == 1.0,
@@ -30463,7 +30468,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire option mismatch second save should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire option mismatch second save should clear dirty diagnostics again");
     check(editor.pending_change_count() == 2,
         "shift reacquire option mismatch second save should record the later handoff");
@@ -30648,7 +30654,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
     check(editor.pending_change_count() == 1,
         "shift reacquire missing query first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing query first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing query first save should keep diagnostics clear");
@@ -30667,7 +30674,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
     check(editor.pending_change_count() == 1,
         "shift reacquire missing query should not add materialized handoffs");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing query should not dirty materialized diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_missing_query,
         "shift reacquire missing query");
@@ -30686,6 +30694,7 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
         "shift reacquire missing query matching reacquire should keep old row absent");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "shift reacquire missing query later shift should dirty the shared session");
     const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
@@ -30693,6 +30702,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
         "shift reacquire missing query later shift should report Data dirty once");
     check(editor.pending_materialized_cell_count() == 3,
         "shift reacquire missing query later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "shift reacquire missing query later shift should report the shared memory estimate");
     const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
     check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
             shifted_number.number_value() == 1.0,
@@ -30705,7 +30716,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire missing query second save should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing query second save should clear dirty diagnostics again");
     check(editor.pending_change_count() == 2,
         "shift reacquire missing query second save should record the later handoff");
@@ -30893,7 +30905,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
     check(editor.pending_change_count() == 1,
         "shift reacquire invalid reads first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid reads first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid reads first save should keep diagnostics clear");
@@ -30959,6 +30972,7 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         "shift reacquire invalid reads should keep old row coordinates absent");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "shift reacquire invalid reads later shift should dirty the shared session");
     const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
@@ -30966,6 +30980,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         "shift reacquire invalid reads later shift should report Data dirty once");
     check(editor.pending_materialized_cell_count() == 3,
         "shift reacquire invalid reads later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "shift reacquire invalid reads later shift should report the shared memory estimate");
     const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
     check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
             shifted_number.number_value() == 1.0,
@@ -30978,7 +30994,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire invalid reads second save should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid reads second save should clear dirty diagnostics again");
     check(editor.pending_change_count() == 2,
         "shift reacquire invalid reads second save should record the later handoff");
@@ -31202,7 +31219,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
     check(editor.pending_change_count() == 1,
         "shift reacquire invalid mutations first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid mutations first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid mutations first save should keep diagnostics clear");
@@ -31275,6 +31293,7 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
         "shift reacquire invalid mutations should keep old row coordinates absent");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid mutations later valid shift should clear diagnostics");
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
@@ -31284,6 +31303,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
         "shift reacquire invalid mutations later shift should report Data dirty once");
     check(editor.pending_materialized_cell_count() == 3,
         "shift reacquire invalid mutations later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "shift reacquire invalid mutations later shift should report the shared memory estimate");
     const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
     check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
             shifted_number.number_value() == 1.0,
@@ -31296,7 +31317,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire invalid mutations second save should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid mutations second save should clear dirty diagnostics again");
     check(editor.pending_change_count() == 2,
         "shift reacquire invalid mutations second save should record the later handoff");

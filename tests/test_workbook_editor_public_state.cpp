@@ -16630,6 +16630,77 @@ void test_public_worksheet_editor_stationary_formula_delete_audits_skip_ref()
     }
 }
 
+void test_public_worksheet_editor_stationary_formula_source_audits_preserve_source_scan()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_stationary_formula(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-source-audit-source.xlsx",
+            "Data!A3+Data!B1");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(3, 1);
+
+    constexpr std::string_view shifted_formula = "Data!A4+Data!B1";
+    constexpr std::string_view source_formula = "Data!A3+Data!B1";
+    const fastxlsx::CellValue materialized_formula = sheet.get_cell("C1");
+    check(materialized_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            materialized_formula.text_value() == shifted_formula,
+        "stationary formula source audit setup should expose the rewritten formula");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_change_count() == 0 &&
+            editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 4 &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "stationary formula source audit setup should keep only materialized diagnostics dirty");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        check_public_state_source_formula_audits_preserve_editor_diagnostics(
+            editor, "stationary formula source audit");
+    check(source_audits.size() == 2,
+        "stationary formula source audit should report the original source references");
+    check(find_public_state_formula_audit(source_audits, 1, 3, "Data!A4") == nullptr,
+        "stationary formula source audit should not report the materialized A4 reference");
+
+    const auto check_source_audit =
+        [&](std::string_view qualified_reference_text,
+            std::string_view reference_text,
+            std::string_view message_prefix) {
+            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+                find_public_state_formula_audit(
+                    source_audits, 1, 3, qualified_reference_text);
+            check(audit != nullptr,
+                std::string(message_prefix) + " should expose the source audit entry");
+            if (audit == nullptr) {
+                return;
+            }
+
+            check(audit->formula_sheet_source_name == "Data" &&
+                    audit->formula_sheet_planned_name == "Data" &&
+                    audit->formula_text == source_formula,
+                std::string(message_prefix) + " should report the source formula cell");
+            check(audit->sheet_qualifier_text == "Data!" &&
+                    audit->reference_text == reference_text &&
+                    audit->referenced_sheet_name == "Data",
+                std::string(message_prefix) + " should report source formula tokens");
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Data",
+                std::string(message_prefix) + " should match the current Data sheet");
+            check(!audit->references_renamed_source_name &&
+                    audit->references_planned_sheet_name &&
+                    !audit->external_workbook_qualifier &&
+                    !audit->sheet_range_qualifier,
+                std::string(message_prefix) + " should keep qualifier flags clean");
+        };
+
+    check_source_audit(
+        "Data!A3", "A3", "stationary formula source audit original A reference");
+    check_source_audit(
+        "Data!B1", "B1", "stationary formula source audit original B reference");
+}
+
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -37534,6 +37605,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shifts_rewrite_stationary_formula_references();
             test_public_worksheet_editor_stationary_formula_shift_audits_rewritten_references();
             test_public_worksheet_editor_stationary_formula_delete_audits_skip_ref();
+            test_public_worksheet_editor_stationary_formula_source_audits_preserve_source_scan();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();

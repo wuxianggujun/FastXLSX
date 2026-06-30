@@ -79,7 +79,9 @@ also pins supported cell-range and whole-axis stationary formulas such as
 `formula_reference_audits()` observes the rewritten `Data!A4` plus stable
 `Data!B1` references without changing dirty diagnostics. Delete-side stationary
 formula audits now also skip `Data!#REF!` while keeping the surviving `Data!B1`
-reference visible. The retry/guard shard also pins that
+reference visible. The source-audit path now keeps scanning original source XML
+for `Data!A3` / `Data!B1` while the dirty materialized formula has already
+rewritten to `Data!A4+Data!B1`. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

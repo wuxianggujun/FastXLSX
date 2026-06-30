@@ -50189,6 +50189,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1251 - Pin stationary formula source audit boundary
+
+Type: public `WorksheetEditor` in-memory source-audit regression.
+
+Status: completed.
+
+Goal: prove source formula-reference audits keep scanning original source
+worksheet XML while a stationary formula-only materialized rewrite is dirty.
+
+Coverage:
+- Adds a dirty materialized `C1` formula case where `insert_rows(3, 1)`
+  rewrites the current in-memory formula from `Data!A3+Data!B1` to
+  `Data!A4+Data!B1`.
+- Verifies `WorkbookEditor::source_formula_reference_audits()` still reports
+  the original source references `Data!A3` and `Data!B1`, and does not report
+  the materialized-only `Data!A4` reference.
+- Reuses the public source-audit diagnostic-preservation helper to prove the
+  read-only scan preserves pending materialized diagnostics, edit summaries,
+  catalog, and last-error state.
+
+Non-goals:
+- No merged source/materialized formula view, source package mutation,
+  formula evaluation, worksheet metadata range synchronization, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

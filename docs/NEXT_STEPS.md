@@ -35,6 +35,10 @@ drives a tiny existing workbook through `WorksheetEditor::insert_rows()`, writes
 a new materialized formula row, verifies the shifted source-backed formula,
 saves, and reopens the output through ZIP/XML, `openpyxl`, optional XlsxWriter,
 and optional Excel COM checks.
+It also includes `generated_in_memory_delete_column_formula`, which drives
+`WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
+left-shifted source cells plus formula reference translation before the same
+save/reopen checks.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

@@ -418,6 +418,28 @@ std::filesystem::path write_in_memory_insert_formula_source(const std::filesyste
     return path;
 }
 
+std::filesystem::path write_in_memory_delete_column_formula_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("drop-me"),
+            CellView::number(7.0),
+            CellView::formula("B1+D1"),
+            CellView::text("tail"),
+        });
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1301,6 +1323,35 @@ Report run_generated_in_memory_insert_formula(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_delete_column_formula(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_delete_column_formula_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).delete_columns(1,1)",
+    };
+    report.notes = {
+        "Original Data!A1 should be deleted",
+        "Original Data!B1 should shift to Data!A1",
+        "Original Data!C1 formula should shift to Data!B1 and translate B1+D1 to A1+C1",
+        "Original Data!D1 should shift to Data!C1",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    data.delete_columns(1, 1);
+    require_formula_cell(data, "B1", "A1+C1");
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -1713,6 +1764,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_insert_formula") {
         return run_generated_in_memory_insert_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_delete_column_formula") {
+        return run_generated_in_memory_delete_column_formula(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

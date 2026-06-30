@@ -328,6 +328,23 @@ saved output with ZIP/XML, `openpyxl`, optional XlsxWriter reference, and
 optional Excel COM. It is local QA only and does not expand production
 semantics beyond the small-file in-memory row-shift path.
 
+For the focused generated in-memory column-deletion/formula smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_delete_column_formula `
+  --work-dir build\qa\workbook-editor-in-memory-delete-column-formula
+```
+
+This scenario opens a generated existing workbook through `WorkbookEditor`,
+uses `WorksheetEditor::delete_columns()` on a materialized sheet, verifies
+left-shifted source cells plus shifted formula text, and validates the saved
+output with ZIP/XML, `openpyxl`, optional XlsxWriter reference, and optional
+Excel COM. It is local QA only and does not expand production semantics beyond
+the small-file in-memory column-delete path.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

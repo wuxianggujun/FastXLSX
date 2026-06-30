@@ -50862,6 +50862,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1269 - Add generated in-memory delete-column formula QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+in-memory column deletion.
+
+Status: completed.
+
+Goal: prove the local QA runner exercises a generated small existing workbook
+through public `WorkbookEditor` / `WorksheetEditor` column deletion,
+source-backed cell left-shift, formula reference translation, save, and reopen
+checks.
+
+Coverage:
+- Adds `generated_in_memory_delete_column_formula` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Creates a two-sheet source workbook, deletes source column A, and verifies
+  `B1` shifts to `A1`, `C1` formula shifts to `B1`, `B1+D1` translates to
+  `A1+C1`, and `D1` shifts to `C1` before save.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  verify `Data!A1:C1`, deleted text absence, `Notes!A1`, absence of
+  `xl/calcChain.xml`, and the optional XlsxWriter reference workbook.
+- Extends the optional Excel COM sidecar with the same value/formula smoke.
+
+Non-goals:
+- No production behavior changes, formula evaluation, cached value generation
+  or preservation, worksheet metadata range synchronization, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_delete_column_formula --work-dir build\\qa\\workbook-editor-in-memory-delete-column-formula --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

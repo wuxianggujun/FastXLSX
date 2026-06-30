@@ -399,6 +399,28 @@ function Verify-GeneratedInMemoryInsertFormula {
     }
 }
 
+function Verify-GeneratedInMemoryDeleteColumnFormula {
+    param([object]$Workbook)
+
+    $data = $null
+    $notes = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $notes = Get-Worksheet $Workbook "Notes"
+        Assert-CellValue $data "A1" 7 "Data!A1"
+        Assert-Formula $data "B1" "=A1+C1" "Data!B1 formula"
+        Assert-CellValue $data "C1" "tail" "Data!C1"
+        Assert-CellValue $notes "A1" "preserved" "Notes!A1"
+    }
+    finally {
+        foreach ($object in @($notes, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStyleRejection {
     param([object]$Workbook)
 
@@ -494,6 +516,7 @@ function Verify-Case {
         switch ($scenario) {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
             "generated_in_memory_insert_formula" { Verify-GeneratedInMemoryInsertFormula $workbook }
+            "generated_in_memory_delete_column_formula" { Verify-GeneratedInMemoryDeleteColumnFormula $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

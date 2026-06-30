@@ -427,6 +427,21 @@ and does not add in-place source overwrite, metadata repair,
 sharedStrings/styles migration, calcChain rebuild, or low-memory random
 editing.
 
+For the same single-sheet path plus a final no-op save stability check, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_reopen_modify_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-reopen-modify-noop-save
+```
+
+This variant writes the second-stage output, performs one more `save_as()`
+without new materialized edits, requires both package outputs to be
+byte-identical, and validates the final no-op output with the same ZIP/XML and
+`openpyxl` checks.
+
 For generated in-memory multi-sheet save persistence smoke, run:
 
 ```powershell

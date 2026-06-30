@@ -51484,6 +51484,50 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1283 - Add generated in-memory reopen/modify no-op QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public single-sheet
+`WorksheetEditor` edit/save/reopen/edit/save plus final no-op save stability.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that the existing single-sheet
+reopen/edit/save path can be saved again without new materialized edits while
+producing byte-identical package output.
+
+Coverage:
+- Adds `generated_in_memory_reopen_modify_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated `Data` / `Notes` source shape from
+  `generated_in_memory_reopen_modify_save`, writes the first-stage intermediate
+  output, opens it through a fresh `WorkbookEditor`, applies the existing
+  second-stage `Data!B1`, `Data!C1`, and `Data!D1` edits, saves a second-stage
+  output, then performs a final no-op `save_as()`.
+- The QA tool requires the second-stage output and final no-op output to be
+  byte-identical before the Python runner validates the final workbook.
+- Extends the optional XlsxWriter reference, Excel COM sidecar, and
+  `docs/TESTING_WORKFLOW.md` single-scenario command for the same final workbook
+  shape.
+
+Non-goals:
+- No production behavior changes, commit/close semantics, overwrite mode,
+  rollback, transaction replay, formula evaluation, cached value preservation,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, default CTest/CI
+  expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `py -m py_compile tools\\run_workbook_editor_qa.py` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_reopen_modify_noop_save --work-dir build\\qa\\workbook-editor-in-memory-reopen-modify-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -1713,18 +1713,28 @@ Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
     return report;
 }
 
-Report run_generated_in_memory_reopen_modify_save(const CliOptions& options)
+Report run_generated_in_memory_reopen_modify_save_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_reopen_modify_save_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-output.xlsx");
+    report.source = write_in_memory_reopen_modify_save_source(resolve_generated_source(options,
+        verify_noop_save
+            ? "fastxlsx-qa-reopen-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save
+            ? "fastxlsx-qa-reopen-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-output.xlsx");
     const std::filesystem::path first_output =
-        report.output.parent_path() / "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-first.xlsx";
+        report.output.parent_path() / "first-output.xlsx";
+    const std::filesystem::path second_stage_output =
+        verify_noop_save ? report.output.parent_path() / "second-stage-output.xlsx" : report.output;
     ensure_parent_directory(first_output);
+    ensure_parent_directory(second_stage_output);
+    ensure_parent_directory(report.output);
     report.source_sheet_name = "Data";
     report.mutations = {
         "first:worksheet(Data).set_cell(A1,text)",
@@ -1736,12 +1746,19 @@ Report run_generated_in_memory_reopen_modify_save(const CliOptions& options)
         "second:worksheet(Data).set_cell(D1,text)",
         "second:save_as(output)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("third:save_as(noop-output)");
+    }
     report.notes = {
         "Intermediate output should be usable as a fresh WorkbookEditor source",
         "First-stage A1 text and appended A3:C3 row should survive second-stage save",
         "Second-stage B1, C1, and D1 edits should be present in the final output",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the second-stage flush should be byte-identical");
+    }
 
     {
         WorkbookEditor editor = WorkbookEditor::open(report.source);
@@ -1765,8 +1782,25 @@ Report run_generated_in_memory_reopen_modify_save(const CliOptions& options)
     data.set_cell("D1", CellValue::text("second-edit"));
     require_formula_cell(data, "C1", "B1+5");
     require_formula_cell(data, "C3", "B3*2");
-    reopened.save_as(report.output);
+    reopened.save_as(second_stage_output);
+    if (verify_noop_save) {
+        reopened.save_as(report.output);
+        if (!file_bytes_equal(second_stage_output, report.output)) {
+            throw std::runtime_error(
+                "reopen modify no-op save output should be byte-identical");
+        }
+    }
     return report;
+}
+
+Report run_generated_in_memory_reopen_modify_save(const CliOptions& options)
+{
+    return run_generated_in_memory_reopen_modify_save_impl(options, false);
+}
+
+Report run_generated_in_memory_reopen_modify_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_reopen_modify_save_impl(options, true);
 }
 
 Report run_generated_in_memory_multi_sheet_save(const CliOptions& options)
@@ -2411,6 +2445,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_reopen_modify_save") {
         return run_generated_in_memory_reopen_modify_save(options);
+    }
+    if (options.scenario == "generated_in_memory_reopen_modify_noop_save") {
+        return run_generated_in_memory_reopen_modify_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_multi_sheet_save") {
         return run_generated_in_memory_multi_sheet_save(options);

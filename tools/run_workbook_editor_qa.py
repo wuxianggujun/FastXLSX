@@ -42,6 +42,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_append_row_formula",
     "generated_in_memory_overwrite_formula_text",
     "generated_in_memory_reopen_modify_save",
+    "generated_in_memory_reopen_modify_noop_save",
     "generated_in_memory_multi_sheet_save",
     "generated_in_memory_multi_sheet_retry_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_save",
@@ -1375,6 +1376,18 @@ def verify_generated_in_memory_reopen_modify_save(path: Path) -> tuple[dict[str,
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_reopen_modify_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory reopen/modify/no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_reopen_modify_save(path)
+    require("third:save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -2924,7 +2937,10 @@ def create_xlsxwriter_reference(
             data.write_formula("C1", "=B1+10")
             data.write("A2", "keep-row-two")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_reopen_modify_save":
+        elif scenario in {
+            "generated_in_memory_reopen_modify_save",
+            "generated_in_memory_reopen_modify_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write("A1", "first-edit")
@@ -3060,6 +3076,11 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(output_path)
     elif scenario == "generated_in_memory_reopen_modify_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_save(output_path)
+    elif scenario == "generated_in_memory_reopen_modify_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_multi_sheet_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_save(output_path)
     elif scenario == "generated_in_memory_multi_sheet_retry_save":

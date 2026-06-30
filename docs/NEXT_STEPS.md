@@ -55,6 +55,10 @@ reopen.
 It also covers `generated_in_memory_reopen_modify_save`, which saves a first
 in-memory edit, reopens that output through a fresh `WorkbookEditor`, applies a
 second in-memory edit, and verifies the final workbook after save and reopen.
+The same generated single-sheet lane now also has
+`generated_in_memory_reopen_modify_noop_save`, which requires the final no-op
+`save_as()` output to be byte-identical to the second-stage save before running
+the same ZIP/XML, `openpyxl`, optional XlsxWriter, and optional Excel COM checks.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

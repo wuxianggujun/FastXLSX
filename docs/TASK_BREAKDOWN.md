@@ -48774,6 +48774,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1214 - Pin erase budget-release reinsertion aggregate memory
+
+Type: public `WorksheetEditor` erase-before-reinsert guardrail recovery
+aggregate materialized memory regression.
+
+Status: completed.
+
+Goal: prove erase-released guardrail budget and the later replacement insertion
+keep aggregate dirty materialized count and memory aligned with the active
+`WorksheetEditor` session.
+
+Coverage:
+- Extends `test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions()`
+  so the `max_cells` branch verifies aggregate materialized memory after the
+  replacement insertion matches the active sparse session.
+- Extends the memory-budget branch so the erase phase verifies dirty session and
+  editor state, reduced aggregate sparse count, and aggregate materialized
+  memory matching the reduced `WorksheetEditor`.
+- Verifies the memory-budget replacement insertion restores aggregate sparse
+  count and reports aggregate materialized memory matching the reinserted
+  sparse session.
+- Keeps existing rejected payload absence, saved output, no-op save stability,
+  and reopened clean-sheet checks unchanged.
+
+Non-goals:
+- No erase semantic changes, insertion semantic changes, guardrail budgeting
+  changes, memory-accounting changes, metadata/range repair, relationship
+  repair, calcChain rebuild, sharedStrings/styles migration, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

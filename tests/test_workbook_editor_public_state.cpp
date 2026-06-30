@@ -35764,6 +35764,9 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "replacement insertion after erase should restore the original sparse count");
     check(max_editor.pending_materialized_cell_count() == max_baseline_count,
         "pending materialized count should include the replacement insertion");
+    const std::size_t max_reinserted_memory = max_sheet.estimated_memory_usage();
+    check(max_editor.estimated_pending_materialized_memory_usage() == max_reinserted_memory,
+        "pending materialized memory should include the replacement insertion");
 
     max_editor.save_as(max_output);
     const auto max_output_entries = fastxlsx::test::read_zip_entries(max_output);
@@ -35852,10 +35855,19 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
     memory_sheet.erase_cell("A2");
     check(!memory_editor.last_edit_error().has_value(),
         "successful erase should clear the prior memory-budget diagnostic");
+    check(memory_sheet.has_pending_changes(),
+        "memory-budget erase should dirty the materialized session before reinsertion");
+    check(memory_editor.has_pending_changes(),
+        "memory-budget erase should dirty the editor before reinsertion");
     check(memory_sheet.cell_count() == memory_baseline_count - 1,
         "erase should release one sparse record from memory-budget accounting");
     check(memory_sheet.estimated_memory_usage() < memory_baseline_usage,
         "erase should lower the sparse memory estimate for the memory-budget path");
+    check(memory_editor.pending_materialized_cell_count() == memory_baseline_count - 1,
+        "pending materialized count should reflect memory-budget erase before reinsertion");
+    check(memory_editor.estimated_pending_materialized_memory_usage() ==
+            memory_sheet.estimated_memory_usage(),
+        "pending materialized memory should reflect memory-budget erase before reinsertion");
 
     memory_sheet.set_cell("D4", fastxlsx::CellValue::text("mem-ok"));
     const fastxlsx::CellValue memory_d4 = memory_sheet.get_cell("D4");
@@ -35868,6 +35880,9 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "memory-budget replacement insertion after erase should stay within budget");
     check(memory_editor.pending_materialized_cell_count() == memory_baseline_count,
         "pending materialized count should include the memory-budget replacement");
+    const std::size_t memory_reinserted_memory = memory_sheet.estimated_memory_usage();
+    check(memory_editor.estimated_pending_materialized_memory_usage() == memory_reinserted_memory,
+        "pending materialized memory should include the memory-budget replacement");
 
     memory_editor.save_as(memory_output);
     const auto memory_output_entries = fastxlsx::test::read_zip_entries(memory_output);

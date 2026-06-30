@@ -21417,6 +21417,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-directory-output");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-audit-noop-output.xlsx");
     std::filesystem::remove_all(missing_parent_output.parent_path());
     std::filesystem::remove_all(file_parent);
     fastxlsx::test::write_file(file_parent, "not a directory");
@@ -21624,6 +21626,38 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         output, "D4", 4, 4, expected_formula, styled_formula_style,
         "Data!A3", "A3", "Data!B3", "B3",
         "renamed formula audit shifted row reopened output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    check(save_state_before_noop.last_edit_error.has_value(),
+        "renamed formula audit shifted row save_as should preserve the diagnostic before no-op");
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed formula audit shifted row no-op save should keep materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula audit shifted row no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula audit shifted row no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "renamed formula audit shifted row no-op save should not queue replacement diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed formula audit shifted row no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
+        "renamed formula audit shifted row no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "renamed formula audit shifted row no-op output should match the first materialized output");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D4", 4, 4, expected_formula, styled_formula_style,
+        "Data!A3", "A3", "Data!B3", "B3",
+        "renamed formula audit shifted row no-op save");
 }
 
 void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_shifted_formula()
@@ -21645,6 +21679,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-directory-output");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-audit-noop-output.xlsx");
     std::filesystem::remove_all(missing_parent_output.parent_path());
     std::filesystem::remove_all(file_parent);
     fastxlsx::test::write_file(file_parent, "not a directory");
@@ -21851,6 +21887,38 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         output, "E2", 2, 5, expected_formula, styled_formula_style,
         "Data!B1", "B1", "Data!C1", "C1",
         "renamed column formula audit shifted output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    check(save_state_before_noop.last_edit_error.has_value(),
+        "renamed column formula audit shifted save_as should preserve the diagnostic before no-op");
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed column formula audit shifted no-op save should keep materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "renamed column formula audit shifted no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed column formula audit shifted no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "renamed column formula audit shifted no-op save should not queue replacement diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed column formula audit shifted no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
+        "renamed column formula audit shifted no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "renamed column formula audit shifted no-op output should match the first materialized output");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "E2", 2, 5, expected_formula, styled_formula_style,
+        "Data!B1", "B1", "Data!C1", "C1",
+        "renamed column formula audit shifted no-op save");
 }
 
 void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_ref_tokens()

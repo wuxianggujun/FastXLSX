@@ -39053,6 +39053,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
             "recovered materialization overwrite should expose recovered sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
             "recovered materialization overwrite should expose recovered materialized memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, *recovered, 0, "memory-budget source-load recovery overwrite");
     }
     editor.save_as(output);
 
@@ -39166,6 +39168,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
     const std::size_t recovered_memory = sheet.estimated_memory_usage();
     check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
         "successful overwrite should expose recovered materialized memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "mutation memory-budget recovery overwrite");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -39284,6 +39288,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
     const std::size_t recovered_memory = sheet.estimated_memory_usage();
     check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
         "successful overwrite under max_cells should expose recovered materialized memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "mutation max-cells recovery overwrite");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

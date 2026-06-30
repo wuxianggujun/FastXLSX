@@ -53085,6 +53085,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1320 - Pin guardrail recovery dirty summaries
+
+Type: public `WorksheetEditor` guardrail recovery dirty diagnostics regression.
+
+Status: completed.
+
+Goal:
+Verify valid recovery overwrites after guardrail failures expose the same dirty
+materialized summary contract as other `WorksheetEditor` materialized edits.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()`,
+  `test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()`,
+  and `test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()`.
+- Covers source-load memory-budget recovery through default materialization and
+  overwrite, mutation-side memory-budget recovery overwrite, and mutation-side
+  `max_cells` recovery overwrite.
+- Verifies each accepted recovery overwrite clears diagnostics, keeps
+  `pending_change_count()` at zero, exposes `Data` as the only dirty
+  materialized worksheet, reports matching materialized count/memory, leaves
+  replacement diagnostics empty, and publishes one dirty materialized summary
+  before `save_as()`.
+
+Non-goals:
+- No guardrail policy change, recovery behavior change, save behavior change,
+  summary-generation redesign, memory-accounting change, metadata/range
+  repair, calcChain rebuild, sharedStrings/styles migration, relationship
+  repair, Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -16726,6 +16726,8 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-source-formula-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-source-formula-audit-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -16802,6 +16804,38 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
         output, "D3", 3, 4, shifted_formula, styled_formula_style,
         "Data!A2", "A2", "Data!B2", "B2",
         "renamed full-calc source formula audit");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "renamed full-calc source formula audit no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 3,
+        "renamed full-calc source formula audit no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed full-calc source formula audit no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "renamed full-calc source formula audit no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed full-calc source formula audit no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "renamed full-calc source formula audit no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
+        "renamed full-calc source formula audit no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "renamed full-calc source formula audit no-op output should match the first materialized output");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        "renamed full-calc source formula audit no-op save");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_preserve_materialized_state()

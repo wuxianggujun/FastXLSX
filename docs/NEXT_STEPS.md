@@ -1550,6 +1550,8 @@ save stability check.
 The basic shift reacquire path now pins clean materialized memory after first
 and second saves and aggregate dirty memory for the shared recovery column
 shift.
+The `try_worksheet()` shift reacquire path now pins the same first/second save
+cleanup and aggregate dirty memory for its shared recovery column shift.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

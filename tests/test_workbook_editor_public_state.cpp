@@ -30161,7 +30161,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
     check(!sheet.has_pending_changes(),
         "shift try-reacquire first save should clean the original borrowed handle");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift try-reacquire first save should clear dirty materialized diagnostics");
     check(editor.pending_change_count() == 1,
         "shift try-reacquire first save should record the materialized handoff");
@@ -30188,6 +30189,7 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
         "shift try-reacquire should keep old shifted coordinates absent on both handles");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "shift try-reacquire later shift should dirty the shared session on both handles");
     const std::vector<std::string> dirty_names = editor.pending_materialized_worksheet_names();
@@ -30195,6 +30197,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
         "shift try-reacquire later shift should report only Data as dirty materialized");
     check(editor.pending_materialized_cell_count() == 3,
         "shift try-reacquire later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "shift try-reacquire later shift should report the shared memory estimate");
     const fastxlsx::CellValue shifted_number = reacquired.get_cell("C1");
     check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
             shifted_number.number_value() == 1.0,
@@ -30211,7 +30215,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift try-reacquire second save should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift try-reacquire second save should clear dirty materialized diagnostics again");
     check(editor.pending_change_count() == 2,
         "shift try-reacquire second save should record the second materialized handoff");

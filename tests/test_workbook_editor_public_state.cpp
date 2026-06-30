@@ -35143,6 +35143,15 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         "recovered materialization should load all source cells after memory-budget failure");
     if (recovered.has_value()) {
         recovered->set_cell("A1", fastxlsx::CellValue::text("after-memory-budget-failure"));
+        const std::size_t recovered_memory = recovered->estimated_memory_usage();
+        check(recovered->has_pending_changes(),
+            "recovered materialization overwrite should dirty the recovered session");
+        check(editor.has_pending_changes(),
+            "recovered materialization overwrite should dirty the editor");
+        check(editor.pending_materialized_cell_count() == recovered->cell_count(),
+            "recovered materialization overwrite should expose recovered sparse count");
+        check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
+            "recovered materialization overwrite should expose recovered materialized memory");
     }
     editor.save_as(output);
 

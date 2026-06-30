@@ -1514,6 +1514,8 @@ materialization.
 Mutation guard recovery coverage now pins aggregate materialized memory after
 the valid overwrite that follows rejected memory-budget and `max_cells`
 mutations.
+Source-load memory-budget recovery coverage now pins recovered materialized
+dirty count and memory before the first recovery save.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

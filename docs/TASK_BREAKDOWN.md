@@ -48628,6 +48628,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1210 - Pin source-load memory-budget recovery aggregate memory
+
+Type: public `WorksheetEditor` source-load memory-budget recovery aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove a default-options materialized recovery session after a rejected
+source-load memory-budget guard exposes aggregate dirty materialized count and
+memory before save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()`
+  so the valid overwrite in the recovered default-options `WorksheetEditor`
+  verifies both the recovered handle and editor are dirty.
+- Verifies `pending_materialized_cell_count()` matches the recovered sparse
+  session count and `estimated_pending_materialized_memory_usage()` matches the
+  recovered `WorksheetEditor::estimated_memory_usage()` before save.
+- Keeps existing failed tight-budget source materialization checks, saved
+  output, no-op save stability, and reopened clean-sheet checks unchanged.
+
+Non-goals:
+- No memory-budget enforcement changes, source materialization changes,
+  recovery session ownership changes, memory-accounting changes, new
+  guardrails, replacement semantics changes, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

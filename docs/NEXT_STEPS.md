@@ -7368,8 +7368,9 @@ Current status:
   config, `FastXLSXConfig.cmake` correctly requires
   `find_dependency(minizip-ng CONFIG)`.
 - `FASTXLSX_BUILD_EXAMPLES=ON` currently compiles the
-  `fastxlsx_minimal_writer_example` and `fastxlsx_streaming_writer_example`
-  targets against the public umbrella header.
+  `fastxlsx_minimal_writer_example`, `fastxlsx_streaming_writer_example`, and
+  `fastxlsx_workbook_editor_in_memory_example` targets against the public
+  umbrella header.
 - Release docs now include `CHANGELOG.md`, `THIRD_PARTY_NOTICES.md`,
   `docs/DEPENDENCIES.md`, and `docs/DEVELOPMENT_ENVIRONMENT.md`.
 

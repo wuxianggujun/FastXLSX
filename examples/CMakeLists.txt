@@ -11,3 +11,10 @@ add_executable(fastxlsx_streaming_writer_example
 
 target_link_libraries(fastxlsx_streaming_writer_example PRIVATE FastXLSX::fastxlsx)
 target_compile_features(fastxlsx_streaming_writer_example PRIVATE cxx_std_20)
+
+add_executable(fastxlsx_workbook_editor_in_memory_example
+    workbook_editor_in_memory.cpp
+)
+
+target_link_libraries(fastxlsx_workbook_editor_in_memory_example PRIVATE FastXLSX::fastxlsx)
+target_compile_features(fastxlsx_workbook_editor_in_memory_example PRIVATE cxx_std_20)

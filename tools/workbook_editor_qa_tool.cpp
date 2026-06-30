@@ -4,6 +4,7 @@
 #include "zip_test_utils.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -104,6 +105,40 @@ void write_bytes_to_file(
     if (!stream) {
         throw std::runtime_error("failed to write file: " + path.string());
     }
+}
+
+[[nodiscard]] bool file_bytes_equal(
+    const std::filesystem::path& lhs,
+    const std::filesystem::path& rhs)
+{
+    if (std::filesystem::file_size(lhs) != std::filesystem::file_size(rhs)) {
+        return false;
+    }
+
+    std::ifstream lhs_stream(lhs, std::ios::binary);
+    std::ifstream rhs_stream(rhs, std::ios::binary);
+    if (!lhs_stream) {
+        throw std::runtime_error("failed to open file for comparison: " + lhs.string());
+    }
+    if (!rhs_stream) {
+        throw std::runtime_error("failed to open file for comparison: " + rhs.string());
+    }
+
+    std::array<char, 4096> lhs_buffer{};
+    std::array<char, 4096> rhs_buffer{};
+    while (lhs_stream && rhs_stream) {
+        lhs_stream.read(lhs_buffer.data(), static_cast<std::streamsize>(lhs_buffer.size()));
+        rhs_stream.read(rhs_buffer.data(), static_cast<std::streamsize>(rhs_buffer.size()));
+        const std::streamsize lhs_count = lhs_stream.gcount();
+        const std::streamsize rhs_count = rhs_stream.gcount();
+        if (lhs_count != rhs_count) {
+            return false;
+        }
+        if (!std::equal(lhs_buffer.begin(), lhs_buffer.begin() + lhs_count, rhs_buffer.begin())) {
+            return false;
+        }
+    }
+    return true;
 }
 
 [[nodiscard]] std::filesystem::path
@@ -1832,18 +1867,28 @@ Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
     return report;
 }
 
-Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save(const CliOptions& options)
+Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_multi_sheet_save_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-output.xlsx");
+    report.source = write_in_memory_multi_sheet_save_source(resolve_generated_source(options,
+        verify_noop_save
+            ? "fastxlsx-qa-ms-retry-reopen-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save
+            ? "fastxlsx-qa-ms-retry-reopen-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-output.xlsx");
     const std::filesystem::path retry_output =
         report.output.parent_path() / "retry-intermediate.xlsx";
+    const std::filesystem::path second_stage_output =
+        verify_noop_save ? report.output.parent_path() / "second-stage-output.xlsx" : report.output;
     ensure_parent_directory(retry_output);
+    ensure_parent_directory(second_stage_output);
+    ensure_parent_directory(report.output);
     report.source_sheet_name = "Data";
     report.mutations = {
         "first:worksheet(Data).set_cell(A1,text)",
@@ -1858,12 +1903,19 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save(const CliOpt
         "second:worksheet(Summary).set_cell(C1,formula)",
         "second:save_as(output)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("third:save_as(noop-output)");
+    }
     report.notes = {
         "Source-overwrite save_as should fail before the safe retry",
         "Intermediate retry output should be usable as a fresh WorkbookEditor source",
         "Second-stage edits should preserve first-stage Data and Summary materialized changes",
         "Notes sheet should remain preserved in the final output",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the second-stage flush should be byte-identical");
+    }
 
     {
         WorkbookEditor editor = WorkbookEditor::open(report.source);
@@ -1903,8 +1955,27 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save(const CliOpt
     data.set_cell("D1", CellValue::text("retry-reopened-data"));
     summary.set_cell("C1", CellValue::formula("Data!B1+10"));
     require_formula_cell(summary, "C1", "Data!B1+10");
-    reopened.save_as(report.output);
+    reopened.save_as(second_stage_output);
+    if (verify_noop_save) {
+        reopened.save_as(report.output);
+        if (!file_bytes_equal(second_stage_output, report.output)) {
+            throw std::runtime_error(
+                "retry reopen modify no-op save output should be byte-identical");
+        }
+    }
     return report;
+}
+
+Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save(const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options, false);
+}
+
+Report run_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options, true);
 }
 
 Report run_generated_shared_formula_materialization(const CliOptions& options)
@@ -2349,6 +2420,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save") {
         return run_generated_in_memory_multi_sheet_retry_reopen_modify_save(options);
+    }
+    if (options.scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save") {
+        return run_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

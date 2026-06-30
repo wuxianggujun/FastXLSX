@@ -476,6 +476,20 @@ the safe retry output through a fresh `WorkbookEditor`, applies second-stage
 `Data` and `Summary` materialized edits, and validates the final workbook while
 also checking that the original source workbook retained its old payloads.
 
+For the same path plus a final no-op save stability check, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_retry_reopen_modify_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-retry-reopen-modify-noop-save
+```
+
+This variant writes a second-stage output, performs one more `save_as()` without
+new materialized edits, requires both package outputs to be byte-identical, then
+validates the final no-op output with the same ZIP/XML and `openpyxl` checks.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

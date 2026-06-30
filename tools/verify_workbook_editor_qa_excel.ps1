@@ -723,6 +723,7 @@ function Verify-Case {
             "generated_in_memory_multi_sheet_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_in_memory_multi_sheet_retry_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_in_memory_multi_sheet_retry_reopen_modify_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifySave $workbook }
+            "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifySave $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

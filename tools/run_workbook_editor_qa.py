@@ -45,6 +45,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_multi_sheet_save",
     "generated_in_memory_multi_sheet_retry_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_save",
+    "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1584,6 +1585,21 @@ def verify_generated_in_memory_multi_sheet_retry_reopen_modify_save(
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory multi-sheet retry reopen modify no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_reopen_modify_save(
+        path,
+        tool_report,
+    )
+    require("third:save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_source_formula_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -2924,6 +2940,7 @@ def create_xlsxwriter_reference(
             "generated_in_memory_multi_sheet_save",
             "generated_in_memory_multi_sheet_retry_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_save",
+            "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
         }:
             data = workbook.add_worksheet("Data")
             summary = workbook.add_worksheet("Summary")
@@ -2936,7 +2953,10 @@ def create_xlsxwriter_reference(
             data.write_formula("C3", "=B3+Data!B1")
             summary.write("A1", "edited-summary")
             summary.write_formula("B1", "=Data!B1+Data!B3")
-            if scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save":
+            if scenario in {
+                "generated_in_memory_multi_sheet_retry_reopen_modify_save",
+                "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
+            }:
                 data.write("D1", "retry-reopened-data")
                 summary.write_formula("C1", "=Data!B1+10")
             notes.write("A1", "preserved")
@@ -3049,6 +3069,11 @@ def run_generated_case(
         )
     elif scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_reopen_modify_save(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(
             output_path,
             tool_report,
         )

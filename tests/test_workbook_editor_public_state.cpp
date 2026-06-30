@@ -16406,6 +16406,8 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-shift-formula-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-shift-formula-audit-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -16497,7 +16499,7 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
     check_not_contains(worksheet_xml, R"(r="D2")",
         "full-calc shifted formula audit save_as should omit old formula coordinate");
 
-    check_reopened_shift_output(output, "full-calc shifted formula audit",
+    const auto inspect_full_calc_shift_formula_audit_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 7,
                 "full-calc shifted formula audit reopened output should keep shifted sparse count");
@@ -16513,7 +16515,37 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
                 "full-calc shifted formula audit reopened output should read shifted formula");
             check(!reopened_sheet.try_cell("D2").has_value(),
                 "full-calc shifted formula audit reopened output should keep old formula coordinate absent");
-        });
+        };
+    check_reopened_shift_output(output, "full-calc shifted formula audit",
+        inspect_full_calc_shift_formula_audit_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc shifted formula audit no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc shifted formula audit no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc shifted formula audit no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc shifted formula audit no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc shifted formula audit no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc shifted formula audit no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc shifted formula audit no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc shifted formula audit no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc shifted formula audit no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "full-calc shifted formula audit no-op save",
+        inspect_full_calc_shift_formula_audit_output);
 }
 
 void test_public_worksheet_editor_full_calculation_source_formula_audits_preserve_source_scan()
@@ -16525,6 +16557,8 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-source-formula-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-source-formula-audit-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -16634,7 +16668,7 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
     check_not_contains(worksheet_xml, R"(r="D2")",
         "full-calc source formula audit save_as should omit old formula coordinate");
 
-    check_reopened_shift_output(output, "full-calc source formula audit",
+    const auto inspect_full_calc_source_formula_audit_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 7,
                 "full-calc source formula audit reopened output should keep shifted sparse count");
@@ -16650,7 +16684,37 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
                 "full-calc source formula audit reopened output should read shifted formula");
             check(!reopened_sheet.try_cell("D2").has_value(),
                 "full-calc source formula audit reopened output should keep old formula coordinate absent");
-        });
+        };
+    check_reopened_shift_output(output, "full-calc source formula audit",
+        inspect_full_calc_source_formula_audit_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc source formula audit no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc source formula audit no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc source formula audit no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc source formula audit no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc source formula audit no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc source formula audit no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc source formula audit no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc source formula audit no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc source formula audit no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "full-calc source formula audit no-op save",
+        inspect_full_calc_source_formula_audit_output);
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits_preserve_source_scan()

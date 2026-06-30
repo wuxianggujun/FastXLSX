@@ -15564,6 +15564,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -15636,7 +15638,7 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
     check_not_contains(worksheet_xml, R"(r="C3")",
         "full-calc before insert_columns save_as should omit old dirty coordinate");
 
-    check_reopened_shift_output(output, "full-calc before insert_columns",
+    const auto inspect_full_calc_insert_columns_output =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "full-calc before insert_columns reopened output should keep shifted sparse count");
@@ -15664,7 +15666,37 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
                     !reopened_sheet.try_cell("C2").has_value() &&
                     !reopened_sheet.try_cell("C3").has_value(),
                 "full-calc before insert_columns reopened output should keep old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "full-calc before insert_columns",
+        inspect_full_calc_insert_columns_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_columns no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_columns no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before insert_columns no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_columns no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc before insert_columns no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_columns no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc before insert_columns no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc before insert_columns no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc before insert_columns no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "full-calc before insert_columns no-op save",
+        inspect_full_calc_insert_columns_output);
 }
 
 void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
@@ -16225,6 +16257,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-columns-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-columns-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -16306,7 +16340,7 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
     check_not_contains(worksheet_xml, R"(r="A3")",
         "full-calc before delete_columns save_as should omit deleted trailing coordinate");
 
-    check_reopened_shift_output(output, "full-calc before delete_columns",
+    const auto inspect_full_calc_delete_columns_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,
                 "full-calc before delete_columns reopened output should keep shifted sparse count");
@@ -16330,7 +16364,37 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value(),
                 "full-calc before delete_columns reopened output should keep old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "full-calc before delete_columns",
+        inspect_full_calc_delete_columns_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before delete_columns no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before delete_columns no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before delete_columns no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc before delete_columns no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc before delete_columns no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before delete_columns no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc before delete_columns no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc before delete_columns no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc before delete_columns no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "full-calc before delete_columns no-op save",
+        inspect_full_calc_delete_columns_output);
 }
 
 void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics()

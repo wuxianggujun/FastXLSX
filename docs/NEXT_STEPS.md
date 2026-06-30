@@ -1502,6 +1502,8 @@ materialized memory across the mutated `Data` handle and the untouched dirty
 handle, including save-time cleanup.
 Invalid-to-valid row/column shift recovery coverage now pins aggregate dirty
 materialized memory for both clean recovery and already-dirty recovery paths.
+Formula-translation shift coverage now pins dirty materialized count and memory
+before saving rich reference-shape and out-of-bounds `#REF!` formula shifts.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

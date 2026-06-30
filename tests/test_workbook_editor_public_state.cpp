@@ -34109,9 +34109,14 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
 
         sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
         sheet.insert_rows(2, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
         const std::string expected =
             R"(SUM(A2,$B$2,A2:B3,Sheet1!C4,'Other Sheet'!D:D,[Book.xlsx]Sheet1!2:2,"A1",Table1[A1],LOG10(E6),A1foo,_A1,A1_,R1C1))";
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "insert_rows rich formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "insert_rows rich formula should report shifted dirty memory before save");
         const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == expected,
@@ -34192,9 +34197,14 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
 
         sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
         sheet.insert_columns(2, 2);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
         const std::string expected =
             R"(SUM(C1,$B$2,C1:D2,Sheet1!E3,'Other Sheet'!F:F,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(G5),A1foo,_A1,A1_,R1C1))";
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "insert_columns rich formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "insert_columns rich formula should report shifted dirty memory before save");
         const fastxlsx::CellValue shifted_formula = sheet.get_cell("E2");
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == expected,
@@ -34281,7 +34291,12 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
 
         sheet.set_cell(4, 3, fastxlsx::CellValue::formula("A1+A:A+1:1+B4"));
         sheet.delete_rows(1, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "delete_rows #REF formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "delete_rows #REF formula should report shifted dirty memory before save");
         const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "#REF!+A:A+#REF!+B3",
@@ -34360,7 +34375,12 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
 
         sheet.set_cell(1, 4, fastxlsx::CellValue::formula("A1+A:A+1:1+D2"));
         sheet.delete_columns(1, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "delete_columns #REF formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "delete_columns #REF formula should report shifted dirty memory before save");
         const fastxlsx::CellValue shifted_formula = sheet.get_cell("C1");
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "#REF!+#REF!+1:1+C2",

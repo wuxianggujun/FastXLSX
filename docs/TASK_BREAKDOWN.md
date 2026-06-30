@@ -48519,6 +48519,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1205 - Pin formula-shift pre-save aggregate memory
+
+Type: public `WorksheetEditor` formula row/column shift aggregate materialized
+memory regression.
+
+Status: completed.
+
+Goal: prove formula translation shift tests expose the correct dirty
+materialized count and aggregate materialized memory before the translated
+worksheet is saved.
+
+Coverage:
+- Extends rich formula reference-shape `insert_rows()` and `insert_columns()`
+  tests so they snapshot shifted worksheet memory and verify aggregate dirty
+  materialized count/memory before save.
+- Extends out-of-bounds `#REF!` `delete_rows()` and `delete_columns()` formula
+  tests so they snapshot shifted worksheet memory and verify aggregate dirty
+  materialized count/memory before save.
+
+Non-goals:
+- No formula-translation changes, formula evaluation, cached value generation,
+  row/column shift semantic changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1204 - Pin invalid-to-valid shift recovery memory
 
 Type: public `WorksheetEditor` invalid-to-valid row/column shift recovery

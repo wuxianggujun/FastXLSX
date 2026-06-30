@@ -1932,15 +1932,31 @@ Report run_generated_in_memory_multi_sheet_noop_save(const CliOptions& options)
     return run_generated_in_memory_multi_sheet_save_impl(options, true);
 }
 
-Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
+Report run_generated_in_memory_multi_sheet_retry_save_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_multi_sheet_save_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-output.xlsx");
+    const char* source_filename =
+        "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-source.xlsx";
+    const char* output_filename =
+        "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-output.xlsx";
+    if (verify_noop_save) {
+        source_filename =
+            "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-noop-source.xlsx";
+        output_filename =
+            "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-noop-output.xlsx";
+    }
+    report.source = write_in_memory_multi_sheet_save_source(
+        resolve_generated_source(options, source_filename));
+    report.output = resolve_output_path(options, output_filename);
+    const std::filesystem::path retry_output =
+        report.output.parent_path() / "safe-retry-output.xlsx";
+    if (verify_noop_save) {
+        ensure_parent_directory(retry_output);
+    }
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).set_cell(A1,text)",
@@ -1951,12 +1967,19 @@ Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
         "save_as(source) rejected",
         "save_as(output) retry",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Source-overwrite save_as should fail before flushing dirty materialized sessions",
         "Data and Summary should both flush through the safe retry save",
         "The original source package should retain old Data and Summary payloads",
         "Notes sheet should remain preserved in the retried output",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "A no-op save after the safe retry should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -1984,8 +2007,26 @@ Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
 
     require_formula_cell(data, "C3", "B3+Data!B1");
     require_formula_cell(summary, "B1", "Data!B1+Data!B3");
-    editor.save_as(report.output);
+    if (verify_noop_save) {
+        editor.save_as(retry_output);
+        editor.save_as(report.output);
+        if (!file_bytes_equal(retry_output, report.output)) {
+            throw std::runtime_error("multi-sheet retry no-op output should match safe retry");
+        }
+    } else {
+        editor.save_as(report.output);
+    }
     return report;
+}
+
+Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_save_impl(options, false);
+}
+
+Report run_generated_in_memory_multi_sheet_retry_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_save_impl(options, true);
 }
 
 Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
@@ -2598,6 +2639,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_save") {
         return run_generated_in_memory_multi_sheet_retry_save(options);
+    }
+    if (options.scenario == "generated_in_memory_multi_sheet_retry_noop_save") {
+        return run_generated_in_memory_multi_sheet_retry_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save") {
         return run_generated_in_memory_multi_sheet_retry_reopen_modify_save(options);

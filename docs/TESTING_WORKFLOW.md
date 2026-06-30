@@ -507,6 +507,22 @@ the old `Data` and `Summary` payloads, then validates the safe retry output with
 ZIP/XML, `openpyxl`, optional XlsxWriter reference, and optional Excel COM
 checks.
 
+For generated in-memory multi-sheet failed-save retry plus no-op smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_retry_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-retry-noop-save
+```
+
+This scenario repeats the rejected source-overwrite save path, writes a safe
+retry output, then performs one more no-op `save_as()` and requires the two
+outputs to be byte-identical. The runner also verifies the source workbook
+still contains the old `Data` and `Summary` payloads before ZIP/XML,
+`openpyxl`, optional XlsxWriter reference, and optional Excel COM validation.
+
 For generated in-memory multi-sheet retry plus reopen/modify smoke, run:
 
 ```powershell

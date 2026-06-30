@@ -498,6 +498,33 @@ function Verify-GeneratedInMemoryStationaryFormulaShift {
     }
 }
 
+function Verify-GeneratedInMemoryStationaryRangeFormulaShift {
+    param([object]$Workbook)
+
+    $data = $null
+    $notes = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $notes = Get-Worksheet $Workbook "Notes"
+        Assert-CellValue $data "A1" "item" "Data!A1"
+        Assert-CellValue $data "B1" "label" "Data!B1"
+        Assert-Formula $data "C1" "=SUM(A4:B4)+4:4+SUM(E1:F1)+E:F" "Data!C1 formula"
+        Assert-CellValue $data "D1" $null "Data!D1 inserted blank"
+        Assert-CellValue $data "E1" 4 "Data!E1"
+        Assert-CellValue $data "F1" 5 "Data!F1"
+        Assert-CellValue $data "A4" 1 "Data!A4"
+        Assert-CellValue $data "B4" 2 "Data!B4"
+        Assert-CellValue $notes "A1" "preserved" "Notes!A1"
+    }
+    finally {
+        foreach ($object in @($notes, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedInMemoryClearErase {
     param([object]$Workbook)
 
@@ -788,6 +815,7 @@ function Verify-Case {
             "generated_in_memory_insert_column_formula" { Verify-GeneratedInMemoryInsertColumnFormula $workbook }
             "generated_in_memory_delete_row_formula" { Verify-GeneratedInMemoryDeleteRowFormula $workbook }
             "generated_in_memory_stationary_formula_shift" { Verify-GeneratedInMemoryStationaryFormulaShift $workbook }
+            "generated_in_memory_stationary_range_formula_shift" { Verify-GeneratedInMemoryStationaryRangeFormulaShift $workbook }
             "generated_in_memory_clear_erase" { Verify-GeneratedInMemoryClearErase $workbook }
             "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }

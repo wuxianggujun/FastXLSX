@@ -550,6 +550,32 @@ std::filesystem::path write_in_memory_stationary_formula_shift_source(
     return path;
 }
 
+std::filesystem::path write_in_memory_stationary_range_formula_shift_source(
+    const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("item"),
+            CellView::text("label"),
+            CellView::formula("SUM(A3:B3)+3:3+SUM(D1:E1)+D:E"),
+            CellView::number(4.0),
+            CellView::number(5.0),
+        });
+        data.append_row({CellView::text("keep-row-two")});
+        data.append_row({CellView::number(1.0), CellView::number(2.0)});
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_in_memory_clear_erase_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1674,6 +1700,41 @@ Report run_generated_in_memory_stationary_formula_shift(const CliOptions& option
     data.insert_columns(4, 1);
     data.delete_rows(7, 1);
     data.delete_columns(7, 1);
+    require_formula_cell(data, "C1", kExpectedFormula);
+    editor.save_as(report.output);
+    return report;
+}
+
+Report run_generated_in_memory_stationary_range_formula_shift(const CliOptions& options)
+{
+    static constexpr std::string_view kExpectedFormula =
+        "SUM(A4:B4)+4:4+SUM(E1:F1)+E:F";
+
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source =
+        write_in_memory_stationary_range_formula_shift_source(resolve_generated_source(
+            options,
+            "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-source.xlsx"));
+    report.output = resolve_output_path(
+        options,
+        "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).insert_rows(3,1)",
+        "worksheet(Data).insert_columns(4,1)",
+    };
+    report.notes = {
+        "Stationary Data!C1 should rewrite row ranges and whole-row references",
+        "Stationary Data!C1 should rewrite column ranges and whole-column references",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    data.insert_rows(3, 1);
+    data.insert_columns(4, 1);
     require_formula_cell(data, "C1", kExpectedFormula);
     editor.save_as(report.output);
     return report;
@@ -3039,6 +3100,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_stationary_formula_shift") {
         return run_generated_in_memory_stationary_formula_shift(options);
+    }
+    if (options.scenario == "generated_in_memory_stationary_range_formula_shift") {
+        return run_generated_in_memory_stationary_range_formula_shift(options);
     }
     if (options.scenario == "generated_in_memory_clear_erase") {
         return run_generated_in_memory_clear_erase(options);

@@ -39,6 +39,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_insert_column_formula",
     "generated_in_memory_delete_row_formula",
     "generated_in_memory_stationary_formula_shift",
+    "generated_in_memory_stationary_range_formula_shift",
     "generated_in_memory_clear_erase",
     "generated_in_memory_append_row_formula",
     "generated_in_memory_overwrite_formula_text",
@@ -1182,6 +1183,73 @@ def verify_generated_in_memory_stationary_formula_shift(path: Path) -> tuple[dic
             "Data!A4": data["A4"].value,
             "Data!C4": data["C4"].value,
             "Data!A7": data["A7"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_stationary_range_formula_shift(
+    path: Path,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory stationary range formula shift"
+    expected_formula = "SUM(A4:B4)+4:4+SUM(E1:F1)+E:F"
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, f"{label}: missing workbook.xml")
+    require("xl/calcChain.xml" not in names, f"{label}: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"{label}: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="A4"' in data_xml and "<v>1</v>" in data_xml,
+            f"{label}: missing row-shifted A4 number")
+    require('r="B4"' in data_xml and "<v>2</v>" in data_xml,
+            f"{label}: missing row-shifted B4 number")
+    require('r="E1"' in data_xml and "<v>4</v>" in data_xml,
+            f"{label}: missing column-shifted E1 number")
+    require('r="F1"' in data_xml and "<v>5</v>" in data_xml,
+            f"{label}: missing column-shifted F1 number")
+    formulas = worksheet_formula_cells(path, "Data")
+    require(formulas.get("C1") == expected_formula,
+            f"{label}: stationary C1 formula mismatch {formulas!r}")
+    require(len(formulas) == 1, f"{label}: unexpected formulas {formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+    zip_report["structural_rewrite"] = "checked"
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"{label}: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "item", f"{label}: Data!A1 mismatch")
+        require(data["B1"].value == "label", f"{label}: Data!B1 mismatch")
+        require(data["C1"].value == f"={expected_formula}",
+                f"{label}: Data!C1 mismatch {data['C1'].value!r}")
+        require(data["D1"].value is None, f"{label}: Data!D1 should be blank")
+        require(data["E1"].value == 4, f"{label}: Data!E1 mismatch")
+        require(data["F1"].value == 5, f"{label}: Data!F1 mismatch")
+        require(data["A4"].value == 1, f"{label}: Data!A4 mismatch")
+        require(data["B4"].value == 2, f"{label}: Data!B4 mismatch")
+        require(notes["A1"].value == "preserved", f"{label}: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!C1": data["C1"].value,
+            "Data!D1": data["D1"].value,
+            "Data!E1": data["E1"].value,
+            "Data!F1": data["F1"].value,
+            "Data!A4": data["A4"].value,
+            "Data!B4": data["B4"].value,
             "Notes!A1": notes["A1"].value,
         }
     finally:
@@ -3349,6 +3417,18 @@ def create_xlsxwriter_reference(
             data.write("A5", "row-four")
             data.write("A6", "row-five")
             notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_stationary_range_formula_shift":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write("A1", "item")
+            data.write("B1", "label")
+            data.write_formula("C1", "=SUM(A4:B4)+4:4+SUM(E1:F1)+E:F")
+            data.write_number("E1", 4)
+            data.write_number("F1", 5)
+            data.write("A2", "keep-row-two")
+            data.write_number("A4", 1)
+            data.write_number("B4", 2)
+            notes.write("A1", "preserved")
         elif scenario == "generated_in_memory_clear_erase":
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
@@ -3538,6 +3618,10 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula(output_path)
     elif scenario == "generated_in_memory_stationary_formula_shift":
         zip_xml, openpyxl_report = verify_generated_in_memory_stationary_formula_shift(output_path)
+    elif scenario == "generated_in_memory_stationary_range_formula_shift":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_stationary_range_formula_shift(output_path)
+        )
     elif scenario == "generated_in_memory_clear_erase":
         zip_xml, openpyxl_report = verify_generated_in_memory_clear_erase(output_path)
     elif scenario == "generated_in_memory_append_row_formula":

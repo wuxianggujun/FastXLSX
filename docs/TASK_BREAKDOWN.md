@@ -53211,6 +53211,51 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1323 - Add generated stationary range formula shift QA scenario
+
+Type: opt-in workbook-editor QA runner coverage for public `WorksheetEditor`
+stationary range and whole-axis formula structural rewrites.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated QA path can save and reopen supported stationary
+formula rewrites for cell ranges, whole-row references, and whole-column
+references after materialized row and column insertion.
+
+Coverage:
+- Adds `generated_in_memory_stationary_range_formula_shift` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- The scenario opens a generated workbook with `Data` and `Notes`, applies
+  `insert_rows(3, 1)` and `insert_columns(4, 1)` to `Data`, verifies stationary
+  `C1` rewrites from `SUM(A3:B3)+3:3+SUM(D1:E1)+D:E` to
+  `SUM(A4:B4)+4:4+SUM(E1:F1)+E:F`, and writes a saved output.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML, `openpyxl`, and
+  optional XlsxWriter reference checks validate the final shifted cells and
+  rewritten range formula.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  smoke reads the same generated workbook shape.
+- Documents the scenario in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production formula rewrite semantic change, delete-side range shrink
+  behavior, formula evaluation, cached formula result preservation,
+  non-materialized worksheet formula scan, metadata/range synchronization,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  default CTest/CI expansion, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_stationary_range_formula_shift --work-dir build\\qa\\workbook-editor-in-memory-stationary-range-formula-shift --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

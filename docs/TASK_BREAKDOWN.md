@@ -49045,6 +49045,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1221 - Pin styled formula failed-save and option memory diagnostics
+
+Type: public `WorksheetEditor` styled formula failed-save / option-mismatch
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove styled formula rename-shift failed-save retry and option-mismatch
+paths keep aggregate materialized memory diagnostics aligned with their clean and
+dirty public states.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserves_styled_session()`
+  so the safe retry save clears aggregate dirty materialized memory after the
+  rejected source-overwrite save.
+- Extends `test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_preserves_styled_session()`
+  so the first save, rejected mismatched options access, second save, and
+  reopened output all verify clean materialized names/count/memory.
+- Verifies the later shared `insert_columns()` mutation reports aggregate dirty
+  materialized memory matching both styled handles.
+- Keeps existing failed-save source preservation, option mismatch rejection,
+  style-id preservation, translated formula text, no-op save, and reopened-output
+  checks unchanged.
+
+Non-goals:
+- No failed-save policy changes, option matching changes, style preservation
+  changes, formula translation changes, rename semantic changes, shift semantic
+  changes, memory-accounting changes, metadata/range repair, relationship repair,
+  calcChain rebuild, sharedStrings/styles migration, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

@@ -1547,6 +1547,9 @@ dirty memory for their recovery column shifts.
 The basic shift handle-reuse path now pins clean aggregate materialized
 names/count/memory after both successful `save_as()` calls before the no-op
 save stability check.
+The basic shift reacquire path now pins clean materialized memory after first
+and second saves and aggregate dirty memory for the shared recovery column
+shift.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

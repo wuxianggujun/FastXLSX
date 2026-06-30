@@ -31669,7 +31669,8 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
     check(editor.pending_change_count() == 1,
         "shift reacquire failed save first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire failed save first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire failed save first save should keep diagnostics clear");
@@ -31761,7 +31762,8 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire failed save safe retry should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire failed save safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire failed save safe retry should record the later handoff");

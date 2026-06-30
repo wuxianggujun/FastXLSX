@@ -49831,6 +49831,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1242 - Pin saved-session failed-save clean diagnostics
+
+Type: public `WorksheetEditor` saved-session failed-save clean materialized
+memory regression.
+
+Status: completed.
+
+Goal: prove the saved-session failed-save retry path clears aggregate dirty
+materialized names, count, and memory after both the initial save and safe
+retry, while preserving existing dirty-memory checks around the rejected
+source-overwrite save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_session()`
+  so the initial `save_as()` and later safe retry verify clean materialized
+  memory diagnostics.
+- Keeps the existing rejected source-overwrite, dirty-memory preservation
+  helper, source package preservation, package XML, no-op save, and reopened
+  sparse-state checks unchanged.
+
+Non-goals:
+- No failed-save policy changes, saved-session lookup changes, row/column shift
+  semantic changes, memory-accounting changes, metadata/range repair,
+  relationship repair, calcChain rebuild, sharedStrings/styles migration,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

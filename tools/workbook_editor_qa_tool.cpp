@@ -2152,7 +2152,8 @@ Report run_generated_in_memory_multi_sheet_noop_save(const CliOptions& options)
 
 Report run_generated_in_memory_multi_sheet_retry_save_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool use_path_equivalent_source)
 {
     Report report;
     report.scenario = options.scenario;
@@ -2167,11 +2168,19 @@ Report run_generated_in_memory_multi_sheet_retry_save_impl(
         output_filename =
             "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-noop-output.xlsx";
     }
+    if (use_path_equivalent_source) {
+        source_filename = "fastxlsx-qa-ms-retry-path-equiv-noop-source.xlsx";
+        output_filename = "fastxlsx-qa-ms-retry-path-equiv-noop-output.xlsx";
+    }
     report.source = write_in_memory_multi_sheet_save_source(
         resolve_generated_source(options, source_filename));
     report.output = resolve_output_path(options, output_filename);
     const std::filesystem::path retry_output =
         report.output.parent_path() / "safe-retry-output.xlsx";
+    const std::filesystem::path rejected_output =
+        use_path_equivalent_source
+            ? report.source.parent_path() / "." / report.source.filename()
+            : report.source;
     if (verify_noop_save) {
         ensure_parent_directory(retry_output);
     }
@@ -2182,9 +2191,15 @@ Report run_generated_in_memory_multi_sheet_retry_save_impl(
         "worksheet(Data).append_row(text,number,formula)",
         "worksheet(Summary).set_cell(A1,text)",
         "worksheet(Summary).set_cell(B1,formula)",
-        "save_as(source) rejected",
         "save_as(output) retry",
     };
+    if (use_path_equivalent_source) {
+        report.mutations.insert(
+            report.mutations.end() - 1,
+            "save_as(path-equivalent-source) rejected");
+    } else {
+        report.mutations.insert(report.mutations.end() - 1, "save_as(source) rejected");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -2197,6 +2212,10 @@ Report run_generated_in_memory_multi_sheet_retry_save_impl(
     if (verify_noop_save) {
         report.notes.push_back(
             "A no-op save after the safe retry should be byte-identical");
+    }
+    if (use_path_equivalent_source) {
+        report.notes.push_back(
+            "The rejected output path is path-equivalent to the source package");
     }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
@@ -2216,7 +2235,7 @@ Report run_generated_in_memory_multi_sheet_retry_save_impl(
     require_formula_cell(summary, "B1", "Data!B1+Data!B3");
 
     try {
-        editor.save_as(report.source);
+        editor.save_as(rejected_output);
         throw std::runtime_error("expected source-overwrite save_as to fail");
     } catch (const FastXlsxError& error) {
         report.status = "expected_retry_observed";
@@ -2239,12 +2258,18 @@ Report run_generated_in_memory_multi_sheet_retry_save_impl(
 
 Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
 {
-    return run_generated_in_memory_multi_sheet_retry_save_impl(options, false);
+    return run_generated_in_memory_multi_sheet_retry_save_impl(options, false, false);
 }
 
 Report run_generated_in_memory_multi_sheet_retry_noop_save(const CliOptions& options)
 {
-    return run_generated_in_memory_multi_sheet_retry_save_impl(options, true);
+    return run_generated_in_memory_multi_sheet_retry_save_impl(options, true, false);
+}
+
+Report run_generated_in_memory_multi_sheet_retry_path_equivalent_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_save_impl(options, true, true);
 }
 
 Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
@@ -2873,6 +2898,10 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_noop_save") {
         return run_generated_in_memory_multi_sheet_retry_noop_save(options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_multi_sheet_retry_path_equivalent_noop_save") {
+        return run_generated_in_memory_multi_sheet_retry_path_equivalent_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save") {
         return run_generated_in_memory_multi_sheet_retry_reopen_modify_save(options);

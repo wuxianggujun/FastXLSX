@@ -769,6 +769,7 @@ function Verify-Case {
             "generated_in_memory_multi_sheet_noop_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_in_memory_multi_sheet_retry_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_in_memory_multi_sheet_retry_noop_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
+            "generated_in_memory_multi_sheet_retry_path_equivalent_noop_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_in_memory_multi_sheet_retry_reopen_modify_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifySave $workbook }
             "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifySave $workbook }
             "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifyPostNoopThirdSave $workbook }

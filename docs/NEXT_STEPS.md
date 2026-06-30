@@ -97,6 +97,10 @@ The retry lane now also has
 `generated_in_memory_multi_sheet_retry_noop_save`, which repeats that rejected
 source-overwrite path and requires the safe retry output to be byte-identical
 to a follow-up no-op `save_as()` output.
+It also covers
+`generated_in_memory_multi_sheet_retry_path_equivalent_noop_save`, which uses a
+path-equivalent source output path for the rejected multi-sheet retry before
+the same safe-retry/no-op byte-stability checks.
 It also covers `generated_in_memory_multi_sheet_retry_reopen_modify_save`, which
 reopens that safe retry output through a fresh editor, applies second-stage
 `Data` and `Summary` edits, and validates the final workbook.

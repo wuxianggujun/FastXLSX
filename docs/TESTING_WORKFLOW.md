@@ -584,6 +584,22 @@ outputs to be byte-identical. The runner also verifies the source workbook
 still contains the old `Data` and `Summary` payloads before ZIP/XML,
 `openpyxl`, optional XlsxWriter reference, and optional Excel COM validation.
 
+For generated in-memory multi-sheet path-equivalent failed-save retry plus
+no-op smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_retry_path_equivalent_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-retry-path-equivalent-noop-save
+```
+
+This mirrors the multi-sheet retry/no-op shape while using a path-equivalent
+source output path for the rejected save. It is an opt-in QA scenario only; it
+does not add overwrite mode, path repair, metadata repair, sharedStrings/styles
+migration, calcChain rebuild, or low-memory random editing.
+
 For generated in-memory multi-sheet retry plus reopen/modify smoke, run:
 
 ```powershell

@@ -61,6 +61,9 @@ flushes both while preserving an untouched sheet.
 It also covers `generated_in_memory_multi_sheet_retry_save`, which first
 attempts the rejected source-overwrite save path, verifies the source workbook
 keeps its old payloads, then validates the safe retry output.
+It also covers `generated_in_memory_multi_sheet_retry_reopen_modify_save`, which
+reopens that safe retry output through a fresh editor, applies second-stage
+`Data` and `Summary` edits, and validates the final workbook.
 Public-state coverage also pins the same multi-worksheet saved-session hygiene:
 matching reacquires stay clean after save and a later no-op `save_as()` keeps
 the output byte-stable.

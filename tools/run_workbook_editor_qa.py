@@ -44,6 +44,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_reopen_modify_save",
     "generated_in_memory_multi_sheet_save",
     "generated_in_memory_multi_sheet_retry_save",
+    "generated_in_memory_multi_sheet_retry_reopen_modify_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1464,33 +1465,121 @@ def verify_generated_in_memory_multi_sheet_save(path: Path) -> tuple[dict[str, A
     return zip_report, openpyxl_report
 
 
-def verify_generated_in_memory_multi_sheet_retry_save(
-    path: Path,
-    tool_report: dict[str, Any],
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    require(tool_report.get("status") == "expected_retry_observed",
-            f"generated in-memory multi-sheet retry save: unexpected tool status {tool_report!r}")
-    require(tool_report.get("error_message"),
-            "generated in-memory multi-sheet retry save: missing rejected save diagnostic")
-    source_path = Path(tool_report["source"])
+def verify_in_memory_multi_sheet_retry_source_unchanged(
+    source_path: Path,
+    label: str,
+) -> dict[str, Any]:
     source_sheet_entries = workbook_sheet_entry_map(source_path)
     require(source_sheet_entries == {
         "Data": "xl/worksheets/sheet1.xml",
         "Summary": "xl/worksheets/sheet2.xml",
         "Notes": "xl/worksheets/sheet3.xml",
-    }, f"generated in-memory multi-sheet retry save: unexpected source sheet map {source_sheet_entries!r}")
+    }, f"{label}: unexpected source sheet map {source_sheet_entries!r}")
     source_data_xml = read_zip_text(source_path, source_sheet_entries["Data"])
     source_summary_xml = read_zip_text(source_path, source_sheet_entries["Summary"])
     require("old-data" in source_data_xml and "edited-data" not in source_data_xml,
-            "generated in-memory multi-sheet retry save: source Data payload was overwritten")
+            f"{label}: source Data payload was overwritten")
     require("old-summary" in source_summary_xml and "edited-summary" not in source_summary_xml,
-            "generated in-memory multi-sheet retry save: source Summary payload was overwritten")
+            f"{label}: source Summary payload was overwritten")
     require("Data!B1*2" in source_summary_xml and "Data!B1+Data!B3" not in source_summary_xml,
-            "generated in-memory multi-sheet retry save: source Summary formula was overwritten")
+            f"{label}: source Summary formula was overwritten")
+    return {
+        "source_sheet_entries": source_sheet_entries,
+        "source_payload": "checked",
+    }
+
+
+def verify_generated_in_memory_multi_sheet_retry_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory multi-sheet retry save"
+    require(tool_report.get("status") == "expected_retry_observed",
+            f"{label}: unexpected tool status {tool_report!r}")
+    require(tool_report.get("error_message"),
+            f"{label}: missing rejected save diagnostic")
+    source_path = Path(tool_report["source"])
+    source_report = verify_in_memory_multi_sheet_retry_source_unchanged(source_path, label)
 
     zip_report, openpyxl_report = verify_generated_in_memory_multi_sheet_save(path)
-    zip_report["source_sheet_entries"] = source_sheet_entries
-    zip_report["source_payload"] = "checked"
+    zip_report.update(source_report)
+    zip_report["retry_error_message"] = tool_report["error_message"]
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_multi_sheet_retry_reopen_modify_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory multi-sheet retry reopen modify save"
+    require(tool_report.get("status") == "expected_retry_observed",
+            f"{label}: unexpected tool status {tool_report!r}")
+    require(tool_report.get("error_message"),
+            f"{label}: missing rejected save diagnostic")
+    source_report = verify_in_memory_multi_sheet_retry_source_unchanged(
+        Path(tool_report["source"]),
+        label,
+    )
+
+    zip_report, openpyxl_report = verify_generated_in_memory_multi_sheet_save(path)
+    sheet_entries = zip_report["sheet_entries"]
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    summary_xml = read_zip_text(path, sheet_entries["Summary"])
+    require('r="D1"' in data_xml and "retry-reopened-data" in data_xml,
+            f"{label}: missing second-stage Data!D1 text")
+    data_formulas = worksheet_formula_cells(path, "Data")
+    summary_formulas = worksheet_formula_cells(path, "Summary")
+    require(data_formulas.get("C3") == "B3+Data!B1",
+            f"{label}: Data!C3 formula mismatch {data_formulas!r}")
+    require(summary_formulas.get("B1") == "Data!B1+Data!B3",
+            f"{label}: Summary!B1 formula mismatch {summary_formulas!r}")
+    require(summary_formulas.get("C1") == "Data!B1+10",
+            f"{label}: Summary!C1 formula mismatch {summary_formulas!r}")
+    require('r="C1"' in summary_xml,
+            f"{label}: missing second-stage Summary!C1 cell")
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Summary", "Notes"],
+                f"{label}: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        summary = workbook["Summary"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "edited-data", f"{label}: Data!A1 mismatch")
+        require(data["B1"].value == 7, f"{label}: Data!B1 mismatch")
+        require(data["A2"].value == "keep-data-row", f"{label}: Data!A2 mismatch")
+        require(data["A3"].value == "multi-row", f"{label}: Data!A3 mismatch")
+        require(data["B3"].value == 3, f"{label}: Data!B3 mismatch")
+        require(data["C3"].value == "=B3+Data!B1",
+                f"{label}: Data!C3 mismatch {data['C3'].value!r}")
+        require(data["D1"].value == "retry-reopened-data", f"{label}: Data!D1 mismatch")
+        require(summary["A1"].value == "edited-summary", f"{label}: Summary!A1 mismatch")
+        require(summary["B1"].value == "=Data!B1+Data!B3",
+                f"{label}: Summary!B1 mismatch {summary['B1'].value!r}")
+        require(summary["C1"].value == "=Data!B1+10",
+                f"{label}: Summary!C1 mismatch {summary['C1'].value!r}")
+        require(notes["A1"].value == "preserved", f"{label}: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!A2": data["A2"].value,
+            "Data!A3": data["A3"].value,
+            "Data!B3": data["B3"].value,
+            "Data!C3": data["C3"].value,
+            "Data!D1": data["D1"].value,
+            "Summary!A1": summary["A1"].value,
+            "Summary!B1": summary["B1"].value,
+            "Summary!C1": summary["C1"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    zip_report.update(source_report)
+    zip_report["data_formulas"] = data_formulas
+    zip_report["summary_formulas"] = summary_formulas
     zip_report["retry_error_message"] = tool_report["error_message"]
     return zip_report, openpyxl_report
 
@@ -2834,6 +2923,7 @@ def create_xlsxwriter_reference(
         elif scenario in {
             "generated_in_memory_multi_sheet_save",
             "generated_in_memory_multi_sheet_retry_save",
+            "generated_in_memory_multi_sheet_retry_reopen_modify_save",
         }:
             data = workbook.add_worksheet("Data")
             summary = workbook.add_worksheet("Summary")
@@ -2846,6 +2936,9 @@ def create_xlsxwriter_reference(
             data.write_formula("C3", "=B3+Data!B1")
             summary.write("A1", "edited-summary")
             summary.write_formula("B1", "=Data!B1+Data!B3")
+            if scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save":
+                data.write("D1", "retry-reopened-data")
+                summary.write_formula("C1", "=Data!B1+10")
             notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
@@ -2951,6 +3044,11 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_save(output_path)
     elif scenario == "generated_in_memory_multi_sheet_retry_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_save(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_reopen_modify_save(
             output_path,
             tool_report,
         )

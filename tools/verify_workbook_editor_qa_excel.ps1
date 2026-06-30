@@ -596,6 +596,28 @@ function Verify-GeneratedInMemoryMultiSheetSave {
     }
 }
 
+function Verify-GeneratedInMemoryMultiSheetRetryReopenModifySave {
+    param([object]$Workbook)
+
+    Verify-GeneratedInMemoryMultiSheetSave $Workbook
+
+    $data = $null
+    $summary = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $summary = Get-Worksheet $Workbook "Summary"
+        Assert-CellValue $data "D1" "retry-reopened-data" "Data!D1"
+        Assert-Formula $summary "C1" "=Data!B1+10" "Summary!C1 formula"
+    }
+    finally {
+        foreach ($object in @($summary, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStyleRejection {
     param([object]$Workbook)
 
@@ -700,6 +722,7 @@ function Verify-Case {
             "generated_in_memory_reopen_modify_save" { Verify-GeneratedInMemoryReopenModifySave $workbook }
             "generated_in_memory_multi_sheet_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_in_memory_multi_sheet_retry_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
+            "generated_in_memory_multi_sheet_retry_reopen_modify_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifySave $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

@@ -567,6 +567,35 @@ function Verify-GeneratedInMemoryReopenModifySave {
     }
 }
 
+function Verify-GeneratedInMemoryMultiSheetSave {
+    param([object]$Workbook)
+
+    $data = $null
+    $summary = $null
+    $notes = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $summary = Get-Worksheet $Workbook "Summary"
+        $notes = Get-Worksheet $Workbook "Notes"
+        Assert-CellValue $data "A1" "edited-data" "Data!A1"
+        Assert-CellValue $data "B1" 7 "Data!B1"
+        Assert-CellValue $data "A2" "keep-data-row" "Data!A2"
+        Assert-CellValue $data "A3" "multi-row" "Data!A3"
+        Assert-CellValue $data "B3" 3 "Data!B3"
+        Assert-Formula $data "C3" "=B3+Data!B1" "Data!C3 formula"
+        Assert-CellValue $summary "A1" "edited-summary" "Summary!A1"
+        Assert-Formula $summary "B1" "=Data!B1+Data!B3" "Summary!B1 formula"
+        Assert-CellValue $notes "A1" "preserved" "Notes!A1"
+    }
+    finally {
+        foreach ($object in @($notes, $summary, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStyleRejection {
     param([object]$Workbook)
 
@@ -669,6 +698,7 @@ function Verify-Case {
             "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_reopen_modify_save" { Verify-GeneratedInMemoryReopenModifySave $workbook }
+            "generated_in_memory_multi_sheet_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

@@ -42,6 +42,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_append_row_formula",
     "generated_in_memory_overwrite_formula_text",
     "generated_in_memory_reopen_modify_save",
+    "generated_in_memory_multi_sheet_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1366,6 +1367,94 @@ def verify_generated_in_memory_reopen_modify_save(path: Path) -> tuple[dict[str,
             "Data!A3": data["A3"].value,
             "Data!B3": data["B3"].value,
             "Data!C3": data["C3"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_multi_sheet_save(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names,
+            "generated in-memory multi-sheet save: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory multi-sheet save: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Summary": "xl/worksheets/sheet2.xml",
+        "Notes": "xl/worksheets/sheet3.xml",
+    }, f"generated in-memory multi-sheet save: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    summary_xml = read_zip_text(path, sheet_entries["Summary"])
+    require("old-data" not in data_xml,
+            "generated in-memory multi-sheet save: old Data!A1 text remained")
+    require("old-summary" not in summary_xml,
+            "generated in-memory multi-sheet save: old Summary!A1 text remained")
+    require("Data!B1*2" not in summary_xml,
+            "generated in-memory multi-sheet save: old Summary!B1 formula remained")
+    require('r="A1"' in data_xml and "edited-data" in data_xml,
+            "generated in-memory multi-sheet save: missing edited Data!A1 text")
+    require('<c r="B1"><v>7</v></c>' in data_xml,
+            "generated in-memory multi-sheet save: missing edited Data!B1 number")
+    require('r="A2"' in data_xml and "keep-data-row" in data_xml,
+            "generated in-memory multi-sheet save: missing preserved Data!A2")
+    require('r="A3"' in data_xml and "multi-row" in data_xml,
+            "generated in-memory multi-sheet save: missing appended Data!A3")
+    require('<c r="B3"><v>3</v></c>' in data_xml,
+            "generated in-memory multi-sheet save: missing appended Data!B3 number")
+    require('r="A1"' in summary_xml and "edited-summary" in summary_xml,
+            "generated in-memory multi-sheet save: missing edited Summary!A1 text")
+    data_formulas = worksheet_formula_cells(path, "Data")
+    summary_formulas = worksheet_formula_cells(path, "Summary")
+    require(data_formulas.get("C3") == "B3+Data!B1",
+            f"generated in-memory multi-sheet save: Data!C3 formula mismatch {data_formulas!r}")
+    require(summary_formulas.get("B1") == "Data!B1+Data!B3",
+            f"generated in-memory multi-sheet save: Summary!B1 formula mismatch {summary_formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["data_formulas"] = data_formulas
+    zip_report["summary_formulas"] = summary_formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Summary", "Notes"],
+                f"generated in-memory multi-sheet save: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        summary = workbook["Summary"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "edited-data",
+                "generated in-memory multi-sheet save: Data!A1 mismatch")
+        require(data["B1"].value == 7,
+                "generated in-memory multi-sheet save: Data!B1 mismatch")
+        require(data["A2"].value == "keep-data-row",
+                "generated in-memory multi-sheet save: Data!A2 mismatch")
+        require(data["A3"].value == "multi-row",
+                "generated in-memory multi-sheet save: Data!A3 mismatch")
+        require(data["B3"].value == 3,
+                "generated in-memory multi-sheet save: Data!B3 mismatch")
+        require(data["C3"].value == "=B3+Data!B1",
+                f"generated in-memory multi-sheet save: Data!C3 mismatch {data['C3'].value!r}")
+        require(summary["A1"].value == "edited-summary",
+                "generated in-memory multi-sheet save: Summary!A1 mismatch")
+        require(summary["B1"].value == "=Data!B1+Data!B3",
+                f"generated in-memory multi-sheet save: Summary!B1 mismatch {summary['B1'].value!r}")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory multi-sheet save: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!A2": data["A2"].value,
+            "Data!A3": data["A3"].value,
+            "Data!B3": data["B3"].value,
+            "Data!C3": data["C3"].value,
+            "Summary!A1": summary["A1"].value,
+            "Summary!B1": summary["B1"].value,
             "Notes!A1": notes["A1"].value,
         }
     finally:
@@ -2710,6 +2799,19 @@ def create_xlsxwriter_reference(
             data.write_number("B3", 4)
             data.write_formula("C3", "=B3*2")
             notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_multi_sheet_save":
+            data = workbook.add_worksheet("Data")
+            summary = workbook.add_worksheet("Summary")
+            notes = workbook.add_worksheet("Notes")
+            data.write("A1", "edited-data")
+            data.write_number("B1", 7)
+            data.write("A2", "keep-data-row")
+            data.write("A3", "multi-row")
+            data.write_number("B3", 3)
+            data.write_formula("C3", "=B3+Data!B1")
+            summary.write("A1", "edited-summary")
+            summary.write_formula("B1", "=Data!B1+Data!B3")
+            notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
@@ -2810,6 +2912,8 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(output_path)
     elif scenario == "generated_in_memory_reopen_modify_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_save(output_path)
+    elif scenario == "generated_in_memory_multi_sheet_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_save(output_path)
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

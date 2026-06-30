@@ -51130,6 +51130,51 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1275 - Add generated in-memory multi-sheet save QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+multi-worksheet dirty-session save persistence.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that one `WorkbookEditor`
+session can materialize and dirty more than one worksheet, then flush all dirty
+materialized sessions through a single `save_as()` output.
+
+Coverage:
+- Adds `generated_in_memory_multi_sheet_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- The generated source workbook contains `Data`, `Summary`, and untouched
+  `Notes` worksheets. `Summary!B1` starts as a sheet-qualified formula pointing
+  at `Data`.
+- The editor materializes `Data` and `Summary`, overwrites source-backed
+  `Data!A1`, `Data!B1`, `Summary!A1`, and `Summary!B1`, appends `Data!A3:C3`,
+  verifies the dirty formulas through the public read model, and saves once.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  verify both dirty worksheets, old payload removal, formula text, preserved
+  `Data!A2`, absence of `xl/calcChain.xml`, and untouched `Notes`.
+- Extends optional XlsxWriter reference generation and Excel COM sidecar checks
+  for the same final workbook shape.
+- Documents the single-scenario command in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production behavior changes, formula evaluation, cached value
+  preservation, cross-sheet dependency synchronization, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_multi_sheet_save --work-dir build\\qa\\workbook-editor-in-memory-multi-sheet-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

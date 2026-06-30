@@ -427,6 +427,23 @@ and does not add in-place source overwrite, metadata repair,
 sharedStrings/styles migration, calcChain rebuild, or low-memory random
 editing.
 
+For generated in-memory multi-sheet save persistence smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-save
+```
+
+This scenario covers one `WorkbookEditor` session dirtying `Data` and `Summary`
+through public `WorksheetEditor` handles, saving once, and verifying both
+worksheets plus an untouched `Notes` sheet after reopen. It is local QA only
+and does not add cross-sheet dependency synchronization, metadata repair,
+sharedStrings/styles migration, calcChain rebuild, or low-memory random
+editing.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

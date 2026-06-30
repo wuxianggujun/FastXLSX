@@ -571,6 +571,34 @@ std::filesystem::path write_in_memory_reopen_modify_save_source(const std::files
     return path;
 }
 
+std::filesystem::path write_in_memory_multi_sheet_save_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("old-data"),
+            CellView::number(2.0),
+        });
+        data.append_row({CellView::text("keep-data-row")});
+    }
+    {
+        WorksheetWriter summary = writer.add_worksheet("Summary");
+        summary.append_row({
+            CellView::text("old-summary"),
+            CellView::formula("Data!B1*2"),
+        });
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1706,6 +1734,48 @@ Report run_generated_in_memory_reopen_modify_save(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_multi_sheet_save(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_multi_sheet_save_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-save-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-save-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).set_cell(A1,text)",
+        "worksheet(Data).set_cell(B1,number)",
+        "worksheet(Data).append_row(text,number,formula)",
+        "worksheet(Summary).set_cell(A1,text)",
+        "worksheet(Summary).set_cell(B1,formula)",
+    };
+    report.notes = {
+        "Data and Summary should both flush dirty materialized sessions in one save",
+        "Data!A2 and Notes!A1 should remain preserved",
+        "Summary formulas should preserve sheet-qualified text",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    WorksheetEditor summary = editor.worksheet("Summary");
+    require_formula_cell(summary, "B1", "Data!B1*2");
+    data.set_cell("A1", CellValue::text("edited-data"));
+    data.set_cell("B1", CellValue::number(7.0));
+    data.append_row({
+        CellValue::text("multi-row"),
+        CellValue::number(3.0),
+        CellValue::formula("B3+Data!B1"),
+    });
+    summary.set_cell("A1", CellValue::text("edited-summary"));
+    summary.set_cell("B1", CellValue::formula("Data!B1+Data!B3"));
+    require_formula_cell(data, "C3", "B3+Data!B1");
+    require_formula_cell(summary, "B1", "Data!B1+Data!B3");
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -2139,6 +2209,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_reopen_modify_save") {
         return run_generated_in_memory_reopen_modify_save(options);
+    }
+    if (options.scenario == "generated_in_memory_multi_sheet_save") {
+        return run_generated_in_memory_multi_sheet_save(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

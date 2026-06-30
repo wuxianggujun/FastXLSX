@@ -31853,7 +31853,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
     check(editor.pending_change_count() == 1,
         "shift reacquire after retry first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire after retry first save should clear dirty diagnostics");
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
@@ -31891,7 +31892,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire after retry safe retry should clean both borrowed handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire after retry safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire after retry safe retry should record the second handoff");
@@ -31911,7 +31913,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
             !reacquired.has_pending_changes(),
         "shift reacquire after retry should return a clean saved session");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire after retry clean reacquire should keep dirty diagnostics empty");
     check(editor.pending_change_count() == 2,
         "shift reacquire after retry clean reacquire should not add handoffs");
@@ -31928,6 +31931,7 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
         "shift reacquire after retry should keep old sparse coordinates absent");
 
     after_retry.delete_rows(3, 1);
+    const std::size_t deleted_memory = after_retry.estimated_memory_usage();
     check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
             reacquired.has_pending_changes(),
         "shift reacquire after retry later delete should dirty all shared handles");
@@ -31939,6 +31943,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
     }
     check(editor.pending_materialized_cell_count() == 2,
         "shift reacquire after retry later delete should shrink the dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == deleted_memory,
+        "shift reacquire after retry later delete should report the dirty memory");
     check(!after_retry.try_cell("A3").has_value() &&
             !sheet.try_cell("A3").has_value() &&
             !reacquired.try_cell("A3").has_value(),
@@ -31951,7 +31957,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
             !reacquired.has_pending_changes(),
         "shift reacquire after retry third save should clean all shared handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire after retry third save should clear dirty diagnostics");
     check(editor.pending_change_count() == 3,
         "shift reacquire after retry third save should record the third handoff");

@@ -1558,6 +1558,9 @@ rejected access and aggregate dirty memory for their recovery column shifts.
 The saved-session failed-save retry path now also pins clean materialized
 memory after the initial save and safe retry while preserving existing dirty
 memory checks around the rejected source-overwrite save.
+The failed-save retry reacquire path now pins clean materialized memory after
+first/safe/third saves and clean reacquire, plus dirty memory for the
+post-retry delete-row mutation.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

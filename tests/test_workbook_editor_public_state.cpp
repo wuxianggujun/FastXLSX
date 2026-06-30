@@ -28641,7 +28641,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
     check(editor.pending_change_count() == 2,
         "renamed shift option mismatch first save should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift option mismatch first save should clear dirty materialized diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift option mismatch first save should keep diagnostics clear");
@@ -28663,7 +28664,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
     check(editor.pending_change_count() == 2,
         "renamed shift option mismatch should not add materialized handoffs");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift option mismatch should not dirty materialized diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
@@ -28728,7 +28730,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
     check(editor.pending_change_count() == 3,
         "renamed shift option mismatch second save should record the later materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift option mismatch second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
@@ -28796,7 +28799,9 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed shift option mismatch reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift option mismatch reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 3,
         "renamed shift option mismatch reopened output should keep sparse count");

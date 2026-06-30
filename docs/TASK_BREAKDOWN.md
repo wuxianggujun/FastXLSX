@@ -52876,6 +52876,50 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1315 - Pin invalid-to-valid shift recovery dirty diagnostics
+
+Type: public `WorksheetEditor` invalid-to-valid row/column shift recovery
+pre-save diagnostics regression.
+
+Status: completed.
+
+Goal:
+Extend the pre-save dirty materialized diagnostics contract to invalid-to-valid
+row/column shift recovery paths after the valid recovery mutation and before
+the next materialized handoff.
+
+Coverage:
+- Reuses the shared public-state assertion helper for a single dirty `Data`
+  materialized session with no replacement flags.
+- Extends
+  `test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()`
+  and
+  `test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_state()`.
+- Covers clean-start row and column recovery plus already-dirty row and column
+  recovery.
+- Verifies the valid recovery shift clears the prior diagnostic, keeps
+  `pending_change_count()` at zero, exposes `Data` as the only dirty
+  materialized worksheet, reports matching materialized cell count and memory
+  estimate, leaves replacement diagnostics empty, and publishes one dirty
+  materialized summary before `save_as()`.
+
+Non-goals:
+- No invalid range validation changes, diagnostic-clearing semantic changes,
+  row/column shift behavior changes, save behavior changes, memory-accounting
+  changes, summary-generation redesign, row/column metadata synchronization,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition changes, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

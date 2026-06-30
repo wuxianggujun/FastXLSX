@@ -36779,6 +36779,8 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
 
         sheet.insert_rows(2, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "valid insert_rows after invalid shifts pre-save recovery");
         check(!editor.last_edit_error().has_value(),
             "valid insert_rows after invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
@@ -36874,6 +36876,8 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
 
         sheet.insert_columns(2, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "valid insert_columns after invalid shifts pre-save recovery");
         check(!editor.last_edit_error().has_value(),
             "valid insert_columns after invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
@@ -36989,6 +36993,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
 
         sheet.insert_rows(2, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "valid insert_rows after dirty invalid shifts pre-save recovery");
         check(!editor.last_edit_error().has_value(),
             "valid insert_rows after dirty invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
@@ -37100,6 +37106,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
 
         sheet.insert_columns(2, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "valid insert_columns after dirty invalid shifts pre-save recovery");
         check(!editor.last_edit_error().has_value(),
             "valid insert_columns after dirty invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),

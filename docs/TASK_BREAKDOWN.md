@@ -48519,6 +48519,40 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1203 - Pin cross-handle shift aggregate memory
+
+Type: public `WorksheetEditor` cross-handle row/column shift/delete aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove `WorkbookEditor` aggregate materialized memory tracks two active
+dirty worksheet handles when only one handle is shifted or deleted.
+
+Coverage:
+- Extends the row and column cross-handle shift tests so they snapshot `Data`
+  and `Untouched` memory before the shift, verify aggregate memory before and
+  after mutating only `Data`, and verify `save_as()` clears aggregate memory.
+- Extends the row and column cross-handle delete tests so they snapshot both
+  handles before deletion, recompute `Data` memory after deletion removes
+  records, verify aggregate memory is updated for the shifted sheet only, and
+  verify `save_as()` clears aggregate memory.
+
+Non-goals:
+- No shared-session ownership changes, row/column shift/delete semantic changes,
+  memory-accounting changes, new guardrails, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

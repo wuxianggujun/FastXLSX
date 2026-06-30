@@ -33322,6 +33322,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
     untouched.set_cell(3, 1, fastxlsx::CellValue::text("untouched-dirty-tail"));
     const std::size_t data_dirty_count = data.cell_count();
     const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
     check(data_dirty_count == 4 && untouched_dirty_count == 3,
         "cross-handle shift should start with two dirty sparse sessions");
     check(data.has_pending_changes() && untouched.has_pending_changes(),
@@ -33336,8 +33338,12 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
     check(editor.pending_materialized_cell_count() ==
             data_dirty_count + untouched_dirty_count,
         "cross-handle shift should aggregate both dirty sparse sessions before the shift");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle shift should aggregate both dirty sparse memory estimates before the shift");
 
     data.insert_rows(2, 1);
+    const std::size_t data_shifted_memory = data.estimated_memory_usage();
 
     check(!editor.last_edit_error().has_value(),
         "cross-handle insert_rows should keep diagnostics clear");
@@ -33349,6 +33355,9 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
     check(editor.pending_materialized_cell_count() ==
             data_dirty_count + untouched_dirty_count,
         "cross-handle insert_rows should keep aggregate dirty sparse count stable");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_shifted_memory + untouched_dirty_memory,
+        "cross-handle insert_rows should keep aggregate dirty memory stable");
     const std::vector<std::string> dirty_names_after_shift =
         editor.pending_materialized_worksheet_names();
     check(dirty_names_after_shift.size() == 2 &&
@@ -33379,6 +33388,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "cross-handle shift save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle shift save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -33501,6 +33512,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
     untouched.set_cell(2, 3, fastxlsx::CellValue::text("untouched-dirty-column-tail"));
     const std::size_t data_dirty_count = data.cell_count();
     const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
     check(data_dirty_count == 4 && untouched_dirty_count == 3,
         "cross-handle column shift should start with two dirty sparse sessions");
     check(data.has_pending_changes() && untouched.has_pending_changes(),
@@ -33515,8 +33528,12 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
     check(editor.pending_materialized_cell_count() ==
             data_dirty_count + untouched_dirty_count,
         "cross-handle column shift should aggregate both dirty sparse sessions before the shift");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle column shift should aggregate both dirty sparse memory estimates before the shift");
 
     data.insert_columns(2, 1);
+    const std::size_t data_shifted_memory = data.estimated_memory_usage();
 
     check(!editor.last_edit_error().has_value(),
         "cross-handle insert_columns should keep diagnostics clear");
@@ -33528,6 +33545,9 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
     check(editor.pending_materialized_cell_count() ==
             data_dirty_count + untouched_dirty_count,
         "cross-handle insert_columns should keep aggregate dirty sparse count stable");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_shifted_memory + untouched_dirty_memory,
+        "cross-handle insert_columns should keep aggregate dirty memory stable");
     const std::vector<std::string> dirty_names_after_shift =
         editor.pending_materialized_worksheet_names();
     check(dirty_names_after_shift.size() == 2 &&
@@ -33560,6 +33580,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "cross-handle column shift save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle column shift save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -33683,15 +33705,21 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
     untouched.set_cell(3, 1, fastxlsx::CellValue::text("untouched-dirty-delete-row-tail"));
     const std::size_t data_dirty_count = data.cell_count();
     const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
     check(data_dirty_count == 4 && untouched_dirty_count == 3,
         "cross-handle delete_rows should start with two dirty sparse sessions");
     check(editor.pending_materialized_cell_count() ==
             data_dirty_count + untouched_dirty_count,
         "cross-handle delete_rows should aggregate both dirty sessions before deletion");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle delete_rows should aggregate both dirty memory estimates before deletion");
 
     data.delete_rows(1, 1);
 
     const std::size_t data_after_delete_count = data.cell_count();
+    const std::size_t data_after_delete_memory = data.estimated_memory_usage();
     check(data_after_delete_count == 2,
         "cross-handle delete_rows should remove Data records from deleted rows");
     check(data.has_pending_changes() && untouched.has_pending_changes(),
@@ -33701,6 +33729,9 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
     check(editor.pending_materialized_cell_count() ==
             data_after_delete_count + untouched_dirty_count,
         "cross-handle delete_rows should update aggregate count for the shifted sheet only");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_after_delete_memory + untouched_dirty_memory,
+        "cross-handle delete_rows should update aggregate memory for the shifted sheet only");
     const std::vector<std::string> dirty_names_after_delete =
         editor.pending_materialized_worksheet_names();
     check(dirty_names_after_delete.size() == 2 &&
@@ -33734,6 +33765,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "cross-handle delete_rows save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_rows save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -33860,15 +33893,21 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
     untouched.set_cell(2, 3, fastxlsx::CellValue::text("untouched-dirty-delete-column-tail"));
     const std::size_t data_dirty_count = data.cell_count();
     const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
     check(data_dirty_count == 4 && untouched_dirty_count == 3,
         "cross-handle delete_columns should start with two dirty sparse sessions");
     check(editor.pending_materialized_cell_count() ==
             data_dirty_count + untouched_dirty_count,
         "cross-handle delete_columns should aggregate both dirty sessions before deletion");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle delete_columns should aggregate both dirty memory estimates before deletion");
 
     data.delete_columns(1, 1);
 
     const std::size_t data_after_delete_count = data.cell_count();
+    const std::size_t data_after_delete_memory = data.estimated_memory_usage();
     check(data_after_delete_count == 2,
         "cross-handle delete_columns should remove Data records from deleted columns");
     check(data.has_pending_changes() && untouched.has_pending_changes(),
@@ -33878,6 +33917,9 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
     check(editor.pending_materialized_cell_count() ==
             data_after_delete_count + untouched_dirty_count,
         "cross-handle delete_columns should update aggregate count for the shifted sheet only");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_after_delete_memory + untouched_dirty_memory,
+        "cross-handle delete_columns should update aggregate memory for the shifted sheet only");
     const std::vector<std::string> dirty_names_after_delete =
         editor.pending_materialized_worksheet_names();
     check(dirty_names_after_delete.size() == 2 &&
@@ -33913,6 +33955,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0,
         "cross-handle delete_columns save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_columns save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");

@@ -1497,6 +1497,9 @@ translation checks.
 Full-calculation insert-row setup coverage now pins aggregate dirty
 materialized memory before `request_full_calculation()` queues workbook
 metadata.
+Cross-handle row/column shift and delete coverage now pins aggregate dirty
+materialized memory across the mutated `Data` handle and the untouched dirty
+handle, including save-time cleanup.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

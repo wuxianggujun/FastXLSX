@@ -29454,8 +29454,10 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         "shift handle reuse first save should clean the borrowed handle");
     check(editor.pending_change_count() == 1,
         "shift handle reuse first save should record the flushed materialized handoff");
-    check(editor.pending_materialized_cell_count() == 0,
-        "shift handle reuse first save should clear aggregate dirty materialized count");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift handle reuse first save should clear aggregate dirty materialized diagnostics");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
         "shift handle reuse first save should keep shifted cells readable on the same handle");
 
@@ -29482,8 +29484,10 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         "shift handle reuse second save should clean the reused borrowed handle");
     check(editor.pending_change_count() == 2,
         "shift handle reuse second save should record a second materialized handoff");
-    check(editor.pending_materialized_cell_count() == 0,
-        "shift handle reuse second save should clear aggregate dirty materialized count");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift handle reuse second save should clear aggregate dirty materialized diagnostics");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =

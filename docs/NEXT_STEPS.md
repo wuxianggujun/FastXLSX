@@ -1544,6 +1544,9 @@ for the recovery column shift.
 The non-styled invalid-read and invalid-mutation paths now carry matching clean
 materialized diagnostics through rejected reads/mutations and add aggregate
 dirty memory for their recovery column shifts.
+The basic shift handle-reuse path now pins clean aggregate materialized
+names/count/memory after both successful `save_as()` calls before the no-op
+save stability check.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

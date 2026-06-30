@@ -49692,6 +49692,39 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1238 - Pin shift handle-reuse clean diagnostics
+
+Type: public `WorksheetEditor` shift handle-reuse clean materialized memory
+regression.
+
+Status: completed.
+
+Goal: prove a reused worksheet handle becomes materialized-clean after each
+successful `save_as()` and reports empty aggregate dirty names, count, and
+memory before the existing no-op save stability check.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_handle_reuse_after_save_as()` so
+  both successful saves verify clean aggregate materialized worksheet names,
+  cell count, and memory usage.
+- Keeps the existing reused-handle row/column shift behavior, package output,
+  no-op save, and sparse-state checks unchanged.
+
+Non-goals:
+- No handle lifetime changes, saved-session reuse changes, row/column shift
+  semantic changes, memory-accounting changes, metadata/range repair,
+  relationship repair, calcChain rebuild, sharedStrings/styles migration,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

@@ -35106,6 +35106,8 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire failed save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire failed save first save should clean the borrowed handle");
@@ -35290,6 +35292,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire after retry pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire after retry first save should clean the original borrowed handle");
@@ -35490,6 +35494,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire after retry noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire after retry noop save first save should clean the original handle");
@@ -35637,6 +35643,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire path-equivalent failed save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire path-equivalent failed save first save should clean the borrowed handle");
@@ -35855,6 +35863,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire empty-output failed save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire empty-output failed save first save should clean the borrowed handle");
@@ -36077,6 +36087,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire missing-parent failed save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire missing-parent failed save first save should clean the borrowed handle");
@@ -36302,6 +36314,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire file-parent failed save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire file-parent failed save first save should clean the borrowed handle");
@@ -36527,6 +36541,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire directory-output failed save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire directory-output failed save first save should clean the borrowed handle");

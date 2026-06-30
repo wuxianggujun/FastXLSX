@@ -171,6 +171,9 @@ counted yet, and the dirty summary carries no replacement flags.
 The same pre-save dirty diagnostics now cover the saved-session rejection
 branches for option mismatch, missing worksheet queries, invalid reads, invalid
 mutations, and invalid shifts before their first materialized handoff.
+Failed-save retry branches now share that first-handoff coverage too, including
+source overwrite, path-equivalent source overwrite, empty output, missing parent,
+non-directory parent, existing-directory output, and after-retry no-op paths.
 Post-noop third-stage edits now mirror that memory diagnostic coverage before
 their later save: single-sheet dirtiness reports the `Data` session estimate,
 while multi-sheet dirtiness reports the aggregate `Data` plus `Untouched`

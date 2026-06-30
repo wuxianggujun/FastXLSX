@@ -141,6 +141,9 @@ The single-worksheet public-state path now mirrors that first-save guard too:
 exact and path-equivalent source-overwrite failures preserve the dirty `Data`
 session and source bytes before the same retry/reopen/no-op/post-noop flow
 continues.
+That single-worksheet guard now also pins the full dirty materialized
+diagnostics for both rejected save attempts: worksheet names, cell count, and
+estimated materialized memory stay stable until the later safe retry.
 It also pins the failed-save retry output as a fresh `WorkbookEditor` source:
 the reopened editor can dirty both materialized sheets again, save, and then
 no-op save byte-stably while leaving the original source and retry output

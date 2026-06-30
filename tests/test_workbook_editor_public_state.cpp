@@ -4269,11 +4269,18 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen first-stage edits should expose Data as dirty");
     check(editor.pending_materialized_cell_count() == data.cell_count(),
         "single-sheet reopen first-stage edits should expose dirty cell count");
+    const std::size_t dirty_memory_usage = data.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "single-sheet reopen first-stage edits should expose dirty memory usage");
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "single-sheet reopen first-stage should reject saving over the source workbook");
     check(data.has_pending_changes(),
         "single-sheet reopen exact rejected save should keep the Data handle dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == data.cell_count() &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "single-sheet reopen exact rejected save should preserve dirty diagnostics");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "single-sheet reopen exact rejected save should leave source bytes unchanged");
     check(threw_fastxlsx_error([&] { editor.save_as(path_equivalent_source); }),
@@ -4281,7 +4288,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     check(data.has_pending_changes(),
         "single-sheet reopen path-equivalent rejected save should keep the Data handle dirty");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
-            editor.pending_materialized_cell_count() == data.cell_count(),
+            editor.pending_materialized_cell_count() == data.cell_count() &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "single-sheet reopen path-equivalent rejected save should preserve dirty diagnostics");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "single-sheet reopen path-equivalent rejected save should leave source bytes unchanged");

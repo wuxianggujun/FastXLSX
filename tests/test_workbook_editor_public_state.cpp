@@ -730,6 +730,7 @@ struct WorkbookEditorPublicSaveStateSnapshot {
     std::size_t estimated_pending_replacement_memory_usage{};
     std::vector<std::string> pending_replacement_worksheet_names;
     std::optional<std::string> last_edit_error;
+    std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> pending_worksheet_edits;
 };
 
 WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot(
@@ -741,6 +742,7 @@ WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot
         editor.estimated_pending_replacement_memory_usage(),
         editor.pending_replacement_worksheet_names(),
         editor.last_edit_error(),
+        editor.pending_worksheet_edits(),
     };
 }
 
@@ -762,6 +764,9 @@ void check_workbook_editor_public_save_state_preserved(
         std::string(scenario) + " should preserve pending replacement worksheet names");
     check(editor.last_edit_error() == before.last_edit_error,
         std::string(scenario) + " should not replace or clear last_edit_error");
+    check(workbook_editor_edit_summaries_equal(
+            editor.pending_worksheet_edits(), before.pending_worksheet_edits),
+        std::string(scenario) + " should preserve pending worksheet edit summaries");
 }
 
 void check_workbook_editor_public_no_pending_state(

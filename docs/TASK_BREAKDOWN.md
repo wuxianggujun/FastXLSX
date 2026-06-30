@@ -47863,6 +47863,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1184 - Pin public save-state summaries
+
+Type: public `WorkbookEditor` save-state snapshot summary-stability helper
+regression.
+
+Status: completed.
+
+Goal: make every no-op-save regression that uses the public save-state helper
+also prove `pending_worksheet_edits()` summaries are preserved.
+
+Coverage:
+- Extends `WorkbookEditorPublicSaveStateSnapshot` with the current
+  `pending_worksheet_edits()` vector.
+- Extends `check_workbook_editor_public_save_state_preserved()` to compare the
+  current summaries with the snapshot through
+  `workbook_editor_edit_summaries_equal()`.
+- Reuses all existing `check_workbook_editor_public_save_state_preserved()`
+  call sites to pin summary stability alongside pending counts, replacement
+  diagnostics, and `last_edit_error()`.
+
+Non-goals:
+- Does not add new public summary fields, change production summary semantics,
+  alter save behavior, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

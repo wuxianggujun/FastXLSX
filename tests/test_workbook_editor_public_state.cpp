@@ -15090,6 +15090,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15160,7 +15162,7 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
     check_not_contains(worksheet_xml, R"(r="C3")",
         "full-calc insert_rows save_as should omit old dirty coordinate");
 
-    check_reopened_shift_output(output, "full-calc insert_rows",
+    const auto inspect_full_calc_insert_rows_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 8,
                 "full-calc insert_rows reopened output should keep shifted sparse count");
@@ -15189,7 +15191,37 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("C3").has_value(),
                 "full-calc insert_rows reopened output should keep old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "full-calc insert_rows",
+        inspect_full_calc_insert_rows_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc insert_rows no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc insert_rows no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc insert_rows no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc insert_rows no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc insert_rows no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc insert_rows no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc insert_rows no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc insert_rows no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc insert_rows no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "full-calc insert_rows no-op save",
+        inspect_full_calc_insert_rows_output);
 }
 
 void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
@@ -15916,6 +15948,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15985,7 +16019,7 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
     check_not_contains(worksheet_xml, R"(r="A3")",
         "full-calc delete_rows save_as should omit old trailing coordinate");
 
-    check_reopened_shift_output(output, "full-calc delete_rows",
+    const auto inspect_full_calc_delete_rows_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "full-calc delete_rows reopened output should keep shifted sparse count");
@@ -16005,7 +16039,37 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value(),
                 "full-calc delete_rows reopened output should keep old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "full-calc delete_rows",
+        inspect_full_calc_delete_rows_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc delete_rows no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc delete_rows no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc delete_rows no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc delete_rows no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc delete_rows no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc delete_rows no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc delete_rows no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc delete_rows no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc delete_rows no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "full-calc delete_rows no-op save",
+        inspect_full_calc_delete_rows_output);
 }
 
 void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()

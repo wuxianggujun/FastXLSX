@@ -51036,6 +51036,51 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1273 - Add generated in-memory source-cell overwrite QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+in-memory source-cell overwrite persistence.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that `set_cell()` overwrites
+source-backed text, number, and formula cells while preserving unrelated source
+rows and untouched worksheets through save and readback.
+
+Coverage:
+- Adds `generated_in_memory_overwrite_formula_text` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- The generated source workbook contains `Data!A1` text, `Data!B1` number,
+  `Data!C1` formula, `Data!A2` text, and an untouched `Notes` sheet.
+- The scenario opens the source through public `WorkbookEditor`, verifies the
+  original `C1` formula, overwrites `A1`, `B1`, and `C1` through
+  `WorksheetEditor::set_cell()`, verifies the new `C1` formula through the
+  public read model, and saves.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  verify old payload removal, overwritten values, rewritten formula text,
+  preserved `Data!A2`, absence of `xl/calcChain.xml`, and untouched `Notes`.
+- Extends optional XlsxWriter reference generation and Excel COM sidecar checks
+  for the same output workbook shape.
+- Documents the single-scenario command in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production behavior changes, formula evaluation, cached value
+  preservation, source package overwrite, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_overwrite_formula_text --work-dir build\\qa\\workbook-editor-in-memory-overwrite-formula-text --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

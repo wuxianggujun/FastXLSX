@@ -48,6 +48,10 @@ the represented cell set, a new materialized text cell, save, and reopen checks.
 The generated lane now also covers `generated_in_memory_append_row_formula`,
 which appends a materialized text/number/formula row to an existing worksheet
 and verifies source rows plus the appended row after save and reopen.
+It also covers `generated_in_memory_overwrite_formula_text`, which overwrites
+source-backed text, number, and formula cells with `WorksheetEditor::set_cell()`
+and verifies old payload removal plus preserved rows/sheets after save and
+reopen.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

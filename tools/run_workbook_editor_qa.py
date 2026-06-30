@@ -40,6 +40,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_delete_row_formula",
     "generated_in_memory_clear_erase",
     "generated_in_memory_append_row_formula",
+    "generated_in_memory_overwrite_formula_text",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1222,6 +1223,67 @@ def verify_generated_in_memory_append_row_formula(path: Path) -> tuple[dict[str,
             "Data!A3": data["A3"].value,
             "Data!B3": data["B3"].value,
             "Data!C3": data["C3"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_overwrite_formula_text(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names,
+            "generated in-memory overwrite formula/text: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory overwrite formula/text: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"generated in-memory overwrite formula/text: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require("old-text" not in data_xml,
+            "generated in-memory overwrite formula/text: old A1 text remained")
+    require("B1*2" not in data_xml,
+            "generated in-memory overwrite formula/text: old C1 formula remained")
+    require('r="A1"' in data_xml and "new-text" in data_xml,
+            "generated in-memory overwrite formula/text: missing overwritten A1 text")
+    require('<c r="B1"><v>5</v></c>' in data_xml,
+            "generated in-memory overwrite formula/text: missing overwritten B1 number")
+    require('r="A2"' in data_xml and "keep-row-two" in data_xml,
+            "generated in-memory overwrite formula/text: missing preserved A2 text")
+    formulas = worksheet_formula_cells(path, "Data")
+    require(formulas.get("C1") == "B1+10",
+            f"generated in-memory overwrite formula/text: C1 formula mismatch {formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"generated in-memory overwrite formula/text: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "new-text",
+                "generated in-memory overwrite formula/text: A1 mismatch")
+        require(data["B1"].value == 5,
+                "generated in-memory overwrite formula/text: B1 mismatch")
+        require(data["C1"].value == "=B1+10",
+                f"generated in-memory overwrite formula/text: C1 mismatch {data['C1'].value!r}")
+        require(data["A2"].value == "keep-row-two",
+                "generated in-memory overwrite formula/text: A2 mismatch")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory overwrite formula/text: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!C1": data["C1"].value,
+            "Data!A2": data["A2"].value,
             "Notes!A1": notes["A1"].value,
         }
     finally:
@@ -2546,6 +2608,14 @@ def create_xlsxwriter_reference(
             data.write_number("B3", 4)
             data.write_formula("C3", "=B3*2")
             notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_overwrite_formula_text":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write("A1", "new-text")
+            data.write_number("B1", 5)
+            data.write_formula("C1", "=B1+10")
+            data.write("A2", "keep-row-two")
+            notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
@@ -2642,6 +2712,8 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_clear_erase(output_path)
     elif scenario == "generated_in_memory_append_row_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_append_row_formula(output_path)
+    elif scenario == "generated_in_memory_overwrite_formula_text":
+        zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(output_path)
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

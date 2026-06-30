@@ -527,6 +527,28 @@ std::filesystem::path write_in_memory_append_row_formula_source(const std::files
     return path;
 }
 
+std::filesystem::path write_in_memory_overwrite_formula_text_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("old-text"),
+            CellView::number(2.0),
+            CellView::formula("B1*2"),
+        });
+        data.append_row({CellView::text("keep-row-two")});
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1573,6 +1595,39 @@ Report run_generated_in_memory_append_row_formula(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_overwrite_formula_text_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).set_cell(A1,text)",
+        "worksheet(Data).set_cell(B1,number)",
+        "worksheet(Data).set_cell(C1,formula)",
+    };
+    report.notes = {
+        "Original Data!A1 text should be overwritten",
+        "Original Data!B1 number should be overwritten",
+        "Original Data!C1 formula should be overwritten",
+        "Data!A2 and Notes!A1 should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    require_formula_cell(data, "C1", "B1*2");
+    data.set_cell("A1", CellValue::text("new-text"));
+    data.set_cell("B1", CellValue::number(5.0));
+    data.set_cell("C1", CellValue::formula("B1+10"));
+    require_formula_cell(data, "C1", "B1+10");
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -2000,6 +2055,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_append_row_formula") {
         return run_generated_in_memory_append_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_overwrite_formula_text") {
+        return run_generated_in_memory_overwrite_formula_text(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

@@ -3284,6 +3284,8 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
     replacement_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("ignored")}});
     check(replacement_editor.pending_replacement_cell_count() == 1,
         "replacement-only editor should expose queued replacement diagnostics");
+    check(replacement_editor.estimated_pending_replacement_memory_usage() > 0,
+        "replacement-only editor should expose queued replacement memory diagnostics");
     check(replacement_editor.pending_materialized_cell_count() == 0,
         "queued replacement diagnostics should not contribute materialized cells");
     check(replacement_editor.estimated_pending_materialized_memory_usage() == 0,

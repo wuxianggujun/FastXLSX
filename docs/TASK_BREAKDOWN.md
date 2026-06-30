@@ -48080,6 +48080,39 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1190 - Pin replacement memory diagnostic isolation
+
+Type: public `WorkbookEditor` replacement/materialized aggregate diagnostic
+separation regression.
+
+Status: completed.
+
+Goal: prove queued replacement memory diagnostics remain visible while
+materialized aggregate diagnostics stay zero for a replacement-only editor.
+
+Coverage:
+- Extends `test_public_workbook_editor_pending_materialized_aggregate_diagnostics()`
+  to check `estimated_pending_replacement_memory_usage()` after a one-cell
+  `replace_sheet_data()` queue.
+- Keeps the existing assertions that replacement-only state contributes zero
+  `pending_materialized_cell_count()` and zero
+  `estimated_pending_materialized_memory_usage()`.
+
+Non-goals:
+- No replacement memory-accounting changes, new guardrails, same-sheet
+  Patch/materialized composition, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

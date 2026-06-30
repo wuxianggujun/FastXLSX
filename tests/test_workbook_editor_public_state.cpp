@@ -17731,6 +17731,42 @@ void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
         "SUM(E1:F1)+E:F",
         "stationary formula range insert_columns",
         [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(4, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-insert-rows-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-insert-rows-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-insert-rows-noop-output.xlsx",
+        "SUM($A$3,$B1,C$3,Data!$A$3)",
+        "SUM($A$4,$B1,C$4,Data!$A$4)",
+        "stationary formula absolute insert_rows",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_rows(3, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-delete-rows-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-delete-rows-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-delete-rows-noop-output.xlsx",
+        "SUM($A$3,$B1,C$4,Data!$A$3)",
+        "SUM(#REF!,$B1,C$3,Data!#REF!)",
+        "stationary formula absolute delete_rows",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_rows(3, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-insert-columns-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-insert-columns-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-insert-columns-noop-output.xlsx",
+        "SUM($D$1,B$1,$D1,Data!$D$1)",
+        "SUM($E$1,B$1,$E1,Data!$E$1)",
+        "stationary formula absolute insert_columns",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(4, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-delete-columns-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-delete-columns-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-absolute-delete-columns-noop-output.xlsx",
+        "SUM($D$1,B$1,E$1,Data!$D$1)",
+        "SUM(#REF!,B$1,D$1,Data!#REF!)",
+        "stationary formula absolute delete_columns",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_columns(4, 1); });
 }
 
 void test_public_worksheet_editor_stationary_formula_shift_audits_rewritten_references()

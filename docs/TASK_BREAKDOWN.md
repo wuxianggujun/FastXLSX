@@ -53124,6 +53124,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1321 - Pin stationary formula absolute structural rewrites
+
+Type: public `WorksheetEditor` stationary formula structural rewrite
+regression.
+
+Status: completed.
+
+Goal:
+Verify row/column structural edits rewrite absolute and mixed-reference
+markers in stationary materialized formula cells consistently with the current
+narrow structural rewriter.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()`.
+- Covers `insert_rows()` moving affected `$A$3`, `C$3`, and
+  sheet-qualified `Data!$A$3` references while preserving `$` markers.
+- Covers `delete_rows()` emitting `#REF!` for deleted `$A$3` /
+  `Data!$A$3` references and shifting surviving mixed references.
+- Covers `insert_columns()` moving affected `$D$1`, `$D1`, and
+  sheet-qualified `Data!$D$1` references while preserving `$` markers.
+- Covers `delete_columns()` emitting `#REF!` for deleted `$D$1` /
+  `Data!$D$1` references and shifting surviving mixed references.
+- Reuses the stationary formula helper so each case verifies dirty-state
+  diagnostics, failed exact-source save preservation, successful `save_as()`,
+  byte-identical follow-up no-op save, and saved/reopened formula text.
+
+Non-goals:
+- No formula translator behavior change, formula evaluation, cached formula
+  result preservation, non-materialized worksheet formula scan, metadata/range
+  synchronization, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

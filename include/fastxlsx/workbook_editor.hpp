@@ -654,7 +654,9 @@ struct WorkbookEditorRenameOptions {
 /// `insert_columns()`, and `delete_columns()` are the first small-file
 /// structural shift helpers: they move/delete represented sparse cells in this
 /// materialized store, translate relative references in moved formula cells,
-/// and leave workbook/worksheet metadata for caller review. Empty, valueless,
+/// rewrite supported references in stationary materialized formula cells when
+/// the structural edit affects those references, and leave workbook/worksheet
+/// metadata for caller review. Empty, valueless,
 /// unquoted, unterminated, padded,
 /// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source
@@ -945,10 +947,14 @@ public:
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
     /// dimension, and translates relative references in moved formula cells,
-    /// but it does not update tables, autoFilter, mergeCells, data
-    /// validations, conditional formatting, hyperlinks, drawings/charts/VBA,
-    /// defined names, relationships, sharedStrings/styles metadata, or
-    /// calcChain beyond the existing worksheet rewrite policy.
+    /// while stationary formula cells in the materialized store use the narrow
+    /// structural rewriter for references at or after the insertion point. The
+    /// structural rewriter preserves `$` markers as output anchors but still
+    /// moves affected row references. It does not update tables, autoFilter,
+    /// mergeCells, data validations, conditional formatting, hyperlinks,
+    /// drawings/charts/VBA, defined names, relationships,
+    /// sharedStrings/styles metadata, or calcChain beyond the existing
+    /// worksheet rewrite policy.
     /// This is not a complete Excel row-insert operation and not a large-file
     /// low-memory random-editing path.
     void insert_rows(std::uint32_t first_row, std::uint32_t row_count);
@@ -968,8 +974,12 @@ public:
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
     /// dimension only. It translates relative references in moved formula
-    /// cells, but it does not recalculate or repair range metadata, tables,
-    /// drawings/charts/VBA, relationships, sharedStrings/styles, or calcChain.
+    /// cells, while stationary formula cells in the materialized store use the
+    /// narrow structural rewriter for references affected by the deleted rows.
+    /// The structural rewriter preserves `$` markers on surviving references
+    /// and emits `#REF!` for deleted references, but it does not recalculate or
+    /// repair range metadata, tables, drawings/charts/VBA, relationships,
+    /// sharedStrings/styles, or calcChain.
     /// This is not a complete Excel row deletion operation and not a large-file
     /// low-memory random-editing path.
     void delete_rows(std::uint32_t first_row, std::uint32_t row_count);
@@ -992,10 +1002,14 @@ public:
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
     /// dimension, and translates relative references in moved formula cells,
-    /// but it does not update tables, autoFilter, mergeCells, data
-    /// validations, conditional formatting, hyperlinks, drawings/charts/VBA,
-    /// defined names, relationships, sharedStrings/styles metadata, or
-    /// calcChain beyond the existing worksheet rewrite policy.
+    /// while stationary formula cells in the materialized store use the narrow
+    /// structural rewriter for references at or after the insertion point. The
+    /// structural rewriter preserves `$` markers as output anchors but still
+    /// moves affected column references. It does not update tables, autoFilter,
+    /// mergeCells, data validations, conditional formatting, hyperlinks,
+    /// drawings/charts/VBA, defined names, relationships,
+    /// sharedStrings/styles metadata, or calcChain beyond the existing
+    /// worksheet rewrite policy.
     /// This is not a complete Excel column-insert operation and not a
     /// large-file low-memory random-editing path.
     void insert_columns(std::uint32_t first_column, std::uint32_t column_count);
@@ -1015,8 +1029,12 @@ public:
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
     /// dimension only. It translates relative references in moved formula
-    /// cells, but it does not recalculate or repair range metadata, tables,
-    /// drawings/charts/VBA, relationships, sharedStrings/styles, or calcChain.
+    /// cells, while stationary formula cells in the materialized store use the
+    /// narrow structural rewriter for references affected by the deleted
+    /// columns. The structural rewriter preserves `$` markers on surviving
+    /// references and emits `#REF!` for deleted references, but it does not
+    /// recalculate or repair range metadata, tables, drawings/charts/VBA,
+    /// relationships, sharedStrings/styles, or calcChain.
     /// This is not a complete Excel column deletion operation and not a
     /// large-file low-memory random-editing path.
     void delete_columns(std::uint32_t first_column, std::uint32_t column_count);

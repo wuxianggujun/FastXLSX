@@ -251,7 +251,11 @@ also pins supported cell-range and whole-axis stationary formulas such as
 `formula_reference_audits()` observes the rewritten `Data!A4` plus stable
 `Data!B1` references without changing dirty diagnostics. Delete-side stationary
 formula audits now also skip `Data!#REF!` while keeping the surviving `Data!B1`
-reference visible. The source-audit path now keeps scanning original source XML
+reference visible. Stationary formulas with absolute and mixed `$` markers are
+now covered on insert/delete rows and columns as lexical structural rewrites:
+affected `$A$3` / `C$3` / `$D1` references move while preserving markers, and
+deleted absolute references become `#REF!` in saved/reopened output. The
+source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same
 boundary when the materialized formula is `Data!#REF!+Data!B1`. Fresh reopen

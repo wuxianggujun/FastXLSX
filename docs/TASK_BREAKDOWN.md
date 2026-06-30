@@ -50295,6 +50295,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1254 - Pin stationary formula delete saved reopen audit boundary
+
+Type: public `WorksheetEditor` in-memory saved-output audit regression.
+
+Status: completed.
+
+Goal: prove delete-side stationary formula-only materialized rewrites remain
+lexical after `save_as()` and a fresh `WorkbookEditor::open(output)`.
+
+Coverage:
+- Adds a delete-row stationary formula case where `C1` rewrites from
+  `Data!A3+Data!B1` to `Data!#REF!+Data!B1`, then saves and reopens the output
+  workbook.
+- Verifies fresh-open `source_formula_reference_audits()` scans the saved
+  worksheet XML, skips `Data!#REF!`, reports only the surviving `Data!B1`
+  reference, and does not report the original `Data!A3` source reference.
+- Verifies clean materialization of `Data` reads the saved `#REF!` formula and
+  `formula_reference_audits()` reports the same surviving reference without
+  dirtying the reopened editor.
+
+Non-goals:
+- No `#REF!` repair, formula evaluation, edit-history reconstruction,
+  worksheet metadata synchronization, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

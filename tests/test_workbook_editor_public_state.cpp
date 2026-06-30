@@ -16886,6 +16886,113 @@ void test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_r
         "stationary formula saved reopen materialized audit stable B reference");
 }
 
+void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_skip_ref()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_stationary_formula(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-reopen-audit-source.xlsx",
+            "Data!A3+Data!B1");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-reopen-audit-output.xlsx");
+
+    constexpr std::string_view expected_formula = "Data!#REF!+Data!B1";
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.delete_rows(3, 1);
+
+        const fastxlsx::CellValue rewritten_formula = sheet.get_cell("C1");
+        check(rewritten_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                rewritten_formula.text_value() == expected_formula,
+            "stationary formula delete saved reopen audit setup should expose the #REF! formula");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "stationary formula delete saved reopen audit setup should clean the materialized sheet");
+        check(editor.pending_change_count() == 1,
+            "stationary formula delete saved reopen audit setup should record one materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "stationary formula delete saved reopen audit setup should clear materialized diagnostics");
+    }
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
+        "stationary formula delete saved reopen audit should expose saved worksheets");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula delete saved reopen audit setup");
+
+    const auto check_surviving_audit =
+        [&](const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+            std::string_view message_prefix) {
+            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+                find_public_state_formula_audit(audits, 1, 3, "Data!B1");
+            check(audit != nullptr,
+                std::string(message_prefix) + " should expose the surviving saved audit entry");
+            if (audit == nullptr) {
+                return;
+            }
+
+            check(audit->formula_sheet_source_name == "Data" &&
+                    audit->formula_sheet_planned_name == "Data" &&
+                    audit->formula_text == expected_formula,
+                std::string(message_prefix) + " should report the saved formula cell");
+            check(audit->sheet_qualifier_text == "Data!" &&
+                    audit->reference_text == "B1" &&
+                    audit->referenced_sheet_name == "Data",
+                std::string(message_prefix) + " should report the surviving saved token");
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Data",
+                std::string(message_prefix) + " should match the reopened Data sheet");
+            check(!audit->references_renamed_source_name &&
+                    audit->references_planned_sheet_name &&
+                    !audit->external_workbook_qualifier &&
+                    !audit->sheet_range_qualifier,
+                std::string(message_prefix) + " should keep qualifier flags clean");
+        };
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        check_public_state_source_formula_audits_preserve_editor_diagnostics(
+            reopened, "stationary formula delete saved reopen source audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula delete saved reopen after source audit");
+    check(source_audits.size() == 1,
+        "stationary formula delete saved reopen source audit should report only the surviving reference");
+    check(find_public_state_formula_audit(source_audits, 1, 3, "Data!A3") == nullptr,
+        "stationary formula delete saved reopen source audit should not report the original A3 reference");
+    check(find_public_state_formula_audit(source_audits, 1, 3, "Data!#REF!") == nullptr,
+        "stationary formula delete saved reopen source audit should skip Data!#REF!");
+    check_surviving_audit(
+        source_audits, "stationary formula delete saved reopen source audit");
+
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "stationary formula delete saved reopen audit should materialize Data cleanly");
+    const std::optional<fastxlsx::CellValue> reopened_formula =
+        reopened_sheet.try_cell("C1");
+    check(reopened_formula.has_value() &&
+            reopened_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula->text_value() == expected_formula,
+        "stationary formula delete saved reopen audit should read the saved formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> materialized_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            reopened, "stationary formula delete saved reopen materialized audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula delete saved reopen after materialized audit");
+    check(materialized_audits.size() == 1,
+        "stationary formula delete saved reopen materialized audit should report only the surviving reference");
+    check(find_public_state_formula_audit(materialized_audits, 1, 3, "Data!A3") == nullptr,
+        "stationary formula delete saved reopen materialized audit should not report the original A3 reference");
+    check(find_public_state_formula_audit(materialized_audits, 1, 3, "Data!#REF!") == nullptr,
+        "stationary formula delete saved reopen materialized audit should skip Data!#REF!");
+    check_surviving_audit(
+        materialized_audits, "stationary formula delete saved reopen materialized audit");
+}
+
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -37793,6 +37900,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_stationary_formula_source_audits_preserve_source_scan();
             test_public_worksheet_editor_stationary_formula_delete_source_audits_preserve_source_scan();
             test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_rewrite();
+            test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_skip_ref();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();

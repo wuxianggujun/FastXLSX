@@ -84,7 +84,9 @@ for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same
 boundary when the materialized formula is `Data!#REF!+Data!B1`. Fresh reopen
 coverage now verifies saved-output source/materialized audits see the persisted
-`Data!A4` / `Data!B1` references, not the original `Data!A3` source token. The retry/guard shard also pins that
+`Data!A4` / `Data!B1` references, not the original `Data!A3` source token, and
+the delete-side saved-output path keeps only the surviving `Data!B1` reference
+while skipping persisted `Data!#REF!`. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

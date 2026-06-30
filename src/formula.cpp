@@ -502,6 +502,162 @@ void append_translated_formula_axis_range(
     append_formula_axis_reference(output, axis_kind, *translated_last, last.absolute);
 }
 
+bool structural_edit_targets_rows(FormulaStructuralEditKind kind) noexcept
+{
+    return kind == FormulaStructuralEditKind::InsertRows
+        || kind == FormulaStructuralEditKind::DeleteRows;
+}
+
+bool structural_edit_targets_columns(FormulaStructuralEditKind kind) noexcept
+{
+    return kind == FormulaStructuralEditKind::InsertColumns
+        || kind == FormulaStructuralEditKind::DeleteColumns;
+}
+
+bool formula_axis_needs_structural_edit(
+    std::uint32_t value, FormulaStructuralEdit edit) noexcept
+{
+    return edit.count != 0 && value >= edit.first;
+}
+
+std::optional<std::uint32_t> apply_formula_structural_axis_edit(
+    std::uint32_t value, FormulaStructuralEdit edit, std::uint32_t limit)
+{
+    if (edit.count == 0 || value < edit.first) {
+        return value;
+    }
+
+    if (edit.kind == FormulaStructuralEditKind::InsertRows
+        || edit.kind == FormulaStructuralEditKind::InsertColumns) {
+        if (value > limit - edit.count) {
+            return std::nullopt;
+        }
+        return value + edit.count;
+    }
+
+    const std::uint64_t last_deleted =
+        static_cast<std::uint64_t>(edit.first) + edit.count - 1U;
+    if (static_cast<std::uint64_t>(value) <= last_deleted) {
+        return std::nullopt;
+    }
+    return value - edit.count;
+}
+
+bool formula_cell_needs_structural_edit(
+    const FormulaCellReference& cell, FormulaStructuralEdit edit) noexcept
+{
+    if (structural_edit_targets_rows(edit.kind)) {
+        return formula_axis_needs_structural_edit(cell.row, edit);
+    }
+    return formula_axis_needs_structural_edit(cell.column, edit);
+}
+
+void append_formula_cell_reference(
+    std::string& output,
+    const FormulaCellReference& cell,
+    std::uint32_t row,
+    std::uint32_t column)
+{
+    if (cell.column_absolute) {
+        output += '$';
+    }
+    append_formula_column_reference(output, column);
+    if (cell.row_absolute) {
+        output += '$';
+    }
+    append_unsigned_decimal(output, row);
+}
+
+void append_structural_formula_reference(
+    std::string& output,
+    const FormulaCellReference& cell,
+    FormulaStructuralEdit edit)
+{
+    std::optional<std::uint32_t> rewritten_row = cell.row;
+    std::optional<std::uint32_t> rewritten_column = cell.column;
+    if (structural_edit_targets_rows(edit.kind)) {
+        rewritten_row = apply_formula_structural_axis_edit(cell.row, edit, excel_max_row);
+    } else {
+        rewritten_column =
+            apply_formula_structural_axis_edit(cell.column, edit, excel_max_column);
+    }
+
+    if (!rewritten_row.has_value() || !rewritten_column.has_value()) {
+        output += "#REF!";
+        return;
+    }
+
+    append_formula_cell_reference(output, cell, *rewritten_row, *rewritten_column);
+}
+
+void append_structural_formula_cell_range(
+    std::string& output,
+    const FormulaCellReference& first,
+    const FormulaCellReference& last,
+    FormulaStructuralEdit edit)
+{
+    append_structural_formula_reference(output, first, edit);
+    output += ':';
+    append_structural_formula_reference(output, last, edit);
+}
+
+bool formula_axis_range_needs_structural_edit(
+    FormulaReferenceKind kind,
+    const FormulaAxisReference& first,
+    const FormulaAxisReference& last,
+    FormulaStructuralEdit edit) noexcept
+{
+    const bool whole_row_range = kind == FormulaReferenceKind::WholeRowRange;
+    if (whole_row_range != structural_edit_targets_rows(edit.kind)) {
+        return false;
+    }
+    return formula_axis_needs_structural_edit(first.value, edit)
+        || formula_axis_needs_structural_edit(last.value, edit);
+}
+
+void append_structural_formula_axis_range(
+    std::string& output,
+    FormulaReferenceKind kind,
+    const FormulaAxisReference& first,
+    const FormulaAxisReference& last,
+    FormulaStructuralEdit edit)
+{
+    const bool column_range = kind == FormulaReferenceKind::WholeColumnRange;
+    const FormulaAxisKind axis_kind =
+        column_range ? FormulaAxisKind::Column : FormulaAxisKind::Row;
+    const std::uint32_t limit = column_range ? excel_max_column : excel_max_row;
+
+    const std::optional<std::uint32_t> rewritten_first =
+        apply_formula_structural_axis_edit(first.value, edit, limit);
+    const std::optional<std::uint32_t> rewritten_last =
+        apply_formula_structural_axis_edit(last.value, edit, limit);
+    if (!rewritten_first.has_value() || !rewritten_last.has_value()) {
+        output += "#REF!";
+        return;
+    }
+
+    append_formula_axis_reference(output, axis_kind, *rewritten_first, first.absolute);
+    output += ':';
+    append_formula_axis_reference(output, axis_kind, *rewritten_last, last.absolute);
+}
+
+bool formula_reference_needs_structural_edit(
+    const FormulaReference& reference, FormulaStructuralEdit edit) noexcept
+{
+    if (edit.count == 0) {
+        return false;
+    }
+    if (reference.kind == FormulaReferenceKind::Cell) {
+        return formula_cell_needs_structural_edit(reference.first_cell, edit);
+    }
+    if (reference.kind == FormulaReferenceKind::CellRange) {
+        return formula_cell_needs_structural_edit(reference.first_cell, edit)
+            || formula_cell_needs_structural_edit(reference.last_cell, edit);
+    }
+    return formula_axis_range_needs_structural_edit(
+        reference.kind, reference.first_axis, reference.last_axis, edit);
+}
+
 void skip_quoted_formula_string(std::string_view formula, std::size_t& position)
 {
     ++position;
@@ -893,6 +1049,47 @@ std::string translate_formula_references(
     }
     translated.append(formula.substr(cursor));
     return translated;
+}
+
+std::string rewrite_formula_references_for_structural_edit(
+    std::string_view formula, FormulaStructuralEdit edit)
+{
+    if (edit.count == 0) {
+        return std::string(formula);
+    }
+
+    const std::vector<FormulaReference> references = scan_formula_references(formula);
+    if (references.empty()) {
+        return std::string(formula);
+    }
+
+    std::string rewritten;
+    rewritten.reserve(formula.size());
+    bool changed = false;
+    std::size_t cursor = 0;
+    for (const FormulaReference& reference : references) {
+        rewritten.append(formula.substr(cursor, reference.offset - cursor));
+        if (formula_reference_needs_structural_edit(reference, edit)) {
+            changed = true;
+            if (reference.kind == FormulaReferenceKind::Cell) {
+                append_structural_formula_reference(rewritten, reference.first_cell, edit);
+            } else if (reference.kind == FormulaReferenceKind::CellRange) {
+                append_structural_formula_cell_range(
+                    rewritten, reference.first_cell, reference.last_cell, edit);
+            } else {
+                append_structural_formula_axis_range(rewritten, reference.kind,
+                    reference.first_axis, reference.last_axis, edit);
+            }
+        } else {
+            rewritten.append(formula.substr(reference.offset, reference.length));
+        }
+        cursor = reference.offset + reference.length;
+    }
+    if (!changed) {
+        return std::string(formula);
+    }
+    rewritten.append(formula.substr(cursor));
+    return rewritten;
 }
 
 } // namespace fastxlsx::detail

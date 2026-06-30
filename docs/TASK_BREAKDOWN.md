@@ -49970,6 +49970,49 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1206 - Rewrite stationary formula references on structural shifts
+
+Type: public `WorksheetEditor` in-memory row/column shift formula rewrite slice.
+
+Status: completed.
+
+Goal: make represented materialized formula cells participate in row/column
+insert/delete reference rewrites even when the formula cell itself does not
+move and no sparse coordinates are otherwise affected.
+
+Coverage:
+- Adds an internal `detail/formula` structural-edit rewrite helper for the
+  existing narrow A1-style scanner. It shifts affected row/column references,
+  preserves `$` markers as output markers, skips quoted strings and structured
+  references, and emits `#REF!` for deleted references.
+- Updates `MaterializedWorksheetSession` row/column insert/delete operations so
+  stationary formula text changes mark the session dirty and are projected by
+  the existing materialized save-as handoff.
+- Adds public-state coverage for clean source-backed `C1` formula cells where
+  `insert_rows(3, 1)`, `delete_rows(3, 1)`, `insert_columns(4, 1)`, and
+  `delete_columns(4, 1)` do not move any represented sparse coordinates but do
+  rewrite the formula, flush through `save_as()`, preserve untouched sheets,
+  and reopen with clean diagnostics.
+
+Non-goals:
+- No formula evaluation, cached formula result preservation, complete Excel
+  range-shrink semantics, non-materialized worksheet formula scans, worksheet
+  metadata range synchronization, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_formula_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_formula_tests.exe` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.(formula|workbook_editor\\.public-state)$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

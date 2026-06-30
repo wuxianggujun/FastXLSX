@@ -2551,6 +2551,127 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_stationary_formula(
+    std::string_view name, std::string_view formula)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::formula(formula)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
+template <typename ShiftOperation>
+void check_public_stationary_formula_shift_case(
+    std::string_view source_name,
+    std::string_view output_name,
+    std::string_view initial_formula,
+    std::string_view expected_formula,
+    std::string_view label,
+    ShiftOperation shift_operation)
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_stationary_formula(source_name, initial_formula);
+    const std::filesystem::path output = artifact(output_name);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(!sheet.has_pending_changes(),
+        std::string(label) + " setup should start with a clean materialized sheet");
+    check(editor.pending_change_count() == 0,
+        std::string(label) + " setup should not queue Patch edits");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        std::string(label) + " setup should keep dirty materialized diagnostics empty");
+
+    shift_operation(sheet);
+
+    check(sheet.has_pending_changes(),
+        std::string(label) + " should dirty the sheet when only formula references change");
+    check(sheet.cell_count() == 4,
+        std::string(label) + " should keep sparse cell count stable");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        std::string(label) + " should keep sparse bounds stable");
+    const fastxlsx::CellValue rewritten_formula = sheet.get_cell("C1");
+    check(rewritten_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            rewritten_formula.text_value() == expected_formula,
+        std::string(label) + " should rewrite the stationary source formula");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2",
+        std::string(label) + " should leave represented sparse coordinates in place");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_change_count() == 0,
+        std::string(label) + " should not flush materialized state before save_as");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        std::string(label) + " should report Data dirty");
+    check(editor.pending_materialized_cell_count() == 4,
+        std::string(label) + " should report stable dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        std::string(label) + " should report dirty sparse memory");
+    check(!editor.last_edit_error().has_value(),
+        std::string(label) + " should keep diagnostics clear");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        std::string(label) + " save_as should clean the materialized sheet");
+    check(editor.pending_change_count() == 1,
+        std::string(label) + " save_as should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        std::string(label) + " save_as should clear dirty materialized diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        std::string(label) + " save_as should clear dirty edit summaries");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string formula_xml =
+        std::string(R"(<c r="C1"><f>)") + std::string(expected_formula) + R"(</f></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        std::string(label) + " save_as should keep sparse dimension stable");
+    check_contains(worksheet_xml, formula_xml,
+        std::string(label) + " save_as should write the rewritten formula");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        std::string(label) + " save_as should preserve untouched worksheets");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(!reopened_sheet.has_pending_changes(),
+        std::string(label) + " reopened output should materialize cleanly");
+    check(reopened_sheet.cell_count() == 4,
+        std::string(label) + " reopened output should keep sparse count");
+    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+        std::string(label) + " reopened output should keep sparse bounds");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("C1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        std::string(label) + " reopened output should read the rewritten formula");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        std::string(label) + " reopened output should keep dirty diagnostics empty");
+    check(reopened.pending_worksheet_edits().empty() &&
+            !reopened.last_edit_error().has_value(),
+        std::string(label) + " reopened output should keep public state clean");
+}
+
 std::filesystem::path write_two_sheet_source_with_large_clear_payload(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -16256,6 +16377,41 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         "delete_columns no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "delete_columns no-op save",
         inspect_delete_columns_output);
+}
+
+void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
+{
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-rows-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-rows-output.xlsx",
+        "A3+B1",
+        "A4+B1",
+        "stationary formula insert_rows",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_rows(3, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-rows-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-rows-output.xlsx",
+        "A3+B1",
+        "#REF!+B1",
+        "stationary formula delete_rows",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_rows(3, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-columns-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-columns-output.xlsx",
+        "D1+B1",
+        "E1+B1",
+        "stationary formula insert_columns",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(4, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-columns-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-columns-output.xlsx",
+        "D1+B1",
+        "#REF!+B1",
+        "stationary formula delete_columns",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_columns(4, 1); });
 }
 
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()
@@ -37159,6 +37315,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_full_calculation_before_insert_columns_shift();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
+            test_public_worksheet_editor_shifts_rewrite_stationary_formula_references();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();

@@ -64,7 +64,12 @@ handles, restored-name diagnostics, insert/delete row/column owning snapshot
 views, sparse used-range refresh, source-backed styled formula `StyleId`
 preservation, saved XML projection, and saved-file reopen readback for the
 plain/styled insert-shift, delete-shift sparse snapshot state, and row/column
-out-of-bounds `#REF!` formula translations. The retry/guard shard also pins that
+out-of-bounds `#REF!` formula translations. The same small-file lane now also
+rewrites stationary materialized formula cells when an insert/delete row or
+column operation affects only their referenced coordinates: formula-only
+changes dirty the session, flush through `save_as()`, preserve untouched
+worksheets, and reopen cleanly without extending into non-materialized
+worksheet scans or metadata repair. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

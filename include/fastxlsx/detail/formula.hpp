@@ -76,9 +76,22 @@ struct FormulaReferenceQualifierClassification {
     std::string decoded_sheet_name;
 };
 
+enum class FormulaStructuralEditKind {
+    InsertRows,
+    DeleteRows,
+    InsertColumns,
+    DeleteColumns,
+};
+
 struct FormulaTranslationDelta {
     std::int64_t row_delta = 0;
     std::int64_t column_delta = 0;
+};
+
+struct FormulaStructuralEdit {
+    FormulaStructuralEditKind kind = FormulaStructuralEditKind::InsertRows;
+    std::uint32_t first = 0;
+    std::uint32_t count = 0;
 };
 
 struct FormulaToken {
@@ -130,5 +143,16 @@ struct FormulaToken {
 /// formula text rewriter, not a formula evaluator or calcChain rebuilder.
 [[nodiscard]] std::string translate_formula_references(
     std::string_view formula, FormulaTranslationDelta delta);
+
+/// Rewrites references affected by a worksheet structural row/column edit.
+///
+/// This reuses the narrow A1-style scanner used by translate_formula_references().
+/// References on the edited axis that are shifted by an insertion/deletion are
+/// moved, references deleted by the edit become `#REF!`, and `$` markers are
+/// preserved as output markers rather than copy-translation locks. This is not
+/// a formula evaluator, dependency graph, metadata synchronizer, or calcChain
+/// rebuilder.
+[[nodiscard]] std::string rewrite_formula_references_for_structural_edit(
+    std::string_view formula, FormulaStructuralEdit edit);
 
 } // namespace fastxlsx::detail

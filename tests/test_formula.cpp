@@ -439,6 +439,46 @@ void test_zero_delta_preserves_formula()
         "formula translator should preserve text for zero delta");
 }
 
+void test_rewrite_formula_references_for_structural_edit()
+{
+    using fastxlsx::detail::FormulaStructuralEdit;
+    using fastxlsx::detail::FormulaStructuralEditKind;
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(A1,A2,$A$2,A2:B3,Sheet1!2:2,"A2",Table1[A2]))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 2}),
+        R"(SUM(A1,A4,$A$4,A4:B5,Sheet1!4:4,"A2",Table1[A2]))",
+        "formula structural row insert should move affected row references");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(A1+A2+A4+$A$3+Sheet1!4:4+"A2"+Table1[A2])",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
+        R"(A1+#REF!+A2+#REF!+Sheet1!2:2+"A2"+Table1[A2])",
+        "formula structural row delete should ref deleted rows and shift later rows");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1+B1+$B$2+B:C+Sheet1!B2",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 2}),
+        "A1+D1+$D$2+D:E+Sheet1!D2",
+        "formula structural column insert should move affected column references");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1+B1+D1+$C$1+D:E",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 2}),
+        "A1+#REF!+B1+#REF!+B:C",
+        "formula structural column delete should ref deleted columns and shift later columns");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1+B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 3, 0}),
+        "A1+B1",
+        "formula structural rewrite should preserve text for zero-count edits");
+}
+
 void test_formula_reference_audit_fields()
 {
     const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
@@ -771,6 +811,7 @@ int main()
         test_translate_formula_references();
         test_translate_formula_out_of_bounds();
         test_zero_delta_preserves_formula();
+        test_rewrite_formula_references_for_structural_edit();
         test_formula_reference_audit_fields();
         test_formula_reference_audit_matches_sheet_names_case_insensitively();
         test_scan_workbook_defined_name_formulas();

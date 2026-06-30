@@ -206,6 +206,8 @@ public:
 
         std::map<CellPosition, CellRecord> shifted_records;
         bool shifted_any_record = false;
+        const FormulaStructuralEdit structural_edit {
+            FormulaStructuralEditKind::InsertRows, first_row, row_count};
         for (const auto& [position, record] : store_.records()) {
             CellPosition shifted_position = position;
             if (position.row >= first_row) {
@@ -216,8 +218,10 @@ public:
                 shifted_position.row = position.row + row_count;
                 shifted_any_record = true;
             }
-            insert_shifted_record(shifted_records, position, shifted_position, record,
-                "MaterializedWorksheetSession::insert_rows()");
+            shifted_any_record =
+                insert_shifted_record(shifted_records, position, shifted_position, record,
+                    structural_edit, "MaterializedWorksheetSession::insert_rows()")
+                || shifted_any_record;
         }
 
         if (!shifted_any_record) {
@@ -237,6 +241,8 @@ public:
         const std::uint32_t last_deleted_row = first_row + row_count - 1U;
         std::map<CellPosition, CellRecord> shifted_records;
         bool changed_any_record = false;
+        const FormulaStructuralEdit structural_edit {
+            FormulaStructuralEditKind::DeleteRows, first_row, row_count};
         for (const auto& [position, record] : store_.records()) {
             if (position.row >= first_row && position.row <= last_deleted_row) {
                 changed_any_record = true;
@@ -248,8 +254,10 @@ public:
                 shifted_position.row = position.row - row_count;
                 changed_any_record = true;
             }
-            insert_shifted_record(shifted_records, position, shifted_position, record,
-                "MaterializedWorksheetSession::delete_rows()");
+            changed_any_record =
+                insert_shifted_record(shifted_records, position, shifted_position, record,
+                    structural_edit, "MaterializedWorksheetSession::delete_rows()")
+                || changed_any_record;
         }
 
         if (!changed_any_record) {
@@ -269,6 +277,8 @@ public:
 
         std::map<CellPosition, CellRecord> shifted_records;
         bool shifted_any_record = false;
+        const FormulaStructuralEdit structural_edit {
+            FormulaStructuralEditKind::InsertColumns, first_column, column_count};
         for (const auto& [position, record] : store_.records()) {
             CellPosition shifted_position = position;
             if (position.column >= first_column) {
@@ -279,8 +289,10 @@ public:
                 shifted_position.column = position.column + column_count;
                 shifted_any_record = true;
             }
-            insert_shifted_record(shifted_records, position, shifted_position, record,
-                "MaterializedWorksheetSession::insert_columns()");
+            shifted_any_record =
+                insert_shifted_record(shifted_records, position, shifted_position, record,
+                    structural_edit, "MaterializedWorksheetSession::insert_columns()")
+                || shifted_any_record;
         }
 
         if (!shifted_any_record) {
@@ -301,6 +313,8 @@ public:
         const std::uint32_t last_deleted_column = first_column + column_count - 1U;
         std::map<CellPosition, CellRecord> shifted_records;
         bool changed_any_record = false;
+        const FormulaStructuralEdit structural_edit {
+            FormulaStructuralEditKind::DeleteColumns, first_column, column_count};
         for (const auto& [position, record] : store_.records()) {
             if (position.column >= first_column && position.column <= last_deleted_column) {
                 changed_any_record = true;
@@ -312,8 +326,10 @@ public:
                 shifted_position.column = position.column - column_count;
                 changed_any_record = true;
             }
-            insert_shifted_record(shifted_records, position, shifted_position, record,
-                "MaterializedWorksheetSession::delete_columns()");
+            changed_any_record =
+                insert_shifted_record(shifted_records, position, shifted_position, record,
+                    structural_edit, "MaterializedWorksheetSession::delete_columns()")
+                || changed_any_record;
         }
 
         if (!changed_any_record) {
@@ -444,9 +460,9 @@ private:
         }
     }
 
-    static void insert_shifted_record(std::map<CellPosition, CellRecord>& records,
+    static bool insert_shifted_record(std::map<CellPosition, CellRecord>& records,
         CellPosition source_position, CellPosition position, const CellRecord& record,
-        std::string_view operation)
+        FormulaStructuralEdit structural_edit, std::string_view operation)
     {
         CellRecord shifted_record = record;
         if (record.kind == CellValueKind::Formula
@@ -460,13 +476,20 @@ private:
                     static_cast<std::int64_t>(position.column)
                         - static_cast<std::int64_t>(source_position.column),
                 });
+        } else if (record.kind == CellValueKind::Formula) {
+            shifted_record.text_value = rewrite_formula_references_for_structural_edit(
+                record.text_value, structural_edit);
         }
 
+        const bool changed = source_position.row != position.row
+            || source_position.column != position.column
+            || shifted_record.text_value != record.text_value;
         const auto [_, inserted] = records.emplace(position, std::move(shifted_record));
         if (!inserted) {
             throw FastXlsxError(std::string(operation)
                 + " produced duplicate shifted sparse cell coordinates");
         }
+        return changed;
     }
 
     std::string planned_name_;

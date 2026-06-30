@@ -699,6 +699,7 @@ function Verify-Case {
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_reopen_modify_save" { Verify-GeneratedInMemoryReopenModifySave $workbook }
             "generated_in_memory_multi_sheet_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
+            "generated_in_memory_multi_sheet_retry_save" { Verify-GeneratedInMemoryMultiSheetSave $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

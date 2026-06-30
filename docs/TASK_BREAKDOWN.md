@@ -51268,6 +51268,50 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1278 - Add generated in-memory multi-sheet retry-save QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+multi-worksheet failed-save retry persistence.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that dirty materialized sessions
+on more than one worksheet survive a rejected source-overwrite `save_as()`, then
+flush correctly through a later safe retry output.
+
+Coverage:
+- Adds `generated_in_memory_multi_sheet_retry_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- The scenario reuses the generated `Data` / `Summary` / `Notes` workbook shape,
+  dirties `Data` and `Summary`, observes `save_as(source)` rejection, verifies
+  the materialized formula cells are still readable, and then saves a safe retry
+  output.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  verify the source workbook still contains old `Data` / `Summary` payloads and
+  the retry output matches the existing multi-sheet save output shape.
+- Reuses the XlsxWriter reference and Excel COM sidecar checks for the same final
+  output shape.
+- Documents the single-scenario command in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production behavior changes, overwrite mode, rollback, transaction replay,
+  formula evaluation, cached value preservation, cross-sheet dependency
+  synchronization, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_multi_sheet_retry_save --work-dir build\\qa\\workbook-editor-in-memory-multi-sheet-retry-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

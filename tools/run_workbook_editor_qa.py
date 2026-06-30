@@ -43,6 +43,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_overwrite_formula_text",
     "generated_in_memory_reopen_modify_save",
     "generated_in_memory_multi_sheet_save",
+    "generated_in_memory_multi_sheet_retry_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1463,6 +1464,37 @@ def verify_generated_in_memory_multi_sheet_save(path: Path) -> tuple[dict[str, A
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_multi_sheet_retry_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    require(tool_report.get("status") == "expected_retry_observed",
+            f"generated in-memory multi-sheet retry save: unexpected tool status {tool_report!r}")
+    require(tool_report.get("error_message"),
+            "generated in-memory multi-sheet retry save: missing rejected save diagnostic")
+    source_path = Path(tool_report["source"])
+    source_sheet_entries = workbook_sheet_entry_map(source_path)
+    require(source_sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Summary": "xl/worksheets/sheet2.xml",
+        "Notes": "xl/worksheets/sheet3.xml",
+    }, f"generated in-memory multi-sheet retry save: unexpected source sheet map {source_sheet_entries!r}")
+    source_data_xml = read_zip_text(source_path, source_sheet_entries["Data"])
+    source_summary_xml = read_zip_text(source_path, source_sheet_entries["Summary"])
+    require("old-data" in source_data_xml and "edited-data" not in source_data_xml,
+            "generated in-memory multi-sheet retry save: source Data payload was overwritten")
+    require("old-summary" in source_summary_xml and "edited-summary" not in source_summary_xml,
+            "generated in-memory multi-sheet retry save: source Summary payload was overwritten")
+    require("Data!B1*2" in source_summary_xml and "Data!B1+Data!B3" not in source_summary_xml,
+            "generated in-memory multi-sheet retry save: source Summary formula was overwritten")
+
+    zip_report, openpyxl_report = verify_generated_in_memory_multi_sheet_save(path)
+    zip_report["source_sheet_entries"] = source_sheet_entries
+    zip_report["source_payload"] = "checked"
+    zip_report["retry_error_message"] = tool_report["error_message"]
+    return zip_report, openpyxl_report
+
+
 def verify_generated_source_formula_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -2799,7 +2831,10 @@ def create_xlsxwriter_reference(
             data.write_number("B3", 4)
             data.write_formula("C3", "=B3*2")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_multi_sheet_save":
+        elif scenario in {
+            "generated_in_memory_multi_sheet_save",
+            "generated_in_memory_multi_sheet_retry_save",
+        }:
             data = workbook.add_worksheet("Data")
             summary = workbook.add_worksheet("Summary")
             notes = workbook.add_worksheet("Notes")
@@ -2914,6 +2949,11 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_save(output_path)
     elif scenario == "generated_in_memory_multi_sheet_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_save(output_path)
+    elif scenario == "generated_in_memory_multi_sheet_retry_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

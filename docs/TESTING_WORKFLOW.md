@@ -444,6 +444,23 @@ and does not add cross-sheet dependency synchronization, metadata repair,
 sharedStrings/styles migration, calcChain rebuild, or low-memory random
 editing.
 
+For generated in-memory multi-sheet failed-save retry smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_retry_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-retry-save
+```
+
+This scenario covers the same final output shape as
+`generated_in_memory_multi_sheet_save`, but first attempts the rejected
+`save_as(source)` path. The runner verifies the source workbook still contains
+the old `Data` and `Summary` payloads, then validates the safe retry output with
+ZIP/XML, `openpyxl`, optional XlsxWriter reference, and optional Excel COM
+checks.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

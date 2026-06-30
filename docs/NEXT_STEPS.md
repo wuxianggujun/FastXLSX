@@ -81,7 +81,8 @@ also pins supported cell-range and whole-axis stationary formulas such as
 formula audits now also skip `Data!#REF!` while keeping the surviving `Data!B1`
 reference visible. The source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
-rewritten to `Data!A4+Data!B1`. The retry/guard shard also pins that
+rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same
+boundary when the materialized formula is `Data!#REF!+Data!B1`. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

@@ -21941,6 +21941,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-directory-output");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-audit-noop-output.xlsx");
         std::filesystem::remove_all(missing_parent_output.parent_path());
         std::filesystem::remove_all(file_parent);
         fastxlsx::test::write_file(file_parent, "not a directory");
@@ -22060,6 +22062,36 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             output, "D1", 1, 4, expected_formula, styled_formula_style,
             "Data!B1", "B1",
             "renamed delete-row formula audit reopened output surviving B reference");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+            "renamed delete-row formula audit no-op save should keep materialized handles clean");
+        check(editor.pending_change_count() == 2,
+            "renamed delete-row formula audit no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "renamed delete-row formula audit no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "renamed delete-row formula audit no-op save should not queue replacement diagnostics");
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "renamed delete-row formula audit no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "renamed delete-row formula audit no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "renamed delete-row formula audit no-op output should match the first materialized output");
+        check_public_state_reopened_delete_formula_audit_output(
+            noop_output, "D1", 1, 4, expected_formula, styled_formula_style,
+            "Data!B1", "B1",
+            "renamed delete-row formula audit no-op save surviving B reference");
     }
 
     {
@@ -22080,6 +22112,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-directory-output");
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-audit-noop-output.xlsx");
         std::filesystem::remove_all(missing_parent_output.parent_path());
         std::filesystem::remove_all(file_parent);
         fastxlsx::test::write_file(file_parent, "not a directory");
@@ -22199,6 +22233,36 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             output, "C2", 2, 3, expected_formula, styled_formula_style,
             "Data!A2", "A2",
             "renamed delete-column formula audit reopened output surviving A reference");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+            "renamed delete-column formula audit no-op save should keep materialized handles clean");
+        check(editor.pending_change_count() == 2,
+            "renamed delete-column formula audit no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "renamed delete-column formula audit no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "renamed delete-column formula audit no-op save should not queue replacement diagnostics");
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "renamed delete-column formula audit no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "renamed delete-column formula audit no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "renamed delete-column formula audit no-op output should match the first materialized output");
+        check_public_state_reopened_delete_formula_audit_output(
+            noop_output, "C2", 2, 3, expected_formula, styled_formula_style,
+            "Data!A2", "A2",
+            "renamed delete-column formula audit no-op save surviving A reference");
     }
 }
 
@@ -23850,6 +23914,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-ref-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-ref-formula-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -23940,6 +24006,32 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
     check(!reopened_sheet.try_cell("D2").has_value() &&
             !reopened_sheet.try_cell("A3").has_value(),
         "renamed formula delete_columns reopened output should keep old coordinates absent");
+
+    check_public_state_renamed_clean_noop_save(
+        editor, sheet, noop_output, output_entries, "renamed formula delete_columns", 2,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 4,
+                "renamed formula delete_columns no-op save reopened output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 3,
+                "renamed formula delete_columns no-op save reopened output should expose shifted bounds");
+            const fastxlsx::CellValue noop_a1 = noop_sheet.get_cell("A1");
+            check(noop_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    noop_a1.number_value() == 1.0,
+                "renamed formula delete_columns no-op save reopened output should read shifted B1");
+            const std::optional<fastxlsx::CellValue> noop_c2 =
+                noop_sheet.try_cell("C2");
+            check(noop_c2.has_value() &&
+                    noop_c2->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_c2->text_value() == "#REF!+A1" &&
+                    noop_c2->has_style() &&
+                    noop_c2->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete_columns no-op save reopened output should read translated styled formula");
+            check(noop_sheet.get_cell("A2").text_value() == "row2-gap-b2",
+                "renamed formula delete_columns no-op save reopened output should read shifted B2");
+            check(!noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A3").has_value(),
+                "renamed formula delete_columns no-op save reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_failed_save_preserves_styled_session()
@@ -25543,6 +25635,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-ref-row-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-ref-row-formula-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -25636,6 +25730,30 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
     check(!reopened_sheet.try_cell("D2").has_value() &&
             !reopened_sheet.try_cell("A3").has_value(),
         "renamed formula delete_rows reopened output should keep old coordinates absent");
+
+    check_public_state_renamed_clean_noop_save(
+        editor, sheet, noop_output, output_entries, "renamed formula delete_rows", 2,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 5,
+                "renamed formula delete_rows no-op save reopened output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 4,
+                "renamed formula delete_rows no-op save reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_d1 =
+                noop_sheet.try_cell("D1");
+            check(noop_d1.has_value() &&
+                    noop_d1->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_d1->text_value() == "#REF!+#REF!" &&
+                    noop_d1->has_style() &&
+                    noop_d1->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete_rows no-op save reopened output should read translated styled formula");
+            check(noop_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    noop_sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("A2").text_value() == "extra-c3",
+                "renamed formula delete_rows no-op save reopened output should read shifted source rows");
+            check(!noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A3").has_value(),
+                "renamed formula delete_rows no-op save reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_save_preserves_styled_session()

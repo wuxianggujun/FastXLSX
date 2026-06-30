@@ -4016,6 +4016,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     check(reopened.estimated_pending_materialized_memory_usage() ==
             second_stage_dirty_memory,
         "multi-sheet retry reopen second-stage edits should aggregate dirty memory");
+    check(reopened.pending_change_count() == 0,
+        "multi-sheet retry reopen second-stage edits should not add handoffs before save");
 
     reopened.save_as(second_output);
     check(reopened.pending_materialized_worksheet_names().empty() &&
@@ -4438,6 +4440,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     const std::size_t second_stage_dirty_memory = reopened_data.estimated_memory_usage();
     check(reopened.estimated_pending_materialized_memory_usage() == second_stage_dirty_memory,
         "single-sheet reopen second-stage edits should expose dirty memory usage");
+    check(reopened.pending_change_count() == 0,
+        "single-sheet reopen second-stage edits should not add a handoff before save");
 
     reopened.save_as(second_output);
     check(!reopened_data.has_pending_changes(),

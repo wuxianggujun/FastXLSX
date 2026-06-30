@@ -52578,6 +52578,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1308 - Pin fresh-reopen second-stage pending count lifecycle
+
+Type: public `WorkbookEditor` / `WorksheetEditor` fresh-reopen pending-count
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Pin that dirty materialized sessions in a fresh reopened editor do not increment
+`pending_change_count()` before the second-stage `save_as()` flush.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`
+  and
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- Verifies the single-sheet second-stage dirty edit keeps
+  `pending_change_count()` at zero before the second save.
+- Verifies the multi-sheet second-stage dirty edit keeps
+  `pending_change_count()` at zero before the second save.
+- Reuses the existing second-save assertions that the later flush records the
+  new materialized handoffs.
+
+Non-goals:
+- No save behavior change, commit/close semantics, pending-count redesign,
+  rollback, transaction replay, formula evaluation, cached value preservation,
+  cross-sheet dependency synchronization, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

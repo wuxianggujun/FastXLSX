@@ -48740,6 +48740,40 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1213 - Pin mixed diagnostic recovery materialized isolation
+
+Type: public `WorkbookEditor` mixed diagnostic recovery materialized aggregate
+isolation regression.
+
+Status: completed.
+
+Goal: prove a successful other-sheet replacement recovery after mixed failure
+diagnostics does not dirty or otherwise contribute aggregate materialized state
+from an already clean materialized handle.
+
+Coverage:
+- Extends `test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics()`
+  so the successful `replace_sheet_data("Untouched", ...)` recovery verifies
+  the clean materialized `Data` session still reports zero dirty materialized
+  cells and zero dirty materialized memory.
+- Keeps the existing replacement summary preservation, no-op save stability,
+  rejected payload absence, and reopened clean-sheet checks unchanged.
+
+Non-goals:
+- No same-sheet Patch/materialized composition, replacement summary changes,
+  clean materialized session mutation, memory-accounting changes,
+  metadata/range repair, relationship repair, calcChain rebuild,
+  sharedStrings/styles migration, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

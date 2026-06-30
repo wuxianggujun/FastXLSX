@@ -1520,6 +1520,8 @@ Explicit-blank guard recovery coverage now pins aggregate dirty materialized
 memory after successful existing-cell blank overwrites.
 Last-edit-error replacement recovery coverage now pins aggregate materialized
 memory after the successful overwrite that follows replaced failure diagnostics.
+Mixed diagnostic recovery coverage now pins replacement-only recovery isolation
+from clean materialized aggregate count and memory.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

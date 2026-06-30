@@ -36637,6 +36637,10 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
         "successful recovery replacement should be tracked under the target sheet");
     check(editor.pending_materialized_worksheet_names().empty(),
         "clean materialized Data session should not become dirty after other-sheet recovery");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean materialized Data session should not expose dirty cells after other-sheet recovery");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialized Data session should not expose dirty memory after other-sheet recovery");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

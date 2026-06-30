@@ -16855,6 +16855,7 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
 
     sheet.insert_rows(2, 1);
     editor.request_full_calculation();
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     constexpr std::string_view shifted_formula = "Data!A2+Data!B2";
     constexpr std::string_view source_formula = "Data!A1+Data!B1";
@@ -16869,7 +16870,7 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
     check(editor.pending_change_count() == 1 &&
             editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
             editor.pending_materialized_cell_count() == 7 &&
-            editor.estimated_pending_materialized_memory_usage() > 0,
+            editor.estimated_pending_materialized_memory_usage() == shifted_memory,
         "full-calc source formula audit setup should keep metadata and materialized diagnostics pending");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
@@ -16881,7 +16882,8 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
                     summaries[0].planned_name == "Data" &&
                     !summaries[0].renamed &&
                     summaries[0].materialized_dirty &&
-                    summaries[0].materialized_cell_count == 7,
+                    summaries[0].materialized_cell_count == 7 &&
+                    summaries[0].estimated_materialized_memory_usage == shifted_memory,
                 "full-calc source formula audit setup should report the dirty Data summary");
         }
     }
@@ -17025,6 +17027,7 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
     editor.request_full_calculation();
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_rows(2, 1);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     constexpr std::string_view shifted_formula = "Data!A2+Data!B2";
     const std::optional<fastxlsx::CellValue> materialized_formula =
@@ -17041,7 +17044,7 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
             editor.pending_materialized_worksheet_names()
                 == std::vector<std::string>{"RenamedData"} &&
             editor.pending_materialized_cell_count() == 7 &&
-            editor.estimated_pending_materialized_memory_usage() > 0,
+            editor.estimated_pending_materialized_memory_usage() == shifted_memory,
         "renamed full-calc source formula audit setup should keep rename, metadata, and materialized diagnostics pending");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
@@ -17053,7 +17056,8 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
                     summaries[0].planned_name == "RenamedData" &&
                     summaries[0].renamed &&
                     summaries[0].materialized_dirty &&
-                    summaries[0].materialized_cell_count == 7,
+                    summaries[0].materialized_cell_count == 7 &&
+                    summaries[0].estimated_materialized_memory_usage == shifted_memory,
                 "renamed full-calc source formula audit setup should report the dirty renamed summary");
         }
     }
@@ -17290,7 +17294,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_failed
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 7,
+                        summaries[0].materialized_cell_count == 7 &&
+                        summaries[0].estimated_materialized_memory_usage == shifted_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }

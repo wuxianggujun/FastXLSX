@@ -1470,6 +1470,8 @@ memory.
 Pending materialized summary move coverage now carries the same memory estimate
 through `WorkbookEditor` move construction and move assignment, so summary
 diagnostics preserve both cell count and memory count.
+Full-calculation formula-audit dirty-summary coverage now pins the same shifted
+fixture memory estimate in both aggregate diagnostics and edit summaries.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

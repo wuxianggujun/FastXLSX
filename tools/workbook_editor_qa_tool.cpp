@@ -1802,7 +1802,8 @@ Report run_generated_in_memory_retry_path_equivalent_noop_save(const CliOptions&
 
 Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
     const CliOptions& options,
-    bool verify_post_noop_third_save)
+    bool verify_post_noop_third_save,
+    bool use_path_equivalent_source)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1817,10 +1818,18 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         output_filename =
             "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-post-noop-third-output.xlsx";
     }
+    if (use_path_equivalent_source) {
+        source_filename = "fastxlsx-qa-retry-path-equiv-reopen-noop-source.xlsx";
+        output_filename = "fastxlsx-qa-retry-path-equiv-reopen-noop-output.xlsx";
+    }
 
     report.source = write_in_memory_reopen_modify_save_source(
         resolve_generated_source(options, source_filename));
     report.output = resolve_output_path(options, output_filename);
+    const std::filesystem::path rejected_output =
+        use_path_equivalent_source
+            ? report.source.parent_path() / "." / report.source.filename()
+            : report.source;
     const std::filesystem::path retry_output =
         report.output.parent_path() / "safe-retry-output.xlsx";
     const std::filesystem::path second_stage_output =
@@ -1837,7 +1846,6 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
     report.mutations = {
         "first:worksheet(Data).set_cell(A1,text)",
         "first:worksheet(Data).append_row(text,number,formula)",
-        "first:save_as(source) rejected",
         "first:save_as(safe-retry-output)",
         "second:open(safe-retry-output)",
         "second:worksheet(Data).set_cell(B1,number)",
@@ -1846,6 +1854,15 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         "second:save_as(output)",
         "second:save_as(noop-output)",
     };
+    if (use_path_equivalent_source) {
+        report.mutations.insert(
+            report.mutations.begin() + 2,
+            "first:save_as(path-equivalent-source) rejected");
+    } else {
+        report.mutations.insert(
+            report.mutations.begin() + 2,
+            "first:save_as(source) rejected");
+    }
     if (verify_post_noop_third_save) {
         report.mutations.push_back("third:worksheet(Data).set_cell(E1,text)");
         report.mutations.push_back("third:save_as(third-stage-output)");
@@ -1863,6 +1880,10 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         report.notes.push_back(
             "Post-noop third-stage edit should save and no-op save byte-identically");
     }
+    if (use_path_equivalent_source) {
+        report.notes.push_back(
+            "The rejected first-stage output path is path-equivalent to the source package");
+    }
 
     {
         WorkbookEditor editor = WorkbookEditor::open(report.source);
@@ -1877,7 +1898,7 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         require_formula_cell(data, "C3", "B3*2");
 
         try {
-            editor.save_as(report.source);
+            editor.save_as(rejected_output);
             throw std::runtime_error("expected source-overwrite save_as to fail");
         } catch (const FastXlsxError& error) {
             report.status = "expected_retry_observed";
@@ -1922,13 +1943,28 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
 
 Report run_generated_in_memory_retry_reopen_modify_noop_save(const CliOptions& options)
 {
-    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(options, false);
+    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
+        options,
+        false,
+        false);
+}
+
+Report run_generated_in_memory_retry_path_equivalent_reopen_modify_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
+        options,
+        false,
+        true);
 }
 
 Report run_generated_in_memory_retry_reopen_modify_post_noop_third_save(
     const CliOptions& options)
 {
-    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(options, true);
+    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
+        options,
+        true,
+        false);
 }
 
 Report run_generated_in_memory_reopen_modify_save_impl(
@@ -2873,6 +2909,11 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_retry_reopen_modify_noop_save") {
         return run_generated_in_memory_retry_reopen_modify_noop_save(options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_retry_path_equivalent_reopen_modify_noop_save") {
+        return run_generated_in_memory_retry_path_equivalent_reopen_modify_noop_save(
+            options);
     }
     if (options.scenario ==
         "generated_in_memory_retry_reopen_modify_post_noop_third_save") {

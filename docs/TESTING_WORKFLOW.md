@@ -455,6 +455,23 @@ retry output through a fresh `WorkbookEditor`, applies second-stage `Data`
 edits, and requires the final no-op `save_as()` output to be byte-identical to
 the second-stage save while the original source workbook keeps the old payload.
 
+For generated in-memory path-equivalent retry plus reopen/modify/no-op smoke,
+run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_retry_path_equivalent_reopen_modify_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-retry-path-equivalent-reopen-modify-noop-save
+```
+
+This mirrors the single-sheet retry/reopen/no-op shape while using a
+path-equivalent source output path for the rejected first save. It is opt-in QA
+only; it does not add overwrite mode, path repair, transaction replay,
+metadata repair, sharedStrings/styles migration, calcChain rebuild, or
+low-memory random editing.
+
 For generated in-memory single-sheet failed-save retry plus reopen/modify,
 no-op, third edit, and final no-op smoke, run:
 

@@ -61,6 +61,10 @@ safe retry and byte-identical no-op output checks.
 It also covers `generated_in_memory_retry_reopen_modify_noop_save`, which opens
 that safe retry output through a fresh editor, applies second-stage edits, and
 requires the final no-op save to be byte-identical to the second-stage output.
+It also covers
+`generated_in_memory_retry_path_equivalent_reopen_modify_noop_save`, which uses
+a path-equivalent source output path for the rejected first save before the
+same safe-retry, fresh reopen/edit, and byte-identical no-op checks.
 It now also covers
 `generated_in_memory_retry_reopen_modify_post_noop_third_save`, which edits
 `Data` again after that clean no-op save and requires the final no-op save to

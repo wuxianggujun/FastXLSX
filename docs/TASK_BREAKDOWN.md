@@ -48552,6 +48552,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1208 - Pin source-load max-cells guard aggregate state
+
+Type: public `WorksheetEditor` source-load max-cells failure aggregate
+materialized diagnostics regression.
+
+Status: completed.
+
+Goal: prove a rejected source worksheet materialization under a tight
+`WorksheetEditorOptions::max_cells` limit does not leave partial dirty
+materialized names, cells, or memory diagnostics before the editor recovers
+through the existing replacement path.
+
+Coverage:
+- Extends `test_public_worksheet_editor_options_guard_failure_preserves_state()`
+  so the failed `worksheet("Data", options)` source-load guard path verifies
+  `pending_materialized_worksheet_names()`, `pending_materialized_cell_count()`,
+  and `estimated_pending_materialized_memory_usage()` remain empty/zero.
+- Keeps the existing recovery `replace_sheet_data()` save, replacement-summary
+  no-op save stability, output ZIP stability, and reopened clean-sheet checks
+  unchanged.
+
+Non-goals:
+- No `max_cells` enforcement changes, source materialization changes,
+  replacement semantics changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

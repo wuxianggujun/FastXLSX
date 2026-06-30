@@ -35038,6 +35038,12 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         "failed public WorksheetEditor materialization should not dirty the editor");
     check(editor.pending_change_count() == 0,
         "failed public WorksheetEditor materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed public WorksheetEditor materialization should not leave a partial materialized session");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed public WorksheetEditor materialization should not expose partial materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed public WorksheetEditor materialization should not expose partial materialized memory");
     check(!editor.last_edit_error().has_value(),
         "failed public WorksheetEditor materialization should not update last_edit_error");
 

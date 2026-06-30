@@ -48853,6 +48853,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1216 - Pin saved-reacquire formula-audit recovery memory summaries
+
+Type: public `WorksheetEditor` saved-session renamed formula-audit recovery dirty
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove saved/reacquired `RenamedData` sessions report the recovered dirty
+materialized memory estimate through both aggregate `WorkbookEditor` diagnostics
+and the dirty worksheet edit summary before their second save.
+
+Coverage:
+- Adds a rename-aware dirty materialized summary helper for `Data` ->
+  `RenamedData` formula-audit recovery branches.
+- Extends the invalid-mutation, invalid-read, invalid-shift, missing-query,
+  option-mismatch, and same-sheet guard saved-reacquire recovery tests so each
+  snapshots `WorksheetEditor::estimated_memory_usage()` after the valid recovery
+  mutation.
+- Verifies both saved and reacquired handles expose the recovered sparse count
+  and memory estimate.
+- Verifies aggregate materialized names/count/memory and the single dirty
+  `WorkbookEditorWorksheetEditSummary` report the same recovered `RenamedData`
+  materialized state before the second save.
+- Keeps existing formula-audit preservation, source-audit preservation,
+  fullCalcOnLoad, save/no-op save, and reopened-output checks unchanged.
+
+Non-goals:
+- No formula translation changes, recovery mutation semantic changes, rename
+  semantic changes, formula-audit tokenization changes, fullCalcOnLoad metadata
+  changes, memory-accounting changes, guardrail changes, metadata/range repair,
+  relationship repair, calcChain rebuild, sharedStrings/styles migration,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

@@ -1478,6 +1478,10 @@ without changing formula repair or calculation behavior.
 The renamed formula-audit preserve-state helpers now carry that memory estimate
 through option, missing-query, invalid-read, invalid-mutation, invalid-shift,
 and diagnostic-recovery checks as well.
+The saved-reacquire renamed formula-audit recovery branches now use the same
+rename-aware memory-summary helper after valid recovery mutations, covering
+invalid mutation/read/shift, missing query, option mismatch, and same-sheet guard
+paths before their second save.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

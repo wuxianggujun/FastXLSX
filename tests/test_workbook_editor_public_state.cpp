@@ -813,6 +813,55 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement sheet names");
 }
 
+void check_public_state_renamed_dirty_materialized_summary_memory(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& first_handle,
+    fastxlsx::WorksheetEditor& second_handle,
+    std::size_t expected_cell_count,
+    std::size_t expected_memory_usage,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(first_handle.cell_count() == expected_cell_count &&
+            second_handle.cell_count() == expected_cell_count,
+        prefix + " should expose the expected sparse count on both handles");
+    check(first_handle.estimated_memory_usage() == expected_memory_usage &&
+            second_handle.estimated_memory_usage() == expected_memory_usage,
+        prefix + " should expose the expected materialized memory on both handles");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string>{"RenamedData"},
+        prefix + " should report the renamed sheet as dirty materialized");
+    check(editor.pending_materialized_cell_count() == expected_cell_count,
+        prefix + " should report the expected dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_memory_usage,
+        prefix + " should report the expected dirty materialized memory");
+
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+        editor.pending_worksheet_edits();
+    check(summaries.size() == 1,
+        prefix + " should expose one renamed dirty materialized summary");
+    if (summaries.size() == 1) {
+        const auto& summary = summaries[0];
+        check(summary.source_name == "Data" &&
+                summary.planned_name == "RenamedData" &&
+                summary.renamed,
+            prefix + " summary should report the renamed worksheet");
+        check(!summary.sheet_data_replaced,
+            prefix + " summary should not invent sheetData replacement");
+        check(summary.replacement_cell_count == 0,
+            prefix + " summary should not invent replacement cells");
+        check(summary.estimated_replacement_memory_usage == 0,
+            prefix + " summary should keep replacement memory empty");
+        check(summary.materialized_dirty,
+            prefix + " summary should report dirty materialized state");
+        check(summary.materialized_cell_count == expected_cell_count,
+            prefix + " summary should report the expected materialized cell count");
+        check(summary.estimated_materialized_memory_usage == expected_memory_usage,
+            prefix + " summary should report the expected materialized memory");
+    }
+}
+
 void check_public_state_renamed_shift_formula_audit_noop_save(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& sheet,
@@ -19103,6 +19152,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation audits should preserve last_edit_error");
 
     sheet.set_cell(5, 3, fastxlsx::CellValue::text("invalid-recovery-c5"));
+    const std::size_t recovery_memory = sheet.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid mutation valid recovery should clear diagnostics");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -19112,6 +19162,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation recovery should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire invalid mutation recovery should grow sparse count");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor, sheet, reacquired, 8, recovery_memory,
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery");
     const std::optional<fastxlsx::CellValue> recovered_cell =
         reacquired.try_cell("C5");
     check(recovered_cell.has_value() &&
@@ -19533,6 +19586,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid reads audits should keep diagnostics clear");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("invalid-read-recovery-c5"));
+    const std::size_t recovery_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid reads recovery should keep diagnostics clear");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -19542,6 +19596,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid reads recovery should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire invalid reads recovery should grow sparse count");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor, sheet, reacquired, 8, recovery_memory,
+        "renamed full-calc formula audit saved reacquire invalid reads recovery");
     const std::optional<fastxlsx::CellValue> recovered_cell =
         sheet.try_cell("C5");
     check(recovered_cell.has_value() &&
@@ -19966,6 +20023,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid shifts audits should preserve last_edit_error");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("invalid-shift-recovery-c5"));
+    const std::size_t recovery_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid shifts recovery should clear diagnostics");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -19975,6 +20033,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid shifts recovery should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire invalid shifts recovery should grow sparse count");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor, sheet, reacquired, 8, recovery_memory,
+        "renamed full-calc formula audit saved reacquire invalid shifts recovery");
     const std::optional<fastxlsx::CellValue> recovered_cell =
         sheet.try_cell("C5");
     check(recovered_cell.has_value() &&
@@ -20383,6 +20444,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire missing query audits should keep diagnostics clear");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("missing-query-recovery-c5"));
+    const std::size_t recovery_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire missing query recovery should keep diagnostics clear");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -20392,6 +20454,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire missing query recovery should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire missing query recovery should grow sparse count");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor, sheet, reacquired, 8, recovery_memory,
+        "renamed full-calc formula audit saved reacquire missing query recovery");
     const std::optional<fastxlsx::CellValue> recovered_cell =
         sheet.try_cell("C5");
     check(recovered_cell.has_value() &&
@@ -20800,6 +20865,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire option mismatch audits should keep diagnostics clear");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("option-mismatch-recovery-c5"));
+    const std::size_t recovery_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch recovery should keep diagnostics clear");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -20809,6 +20875,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire option mismatch recovery should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire option mismatch recovery should grow sparse count");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor, sheet, reacquired, 8, recovery_memory,
+        "renamed full-calc formula audit saved reacquire option mismatch recovery");
     const std::optional<fastxlsx::CellValue> recovered_cell =
         sheet.try_cell("C5");
     check(recovered_cell.has_value() &&
@@ -21217,6 +21286,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire same-sheet guard audits should preserve guard diagnostic");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("same-sheet-guard-recovery-c5"));
+    const std::size_t recovery_memory = reacquired.estimated_memory_usage();
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire same-sheet guard recovery should clear diagnostics");
     check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
@@ -21226,6 +21296,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire same-sheet guard recovery should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 8,
         "renamed full-calc formula audit saved reacquire same-sheet guard recovery should grow sparse count");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor, sheet, reacquired, 8, recovery_memory,
+        "renamed full-calc formula audit saved reacquire same-sheet guard recovery");
     const std::optional<fastxlsx::CellValue> recovered_cell =
         sheet.try_cell("C5");
     check(recovered_cell.has_value() &&

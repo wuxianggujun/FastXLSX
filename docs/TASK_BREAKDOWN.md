@@ -48444,6 +48444,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1200 - Pin whole-store clear/erase reacquire aggregate memory
+
+Type: public `WorksheetEditor` whole-store clear/erase reacquire aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove whole-store clear/erase paths and their saved-session reacquire
+follow-up mutations expose aggregate dirty materialized memory diagnostics that
+match the active `WorksheetEditor` estimate before each materialized save
+handoff.
+
+Coverage:
+- Extends `test_public_worksheet_editor_clear_and_erase_all_cells()` so
+  `clear_cell_values()` snapshots explicit-blank worksheet memory and verifies
+  aggregate materialized memory before the first save.
+- Extends the same test's whole-store clear post-save reacquire path so later
+  value-only edits on the reused `Styled` session report aggregate memory that
+  matches the reacquired handle.
+- Extends the whole-store erase post-save reacquire path so a later append on
+  the reused empty `Data` session reports aggregate memory that matches the
+  reacquired handle.
+
+Non-goals:
+- No whole-store clear/erase semantic changes, saved-session reuse changes,
+  explicit-blank projection changes, sparse-deletion changes,
+  memory-accounting changes, new guardrails, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

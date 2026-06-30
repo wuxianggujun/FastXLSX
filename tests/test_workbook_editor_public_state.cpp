@@ -9738,10 +9738,13 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "clear_cell_values() should preserve source styles on styled blanks");
         check(cleared_b1.kind() == fastxlsx::CellValueKind::Blank && !cleared_b1.has_style(),
             "clear_cell_values() should keep unstyled source cells unstyled");
+        const std::size_t cleared_memory_usage = sheet.estimated_memory_usage();
         check(sheet.has_pending_changes(),
             "clear_cell_values() should dirty a non-empty materialized worksheet");
         check(editor.pending_materialized_cell_count() == 2,
             "clear_cell_values() should keep explicit blanks in aggregate diagnostics");
+        check(editor.estimated_pending_materialized_memory_usage() == cleared_memory_usage,
+            "clear_cell_values() should keep explicit blanks in aggregate memory diagnostics");
         check(editor.pending_materialized_worksheet_names() ==
                 std::vector<std::string> {"Styled"},
             "clear_cell_values() should expose the dirty materialized worksheet name");
@@ -9876,11 +9879,14 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
                 reacquired_a1.has_style() &&
                 reacquired_a1.style_id().value() == non_default_style.value(),
             "reacquired value-only edit after whole-store clear should preserve source style");
+        const std::size_t reacquired_memory_usage = reacquired.estimated_memory_usage();
         check(editor.pending_materialized_worksheet_names() ==
                 std::vector<std::string> {"Styled"},
             "post-save whole-store clear handle reuse should dirty the same worksheet name");
         check(editor.pending_materialized_cell_count() == 2,
             "post-save whole-store clear handle reuse should report edited sparse cells");
+        check(editor.estimated_pending_materialized_memory_usage() == reacquired_memory_usage,
+            "post-save whole-store clear handle reuse should report edited sparse memory");
         {
             const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
                 editor.pending_worksheet_edits();
@@ -10146,11 +10152,16 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
         });
         check_cell_range_equals(reacquired.used_range(), 1, 1, 1, 2,
             "reacquired empty worksheet should append from row one");
+        const std::size_t reacquired_append_memory_usage =
+            reacquired.estimated_memory_usage();
         check(editor.pending_materialized_worksheet_names() ==
                 std::vector<std::string> {"Data"},
             "post-save whole-store erase handle reuse should dirty the same worksheet name");
         check(editor.pending_materialized_cell_count() == 2,
             "post-save whole-store erase handle reuse should report appended sparse cells");
+        check(editor.estimated_pending_materialized_memory_usage() ==
+                reacquired_append_memory_usage,
+            "post-save whole-store erase handle reuse should report appended sparse memory");
         {
             const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
                 editor.pending_worksheet_edits();

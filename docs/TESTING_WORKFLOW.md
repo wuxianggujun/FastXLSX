@@ -680,6 +680,24 @@ only; it does not add overwrite mode, path repair, transaction replay,
 cross-sheet dependency synchronization, metadata repair, sharedStrings/styles
 migration, calcChain rebuild, or low-memory random editing.
 
+For the path-equivalent failed-save variant of the multi-sheet retry,
+reopen/modify, no-op save, and post-no-op third-save path, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-retry-path-equivalent-reopen-post-noop-third-save
+```
+
+This mirrors the multi-sheet retry/reopen/post-noop third-save shape while
+using a path-equivalent source output path for the rejected first save. It is
+opt-in QA only; it does not add overwrite mode, path repair, transaction
+replay, cross-sheet dependency synchronization, metadata repair,
+sharedStrings/styles migration, calcChain rebuild, or low-memory random
+editing.
+
 ```powershell
 cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
 py tools\run_workbook_editor_qa.py `

@@ -58,6 +58,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_multi_sheet_retry_reopen_modify_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
+    "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
@@ -73,6 +74,11 @@ GENERATED_SCENARIOS = [
     "generated_public_e2e",
     "generated_non_default_style_rejection",
 ]
+
+GENERATED_CASE_DIRECTORY_ALIASES = {
+    "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
+        "ms-pe-post-noop-third",
+}
 
 DEFAULT_XLNT_RENAME_FIXTURES = [
     "2_minimal.xlsx",
@@ -1935,6 +1941,23 @@ def verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_s
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory multi-sheet retry path-equivalent reopen modify post-noop third save"
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save(
+            path,
+            tool_report,
+        )
+    )
+    require("first:save_as(path-equivalent-source) rejected" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the path-equivalent rejected save stage")
+    zip_report["path_equivalent_retry"] = "checked"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_source_formula_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -3298,6 +3321,7 @@ def create_xlsxwriter_reference(
             "generated_in_memory_multi_sheet_retry_reopen_modify_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
             "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
+            "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
         }:
             data = workbook.add_worksheet("Data")
@@ -3315,11 +3339,15 @@ def create_xlsxwriter_reference(
                 "generated_in_memory_multi_sheet_retry_reopen_modify_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
+                "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
             }:
                 data.write("D1", "retry-reopened-data")
                 summary.write_formula("C1", "=Data!B1+10")
-            if scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save":
+            if scenario in {
+                "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
+                "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
+            }:
                 data.write("E1", "retry-reopened-post-noop-data")
                 summary.write_formula("D1", "=Data!B1+20")
             notes.write("A1", "preserved")
@@ -3400,7 +3428,7 @@ def run_generated_case(
     work_dir: Path,
     scenario: str,
 ) -> ScenarioResult:
-    case_dir = work_dir / scenario
+    case_dir = work_dir / GENERATED_CASE_DIRECTORY_ALIASES.get(scenario, scenario)
     tool_report = run_tool(qa_exe, scenario, case_dir)
     output_path = Path(tool_report["output"])
     replacement_image = Path(tool_report["replacement_image"]) if tool_report.get("replacement_image") else None
@@ -3506,6 +3534,13 @@ def run_generated_case(
     elif scenario == "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save":
         zip_xml, openpyxl_report = (
             verify_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
                 output_path,
                 tool_report,
             )

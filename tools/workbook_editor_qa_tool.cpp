@@ -2347,8 +2347,10 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         output_filename = "fastxlsx-qa-ms-retry-reopen-post-noop-third-output.xlsx";
     }
     if (use_path_equivalent_source) {
-        source_filename = "fastxlsx-qa-ms-retry-path-equiv-reopen-noop-source.xlsx";
-        output_filename = "fastxlsx-qa-ms-retry-path-equiv-reopen-noop-output.xlsx";
+        source_filename =
+            verify_post_noop_third_save ? "fx-ms-pe-post-src.xlsx" : "fx-ms-pe-reopen-src.xlsx";
+        output_filename =
+            verify_post_noop_third_save ? "fx-ms-pe-post-out.xlsx" : "fx-ms-pe-reopen-out.xlsx";
     }
 
     report.source = write_in_memory_multi_sheet_save_source(
@@ -2367,9 +2369,11 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
                   (use_path_equivalent_source ? "s.xlsx" : "second-stage-output.xlsx")
             : report.output;
     const std::filesystem::path prior_noop_output =
-        report.output.parent_path() / "prior-noop-output.xlsx";
+        report.output.parent_path() /
+        (use_path_equivalent_source ? "n.xlsx" : "prior-noop-output.xlsx");
     const std::filesystem::path third_stage_output =
-        report.output.parent_path() / "third-stage-output.xlsx";
+        report.output.parent_path() /
+        (use_path_equivalent_source ? "t.xlsx" : "third-stage-output.xlsx");
     ensure_parent_directory(retry_output);
     ensure_parent_directory(second_stage_output);
     ensure_parent_directory(prior_noop_output);
@@ -2516,6 +2520,16 @@ Report run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_n
         options,
         true,
         false,
+        true);
+}
+
+Report run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options,
+        true,
+        true,
         true);
 }
 
@@ -3017,6 +3031,11 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario ==
         "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save") {
         return run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save(
+            options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save") {
+        return run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
             options);
     }
     if (options.scenario ==

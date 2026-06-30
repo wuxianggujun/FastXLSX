@@ -120,6 +120,11 @@ It also covers
 which uses a path-equivalent source output path for the rejected multi-sheet
 retry before the same safe-retry, fresh reopen/edit, and byte-identical no-op
 checks.
+It also covers
+`generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save`,
+which continues that path-equivalent multi-sheet retry/reopen/no-op path with
+another `Data` / `Summary` edit, a third-stage output, and a byte-identical
+final no-op save.
 It now also covers
 `generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save`,
 which edits `Data` and `Summary` again after that clean no-op save, writes a

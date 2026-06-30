@@ -2629,6 +2629,26 @@ void check_public_stationary_formula_shift_case(
     check(!editor.last_edit_error().has_value(),
         std::string(label) + " should keep diagnostics clear");
 
+    const auto source_entries_before_failed_save = fastxlsx::test::read_zip_entries(source);
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        std::string(label) + " failed save should reject exact source overwrite");
+    check(sheet.has_pending_changes(),
+        std::string(label) + " failed save should preserve dirty formula-only state");
+    check(editor.pending_change_count() == 0,
+        std::string(label) + " failed save should not queue a materialized handoff");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        std::string(label) + " failed save should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 4,
+        std::string(label) + " failed save should preserve dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        std::string(label) + " failed save should preserve dirty sparse memory");
+    const fastxlsx::CellValue formula_after_failed_save = sheet.get_cell("C1");
+    check(formula_after_failed_save.kind() == fastxlsx::CellValueKind::Formula &&
+            formula_after_failed_save.text_value() == expected_formula,
+        std::string(label) + " failed save should preserve the rewritten formula");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        std::string(label) + " failed save should leave source package bytes unchanged");
+
     editor.save_as(output);
 
     check(!sheet.has_pending_changes(),

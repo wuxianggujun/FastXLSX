@@ -1525,6 +1525,9 @@ memory diagnostics.
 The delete-row invalid-mutation and missing-query styled-session paths now carry
 the same clean rejected-operation, dirty recovery-shift, no-op save, and
 reopened materialized memory diagnostics.
+The delete-row invalid-read and snapshot-read styled-session paths now carry
+matching clean/dirty/reopened materialized memory diagnostics through read-only
+checks and recovery shifts.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

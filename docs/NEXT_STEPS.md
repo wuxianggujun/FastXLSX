@@ -137,6 +137,9 @@ It also pins path-equivalent source-overwrite rejection before that same
 multi-worksheet retry/reopen/no-op/post-noop path: both dirty materialized
 handles remain dirty, the source package bytes stay unchanged, and the later
 safe retry still drives the existing end-to-end checks.
+That multi-worksheet rejected-save path now also keeps its dirty materialized
+diagnostics explicit for exact and path-equivalent failures: both sheet names,
+the aggregate cell count, and the aggregate memory estimate stay stable.
 The single-worksheet public-state path now mirrors that first-save guard too:
 exact and path-equivalent source-overwrite failures preserve the dirty `Data`
 session and source bytes before the same retry/reopen/no-op/post-noop flow

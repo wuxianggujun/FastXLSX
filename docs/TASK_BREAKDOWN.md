@@ -52377,6 +52377,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1303 - Pin multi-sheet rejected-save dirty diagnostics
+
+Type: public `WorkbookEditor` / `WorksheetEditor` multi-sheet failed-save
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Tighten P8.1300 so exact and path-equivalent source-overwrite `save_as()`
+failures both preserve the full aggregate dirty materialized diagnostics before
+the safe retry.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- Captures the dirty `Data` plus `Untouched` aggregate cell count and memory
+  estimate before the rejected saves.
+- Verifies both exact-source and path-equivalent rejected saves preserve dirty
+  materialized worksheet names, aggregate cell count, and estimated memory
+  usage.
+- Reuses the existing source-byte preservation, safe retry, fresh reopen/edit,
+  no-op save, post-noop third save, and final byte-identical no-op assertions.
+
+Non-goals:
+- No save behavior change, overwrite mode, path repair, rollback, transaction
+  replay, memory-accounting redesign, formula evaluation, cached value
+  preservation, cross-sheet dependency synchronization, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

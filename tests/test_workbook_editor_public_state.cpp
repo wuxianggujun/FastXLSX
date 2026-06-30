@@ -3928,17 +3928,47 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
 
     data.set_cell("A1", fastxlsx::CellValue::text("multi-retry-reopen-data"));
     untouched.set_cell("B1", fastxlsx::CellValue::text("multi-retry-reopen-untouched"));
+    const std::size_t dirty_cells = data.cell_count() + untouched.cell_count();
+    const std::size_t dirty_memory_usage =
+        data.estimated_memory_usage() + untouched.estimated_memory_usage();
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen setup should expose both dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet retry reopen setup should expose dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "multi-sheet retry reopen setup should expose dirty memory aggregate");
     const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "multi-sheet retry reopen should reject saving over the source workbook");
     check(data.has_pending_changes() && untouched.has_pending_changes(),
         "multi-sheet retry reopen rejected save should keep both handles dirty");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen rejected save should preserve dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet retry reopen rejected save should preserve dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "multi-sheet retry reopen rejected save should preserve dirty memory aggregate");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "multi-sheet retry reopen rejected save should leave source bytes unchanged");
     check(threw_fastxlsx_error([&] { editor.save_as(path_equivalent_source); }),
         "multi-sheet retry reopen should reject path-equivalent source overwrite");
     check(data.has_pending_changes() && untouched.has_pending_changes(),
         "multi-sheet retry reopen path-equivalent rejected save should keep both handles dirty");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen path-equivalent rejected save should preserve dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet retry reopen path-equivalent rejected save should preserve dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "multi-sheet retry reopen path-equivalent rejected save should preserve dirty memory aggregate");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "multi-sheet retry reopen path-equivalent rejected save should leave source bytes unchanged");
 

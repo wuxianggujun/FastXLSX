@@ -1530,6 +1530,9 @@ matching clean/dirty/reopened materialized memory diagnostics through read-only
 checks and recovery shifts.
 The delete-row reacquire styled-session path now pins matching clean reacquire,
 dirty recovery-shift, no-op save, and reopened materialized memory diagnostics.
+The non-styled rename-shift saved-session reacquire path now pins first/second
+save cleanup and reopened clean materialized memory diagnostics while keeping
+the existing dirty shared-session shift memory check.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

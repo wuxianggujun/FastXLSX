@@ -28060,7 +28060,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
     check(editor.pending_change_count() == 2,
         "renamed shift reacquire first save should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift reacquire first save should clear dirty materialized diagnostics");
 
     std::optional<fastxlsx::WorksheetEditor> maybe_reacquired =
@@ -28124,7 +28125,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
     check(editor.pending_change_count() == 3,
         "renamed shift reacquire second save should record the second materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift reacquire second save should clear dirty materialized diagnostics");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
@@ -28192,7 +28194,9 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed shift reacquire reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift reacquire reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 3,
         "renamed shift reacquire reopened output should keep sparse count");

@@ -354,7 +354,9 @@ py tools\run_workbook_editor_qa.py `
   --scenario generated_in_memory_insert_column_formula `
   --scenario generated_in_memory_delete_row_formula `
   --scenario generated_in_memory_stationary_formula_shift `
+  --scenario generated_in_memory_stationary_formula_shift_noop_save `
   --scenario generated_in_memory_stationary_range_formula_shift `
+  --scenario generated_in_memory_stationary_range_formula_shift_noop_save `
   --work-dir build\qa\workbook-editor-in-memory-shift-formulas
 ```
 
@@ -362,7 +364,8 @@ These scenarios cover `WorksheetEditor::insert_columns()` and
 `WorksheetEditor::delete_rows()` on generated existing workbooks, including
 source-backed cell shifts, formula text translation, stationary formula
 structural rewrites with `$` markers, `#REF!`, cell ranges, whole-row and
-whole-column references, save, and reopen checks.
+whole-column references, save, reopen checks, and byte-identical follow-up
+no-op saves for the stationary formula rewrite cases.
 They are local QA only and do not expand production semantics beyond the
 current small-file in-memory row/column shift paths.
 

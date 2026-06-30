@@ -39,7 +39,9 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_insert_column_formula",
     "generated_in_memory_delete_row_formula",
     "generated_in_memory_stationary_formula_shift",
+    "generated_in_memory_stationary_formula_shift_noop_save",
     "generated_in_memory_stationary_range_formula_shift",
+    "generated_in_memory_stationary_range_formula_shift_noop_save",
     "generated_in_memory_clear_erase",
     "generated_in_memory_append_row_formula",
     "generated_in_memory_overwrite_formula_text",
@@ -1255,6 +1257,30 @@ def verify_generated_in_memory_stationary_range_formula_shift(
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_stationary_formula_shift_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory stationary formula shift no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_stationary_formula_shift(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_stationary_range_formula_shift_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory stationary range formula shift no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_stationary_range_formula_shift(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -3399,7 +3425,10 @@ def create_xlsxwriter_reference(
             data.write_formula("B1", "=A1+A2")
             data.write_number("A2", 6)
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_stationary_formula_shift":
+        elif scenario in {
+            "generated_in_memory_stationary_formula_shift",
+            "generated_in_memory_stationary_formula_shift_noop_save",
+        }:
             expected_formula = (
                 "SUM($A$4,C$4,Data!$A$4,$E$1,$E1,Data!$E$1,#REF!,#REF!,"
                 "Data!#REF!,#REF!,Data!#REF!)"
@@ -3417,7 +3446,10 @@ def create_xlsxwriter_reference(
             data.write("A5", "row-four")
             data.write("A6", "row-five")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_stationary_range_formula_shift":
+        elif scenario in {
+            "generated_in_memory_stationary_range_formula_shift",
+            "generated_in_memory_stationary_range_formula_shift_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write("A1", "item")
@@ -3618,9 +3650,21 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula(output_path)
     elif scenario == "generated_in_memory_stationary_formula_shift":
         zip_xml, openpyxl_report = verify_generated_in_memory_stationary_formula_shift(output_path)
+    elif scenario == "generated_in_memory_stationary_formula_shift_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_stationary_formula_shift_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_stationary_range_formula_shift":
         zip_xml, openpyxl_report = (
             verify_generated_in_memory_stationary_range_formula_shift(output_path)
+        )
+    elif scenario == "generated_in_memory_stationary_range_formula_shift_noop_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_stationary_range_formula_shift_noop_save(
+                output_path,
+                tool_report,
+            )
         )
     elif scenario == "generated_in_memory_clear_erase":
         zip_xml, openpyxl_report = verify_generated_in_memory_clear_erase(output_path)

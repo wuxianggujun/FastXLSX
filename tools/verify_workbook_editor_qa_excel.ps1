@@ -815,7 +815,9 @@ function Verify-Case {
             "generated_in_memory_insert_column_formula" { Verify-GeneratedInMemoryInsertColumnFormula $workbook }
             "generated_in_memory_delete_row_formula" { Verify-GeneratedInMemoryDeleteRowFormula $workbook }
             "generated_in_memory_stationary_formula_shift" { Verify-GeneratedInMemoryStationaryFormulaShift $workbook }
+            "generated_in_memory_stationary_formula_shift_noop_save" { Verify-GeneratedInMemoryStationaryFormulaShift $workbook }
             "generated_in_memory_stationary_range_formula_shift" { Verify-GeneratedInMemoryStationaryRangeFormulaShift $workbook }
+            "generated_in_memory_stationary_range_formula_shift_noop_save" { Verify-GeneratedInMemoryStationaryRangeFormulaShift $workbook }
             "generated_in_memory_clear_erase" { Verify-GeneratedInMemoryClearErase $workbook }
             "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }

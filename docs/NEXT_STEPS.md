@@ -261,7 +261,11 @@ combined row/column insert/delete workbook through ZIP/XML, `openpyxl`,
 optional XlsxWriter, and optional Excel COM checks. It also covers
 `generated_in_memory_stationary_range_formula_shift`, which saves and reopens
 cell-range, whole-row, and whole-column stationary rewrites such as
-`SUM(A4:B4)+4:4+SUM(E1:F1)+E:F`. The
+`SUM(A4:B4)+4:4+SUM(E1:F1)+E:F`. The generated stationary lane now also has
+`generated_in_memory_stationary_formula_shift_noop_save` and
+`generated_in_memory_stationary_range_formula_shift_noop_save`, requiring the
+follow-up clean `save_as()` output to be byte-identical after those structural
+formula rewrites. The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same

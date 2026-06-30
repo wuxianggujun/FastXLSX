@@ -53256,6 +53256,51 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1324 - Add generated stationary formula no-op QA scenarios
+
+Type: opt-in workbook-editor QA runner coverage for public `WorksheetEditor`
+stationary formula post-flush no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated QA path can save supported stationary formula
+structural rewrites and then issue a follow-up clean `save_as()` whose output
+is byte-identical.
+
+Coverage:
+- Adds `generated_in_memory_stationary_formula_shift_noop_save` and
+  `generated_in_memory_stationary_range_formula_shift_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated stationary formula and stationary range formula source
+  workbooks, mutations, and pre-save formula assertions from P8.1322/P8.1323.
+- Saves once to a first output, performs a second clean `save_as()` to the
+  scenario output, and compares both packages byte-for-byte in the QA tool.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML, `openpyxl`, and
+  optional XlsxWriter reference checks validate the final no-op output and
+  confirm the tool reported the no-op stage.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  smoke reads the same final workbook shapes.
+- Documents the scenarios in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production formula rewrite semantic change, formula evaluation, cached
+  formula result preservation, non-materialized worksheet formula scan,
+  metadata/range synchronization, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, default CTest/CI expansion, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_stationary_formula_shift_noop_save --scenario generated_in_memory_stationary_range_formula_shift_noop_save --work-dir build\\qa\\workbook-editor-in-memory-stationary-formula-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -1668,7 +1668,9 @@ Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
     return report;
 }
 
-Report run_generated_in_memory_stationary_formula_shift(const CliOptions& options)
+Report run_generated_in_memory_stationary_formula_shift_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     static constexpr std::string_view kExpectedFormula =
         "SUM($A$4,C$4,Data!$A$4,$E$1,$E1,Data!$E$1,#REF!,#REF!,Data!#REF!,#REF!,Data!#REF!)";
@@ -1677,9 +1679,14 @@ Report run_generated_in_memory_stationary_formula_shift(const CliOptions& option
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_in_memory_stationary_formula_shift_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-output.xlsx");
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_rows(3,1)",
@@ -1687,12 +1694,19 @@ Report run_generated_in_memory_stationary_formula_shift(const CliOptions& option
         "worksheet(Data).delete_rows(7,1)",
         "worksheet(Data).delete_columns(7,1)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Stationary Data!C1 should stay in place while its references are structurally rewritten",
         "Affected absolute and mixed row/column markers should be preserved on surviving references",
         "Deleted row and column references should become #REF!",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the stationary formula rewrite should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -1701,11 +1715,34 @@ Report run_generated_in_memory_stationary_formula_shift(const CliOptions& option
     data.delete_rows(7, 1);
     data.delete_columns(7, 1);
     require_formula_cell(data, "C1", kExpectedFormula);
-    editor.save_as(report.output);
+    const std::filesystem::path first_save_output = verify_noop_save
+        ? report.output.parent_path() / "stationary-formula-first-save.xlsx"
+        : report.output;
+    ensure_parent_directory(first_save_output);
+    editor.save_as(first_save_output);
+    if (verify_noop_save) {
+        editor.save_as(report.output);
+        if (!file_bytes_equal(first_save_output, report.output)) {
+            throw std::runtime_error(
+                "stationary formula no-op save output should be byte-identical");
+        }
+    }
     return report;
 }
 
-Report run_generated_in_memory_stationary_range_formula_shift(const CliOptions& options)
+Report run_generated_in_memory_stationary_formula_shift(const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_formula_shift_impl(options, false);
+}
+
+Report run_generated_in_memory_stationary_formula_shift_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_formula_shift_impl(options, true);
+}
+
+Report run_generated_in_memory_stationary_range_formula_shift_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     static constexpr std::string_view kExpectedFormula =
         "SUM(A4:B4)+4:4+SUM(E1:F1)+E:F";
@@ -1716,28 +1753,60 @@ Report run_generated_in_memory_stationary_range_formula_shift(const CliOptions& 
     report.source =
         write_in_memory_stationary_range_formula_shift_source(resolve_generated_source(
             options,
-            "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-source.xlsx"));
+            verify_noop_save
+                ? "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-noop-source.xlsx"
+                : "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-source.xlsx"));
     report.output = resolve_output_path(
         options,
-        "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-output.xlsx");
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_rows(3,1)",
         "worksheet(Data).insert_columns(4,1)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Stationary Data!C1 should rewrite row ranges and whole-row references",
         "Stationary Data!C1 should rewrite column ranges and whole-column references",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the stationary range formula rewrite should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
     data.insert_rows(3, 1);
     data.insert_columns(4, 1);
     require_formula_cell(data, "C1", kExpectedFormula);
-    editor.save_as(report.output);
+    const std::filesystem::path first_save_output = verify_noop_save
+        ? report.output.parent_path() / "stationary-range-formula-first-save.xlsx"
+        : report.output;
+    ensure_parent_directory(first_save_output);
+    editor.save_as(first_save_output);
+    if (verify_noop_save) {
+        editor.save_as(report.output);
+        if (!file_bytes_equal(first_save_output, report.output)) {
+            throw std::runtime_error(
+                "stationary range formula no-op save output should be byte-identical");
+        }
+    }
     return report;
+}
+
+Report run_generated_in_memory_stationary_range_formula_shift(const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_range_formula_shift_impl(options, false);
+}
+
+Report run_generated_in_memory_stationary_range_formula_shift_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_range_formula_shift_impl(options, true);
 }
 
 Report run_generated_in_memory_clear_erase(const CliOptions& options)
@@ -3101,8 +3170,14 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_in_memory_stationary_formula_shift") {
         return run_generated_in_memory_stationary_formula_shift(options);
     }
+    if (options.scenario == "generated_in_memory_stationary_formula_shift_noop_save") {
+        return run_generated_in_memory_stationary_formula_shift_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_stationary_range_formula_shift") {
         return run_generated_in_memory_stationary_range_formula_shift(options);
+    }
+    if (options.scenario == "generated_in_memory_stationary_range_formula_shift_noop_save") {
+        return run_generated_in_memory_stationary_range_formula_shift_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_clear_erase") {
         return run_generated_in_memory_clear_erase(options);

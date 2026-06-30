@@ -38943,6 +38943,8 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         "failed public WorksheetEditor materialization should not expose partial materialized memory");
     check(!editor.last_edit_error().has_value(),
         "failed public WorksheetEditor materialization should not update last_edit_error");
+    check_workbook_editor_public_clean_state(
+        editor, "failed public WorksheetEditor materialization");
 
     editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("after-options-failure")}});
     editor.save_as(output);
@@ -39032,6 +39034,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         "memory-budget materialization failure should not expose partial materialized memory");
     check(!editor.last_edit_error().has_value(),
         "memory-budget materialization failure should not update last_edit_error");
+    check_workbook_editor_public_clean_state(
+        editor, "memory-budget materialization failure");
 
     std::optional<fastxlsx::WorksheetEditor> recovered = editor.try_worksheet("Data");
     check(recovered.has_value(),
@@ -39075,6 +39079,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         "memory-budget source-load recovery noop save should not leave dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "memory-budget source-load recovery noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "memory-budget source-load recovery noop save");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "memory-budget source-load recovery noop save");
@@ -39131,12 +39137,16 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "failed memory-budget mutation should not dirty the materialized session");
     check(!editor.has_pending_changes(),
         "failed memory-budget mutation should not dirty the editor");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed memory-budget mutation");
     check(editor.pending_materialized_worksheet_names().empty(),
         "failed memory-budget mutation should not expose dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,
         "failed memory-budget mutation should not expose dirty materialized cells");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "failed memory-budget mutation should not expose dirty materialized memory");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "failed memory-budget mutation");
     check(sheet.cell_count() == baseline_count,
         "failed memory-budget mutation should preserve sparse cell count");
     check(sheet.estimated_memory_usage() == baseline_memory,
@@ -39186,6 +39196,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "successful memory-budget recovery noop save should not leave dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "successful memory-budget recovery noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful memory-budget recovery noop save");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "mutation memory-budget recovery noop save");
@@ -39243,12 +39255,16 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "failed max_cells mutation should not dirty the materialized session");
     check(!editor.has_pending_changes(),
         "failed max_cells mutation should not dirty the editor");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed max_cells mutation");
     check(editor.pending_materialized_worksheet_names().empty(),
         "failed max_cells mutation should not expose dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,
         "failed max_cells mutation should not expose dirty materialized cells");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "failed max_cells mutation should not expose dirty materialized memory");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "failed max_cells mutation");
     check(sheet.cell_count() == baseline_count,
         "failed max_cells mutation should preserve sparse cell count");
     check(sheet.estimated_memory_usage() == baseline_memory,
@@ -39296,6 +39312,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "successful max-cells recovery noop save should not leave dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "successful max-cells recovery noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful max-cells recovery noop save");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "mutation max-cells recovery noop save");

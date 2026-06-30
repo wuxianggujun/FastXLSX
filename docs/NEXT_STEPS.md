@@ -1831,6 +1831,10 @@ materialization.
 Mutation guard recovery coverage now pins aggregate materialized memory after
 the valid overwrite that follows rejected memory-budget and `max_cells`
 mutations.
+Guardrail failure and recovery no-op coverage now also pins empty pending
+summaries and empty replacement diagnostics for source-load `max_cells` /
+memory-budget failures, mutation-side memory-budget / `max_cells` failures,
+and the materialized recovery no-op saves.
 Source-load memory-budget recovery coverage now pins recovered materialized
 dirty count and memory before the first recovery save.
 Explicit-blank guard recovery coverage now pins aggregate dirty materialized

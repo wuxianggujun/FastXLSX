@@ -53043,6 +53043,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1319 - Pin guardrail clean summaries
+
+Type: public `WorksheetEditor` guardrail failure/no-op diagnostics regression.
+
+Status: completed.
+
+Goal:
+Verify source-load and mutation-side guardrail failures cannot expose stale
+pending summaries or replacement diagnostics, and that materialized recovery
+no-op saves stay replacement-clean.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_options_guard_failure_preserves_state()`,
+  `test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()`,
+  `test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()`,
+  and `test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()`.
+- Covers source-load `max_cells` and memory-budget materialization failures,
+  mutation-side memory-budget and `max_cells` failures, and materialized
+  recovery no-op saves after the accepted overwrite paths.
+- Verifies source-load failures keep the editor fully clean with empty pending
+  summaries and replacement diagnostics, mutation-side failures preserve their
+  expected `last_edit_error()` while keeping pending summaries and replacement
+  diagnostics empty, and materialized recovery no-op saves keep replacement
+  diagnostics empty.
+
+Non-goals:
+- No guardrail enforcement change, diagnostic text change, recovery behavior
+  change, save behavior change, summary-generation redesign,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition changes, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

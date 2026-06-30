@@ -3909,6 +3909,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
 {
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-source.xlsx");
+    const std::filesystem::path path_equivalent_source =
+        source.parent_path() / "." / source.filename();
     const std::filesystem::path retry_output =
         artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-output.xlsx");
     const std::filesystem::path second_output =
@@ -3933,6 +3935,12 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen rejected save should keep both handles dirty");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "multi-sheet retry reopen rejected save should leave source bytes unchanged");
+    check(threw_fastxlsx_error([&] { editor.save_as(path_equivalent_source); }),
+        "multi-sheet retry reopen should reject path-equivalent source overwrite");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet retry reopen path-equivalent rejected save should keep both handles dirty");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen path-equivalent rejected save should leave source bytes unchanged");
 
     editor.save_as(retry_output);
     check(!data.has_pending_changes() && !untouched.has_pending_changes(),

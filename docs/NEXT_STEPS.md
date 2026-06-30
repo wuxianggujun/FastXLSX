@@ -133,6 +133,10 @@ that third output.
 Public-state coverage also pins the same multi-worksheet saved-session hygiene:
 matching reacquires stay clean after save and a later no-op `save_as()` keeps
 the output byte-stable.
+It also pins path-equivalent source-overwrite rejection before that same
+multi-worksheet retry/reopen/no-op/post-noop path: both dirty materialized
+handles remain dirty, the source package bytes stay unchanged, and the later
+safe retry still drives the existing end-to-end checks.
 It also pins the failed-save retry output as a fresh `WorkbookEditor` source:
 the reopened editor can dirty both materialized sheets again, save, and then
 no-op save byte-stably while leaving the original source and retry output

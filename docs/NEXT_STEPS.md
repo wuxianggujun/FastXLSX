@@ -1491,6 +1491,9 @@ both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
+The direct shift-after-rename reopened-output check now also verifies clean
+materialized names/count/memory before reading shifted cells from the saved
+package.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

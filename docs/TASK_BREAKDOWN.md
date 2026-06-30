@@ -48972,6 +48972,39 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1219 - Pin shift-after-rename reopened clean memory diagnostics
+
+Type: public `WorksheetEditor` rename plus row-shift reopened-output clean
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove a saved and reopened direct shift-after-rename package starts with
+clean materialized public diagnostics before callers inspect shifted cells.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_uses_planned_name()`
+  so the reopened `WorkbookEditor` verifies no pending changes, no dirty
+  materialized worksheet names, zero dirty materialized cells, and zero dirty
+  materialized memory.
+- Keeps existing planned-name catalog, shifted source-backed cell, save/no-op
+  save, and reopened sparse read checks unchanged.
+
+Non-goals:
+- No rename semantic changes, row-shift semantic changes, saved-session lifecycle
+  changes, memory-accounting changes, metadata/range repair, relationship repair,
+  calcChain rebuild, sharedStrings/styles migration, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

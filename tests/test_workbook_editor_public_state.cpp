@@ -21715,7 +21715,9 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "shift after rename reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "shift after rename reopened output should not expose pending diagnostics");
     check(reopened_sheet.cell_count() == 3,
         "shift after rename reopened output should keep sparse count");

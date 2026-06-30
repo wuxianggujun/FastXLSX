@@ -158,6 +158,10 @@ Post-noop third-stage edits now mirror that memory diagnostic coverage before
 their later save: single-sheet dirtiness reports the `Data` session estimate,
 while multi-sheet dirtiness reports the aggregate `Data` plus `Untouched`
 estimate.
+Those same post-noop edits now also pin their pending worksheet summaries:
+single-sheet exposes one dirty materialized `Data` summary, and multi-sheet
+exposes source-order dirty `Data` plus `Untouched` summaries with per-sheet
+cell and memory diagnostics.
 That same multi-worksheet public-state path now also mutates both clean sheets
 again after the no-op save, writes a third output without changing the retry,
 second-stage, or prior no-op outputs, and verifies a third no-op save remains

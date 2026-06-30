@@ -52498,6 +52498,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1306 - Pin post-noop third-stage dirty summaries
+
+Type: public `WorkbookEditor` / `WorksheetEditor` post-noop dirty-summary
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Pin the public worksheet edit summaries that accompany post-noop dirty
+materialized sessions before the third-stage save.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`
+  and
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- Verifies the post-noop single-sheet edit exposes one `Data` summary with
+  `materialized_dirty`, materialized cell count, and materialized memory aligned
+  with the active `WorksheetEditor`.
+- Verifies the post-noop multi-sheet edit exposes source-order `Data` and
+  `Untouched` dirty materialized summaries with per-sheet cell count and memory
+  estimates aligned with each active `WorksheetEditor`.
+- Confirms those summaries remain materialized-only, not whole-sheet or
+  targeted-cell replacement summaries, before the existing third-stage save.
+
+Non-goals:
+- No summary generation change, save behavior change, memory-accounting
+  redesign, rollback, transaction replay, formula evaluation, cached value
+  preservation, cross-sheet dependency synchronization, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -4144,12 +4144,45 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     check(reopened.pending_materialized_cell_count() ==
             noop_data_reacquired.cell_count() + noop_untouched_reacquired.cell_count(),
         "multi-sheet retry reopen post-noop edit should aggregate dirty cell count");
-    const std::size_t post_noop_dirty_memory_usage =
-        noop_data_reacquired.estimated_memory_usage() +
+    const std::size_t post_noop_data_memory_usage =
+        noop_data_reacquired.estimated_memory_usage();
+    const std::size_t post_noop_untouched_memory_usage =
         noop_untouched_reacquired.estimated_memory_usage();
+    const std::size_t post_noop_dirty_memory_usage =
+        post_noop_data_memory_usage + post_noop_untouched_memory_usage;
     check(reopened.estimated_pending_materialized_memory_usage() ==
             post_noop_dirty_memory_usage,
         "multi-sheet retry reopen post-noop edit should aggregate dirty memory usage");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "multi-sheet retry reopen post-noop edit should expose two dirty summaries");
+        if (summaries.size() == 2) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "Data" &&
+                    summaries[0].materialized_dirty,
+                "multi-sheet retry reopen post-noop Data summary should be dirty");
+            check(!summaries[0].sheet_data_replaced &&
+                    !summaries[0].targeted_cells_replaced &&
+                    summaries[0].materialized_cell_count ==
+                        noop_data_reacquired.cell_count() &&
+                    summaries[0].estimated_materialized_memory_usage ==
+                        post_noop_data_memory_usage,
+                "multi-sheet retry reopen post-noop Data summary should match materialized state");
+            check(summaries[1].source_name == "Untouched" &&
+                    summaries[1].planned_name == "Untouched" &&
+                    summaries[1].materialized_dirty,
+                "multi-sheet retry reopen post-noop Untouched summary should be dirty");
+            check(!summaries[1].sheet_data_replaced &&
+                    !summaries[1].targeted_cells_replaced &&
+                    summaries[1].materialized_cell_count ==
+                        noop_untouched_reacquired.cell_count() &&
+                    summaries[1].estimated_materialized_memory_usage ==
+                        post_noop_untouched_memory_usage,
+                "multi-sheet retry reopen post-noop Untouched summary should match materialized state");
+        }
+    }
 
     reopened.save_as(third_output);
     check(!reopened_data.has_pending_changes() &&
@@ -4537,6 +4570,25 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     check(reopened.estimated_pending_materialized_memory_usage() ==
             post_noop_dirty_memory_usage,
         "single-sheet reopen post-noop edit should expose dirty memory usage");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "single-sheet reopen post-noop edit should expose one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "Data" &&
+                    summary.materialized_dirty,
+                "single-sheet reopen post-noop summary should be dirty Data");
+            check(!summary.sheet_data_replaced &&
+                    !summary.targeted_cells_replaced &&
+                    summary.materialized_cell_count == after_noop_data.cell_count() &&
+                    summary.estimated_materialized_memory_usage ==
+                        post_noop_dirty_memory_usage,
+                "single-sheet reopen post-noop summary should match materialized state");
+        }
+    }
 
     reopened.save_as(third_output);
     check(!reopened_data.has_pending_changes() &&

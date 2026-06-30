@@ -32171,7 +32171,7 @@ ctest --preset windows-nmake-release --output-on-failure --timeout 60
 ## P13 - Phase 3 metadata/styles hardening
 
 状态：推进中；P13.1、P13.2、P13.3、P13.4、P13.5、P13.6、P13.7、P13.8、
-P13.9、P13.10、P13.11、P13.12 已落地。
+P13.9、P13.10、P13.11、P13.12、P13.13 已落地。
 
 目标：继续硬化已存在的 Phase 3 metadata 和 streaming-only styles 表面，补齐
 public 注释已经承诺的结构回归；不要把本阶段写成完整 styles、公式计算、
@@ -32190,6 +32190,7 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
 - P13.10 small-workbook case-insensitive lookup consistency：基础完成。
 - P13.11 small-workbook sheet-name guardrail no-state-pollution：基础完成。
 - P13.12 small-workbook diagnostics after sheet removal：基础完成。
+- P13.13 WorkbookEditor in-memory example：基础完成。
 
 ### P13.7 small-workbook Workbook size diagnostics
 
@@ -32294,41 +32295,6 @@ dxfs、hyperlink styles、existing-file style preservation 或 full Phase 3。
   通过；`cmake --build --preset windows-nmake-release --target
   fastxlsx_streaming_writer_example` 通过；两个 example exe 在
   `build/windows-nmake-release/examples` 下运行 smoke 通过。
-
-### P13.11 WorkbookEditor in-memory example
-
-状态：基础完成，已通过 opt-in example 构建和运行 smoke。
-
-类型：example / docs hygiene；不新增 public API / CMake dependency。
-
-目标：给已有文件 small-file In-memory 编辑提供一个可编译 public API 示例，展示
-`WorkbookEditor` / `WorksheetEditor` 与 `Workbook::save()` 生成源文件的组合方式。
-
-范围：
-- 新增 `examples/workbook_editor_in_memory.cpp`：先用 `Workbook` 生成小型 source
-  workbook，再用 `WorkbookEditor::open()` 打开已有文件，materialize `Data` sheet，
-  执行 `insert_rows()`、`set_cell()` 数字/文本/公式更新，最后 `save_as()` 到新
-  output。
-- 新增 opt-in target `fastxlsx_workbook_editor_in_memory_example`。
-- README / NEXT_STEPS / API 设计文档同步 example target 和适用边界。
-
-非目标：
-- 不新增 example CTest 或默认 CI example 构建要求。
-- 不新增 public API、in-place source overwrite、metadata repair、calcChain rebuild、
-  sharedStrings/styles migration、relationship repair、large-file random editing 或
-  完整 Excel 编辑器语义。
-
-验证：
-- `git diff --check` passes.
-- `cmake --preset windows-nmake-release -DFASTXLSX_BUILD_EXAMPLES=ON` passes.
-- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_in_memory_example`
-  passes.
-- `build\\windows-nmake-release\\examples\\fastxlsx_workbook_editor_in_memory_example.exe`
-  smoke passes.
-- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
-  passes.
-- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
-  passes.
 
 ### P13.10 small-workbook case-insensitive lookup consistency
 
@@ -32449,6 +32415,41 @@ CMake dependency。
   `ctest --test-dir build/windows-nmake-release -R fastxlsx.unit --output-on-failure
   --timeout 60` 通过；`ctest --test-dir build/windows-nmake-release
   --output-on-failure --timeout 60` 通过 32/32。
+
+### P13.13 WorkbookEditor in-memory example
+
+状态：基础完成，已通过 opt-in example 构建和运行 smoke。
+
+类型：example / docs hygiene；不新增 public API / CMake dependency。
+
+目标：给已有文件 small-file In-memory 编辑提供一个可编译 public API 示例，展示
+`WorkbookEditor` / `WorksheetEditor` 与 `Workbook::save()` 生成源文件的组合方式。
+
+范围：
+- 新增 `examples/workbook_editor_in_memory.cpp`：先用 `Workbook` 生成小型 source
+  workbook，再用 `WorkbookEditor::open()` 打开已有文件，materialize `Data` sheet，
+  执行 `insert_rows()`、`set_cell()` 数字/文本/公式更新，最后 `save_as()` 到新
+  output。
+- 新增 opt-in target `fastxlsx_workbook_editor_in_memory_example`。
+- README / NEXT_STEPS / API 设计文档同步 example target 和适用边界。
+
+非目标：
+- 不新增 example CTest 或默认 CI example 构建要求。
+- 不新增 public API、in-place source overwrite、metadata repair、calcChain rebuild、
+  sharedStrings/styles migration、relationship repair、large-file random editing 或
+  完整 Excel 编辑器语义。
+
+验证：
+- `git diff --check` passes.
+- `cmake --preset windows-nmake-release -DFASTXLSX_BUILD_EXAMPLES=ON` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_in_memory_example`
+  passes.
+- `build\\windows-nmake-release\\examples\\fastxlsx_workbook_editor_in_memory_example.exe`
+  smoke passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
 
 
 ### P13.1 default `StyleId{}` clears per-cell style

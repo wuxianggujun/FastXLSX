@@ -48813,6 +48813,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1215 - Pin shifted formula-audit dirty summary memory
+
+Type: public `WorksheetEditor` full-calculation formula-audit dirty materialized
+memory regression.
+
+Status: completed.
+
+Goal: prove the direct shifted formula-audit setup reports the active
+materialized `WorksheetEditor` memory estimate through both aggregate
+`WorkbookEditor` diagnostics and the dirty worksheet edit summary before formula
+audits read public state.
+
+Coverage:
+- Extends `test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics()`
+  so the shifted `Data` session snapshots `WorksheetEditor::estimated_memory_usage()`
+  after `insert_rows()` and `request_full_calculation()`.
+- Verifies `pending_materialized_cell_count()` and
+  `estimated_pending_materialized_memory_usage()` both describe the same shifted
+  sparse session before `formula_reference_audits()`-style public diagnostics run.
+- Verifies the single dirty `WorkbookEditorWorksheetEditSummary` carries the same
+  materialized cell count and memory estimate.
+- Keeps existing translated formula, style id, formula-audit preservation, save,
+  no-op save, and reopened-output checks unchanged.
+
+Non-goals:
+- No formula translation changes, formula-audit tokenization changes,
+  fullCalcOnLoad metadata changes, memory-accounting changes, guardrail changes,
+  metadata/range repair, relationship repair, calcChain rebuild,
+  sharedStrings/styles migration, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

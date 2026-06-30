@@ -16794,6 +16794,7 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
 
     sheet.insert_rows(2, 1);
     editor.request_full_calculation();
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     constexpr std::string_view expected_formula = "Data!A2+Data!B2";
     const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D3");
@@ -16805,8 +16806,24 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
         "full-calc shifted formula audit setup should expose the translated styled formula");
     check(editor.pending_change_count() == 1 &&
             editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
-            editor.pending_materialized_cell_count() == 7,
+            editor.pending_materialized_cell_count() == 7 &&
+            editor.estimated_pending_materialized_memory_usage() == shifted_memory,
         "full-calc shifted formula audit setup should keep metadata and materialized diagnostics pending");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "full-calc shifted formula audit setup should expose one dirty materialized summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "Data" &&
+                    !summaries[0].renamed &&
+                    summaries[0].materialized_dirty &&
+                    summaries[0].materialized_cell_count == 7 &&
+                    summaries[0].estimated_materialized_memory_usage == shifted_memory,
+                "full-calc shifted formula audit setup should report shifted materialized memory");
+        }
+    }
 
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
         check_public_state_formula_audits_preserve_editor_diagnostics(

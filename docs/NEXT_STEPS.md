@@ -1472,6 +1472,9 @@ through `WorkbookEditor` move construction and move assignment, so summary
 diagnostics preserve both cell count and memory count.
 Full-calculation formula-audit dirty-summary coverage now pins the same shifted
 fixture memory estimate in both aggregate diagnostics and edit summaries.
+The direct shifted formula-audit setup path now carries that same memory estimate
+before formula-audit reads, matching the later source-formula audit coverage
+without changing formula repair or calculation behavior.
 The renamed formula-audit preserve-state helpers now carry that memory estimate
 through option, missing-query, invalid-read, invalid-mutation, invalid-shift,
 and diagnostic-recovery checks as well.

@@ -425,6 +425,22 @@ but first attempts the rejected `save_as(source)` path, verifies the source
 workbook retained the old payload, then requires the safe retry output and a
 follow-up no-op `save_as()` output to be byte-identical.
 
+For generated in-memory single-sheet failed-save retry plus reopen/modify/no-op
+smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_retry_reopen_modify_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-retry-reopen-modify-noop-save
+```
+
+This scenario rejects `save_as(source)`, writes a safe retry output, opens that
+retry output through a fresh `WorkbookEditor`, applies second-stage `Data`
+edits, and requires the final no-op `save_as()` output to be byte-identical to
+the second-stage save while the original source workbook keeps the old payload.
+
 For generated in-memory edit/save/reopen/edit/save persistence smoke, run:
 
 ```powershell

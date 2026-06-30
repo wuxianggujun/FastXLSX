@@ -51869,6 +51869,51 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1292 - Add generated single-sheet retry reopen/modify no-op QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+single-worksheet failed-save retry, reopen/modify, and clean no-op save stability.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that a safe retry output from a
+rejected source-overwrite save can be reopened through a fresh editor, edited
+again, saved, and no-op saved byte-identically while the original source
+workbook remains unchanged.
+
+Coverage:
+- Adds `generated_in_memory_retry_reopen_modify_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated edit/save/reopen final shape: first-stage `Data!A1`
+  plus appended `Data!A3:C3`, followed by second-stage `Data!B1`, `Data!C1`,
+  and `Data!D1` edits.
+- Attempts rejected `save_as(source)`, writes a safe retry output, opens that
+  retry output through a fresh `WorkbookEditor`, saves the second-stage output,
+  then performs a follow-up no-op `save_as()` requiring byte-identical output.
+- Extends Python ZIP/XML + `openpyxl`, optional XlsxWriter reference, and
+  optional Excel COM sidecar by reusing final shape checks plus source
+  preservation, rejected-save diagnostic, retry-reopen, and no-op markers.
+- Documents the single-scenario command in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production behavior changes, overwrite mode, commit/close semantics,
+  rollback, transaction replay, formula evaluation, cached value preservation,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, default
+  CTest/CI expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `py -m py_compile tools\\run_workbook_editor_qa.py` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_retry_reopen_modify_noop_save --work-dir build\\qa\\workbook-editor-in-memory-retry-reopen-modify-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

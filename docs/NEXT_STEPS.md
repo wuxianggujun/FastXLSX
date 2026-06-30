@@ -55,6 +55,9 @@ reopen.
 It now also covers `generated_in_memory_retry_noop_save`, which exercises the
 same overwritten single-sheet final shape through a rejected source-overwrite
 `save_as()`, safe retry, and byte-identical no-op save.
+It also covers `generated_in_memory_retry_reopen_modify_noop_save`, which opens
+that safe retry output through a fresh editor, applies second-stage edits, and
+requires the final no-op save to be byte-identical to the second-stage output.
 It also covers `generated_in_memory_reopen_modify_save`, which saves a first
 in-memory edit, reopens that output through a fresh `WorkbookEditor`, applies a
 second in-memory edit, and verifies the final workbook after save and reopen.

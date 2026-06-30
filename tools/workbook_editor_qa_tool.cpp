@@ -1767,6 +1767,84 @@ Report run_generated_in_memory_retry_noop_save(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_retry_reopen_modify_noop_save(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_reopen_modify_save_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-noop-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-noop-output.xlsx");
+    const std::filesystem::path retry_output =
+        report.output.parent_path() / "safe-retry-output.xlsx";
+    const std::filesystem::path second_stage_output =
+        report.output.parent_path() / "second-stage-output.xlsx";
+    ensure_parent_directory(retry_output);
+    ensure_parent_directory(second_stage_output);
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "first:worksheet(Data).set_cell(A1,text)",
+        "first:worksheet(Data).append_row(text,number,formula)",
+        "first:save_as(source) rejected",
+        "first:save_as(safe-retry-output)",
+        "second:open(safe-retry-output)",
+        "second:worksheet(Data).set_cell(B1,number)",
+        "second:worksheet(Data).set_cell(C1,formula)",
+        "second:worksheet(Data).set_cell(D1,text)",
+        "second:save_as(output)",
+        "second:save_as(noop-output)",
+    };
+    report.notes = {
+        "Source-overwrite save_as should fail before flushing the dirty Data session",
+        "Safe retry output should be usable as a fresh WorkbookEditor source",
+        "First-stage A1 text and appended A3:C3 row should survive second-stage save",
+        "Second-stage B1, C1, and D1 edits should be present in the final output",
+        "No-op save after the second-stage flush should be byte-identical",
+        "Notes sheet should remain preserved",
+    };
+
+    {
+        WorkbookEditor editor = WorkbookEditor::open(report.source);
+        WorksheetEditor data = editor.worksheet("Data");
+        require_formula_cell(data, "C1", "B1+1");
+        data.set_cell("A1", CellValue::text("first-edit"));
+        data.append_row({
+            CellValue::text("reopened-row"),
+            CellValue::number(4.0),
+            CellValue::formula("B3*2"),
+        });
+        require_formula_cell(data, "C3", "B3*2");
+
+        try {
+            editor.save_as(report.source);
+            throw std::runtime_error("expected source-overwrite save_as to fail");
+        } catch (const FastXlsxError& error) {
+            report.status = "expected_retry_observed";
+            report.error_message = error.what();
+        }
+
+        require_formula_cell(data, "C3", "B3*2");
+        editor.save_as(retry_output);
+    }
+
+    WorkbookEditor reopened = WorkbookEditor::open(retry_output);
+    WorksheetEditor data = reopened.worksheet("Data");
+    require_formula_cell(data, "C3", "B3*2");
+    data.set_cell("B1", CellValue::number(10.0));
+    data.set_cell("C1", CellValue::formula("B1+5"));
+    data.set_cell("D1", CellValue::text("second-edit"));
+    require_formula_cell(data, "C1", "B1+5");
+    require_formula_cell(data, "C3", "B3*2");
+    reopened.save_as(second_stage_output);
+    reopened.save_as(report.output);
+    if (!file_bytes_equal(second_stage_output, report.output)) {
+        throw std::runtime_error(
+            "retry reopen modify no-op save output should be byte-identical");
+    }
+    return report;
+}
+
 Report run_generated_in_memory_reopen_modify_save_impl(
     const CliOptions& options,
     bool verify_noop_save,
@@ -2678,6 +2756,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_retry_noop_save") {
         return run_generated_in_memory_retry_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_retry_reopen_modify_noop_save") {
+        return run_generated_in_memory_retry_reopen_modify_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_reopen_modify_save") {
         return run_generated_in_memory_reopen_modify_save(options);

@@ -410,6 +410,23 @@ preserving a source row and an untouched sheet. It is local QA only and does
 not add metadata repair, sharedStrings/styles migration, calcChain rebuild, or
 low-memory random editing.
 
+For generated in-memory edit/save/reopen/edit/save persistence smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_reopen_modify_save `
+  --work-dir build\qa\workbook-editor-in-memory-reopen-modify-save
+```
+
+This scenario covers a first `WorkbookEditor` materialized edit saved to an
+intermediate output, reopening that output through a fresh `WorkbookEditor`,
+and saving a second materialized edit to the final output. It is local QA only
+and does not add in-place source overwrite, metadata repair,
+sharedStrings/styles migration, calcChain rebuild, or low-memory random
+editing.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

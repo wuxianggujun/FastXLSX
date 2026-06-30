@@ -549,6 +549,28 @@ std::filesystem::path write_in_memory_overwrite_formula_text_source(const std::f
     return path;
 }
 
+std::filesystem::path write_in_memory_reopen_modify_save_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("seed-a1"),
+            CellView::number(2.0),
+            CellView::formula("B1+1"),
+        });
+        data.append_row({CellView::text("keep-row-two")});
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1628,6 +1650,62 @@ Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_reopen_modify_save(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_reopen_modify_save_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-output.xlsx");
+    const std::filesystem::path first_output =
+        report.output.parent_path() / "fastxlsx-workbook-editor-qa-in-memory-reopen-modify-save-first.xlsx";
+    ensure_parent_directory(first_output);
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "first:worksheet(Data).set_cell(A1,text)",
+        "first:worksheet(Data).append_row(text,number,formula)",
+        "first:save_as(intermediate)",
+        "second:open(intermediate)",
+        "second:worksheet(Data).set_cell(B1,number)",
+        "second:worksheet(Data).set_cell(C1,formula)",
+        "second:worksheet(Data).set_cell(D1,text)",
+        "second:save_as(output)",
+    };
+    report.notes = {
+        "Intermediate output should be usable as a fresh WorkbookEditor source",
+        "First-stage A1 text and appended A3:C3 row should survive second-stage save",
+        "Second-stage B1, C1, and D1 edits should be present in the final output",
+        "Notes sheet should remain preserved",
+    };
+
+    {
+        WorkbookEditor editor = WorkbookEditor::open(report.source);
+        WorksheetEditor data = editor.worksheet("Data");
+        require_formula_cell(data, "C1", "B1+1");
+        data.set_cell("A1", CellValue::text("first-edit"));
+        data.append_row({
+            CellValue::text("reopened-row"),
+            CellValue::number(4.0),
+            CellValue::formula("B3*2"),
+        });
+        require_formula_cell(data, "C3", "B3*2");
+        editor.save_as(first_output);
+    }
+
+    WorkbookEditor reopened = WorkbookEditor::open(first_output);
+    WorksheetEditor data = reopened.worksheet("Data");
+    require_formula_cell(data, "C3", "B3*2");
+    data.set_cell("B1", CellValue::number(10.0));
+    data.set_cell("C1", CellValue::formula("B1+5"));
+    data.set_cell("D1", CellValue::text("second-edit"));
+    require_formula_cell(data, "C1", "B1+5");
+    require_formula_cell(data, "C3", "B3*2");
+    reopened.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -2058,6 +2136,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_overwrite_formula_text") {
         return run_generated_in_memory_overwrite_formula_text(options);
+    }
+    if (options.scenario == "generated_in_memory_reopen_modify_save") {
+        return run_generated_in_memory_reopen_modify_save(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

@@ -52,6 +52,9 @@ It also covers `generated_in_memory_overwrite_formula_text`, which overwrites
 source-backed text, number, and formula cells with `WorksheetEditor::set_cell()`
 and verifies old payload removal plus preserved rows/sheets after save and
 reopen.
+It also covers `generated_in_memory_reopen_modify_save`, which saves a first
+in-memory edit, reopens that output through a fresh `WorkbookEditor`, applies a
+second in-memory edit, and verifies the final workbook after save and reopen.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

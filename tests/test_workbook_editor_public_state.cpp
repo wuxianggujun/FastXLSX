@@ -31568,6 +31568,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
 
     const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -31585,6 +31587,9 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
         "shift reacquire after retry noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire after retry noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire after retry noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -31781,6 +31786,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire path-equivalent failed save matching reacquire after retry should keep old coordinates absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -31798,6 +31805,9 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
         "shift reacquire path-equivalent failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire path-equivalent failed save noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire path-equivalent failed save noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -31992,6 +32002,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire empty-output failed save matching reacquire after retry should keep old coordinates absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -32009,6 +32021,9 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
         "shift reacquire empty-output failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire empty-output failed save noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire empty-output failed save noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -32209,6 +32224,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire missing-parent failed save matching reacquire after retry should keep old coordinates absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -32226,6 +32243,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
         "shift reacquire missing-parent failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire missing-parent failed save noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire missing-parent failed save noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -32428,6 +32448,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire file-parent failed save matching reacquire after retry should keep old coordinates absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -32445,6 +32467,9 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
         "shift reacquire file-parent failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire file-parent failed save noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire file-parent failed save noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -32645,6 +32670,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire directory-output failed save matching reacquire after retry should keep old coordinates absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -32664,6 +32691,10 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "shift reacquire directory-output failed save noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "shift reacquire directory-output failed save noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);

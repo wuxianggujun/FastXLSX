@@ -1451,6 +1451,10 @@ The basic saved-session reacquire no-op save paths now pair that save-state
 snapshot with a catalog snapshot, covering handle reuse, `worksheet()` /
 `try_worksheet()` reacquire, and row/column sparse-shift projections without
 claiming broader catalog mutation support.
+The failed-save retry saved-reacquire no-op paths now use the same catalog
+snapshot around the final clean save after rejected outputs, covering
+source-overwrite and invalid output-path failures while keeping rollback and
+repair out of scope.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

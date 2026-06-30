@@ -47969,6 +47969,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1187 - Pin failed-save retry reacquire catalog no-op state
+
+Type: public `WorksheetEditor` failed-save retry saved-session reacquire
+no-op-save catalog-state regression.
+
+Status: completed.
+
+Goal: prove the existing failed-save retry sparse-shift no-op save paths also
+preserve the public workbook catalog snapshot after the safe retry and matching
+saved-session reacquire.
+
+Coverage:
+- Adds `WorkbookEditorPublicCatalogSnapshot` capture before the final clean
+  no-op save in the failed-save retry reacquire sparse-shift tests.
+- Covers exact source overwrite, path-equivalent source overwrite, empty output
+  path, missing parent, non-directory parent, and existing-directory output
+  rejection paths that already verify save-state snapshots and output-entry
+  stability.
+- Verifies `source_worksheet_names()`, `worksheet_names()`, and
+  `worksheet_catalog()` remain stable across those post-retry no-op saves
+  without adding another materialized handoff.
+
+Non-goals:
+- No overwrite mode, path repair, rollback, transaction replay, new shift
+  semantics, sheet catalog mutation, relationship repair, metadata/range repair,
+  formula repair beyond existing moved-cell text translation, calcChain rebuild,
+  sharedStrings/styles migration, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

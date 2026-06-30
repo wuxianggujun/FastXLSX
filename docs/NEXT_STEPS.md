@@ -1455,6 +1455,10 @@ The failed-save retry saved-reacquire no-op paths now use the same catalog
 snapshot around the final clean save after rejected outputs, covering
 source-overwrite and invalid output-path failures while keeping rollback and
 repair out of scope.
+The renamed full-calculation formula-audit saved-reacquire no-op paths now also
+pair their second clean save-state snapshot with a catalog snapshot after
+invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard
+checks, without expanding formula repair or metadata synchronization.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

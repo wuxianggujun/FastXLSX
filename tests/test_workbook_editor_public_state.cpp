@@ -19206,6 +19206,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(editor.last_edit_error() == invalid_error,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save audits should preserve last_edit_error");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -19230,6 +19232,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -19651,6 +19657,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid reads noop-save audits should keep diagnostics clear");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -19677,6 +19685,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire invalid reads noop-save second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "renamed full-calc formula audit saved reacquire invalid reads noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -20062,6 +20074,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(editor.last_edit_error() == invalid_shift_error,
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save audits should preserve last_edit_error");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -20088,6 +20102,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire invalid shifts noop-save second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -20471,6 +20489,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire missing query noop-save audits should keep diagnostics clear");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -20497,6 +20517,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire missing query noop-save second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "renamed full-calc formula audit saved reacquire missing query noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -20882,6 +20906,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch noop-save audits should keep diagnostics clear");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -20908,6 +20934,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire option mismatch noop-save second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "renamed full-calc formula audit saved reacquire option mismatch noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -21304,6 +21334,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(editor.last_edit_error() == guard_error,
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save audits should preserve guard diagnostic");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -21330,6 +21362,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_public_save_state_preserved(
         editor,
         save_state_before_noop,
+        "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second save");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);

@@ -48007,6 +48007,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1188 - Pin renamed formula-audit reacquire catalog no-op state
+
+Type: public `WorksheetEditor` renamed full-calculation formula-audit
+saved-session reacquire no-op-save catalog-state regression.
+
+Status: completed.
+
+Goal: prove the existing renamed formula-audit saved-session reacquire no-op
+save paths also preserve the public workbook catalog snapshot after their
+preflight/guard checks.
+
+Coverage:
+- Adds `WorkbookEditorPublicCatalogSnapshot` capture before the second clean
+  save in the renamed full-calculation formula-audit saved-reacquire tests.
+- Covers invalid mutation, invalid read, invalid shift, missing-query,
+  option-mismatch, and same-sheet guard paths that already verify save-state
+  snapshots, edit-summary stability, and byte-stable output.
+- Verifies `source_worksheet_names()`, `worksheet_names()`, and
+  `worksheet_catalog()` remain stable across those second clean saves without
+  adding another materialized handoff.
+
+Non-goals:
+- No formula qualifier repair, formula evaluation, dependency rewrite, sheet
+  rename/delete, relationship repair, metadata/range repair, calcChain rebuild
+  beyond the existing fullCalcOnLoad request, sharedStrings/styles migration,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

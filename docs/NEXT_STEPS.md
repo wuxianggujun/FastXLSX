@@ -1533,6 +1533,9 @@ dirty recovery-shift, no-op save, and reopened materialized memory diagnostics.
 The non-styled rename-shift saved-session reacquire path now pins first/second
 save cleanup and reopened clean materialized memory diagnostics while keeping
 the existing dirty shared-session shift memory check.
+The adjacent non-styled failed-save retry path now also pins clean materialized
+memory after safe saves/reopens and dirty memory for the post-retry delete-row
+mutation.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

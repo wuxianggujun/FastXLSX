@@ -28256,7 +28256,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(editor.pending_change_count() == 2,
         "renamed shift failed save first save should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save first save should clear dirty materialized diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift failed save first save should keep diagnostics clear");
@@ -28411,7 +28412,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(editor.pending_change_count() == 3,
         "renamed shift failed save safe retry should record the second materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save safe retry should clear dirty materialized diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift failed save safe retry should keep diagnostics clear");
@@ -28441,7 +28443,9 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed shift failed save reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 3,
         "renamed shift failed save reopened output should keep sparse count");
@@ -28472,7 +28476,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(editor.pending_change_count() == 3,
         "renamed shift failed save after retry clean reacquire should not add handoffs");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save after retry clean reacquire should keep dirty diagnostics empty");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
@@ -28517,6 +28522,7 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save after retry no-op output should match the safe retry output");
 
     after_retry.delete_rows(3, 1);
+    const std::size_t deleted_memory = after_retry.estimated_memory_usage();
     check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
             reacquired.has_pending_changes(),
         "renamed shift failed save after retry later delete should dirty all shared handles");
@@ -28525,6 +28531,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save after retry later delete should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 2,
         "renamed shift failed save after retry later delete should shrink the dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == deleted_memory,
+        "renamed shift failed save after retry later delete should report the dirty memory");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -28538,6 +28546,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
                 "renamed shift failed save after retry later delete summary should retain planned state");
             check(summaries[0].materialized_cell_count == 2,
                 "renamed shift failed save after retry later delete summary should report sparse count");
+            check(summaries[0].estimated_materialized_memory_usage == deleted_memory,
+                "renamed shift failed save after retry later delete summary should report memory");
         }
     }
     check(!after_retry.try_cell("A3").has_value() &&
@@ -28554,7 +28564,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(editor.pending_change_count() == 4,
         "renamed shift failed save after retry third save should record the third materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save after retry third save should clear dirty diagnostics");
 
     const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
@@ -28586,6 +28597,11 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check(!third_reopened.has_pending_changes() &&
             !third_reopened_sheet.has_pending_changes(),
         "renamed shift failed save after retry third reopened output should start clean");
+    check(third_reopened.pending_change_count() == 0 &&
+            third_reopened.pending_materialized_worksheet_names().empty() &&
+            third_reopened.pending_materialized_cell_count() == 0 &&
+            third_reopened.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift failed save after retry third reopened output should not expose dirty diagnostics");
     check(third_reopened_sheet.cell_count() == 2,
         "renamed shift failed save after retry third reopened output should shrink sparse count");
     check_cell_range_equals(third_reopened_sheet.used_range(), 1, 1, 1, 3,

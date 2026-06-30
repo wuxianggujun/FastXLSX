@@ -17284,6 +17284,77 @@ void test_public_worksheet_editor_materialized_only_formula_failed_save_preserve
         "materialized-only formula failed-save saved source audit should report safe-retry references");
 }
 
+void test_public_worksheet_editor_materialized_only_formula_failed_save_noop_preserves_output()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-failed-save-noop-source.xlsx");
+    const std::filesystem::path output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-failed-save-noop-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-failed-save-noop-second-output.xlsx");
+
+    constexpr std::string_view expected_formula = "Data!A1+Data!B1";
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(2, 3, fastxlsx::CellValue::formula(std::string(expected_formula)));
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "materialized-only formula failed-save no-op should reject exact source overwrite");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "materialized-only formula failed-save no-op safe retry should clean the materialized sheet");
+    check(editor.pending_change_count() == 1,
+        "materialized-only formula failed-save no-op safe retry should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "materialized-only formula failed-save no-op safe retry should clear materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="C2"><f>Data!A1+Data!B1</f></c>)",
+        "materialized-only formula failed-save no-op safe retry should write the formula");
+
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes(),
+        "materialized-only formula failed-save no-op should keep the materialized sheet clean");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "materialized-only formula failed-save no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "materialized-only formula failed-save no-op output should match the safe retry output");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "materialized-only formula failed-save no-op reopen setup");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> saved_source_audits =
+        check_public_state_source_formula_audits_preserve_editor_diagnostics(
+            reopened, "materialized-only formula failed-save no-op saved source audit");
+    check(saved_source_audits.size() == 2 &&
+            find_public_state_formula_audit(saved_source_audits, 2, 3, "Data!A1")
+                != nullptr &&
+            find_public_state_formula_audit(saved_source_audits, 2, 3, "Data!B1")
+                != nullptr,
+        "materialized-only formula failed-save no-op saved source audit should report formula references");
+
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> reopened_formula =
+        reopened_sheet.try_cell("C2");
+    check(reopened_formula.has_value() &&
+            reopened_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula->text_value() == expected_formula,
+        "materialized-only formula failed-save no-op reopened output should read the saved formula");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "materialized-only formula failed-save no-op after materialization");
+}
+
 void test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_saved_formula()
 {
     const std::filesystem::path source =
@@ -39237,6 +39308,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_ref_formula_source_audits_preserve_source_scan();
             test_public_worksheet_editor_materialized_only_formula_source_audits_ignore_dirty_formula();
             test_public_worksheet_editor_materialized_only_formula_failed_save_preserves_audits();
+            test_public_worksheet_editor_materialized_only_formula_failed_save_noop_preserves_output();
             test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_saved_formula();
             test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_rewrite();
             test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_skip_ref();

@@ -15988,12 +15988,18 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         "full-calc before insert_columns setup should not expose dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,
         "full-calc before insert_columns setup should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before insert_columns setup should not expose dirty materialized memory");
 
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
     check(!sheet.has_pending_changes(),
         "worksheet() after full-calc before insert_columns should materialize cleanly");
     check(editor.pending_change_count() == 1,
         "clean materialization after full-calc before insert_columns should keep metadata edit count");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialization after full-calc before insert_columns should keep dirty diagnostics clear");
 
     sheet.set_cell(2, 3, fastxlsx::CellValue::formula("A1+B1"));
     sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
@@ -16700,12 +16706,18 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         "full-calc before delete_columns setup should not expose dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,
         "full-calc before delete_columns setup should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before delete_columns setup should not expose dirty materialized memory");
 
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
     check(!sheet.has_pending_changes(),
         "worksheet() after full-calc before delete_columns should materialize cleanly");
     check(editor.pending_change_count() == 1,
         "clean materialization after full-calc before delete_columns should keep metadata edit count");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialization after full-calc before delete_columns should keep dirty diagnostics clear");
 
     sheet.delete_columns(1, 1);
 

@@ -48895,6 +48895,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1217 - Pin full-calculation before-shift clean memory diagnostics
+
+Type: public `WorkbookEditor::request_full_calculation()` plus clean
+`WorksheetEditor` materialization aggregate memory regression.
+
+Status: completed.
+
+Goal: prove queued full-calculation workbook metadata edits do not expose dirty
+materialized memory before a later in-memory column shift dirties the worksheet.
+
+Coverage:
+- Extends `test_public_worksheet_editor_full_calculation_before_insert_columns_shift()`
+  so `request_full_calculation()` reports zero dirty materialized names, cells,
+  and memory before `worksheet("Data")` is materialized.
+- Extends the same test so clean materialization under the queued metadata edit
+  keeps aggregate dirty materialized names, cells, and memory clear.
+- Applies the same setup and clean-materialization checks to
+  `test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift()`.
+- Keeps existing shifted formula/style, fullCalcOnLoad, no calcChain creation,
+  save/no-op save, and reopened-output checks unchanged.
+
+Non-goals:
+- No fullCalcOnLoad metadata changes, source materialization changes,
+  row/column shift semantic changes, memory-accounting changes, guardrail
+  changes, metadata/range repair, relationship repair, calcChain rebuild,
+  sharedStrings/styles migration, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

@@ -1517,6 +1517,8 @@ checks and recovery shifts.
 The delete-column reacquire styled-session path now pins matching clean
 reacquire, dirty recovery-shift, no-op save, and reopened materialized memory
 diagnostics.
+The delete-row direct and failed-save styled-session paths now pin reopened and
+safe-retry clean materialized memory diagnostics.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

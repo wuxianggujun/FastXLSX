@@ -26312,7 +26312,9 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed formula delete_rows reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete_rows reopened output should not expose pending diagnostics");
     check(reopened_sheet.cell_count() == 5,
         "renamed formula delete_rows reopened output should keep shifted sparse count");
@@ -26469,7 +26471,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_
     check(editor.pending_change_count() == 2,
         "renamed formula delete-row failed save safe retry should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-row failed save safe retry should clear dirty materialized diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed formula delete-row failed save safe retry should keep diagnostics clear");
@@ -26532,6 +26535,11 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_
     fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed formula delete-row failed save reopened output should start clean");
+    check(reopened.pending_change_count() == 0 &&
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row failed save reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 5,
         "renamed formula delete-row failed save reopened output should keep shifted sparse count");
     check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,

@@ -21912,6 +21912,10 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
         editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
+    check(materialized_memory_before_audit == sheet.estimated_memory_usage(),
+        "renamed formula audit shifted row should snapshot shifted materialized memory");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
         check_public_state_formula_audits_preserve_editor_diagnostics(
             editor, "renamed formula audit shift");
@@ -21990,7 +21994,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(editor.last_edit_error() == last_error_before_materialization_failure,
         "renamed formula audit shifted row materialization failure should preserve last_edit_error");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed formula audit shifted row materialization failure should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row materialization-failure source scan");
@@ -22001,7 +22006,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
             untouched.get_cell("B1").number_value() == 99.0,
         "renamed formula audit shifted row materialization recovery should read untouched source cells");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed formula audit shifted row materialization recovery should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row materialization-recovery source scan");
@@ -22026,7 +22032,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(editor.last_edit_error().has_value(),
         "renamed formula audit shifted row invalid mutations should populate last_edit_error");
     check(sheet.has_pending_changes() &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed formula audit shifted row invalid mutations should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row invalid-mutation source scan");
@@ -22035,7 +22042,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     check(threw_fastxlsx_error([&] { sheet.delete_rows(1048576, 2); }),
         "renamed formula audit shifted row should reject invalid delete_rows count range");
     check(sheet.has_pending_changes() &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed formula audit shifted row invalid shifts should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed formula audit shifted row invalid-shift source scan");
@@ -22174,6 +22182,10 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         editor.pending_materialized_worksheet_names();
     const std::size_t materialized_count_before_audit =
         editor.pending_materialized_cell_count();
+    const std::size_t materialized_memory_before_audit =
+        editor.estimated_pending_materialized_memory_usage();
+    check(materialized_memory_before_audit == sheet.estimated_memory_usage(),
+        "renamed column formula audit shifted should snapshot shifted materialized memory");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
         check_public_state_formula_audits_preserve_editor_diagnostics(
             editor, "renamed column formula audit shift");
@@ -22251,7 +22263,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check(editor.last_edit_error() == last_error_before_materialization_failure,
         "renamed column formula audit shifted materialization failure should preserve last_edit_error");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed column formula audit shifted materialization failure should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted materialization-failure source scan");
@@ -22262,7 +22275,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
             untouched.get_cell("B1").number_value() == 99.0,
         "renamed column formula audit shifted materialization recovery should read untouched source cells");
     check(editor.pending_materialized_worksheet_names() == materialized_names_before_audit &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed column formula audit shifted materialization recovery should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted materialization-recovery source scan");
@@ -22287,7 +22301,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check(editor.last_edit_error().has_value(),
         "renamed column formula audit shifted invalid mutations should populate last_edit_error");
     check(sheet.has_pending_changes() &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed column formula audit shifted invalid mutations should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted invalid-mutation source scan");
@@ -22296,7 +22311,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     check(threw_fastxlsx_error([&] { sheet.delete_columns(16384, 2); }),
         "renamed column formula audit shifted should reject invalid delete_columns count range");
     check(sheet.has_pending_changes() &&
-            editor.pending_materialized_cell_count() == materialized_count_before_audit,
+            editor.pending_materialized_cell_count() == materialized_count_before_audit &&
+            editor.estimated_pending_materialized_memory_usage() == materialized_memory_before_audit,
         "renamed column formula audit shifted invalid shifts should preserve dirty materialized diagnostics");
     check_public_state_source_formula_audit_preserves_shift_fixture(
         editor, "renamed column formula audit shifted invalid-shift source scan");

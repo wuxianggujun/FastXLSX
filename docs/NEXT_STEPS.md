@@ -1482,6 +1482,10 @@ The saved-reacquire renamed formula-audit recovery branches now use the same
 rename-aware memory-summary helper after valid recovery mutations, covering
 invalid mutation/read/shift, missing query, option mismatch, and same-sheet guard
 paths before their second save.
+The renamed row/column formula-audit preflight tests now snapshot dirty
+materialized memory before audit reads and require materialization guard
+failures, recovery materialization, invalid mutations, and invalid shifts to
+preserve that memory alongside the dirty sparse count.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

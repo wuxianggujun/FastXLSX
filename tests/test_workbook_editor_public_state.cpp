@@ -32924,18 +32924,23 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
             "invalid-to-valid row shift should retain the invalid shift diagnostic");
         check(!sheet.has_pending_changes() && editor.pending_materialized_cell_count() == 0,
             "invalid-to-valid row shift failures should leave the borrowed handle clean");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "invalid-to-valid row shift failures should not expose dirty memory");
         check(sheet.cell_count() == 3,
             "invalid-to-valid row shift failures should preserve sparse count");
         check(sheet.get_cell("A2").text_value() == "placeholder-a2",
             "invalid-to-valid row shift failures should preserve source-backed cells");
 
         sheet.insert_rows(2, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
         check(!editor.last_edit_error().has_value(),
             "valid insert_rows after invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
             "valid insert_rows after invalid shifts should dirty the same borrowed handle");
         check(sheet.cell_count() == 3 && editor.pending_materialized_cell_count() == 3,
             "valid insert_rows after invalid shifts should keep aggregate sparse count stable");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "valid insert_rows after invalid shifts should expose shifted dirty memory");
         check(sheet.get_cell("A3").text_value() == "placeholder-a2",
             "valid insert_rows after invalid shifts should move source-backed rows");
         check(!sheet.try_cell("A2").has_value(),
@@ -33014,18 +33019,23 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
             "invalid-to-valid column shift should retain the invalid shift diagnostic");
         check(!sheet.has_pending_changes() && editor.pending_materialized_cell_count() == 0,
             "invalid-to-valid column shift failures should leave the borrowed handle clean");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "invalid-to-valid column shift failures should not expose dirty memory");
         check(sheet.cell_count() == 3,
             "invalid-to-valid column shift failures should preserve sparse count");
         check(sheet.get_cell("B1").number_value() == 1.0,
             "invalid-to-valid column shift failures should preserve source-backed cells");
 
         sheet.insert_columns(2, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
         check(!editor.last_edit_error().has_value(),
             "valid insert_columns after invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
             "valid insert_columns after invalid shifts should dirty the same borrowed handle");
         check(sheet.cell_count() == 3 && editor.pending_materialized_cell_count() == 3,
             "valid insert_columns after invalid shifts should keep aggregate sparse count stable");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "valid insert_columns after invalid shifts should expose shifted dirty memory");
         const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
         check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
                 shifted_number.number_value() == 1.0,
@@ -33106,10 +33116,13 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
 
         sheet.set_cell(4, 2, fastxlsx::CellValue::text("dirty-row-tail"));
         const std::size_t dirty_count = sheet.cell_count();
+        const std::size_t dirty_memory = sheet.estimated_memory_usage();
         check(dirty_count == 4 && sheet.has_pending_changes(),
             "dirty invalid-to-valid row shift should start from a dirty sparse session");
         check(editor.pending_materialized_cell_count() == dirty_count,
             "dirty invalid-to-valid row shift should report the dirty materialized count");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+            "dirty invalid-to-valid row shift should report the dirty materialized memory");
 
         check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
             "dirty invalid-to-valid row shift should reject invalid row insertion");
@@ -33119,6 +33132,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid row shift should retain the invalid shift diagnostic");
         check(sheet.has_pending_changes() && editor.pending_materialized_cell_count() == dirty_count,
             "dirty invalid-to-valid row shift failures should preserve dirty diagnostics");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+            "dirty invalid-to-valid row shift failures should preserve dirty memory");
         check(sheet.cell_count() == dirty_count,
             "dirty invalid-to-valid row shift failures should preserve sparse count");
         check(sheet.get_cell("B4").text_value() == "dirty-row-tail",
@@ -33127,6 +33142,7 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid row shift failures should preserve source-backed cells");
 
         sheet.insert_rows(2, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
         check(!editor.last_edit_error().has_value(),
             "valid insert_rows after dirty invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
@@ -33134,6 +33150,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
         check(sheet.cell_count() == dirty_count &&
                 editor.pending_materialized_cell_count() == dirty_count,
             "valid insert_rows after dirty invalid shifts should keep dirty sparse count stable");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "valid insert_rows after dirty invalid shifts should expose shifted dirty memory");
         check(sheet.get_cell("A3").text_value() == "placeholder-a2",
             "valid insert_rows after dirty invalid shifts should move source-backed rows");
         check(sheet.get_cell("B5").text_value() == "dirty-row-tail",
@@ -33209,10 +33227,13 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
 
         sheet.set_cell(2, 4, fastxlsx::CellValue::text("dirty-column-tail"));
         const std::size_t dirty_count = sheet.cell_count();
+        const std::size_t dirty_memory = sheet.estimated_memory_usage();
         check(dirty_count == 4 && sheet.has_pending_changes(),
             "dirty invalid-to-valid column shift should start from a dirty sparse session");
         check(editor.pending_materialized_cell_count() == dirty_count,
             "dirty invalid-to-valid column shift should report the dirty materialized count");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+            "dirty invalid-to-valid column shift should report the dirty materialized memory");
 
         check(threw_fastxlsx_error([&] { sheet.insert_columns(0, 1); }),
             "dirty invalid-to-valid column shift should reject invalid column insertion");
@@ -33222,6 +33243,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid column shift should retain the invalid shift diagnostic");
         check(sheet.has_pending_changes() && editor.pending_materialized_cell_count() == dirty_count,
             "dirty invalid-to-valid column shift failures should preserve dirty diagnostics");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+            "dirty invalid-to-valid column shift failures should preserve dirty memory");
         check(sheet.cell_count() == dirty_count,
             "dirty invalid-to-valid column shift failures should preserve sparse count");
         check(sheet.get_cell("D2").text_value() == "dirty-column-tail",
@@ -33230,6 +33253,7 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid column shift failures should preserve source-backed cells");
 
         sheet.insert_columns(2, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
         check(!editor.last_edit_error().has_value(),
             "valid insert_columns after dirty invalid shifts should clear the prior diagnostic");
         check(sheet.has_pending_changes(),
@@ -33237,6 +33261,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
         check(sheet.cell_count() == dirty_count &&
                 editor.pending_materialized_cell_count() == dirty_count,
             "valid insert_columns after dirty invalid shifts should keep dirty sparse count stable");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "valid insert_columns after dirty invalid shifts should expose shifted dirty memory");
         const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");
         check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
                 shifted_number.number_value() == 1.0,

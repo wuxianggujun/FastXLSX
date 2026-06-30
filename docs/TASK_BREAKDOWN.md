@@ -48519,6 +48519,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1204 - Pin invalid-to-valid shift recovery memory
+
+Type: public `WorksheetEditor` invalid-to-valid row/column shift recovery
+aggregate materialized memory regression.
+
+Status: completed.
+
+Goal: prove invalid row/column shift attempts do not corrupt aggregate
+materialized memory diagnostics, and the later valid recovery shift reports the
+current shifted worksheet memory.
+
+Coverage:
+- Extends the clean invalid-to-valid row and column shift recovery paths so
+  invalid shift failures keep aggregate materialized memory at zero, then the
+  subsequent valid shift reports the shifted `WorksheetEditor` memory.
+- Extends the already-dirty invalid-to-valid row and column shift recovery paths
+  so they snapshot dirty memory before invalid shifts, verify failures preserve
+  it, and verify the later valid shift reports the shifted worksheet memory.
+
+Non-goals:
+- No invalid range validation changes, row/column shift semantic changes,
+  diagnostic-clearing changes, save/retry behavior changes, memory-accounting
+  changes, new guardrails, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1203 - Pin cross-handle shift aggregate memory
 
 Type: public `WorksheetEditor` cross-handle row/column shift/delete aggregate

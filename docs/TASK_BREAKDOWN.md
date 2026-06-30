@@ -48113,6 +48113,39 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1191 - Pin materialized summary move memory
+
+Type: public `WorkbookEditor` materialized worksheet edit summary move-state
+memory regression.
+
+Status: completed.
+
+Goal: prove materialized worksheet edit summaries preserve their memory estimate
+across `WorkbookEditor` move construction and move assignment.
+
+Coverage:
+- Extends `test_public_workbook_editor_pending_materialized_summaries_move_with_owner()`
+  to snapshot the dirty `WorksheetEditor::estimated_memory_usage()` before
+  moving the owning `WorkbookEditor`.
+- Verifies `WorkbookEditorWorksheetEditSummary::estimated_materialized_memory_usage`
+  equals that snapshot after move construction and after move assignment,
+  alongside the existing materialized cell-count checks.
+
+Non-goals:
+- No move semantic changes, memory-accounting changes, ownership lifetime
+  changes, new guardrails, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

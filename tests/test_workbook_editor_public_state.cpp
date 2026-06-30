@@ -3535,6 +3535,7 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
     source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-summary-dirty"));
+    const std::size_t moved_summary_memory = source_sheet.estimated_memory_usage();
 
     fastxlsx::WorkbookEditor moved = std::move(editor);
     check(editor.pending_worksheet_edits().empty(),
@@ -3549,6 +3550,8 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
                 "move construction should preserve materialized dirty flag");
             check(summaries[0].materialized_cell_count == 3,
                 "move construction should preserve materialized cell count");
+            check(summaries[0].estimated_materialized_memory_usage == moved_summary_memory,
+                "move construction should preserve materialized memory estimate");
         }
     }
 
@@ -3569,6 +3572,8 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
                 "move assignment should preserve assigned materialized dirty flag");
             check(summaries[0].materialized_cell_count == 3,
                 "move assignment should discard old target materialized summary");
+            check(summaries[0].estimated_materialized_memory_usage == moved_summary_memory,
+                "move assignment should preserve assigned materialized memory estimate");
         }
     }
 

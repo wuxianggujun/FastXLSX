@@ -1467,6 +1467,9 @@ The aggregate diagnostics coverage now also checks that queued replacement
 memory remains visible through `estimated_pending_replacement_memory_usage()`
 while replacement-only editors still contribute zero materialized cells and
 memory.
+Pending materialized summary move coverage now carries the same memory estimate
+through `WorkbookEditor` move construction and move assignment, so summary
+diagnostics preserve both cell count and memory count.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

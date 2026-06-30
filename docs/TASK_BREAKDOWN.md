@@ -50680,6 +50680,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1265 - Pin materialized-only formula failed-save audit boundary
+
+Type: public `WorksheetEditor` in-memory failed-save retry regression.
+
+Status: completed.
+
+Goal: prove a rejected exact-source save preserves materialized-only formula
+state, audit isolation, and source package bytes before a later safe retry.
+
+Coverage:
+- Adds dirty `C2` formula `Data!A1+Data!B1` to a source workbook with no formula
+  cells, then rejects `save_as(source)`.
+- Verifies the source package entries remain unchanged, dirty materialized
+  diagnostics and formula text remain intact, and no materialized handoff is
+  queued.
+- Verifies `source_formula_reference_audits()` stays empty after the failed
+  save, while `formula_reference_audits()` still reports the dirty `Data!A1` /
+  `Data!B1` sparse-store references.
+- Verifies a later safe `save_as(output)` writes the formula and a fresh reopen
+  reports the persisted `Data!A1` / `Data!B1` source-audit references cleanly.
+
+Non-goals:
+- No source overwrite support, source/materialized audit merging, formula
+  evaluation, worksheet metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

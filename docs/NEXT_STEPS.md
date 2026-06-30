@@ -107,7 +107,10 @@ formula coordinates and tokens, rather than the materialized `Data!#REF!` /
 until saved, while `formula_reference_audits()` still reports those in-memory
 formula references from the materialized sparse store; after `save_as()` and a
 fresh reopen, both source and materialized audits report the saved formula tokens
-from the output workbook while keeping the reopened editor clean.
+from the output workbook while keeping the reopened editor clean. Rejected
+exact-source saves now preserve that same materialized-only audit split and
+leave source package bytes unchanged until a later safe retry writes the formula
+into the output workbook.
 The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,

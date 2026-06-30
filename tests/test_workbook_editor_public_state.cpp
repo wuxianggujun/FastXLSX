@@ -17152,6 +17152,138 @@ void test_public_worksheet_editor_materialized_only_formula_source_audits_ignore
         "Data!B1", "B1", "materialized-only formula materialized audit B reference");
 }
 
+void test_public_worksheet_editor_materialized_only_formula_failed_save_preserves_audits()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-failed-save-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-failed-save-audit-output.xlsx");
+
+    const auto source_entries_before_failed_save = fastxlsx::test::read_zip_entries(source);
+    constexpr std::string_view expected_formula = "Data!A1+Data!B1";
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(2, 3, fastxlsx::CellValue::formula(std::string(expected_formula)));
+
+    const fastxlsx::CellValue current_formula = sheet.get_cell("C2");
+    check(current_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            current_formula.text_value() == expected_formula,
+        "materialized-only formula failed-save audit setup should expose the dirty formula");
+    check(sheet.has_pending_changes(),
+        "materialized-only formula failed-save audit setup should dirty the materialized sheet");
+    check(sheet.cell_count() == 4,
+        "materialized-only formula failed-save audit setup should add one sparse formula cell");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "materialized-only formula failed-save audit setup should expand sparse bounds");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_change_count() == 0 &&
+            editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 4 &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "materialized-only formula failed-save audit setup should keep only materialized diagnostics dirty");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "materialized-only formula failed-save audit should reject exact source overwrite");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        "materialized-only formula failed-save audit should leave source package bytes unchanged");
+    check(sheet.has_pending_changes(),
+        "materialized-only formula failed-save audit should preserve the dirty materialized sheet");
+    const fastxlsx::CellValue formula_after_failed_save = sheet.get_cell("C2");
+    check(formula_after_failed_save.kind() == fastxlsx::CellValueKind::Formula &&
+            formula_after_failed_save.text_value() == expected_formula,
+        "materialized-only formula failed-save audit should preserve the dirty formula");
+    check(editor.pending_change_count() == 0 &&
+            editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 4 &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "materialized-only formula failed-save audit should preserve dirty materialized diagnostics");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        check_public_state_source_formula_audits_preserve_editor_diagnostics(
+            editor, "materialized-only formula failed-save source audit");
+    check(source_audits.empty(),
+        "materialized-only formula failed-save source audit should still ignore the dirty formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> materialized_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "materialized-only formula failed-save materialized audit");
+    check(materialized_audits.size() == 2,
+        "materialized-only formula failed-save materialized audit should still report dirty references");
+
+    const auto check_materialized_audit =
+        [&](std::string_view qualified_reference_text,
+            std::string_view reference_text,
+            std::string_view message_prefix) {
+            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+                find_public_state_formula_audit(
+                    materialized_audits, 2, 3, qualified_reference_text);
+            check(audit != nullptr,
+                std::string(message_prefix) + " should expose the materialized audit entry");
+            if (audit == nullptr) {
+                return;
+            }
+
+            check(audit->formula_sheet_source_name == "Data" &&
+                    audit->formula_sheet_planned_name == "Data" &&
+                    audit->formula_text == expected_formula,
+                std::string(message_prefix) + " should report the dirty formula cell");
+            check(audit->sheet_qualifier_text == "Data!" &&
+                    audit->reference_text == reference_text &&
+                    audit->referenced_sheet_name == "Data",
+                std::string(message_prefix) + " should report dirty formula tokens");
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Data",
+                std::string(message_prefix) + " should match the current Data sheet");
+            check(!audit->references_renamed_source_name &&
+                    audit->references_planned_sheet_name &&
+                    !audit->external_workbook_qualifier &&
+                    !audit->sheet_range_qualifier,
+                std::string(message_prefix) + " should keep qualifier flags clean");
+        };
+
+    check_materialized_audit(
+        "Data!A1", "A1",
+        "materialized-only formula failed-save materialized audit A reference");
+    check_materialized_audit(
+        "Data!B1", "B1",
+        "materialized-only formula failed-save materialized audit B reference");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "materialized-only formula failed-save safe retry should clean the materialized sheet");
+    check(editor.pending_change_count() == 1,
+        "materialized-only formula failed-save safe retry should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "materialized-only formula failed-save safe retry should clear materialized diagnostics");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="C2"><f>Data!A1+Data!B1</f></c>)",
+        "materialized-only formula failed-save safe retry should write the dirty formula");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "materialized-only formula failed-save safe retry reopen setup");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> saved_source_audits =
+        check_public_state_source_formula_audits_preserve_editor_diagnostics(
+            reopened, "materialized-only formula failed-save saved source audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "materialized-only formula failed-save saved source audit");
+    check(saved_source_audits.size() == 2 &&
+            find_public_state_formula_audit(saved_source_audits, 2, 3, "Data!A1")
+                != nullptr &&
+            find_public_state_formula_audit(saved_source_audits, 2, 3, "Data!B1")
+                != nullptr,
+        "materialized-only formula failed-save saved source audit should report safe-retry references");
+}
+
 void test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_saved_formula()
 {
     const std::filesystem::path source =
@@ -39104,6 +39236,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_stationary_formula_range_source_audits_preserve_source_scan();
             test_public_worksheet_editor_delete_ref_formula_source_audits_preserve_source_scan();
             test_public_worksheet_editor_materialized_only_formula_source_audits_ignore_dirty_formula();
+            test_public_worksheet_editor_materialized_only_formula_failed_save_preserves_audits();
             test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_saved_formula();
             test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_rewrite();
             test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_skip_ref();

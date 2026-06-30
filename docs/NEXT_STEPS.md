@@ -1503,6 +1503,9 @@ memory after the later shared shift, and reopened clean diagnostics.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.
+The invalid-read and snapshot-read styled-session paths now carry the same
+clean/dirty/reopened materialized memory checks through read-only diagnostics
+and recovery shifts.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

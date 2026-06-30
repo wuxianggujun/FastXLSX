@@ -475,6 +475,21 @@ and does not add cross-sheet dependency synchronization, metadata repair,
 sharedStrings/styles migration, calcChain rebuild, or low-memory random
 editing.
 
+For the same multi-sheet path plus a clean no-op save stability check, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_multi_sheet_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-multi-sheet-noop-save
+```
+
+This variant writes the first multi-sheet save output, performs one more
+`save_as()` without new materialized edits, requires the final output to be
+byte-identical to the first output, and validates the workbook with the same
+ZIP/XML and `openpyxl` checks.
+
 For generated in-memory multi-sheet failed-save retry smoke, run:
 
 ```powershell

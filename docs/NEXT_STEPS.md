@@ -74,6 +74,9 @@ save is byte-equivalent to the third output.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.
+The same generated multi-sheet lane now also has
+`generated_in_memory_multi_sheet_noop_save`, which requires a follow-up no-op
+`save_as()` output to be byte-identical to the first multi-sheet save.
 It also covers `generated_in_memory_multi_sheet_retry_save`, which first
 attempts the rejected source-overwrite save path, verifies the source workbook
 keeps its old payloads, then validates the safe retry output.

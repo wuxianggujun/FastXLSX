@@ -45,6 +45,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_reopen_modify_noop_save",
     "generated_in_memory_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_save",
+    "generated_in_memory_multi_sheet_noop_save",
     "generated_in_memory_multi_sheet_retry_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
@@ -1512,6 +1513,18 @@ def verify_generated_in_memory_multi_sheet_save(path: Path) -> tuple[dict[str, A
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_multi_sheet_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory multi-sheet no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_multi_sheet_save(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -3037,6 +3050,7 @@ def create_xlsxwriter_reference(
             notes.write("A1", "preserved")
         elif scenario in {
             "generated_in_memory_multi_sheet_save",
+            "generated_in_memory_multi_sheet_noop_save",
             "generated_in_memory_multi_sheet_retry_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
@@ -3176,6 +3190,11 @@ def run_generated_case(
         )
     elif scenario == "generated_in_memory_multi_sheet_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_save(output_path)
+    elif scenario == "generated_in_memory_multi_sheet_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_multi_sheet_retry_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_save(
             output_path,

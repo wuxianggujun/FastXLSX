@@ -1849,15 +1849,31 @@ Report run_generated_in_memory_reopen_modify_post_noop_third_save(const CliOptio
     return run_generated_in_memory_reopen_modify_save_impl(options, true, true);
 }
 
-Report run_generated_in_memory_multi_sheet_save(const CliOptions& options)
+Report run_generated_in_memory_multi_sheet_save_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_multi_sheet_save_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-save-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-save-output.xlsx");
+    const char* source_filename =
+        "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-save-source.xlsx";
+    const char* output_filename =
+        "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-save-output.xlsx";
+    if (verify_noop_save) {
+        source_filename =
+            "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-noop-source.xlsx";
+        output_filename =
+            "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-noop-output.xlsx";
+    }
+    report.source = write_in_memory_multi_sheet_save_source(
+        resolve_generated_source(options, source_filename));
+    report.output = resolve_output_path(options, output_filename);
+    const std::filesystem::path first_save_output =
+        report.output.parent_path() / "first-save-output.xlsx";
+    if (verify_noop_save) {
+        ensure_parent_directory(first_save_output);
+    }
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).set_cell(A1,text)",
@@ -1866,11 +1882,18 @@ Report run_generated_in_memory_multi_sheet_save(const CliOptions& options)
         "worksheet(Summary).set_cell(A1,text)",
         "worksheet(Summary).set_cell(B1,formula)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Data and Summary should both flush dirty materialized sessions in one save",
         "Data!A2 and Notes!A1 should remain preserved",
         "Summary formulas should preserve sheet-qualified text",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "A no-op save after the materialized flush should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -1887,8 +1910,26 @@ Report run_generated_in_memory_multi_sheet_save(const CliOptions& options)
     summary.set_cell("B1", CellValue::formula("Data!B1+Data!B3"));
     require_formula_cell(data, "C3", "B3+Data!B1");
     require_formula_cell(summary, "B1", "Data!B1+Data!B3");
-    editor.save_as(report.output);
+    if (verify_noop_save) {
+        editor.save_as(first_save_output);
+        editor.save_as(report.output);
+        if (!file_bytes_equal(first_save_output, report.output)) {
+            throw std::runtime_error("multi-sheet no-op output should match first save");
+        }
+    } else {
+        editor.save_as(report.output);
+    }
     return report;
+}
+
+Report run_generated_in_memory_multi_sheet_save(const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_save_impl(options, false);
+}
+
+Report run_generated_in_memory_multi_sheet_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_save_impl(options, true);
 }
 
 Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
@@ -2551,6 +2592,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_multi_sheet_save") {
         return run_generated_in_memory_multi_sheet_save(options);
+    }
+    if (options.scenario == "generated_in_memory_multi_sheet_noop_save") {
+        return run_generated_in_memory_multi_sheet_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_save") {
         return run_generated_in_memory_multi_sheet_retry_save(options);

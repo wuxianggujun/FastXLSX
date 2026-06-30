@@ -1480,6 +1480,8 @@ both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
+Base sparse row/column shift coverage now pins aggregate dirty materialized
+memory diagnostics for direct insert/delete row and column shifts before save.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

@@ -48295,6 +48295,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1196 - Pin base sparse-shift aggregate memory
+
+Type: public `WorksheetEditor` row/column sparse-shift aggregate materialized
+memory regression.
+
+Status: completed.
+
+Goal: prove direct row/column sparse shifts expose aggregate dirty materialized
+memory diagnostics that match the active `WorksheetEditor` estimate before
+the materialized save handoff.
+
+Coverage:
+- Extends `test_public_worksheet_editor_insert_rows_shifts_sparse_records()` to
+  snapshot shifted worksheet memory and verify the dirty materialized worksheet
+  name, cell count, and aggregate memory before save.
+- Extends `test_public_worksheet_editor_delete_rows_shifts_sparse_records()`,
+  `test_public_worksheet_editor_insert_columns_shifts_sparse_records()`, and
+  `test_public_worksheet_editor_delete_columns_shifts_sparse_records()` with the
+  same dirty-name, cell-count, and memory checks.
+- Keeps the saved XML and reopened-output sparse shift assertions unchanged.
+
+Non-goals:
+- No row/column shift semantic changes, formula-translation changes,
+  source-style preservation changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

@@ -43,6 +43,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_overwrite_formula_text",
     "generated_in_memory_reopen_modify_save",
     "generated_in_memory_reopen_modify_noop_save",
+    "generated_in_memory_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_save",
     "generated_in_memory_multi_sheet_retry_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_save",
@@ -1389,6 +1390,40 @@ def verify_generated_in_memory_reopen_modify_noop_save(
     require("third:save_as(noop-output)" in tool_report.get("mutations", []),
             f"{label}: tool did not report the no-op save stage")
     zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_reopen_modify_post_noop_third_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory reopen/modify post-noop third save"
+    zip_report, openpyxl_report = verify_generated_in_memory_reopen_modify_noop_save(
+        path,
+        tool_report,
+    )
+    mutations = tool_report.get("mutations", [])
+    require("fourth:worksheet(Data).set_cell(E1,text)" in mutations,
+            f"{label}: tool did not report the post-noop Data edit")
+    require("fifth:save_as(third-noop-output)" in mutations,
+            f"{label}: tool did not report the final no-op save stage")
+
+    sheet_entries = zip_report["sheet_entries"]
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="E1"' in data_xml and "third-edit" in data_xml,
+            f"{label}: missing post-noop Data!E1 text")
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        data = workbook["Data"]
+        require(data["E1"].value == "third-edit",
+                f"{label}: Data!E1 mismatch")
+        openpyxl_report["Data!E1"] = data["E1"].value
+    finally:
+        workbook.close()
+
+    zip_report["post_noop_third_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -2985,6 +3020,7 @@ def create_xlsxwriter_reference(
         elif scenario in {
             "generated_in_memory_reopen_modify_save",
             "generated_in_memory_reopen_modify_noop_save",
+            "generated_in_memory_reopen_modify_post_noop_third_save",
         }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
@@ -2996,6 +3032,8 @@ def create_xlsxwriter_reference(
             data.write("A3", "reopened-row")
             data.write_number("B3", 4)
             data.write_formula("C3", "=B3*2")
+            if scenario == "generated_in_memory_reopen_modify_post_noop_third_save":
+                data.write("E1", "third-edit")
             notes.write("A1", "preserved")
         elif scenario in {
             "generated_in_memory_multi_sheet_save",
@@ -3128,6 +3166,11 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_save(output_path)
     elif scenario == "generated_in_memory_reopen_modify_noop_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_noop_save(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_reopen_modify_post_noop_third_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_post_noop_third_save(
             output_path,
             tool_report,
         )

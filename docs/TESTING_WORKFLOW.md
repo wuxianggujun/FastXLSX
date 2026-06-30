@@ -442,6 +442,22 @@ without new materialized edits, requires both package outputs to be
 byte-identical, and validates the final no-op output with the same ZIP/XML and
 `openpyxl` checks.
 
+For the same single-sheet path plus a post-noop third edit and no-op stability
+check, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_reopen_modify_post_noop_third_save `
+  --work-dir build\qa\workbook-editor-in-memory-reopen-modify-post-noop-third-save
+```
+
+This variant repeats the generated single-sheet edit/save/reopen/edit/save/no-op
+path, writes `Data!E1` after that clean no-op save, saves a third-stage output,
+requires the final no-op output to be byte-identical to that third-stage output,
+and validates the result with the same ZIP/XML and `openpyxl` checks.
+
 For generated in-memory multi-sheet save persistence smoke, run:
 
 ```powershell

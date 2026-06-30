@@ -36483,6 +36483,9 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "successful in-budget mutation should dirty the editor");
     check(editor.pending_materialized_cell_count() == baseline_count,
         "successful overwrite after diagnostic replacement should keep sparse count stable");
+    const std::size_t recovery_memory = sheet.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == recovery_memory,
+        "successful overwrite after diagnostic replacement should expose recovered memory");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

@@ -48703,6 +48703,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1212 - Pin last-error recovery aggregate memory
+
+Type: public `WorksheetEditor` last-edit-error diagnostic recovery aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove successful materialized recovery after multiple replaced failure
+diagnostics exposes aggregate dirty materialized memory before save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagnostics()`
+  so the successful in-budget `A1` overwrite after invalid-reference,
+  memory-budget, and invalid-coordinate failures snapshots
+  `WorksheetEditor::estimated_memory_usage()`.
+- Verifies `estimated_pending_materialized_memory_usage()` matches that
+  recovered dirty session before save, alongside the existing sparse-count and
+  `last_edit_error()` clearing checks.
+- Keeps existing rejected payload absence, saved output, no-op save stability,
+  and reopened clean-sheet checks unchanged.
+
+Non-goals:
+- No `last_edit_error()` semantic changes, mutation rollback changes,
+  memory-budget enforcement changes, overwrite semantics changes,
+  memory-accounting changes, new guardrails, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

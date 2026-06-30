@@ -48665,6 +48665,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1211 - Pin explicit-blank guard recovery aggregate memory
+
+Type: public `WorksheetEditor` explicit-blank guard recovery aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove successful explicit-blank overwrites after rejected blank insertions
+expose aggregate dirty materialized count and memory before save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()`
+  so the `max_cells` branch verifies the successful existing-cell blank
+  overwrite dirties the editor and reports aggregate materialized memory that
+  matches the active `WorksheetEditor`.
+- Extends the memory-budget branch with editor dirty-state, aggregate sparse
+  count, and aggregate materialized memory checks after the successful blank
+  overwrite.
+- Keeps existing failed blank insertion guards, exact-budget assertion, saved
+  explicit blank XML, no-op save stability, and reopened clean-sheet checks
+  unchanged.
+
+Non-goals:
+- No explicit blank serialization changes, blank insertion guard behavior
+  changes, overwrite semantics changes, memory-accounting changes, new
+  guardrails, metadata/range repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

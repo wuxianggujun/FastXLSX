@@ -36197,8 +36197,13 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "successful existing-cell blank overwrite should clear max_cells diagnostic");
     check(max_sheet.has_pending_changes(),
         "successful existing-cell blank overwrite should dirty the session");
+    check(max_editor.has_pending_changes(),
+        "successful existing-cell blank overwrite should dirty the editor");
     check(max_editor.pending_materialized_cell_count() == max_baseline_count,
         "existing-cell blank overwrite should keep the sparse count stable");
+    const std::size_t max_blank_memory = max_sheet.estimated_memory_usage();
+    check(max_editor.estimated_pending_materialized_memory_usage() == max_blank_memory,
+        "existing-cell blank overwrite should expose blank dirty memory");
     check(max_sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
         "existing-cell blank overwrite should read back as explicit blank");
 
@@ -36309,10 +36314,17 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
         "successful existing-cell blank overwrite should clear memory-budget diagnostic");
     check(memory_sheet.has_pending_changes(),
         "successful existing-cell blank overwrite should dirty the memory-budget session");
+    check(memory_editor.has_pending_changes(),
+        "successful existing-cell blank overwrite should dirty the memory-budget editor");
     check(memory_sheet.cell_count() == memory_baseline_count,
         "existing-cell blank overwrite should keep memory-budget sparse count stable");
+    check(memory_editor.pending_materialized_cell_count() == memory_baseline_count,
+        "existing-cell blank overwrite should expose memory-budget dirty sparse count");
     check(memory_sheet.estimated_memory_usage() <= exact_memory_budget,
         "existing-cell blank overwrite should stay within exact memory budget");
+    const std::size_t memory_blank_memory = memory_sheet.estimated_memory_usage();
+    check(memory_editor.estimated_pending_materialized_memory_usage() == memory_blank_memory,
+        "existing-cell blank overwrite should expose memory-budget dirty memory");
     check(memory_sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
         "memory-budget blank overwrite should read back as explicit blank");
 

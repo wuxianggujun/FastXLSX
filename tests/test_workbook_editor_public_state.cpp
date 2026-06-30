@@ -16473,6 +16473,24 @@ void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
         "#REF!+B1",
         "stationary formula delete_columns",
         [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_columns(4, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-insert-rows-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-insert-rows-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-insert-rows-noop-output.xlsx",
+        "SUM(A3:B3)+3:3",
+        "SUM(A4:B4)+4:4",
+        "stationary formula range insert_rows",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_rows(3, 1); });
+
+    check_public_stationary_formula_shift_case(
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-insert-columns-source.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-insert-columns-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-insert-columns-noop-output.xlsx",
+        "SUM(D1:E1)+D:E",
+        "SUM(E1:F1)+E:F",
+        "stationary formula range insert_columns",
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(4, 1); });
 }
 
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()

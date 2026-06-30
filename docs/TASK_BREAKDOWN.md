@@ -50085,6 +50085,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1248 - Pin stationary range formula structural shifts
+
+Type: public `WorksheetEditor` in-memory row/column shift formula reference-shape
+regression.
+
+Status: completed.
+
+Goal: prove the stationary formula structural rewrite path covers supported
+cell-range and whole-axis references, not only scalar A1 references.
+
+Coverage:
+- Extends the stationary formula public-state helper with an insert-row formula
+  that rewrites `SUM(A3:B3)+3:3` to `SUM(A4:B4)+4:4`.
+- Adds an insert-column formula that rewrites `SUM(D1:E1)+D:E` to
+  `SUM(E1:F1)+E:F`.
+- Reuses the same failed exact-source save, safe save, clean no-op save,
+  output-entry equality, untouched-sheet preservation, and reopened clean-state
+  checks as the scalar stationary formula cases.
+
+Non-goals:
+- No complete Excel range-shrink semantics, formula evaluation,
+  non-materialized worksheet formula scans, worksheet metadata range
+  synchronization, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

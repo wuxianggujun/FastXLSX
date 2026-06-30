@@ -73,7 +73,9 @@ worksheet scans or metadata repair. A follow-up clean no-op save now snapshots
 catalog/save-state diagnostics, keeps summaries empty, emits a byte-equivalent
 package, and reopens with the same rewritten formula. A rejected exact-source
 `save_as()` before that first flush now also preserves the dirty formula-only
-session and source package bytes until a later safe save. The retry/guard shard also pins that
+session and source package bytes until a later safe save. Public-state coverage
+also pins supported cell-range and whole-axis stationary formulas such as
+`SUM(A3:B3)+3:3` and `SUM(D1:E1)+D:E`. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

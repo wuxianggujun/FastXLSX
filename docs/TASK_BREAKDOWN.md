@@ -48407,6 +48407,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1199 - Pin base erase row/column aggregate memory
+
+Type: public `WorksheetEditor` erase row/column aggregate materialized memory
+regression.
+
+Status: completed.
+
+Goal: prove direct row/column erase operations expose aggregate dirty
+materialized memory diagnostics that match the active `WorksheetEditor`
+estimate before the materialized save handoff.
+
+Coverage:
+- Extends `test_public_worksheet_editor_erase_row_removes_sparse_row()` to
+  snapshot updated worksheet memory after target-row records are removed, then
+  verify dirty materialized worksheet name, remaining cell count, and aggregate
+  memory before save.
+- Extends `test_public_worksheet_editor_erase_column_removes_sparse_column()`
+  with the same dirty-name, cell-count, and memory checks for the direct
+  `erase_column(1)` path.
+- Keeps saved XML, reopened-output, and no-op-save stability assertions
+  unchanged.
+
+Non-goals:
+- No erase semantic changes, sparse-deletion changes, memory-accounting changes,
+  new guardrails, row/column metadata editing, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

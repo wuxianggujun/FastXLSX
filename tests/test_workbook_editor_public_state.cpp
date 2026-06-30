@@ -13970,10 +13970,15 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
         "erase_row should remove target-row numeric cells");
     check(sheet.get_cell("A2").text_value() == "placeholder-a2",
         "erase_row should preserve represented cells outside the target row");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
     check(sheet.has_pending_changes(),
         "erase_row should dirty the materialized worksheet when records are removed");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "erase_row should report the dirty materialized worksheet name");
     check(editor.pending_materialized_cell_count() == 1,
         "erase_row should update aggregate materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "erase_row should update aggregate materialized memory diagnostics");
     check(!editor.last_edit_error().has_value(),
         "successful erase_row should keep diagnostics clear");
 
@@ -14572,10 +14577,15 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
         "erase_column should remove target-column row-two text cells");
     check(sheet.get_cell("B1").number_value() == 1.0,
         "erase_column should preserve represented cells outside the target column");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
     check(sheet.has_pending_changes(),
         "erase_column should dirty the materialized worksheet when records are removed");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "erase_column should report the dirty materialized worksheet name");
     check(editor.pending_materialized_cell_count() == 1,
         "erase_column should update aggregate materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "erase_column should update aggregate materialized memory diagnostics");
     check(!editor.last_edit_error().has_value(),
         "successful erase_column should keep diagnostics clear");
 

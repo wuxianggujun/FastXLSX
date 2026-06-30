@@ -37964,6 +37964,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
         sheet.insert_rows(2, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "insert_rows rich formula pre-save shift");
 
         const std::string expected =
             R"(SUM(A2,$B$2,A2:B3,Sheet1!C4,'Other Sheet'!D:D,[Book.xlsx]Sheet1!2:2,"A1",Table1[A1],LOG10(E6),A1foo,_A1,A1_,R1C1))";
@@ -38052,6 +38054,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
         sheet.insert_columns(2, 2);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "insert_columns rich formula pre-save shift");
 
         const std::string expected =
             R"(SUM(C1,$B$2,C1:D2,Sheet1!E3,'Other Sheet'!F:F,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(G5),A1foo,_A1,A1_,R1C1))";
@@ -38146,6 +38150,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         sheet.set_cell(4, 3, fastxlsx::CellValue::formula("A1+A:A+1:1+B4"));
         sheet.delete_rows(1, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "delete_rows #REF formula pre-save shift");
 
         check(editor.pending_materialized_cell_count() == sheet.cell_count(),
             "delete_rows #REF formula should report shifted sparse count before save");
@@ -38230,6 +38236,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         sheet.set_cell(1, 4, fastxlsx::CellValue::formula("A1+A:A+1:1+D2"));
         sheet.delete_columns(1, 1);
         const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "delete_columns #REF formula pre-save shift");
 
         check(editor.pending_materialized_cell_count() == sheet.cell_count(),
             "delete_columns #REF formula should report shifted sparse count before save");

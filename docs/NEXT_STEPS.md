@@ -177,6 +177,9 @@ non-directory parent, existing-directory output, and after-retry no-op paths.
 Invalid-to-valid row/column shift recovery now uses the same pre-save dirty
 summary contract after the recovery shift, for both clean-start and already
 dirty sessions.
+Formula row/column shifts now pin that contract too before saving translated
+formulas, covering rich reference-shape movement and delete-side `#REF!`
+translation.
 Post-noop third-stage edits now mirror that memory diagnostic coverage before
 their later save: single-sheet dirtiness reports the `Data` session estimate,
 while multi-sheet dirtiness reports the aggregate `Data` plus `Untouched`

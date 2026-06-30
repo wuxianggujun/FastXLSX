@@ -1494,6 +1494,9 @@ the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean
 materialized names/count/memory before reading shifted cells from the saved
 package.
+Styled formula rename-shift coverage now carries the same materialized memory
+diagnostics through reopened clean output and saved/reacquired shared-session
+column shifts.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

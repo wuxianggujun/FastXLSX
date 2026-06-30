@@ -49005,6 +49005,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1220 - Pin styled formula rename-shift materialized memory
+
+Type: public `WorksheetEditor` styled formula rename-shift reopened/reacquired
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove styled formula rename-shift paths report clean and dirty
+materialized memory consistently across reopened output and saved/reacquired
+shared-session flows.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_preserves_column_formula_style()`
+  so the reopened output checks no dirty materialized worksheet names, zero dirty
+  materialized cells, and zero dirty materialized memory before reading the
+  shifted styled formula.
+- Extends `test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session()`
+  so the first save and second save both clear aggregate dirty materialized
+  memory.
+- Verifies the later shared `insert_columns()` mutation reports aggregate dirty
+  materialized memory matching the saved/reacquired styled session.
+- Keeps existing style-id preservation, translated formula text, saved package
+  XML, no-op save, and reopened-output checks unchanged.
+
+Non-goals:
+- No style preservation changes, formula translation changes, rename semantic
+  changes, row/column shift semantic changes, saved-session lifecycle changes,
+  memory-accounting changes, metadata/range repair, relationship repair,
+  calcChain rebuild, sharedStrings/styles migration, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

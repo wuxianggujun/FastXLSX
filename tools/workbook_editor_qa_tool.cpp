@@ -1713,6 +1713,60 @@ Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_retry_noop_save(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_overwrite_formula_text_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-retry-noop-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-retry-noop-output.xlsx");
+    const std::filesystem::path retry_output =
+        report.output.parent_path() / "safe-retry-output.xlsx";
+    ensure_parent_directory(retry_output);
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).set_cell(A1,text)",
+        "worksheet(Data).set_cell(B1,number)",
+        "worksheet(Data).set_cell(C1,formula)",
+        "save_as(source) rejected",
+        "save_as(output) retry",
+        "save_as(noop-output)",
+    };
+    report.notes = {
+        "Source-overwrite save_as should fail before flushing the dirty Data session",
+        "The original source package should retain old Data payloads",
+        "The safe retry output should contain the overwritten text, number, and formula",
+        "A no-op save after the safe retry should be byte-identical",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    require_formula_cell(data, "C1", "B1*2");
+    data.set_cell("A1", CellValue::text("new-text"));
+    data.set_cell("B1", CellValue::number(5.0));
+    data.set_cell("C1", CellValue::formula("B1+10"));
+    require_formula_cell(data, "C1", "B1+10");
+
+    try {
+        editor.save_as(report.source);
+        throw std::runtime_error("expected source-overwrite save_as to fail");
+    } catch (const FastXlsxError& error) {
+        report.status = "expected_retry_observed";
+        report.error_message = error.what();
+    }
+
+    require_formula_cell(data, "C1", "B1+10");
+    editor.save_as(retry_output);
+    editor.save_as(report.output);
+    if (!file_bytes_equal(retry_output, report.output)) {
+        throw std::runtime_error("single-sheet retry no-op output should match safe retry");
+    }
+    return report;
+}
+
 Report run_generated_in_memory_reopen_modify_save_impl(
     const CliOptions& options,
     bool verify_noop_save,
@@ -2621,6 +2675,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_overwrite_formula_text") {
         return run_generated_in_memory_overwrite_formula_text(options);
+    }
+    if (options.scenario == "generated_in_memory_retry_noop_save") {
+        return run_generated_in_memory_retry_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_reopen_modify_save") {
         return run_generated_in_memory_reopen_modify_save(options);

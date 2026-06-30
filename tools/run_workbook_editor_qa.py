@@ -41,6 +41,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_clear_erase",
     "generated_in_memory_append_row_formula",
     "generated_in_memory_overwrite_formula_text",
+    "generated_in_memory_retry_noop_save",
     "generated_in_memory_reopen_modify_save",
     "generated_in_memory_reopen_modify_noop_save",
     "generated_in_memory_reopen_modify_post_noop_third_save",
@@ -1299,6 +1300,50 @@ def verify_generated_in_memory_overwrite_formula_text(path: Path) -> tuple[dict[
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_in_memory_retry_noop_source_unchanged(
+    source_path: Path,
+    label: str,
+) -> dict[str, Any]:
+    source_sheet_entries = workbook_sheet_entry_map(source_path)
+    require(source_sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"{label}: unexpected source sheet map {source_sheet_entries!r}")
+    source_data_xml = read_zip_text(source_path, source_sheet_entries["Data"])
+    require("old-text" in source_data_xml and "new-text" not in source_data_xml,
+            f"{label}: source Data text payload was overwritten")
+    require("B1*2" in source_data_xml and "B1+10" not in source_data_xml,
+            f"{label}: source Data formula payload was overwritten")
+    return {
+        "source_sheet_entries": source_sheet_entries,
+        "source_payload": "checked",
+    }
+
+
+def verify_generated_in_memory_retry_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory retry no-op save"
+    require(tool_report.get("status") == "expected_retry_observed",
+            f"{label}: unexpected tool status {tool_report!r}")
+    require(tool_report.get("error_message"),
+            f"{label}: missing rejected save diagnostic")
+    mutations = tool_report.get("mutations", [])
+    require("save_as(noop-output)" in mutations,
+            f"{label}: tool did not report the no-op save stage")
+    source_report = verify_in_memory_retry_noop_source_unchanged(
+        Path(tool_report["source"]),
+        label,
+    )
+
+    zip_report, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(path)
+    zip_report.update(source_report)
+    zip_report["retry_error_message"] = tool_report["error_message"]
+    zip_report["retry_noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -3038,7 +3083,10 @@ def create_xlsxwriter_reference(
             data.write_number("B3", 4)
             data.write_formula("C3", "=B3*2")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_overwrite_formula_text":
+        elif scenario in {
+            "generated_in_memory_overwrite_formula_text",
+            "generated_in_memory_retry_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write("A1", "new-text")
@@ -3193,6 +3241,11 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_append_row_formula(output_path)
     elif scenario == "generated_in_memory_overwrite_formula_text":
         zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(output_path)
+    elif scenario == "generated_in_memory_retry_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_retry_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_reopen_modify_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_reopen_modify_save(output_path)
     elif scenario == "generated_in_memory_reopen_modify_noop_save":

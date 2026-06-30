@@ -758,6 +758,7 @@ function Verify-Case {
             "generated_in_memory_clear_erase" { Verify-GeneratedInMemoryClearErase $workbook }
             "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
+            "generated_in_memory_retry_noop_save" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_reopen_modify_save" { Verify-GeneratedInMemoryReopenModifySave $workbook }
             "generated_in_memory_reopen_modify_noop_save" { Verify-GeneratedInMemoryReopenModifySave $workbook }
             "generated_in_memory_reopen_modify_post_noop_third_save" { Verify-GeneratedInMemoryReopenModifyPostNoopThirdSave $workbook }

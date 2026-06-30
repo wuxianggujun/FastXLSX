@@ -410,6 +410,21 @@ preserving a source row and an untouched sheet. It is local QA only and does
 not add metadata repair, sharedStrings/styles migration, calcChain rebuild, or
 low-memory random editing.
 
+For generated in-memory single-sheet failed-save retry plus no-op smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_retry_noop_save `
+  --work-dir build\qa\workbook-editor-in-memory-retry-noop-save
+```
+
+This scenario repeats the same overwritten text/number/formula final shape,
+but first attempts the rejected `save_as(source)` path, verifies the source
+workbook retained the old payload, then requires the safe retry output and a
+follow-up no-op `save_as()` output to be byte-identical.
+
 For generated in-memory edit/save/reopen/edit/save persistence smoke, run:
 
 ```powershell

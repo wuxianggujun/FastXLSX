@@ -52781,6 +52781,54 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1313 - Pin shift rejection pre-save dirty diagnostics
+
+Type: public `WorksheetEditor` row/column shift saved-session rejection pre-save
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Extend the pre-save dirty materialized diagnostics contract to row/column shift
+saved-session rejection paths before their first materialized handoff.
+
+Coverage:
+- Reuses the shared public-state assertion helper for a single dirty `Data`
+  materialized session with no replacement flags.
+- Extends
+  `test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_preserves_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preserves_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preserves_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_saved_session()`,
+  `test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_preserves_saved_session()`,
+  and
+  `test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_preserves_saved_session()`.
+- Verifies the first pre-save shift state exposes `Data` as the only dirty
+  materialized worksheet, keeps `pending_change_count()` at zero, reports
+  matching materialized cell count and memory estimate, leaves replacement
+  diagnostics empty, and publishes one dirty materialized summary before any
+  rejection branch runs.
+
+Non-goals:
+- No row/column shift behavior change, validation behavior change, save/retry
+  behavior change, commit/close semantics, summary-generation redesign, formula
+  evaluation, cached value preservation, row/column metadata synchronization,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition changes, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

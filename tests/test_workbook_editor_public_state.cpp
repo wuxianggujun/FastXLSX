@@ -33822,6 +33822,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire option mismatch pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire option mismatch first save should clean the borrowed handle");
@@ -33976,6 +33978,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire option mismatch noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire option mismatch noop save first save should clean the borrowed handle");
@@ -34073,6 +34077,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire missing query pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire missing query first save should clean the borrowed handle");
@@ -34230,6 +34236,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preser
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire missing query noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire missing query noop save first save should clean the borrowed handle");
@@ -34324,6 +34332,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire invalid reads pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire invalid reads first save should clean the borrowed handle");
@@ -34508,6 +34518,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preser
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire invalid reads noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire invalid reads noop save first save should clean the borrowed handle");
@@ -34638,6 +34650,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire invalid mutations pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire invalid mutations first save should clean the borrowed handle");
@@ -34833,6 +34847,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire invalid mutations noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire invalid mutations noop save first save should clean the borrowed handle");
@@ -34972,6 +34988,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire invalid shifts noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift reacquire invalid shifts noop save first save should clean the borrowed handle");

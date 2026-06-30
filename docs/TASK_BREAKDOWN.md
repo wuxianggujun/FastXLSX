@@ -51569,6 +51569,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1285 - Pin single-sheet post-noop third-save public-state stability
+
+Type: public `WorkbookEditor` / `WorksheetEditor` single-sheet post-noop
+continued-edit regression.
+
+Status: completed.
+
+Goal: prove the same fresh-reopen editor remains usable for another materialized
+edit/save cycle after a clean no-op `save_as()`.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`.
+- After the second-stage output and byte-equivalent no-op output, the test
+  reacquires `Data`, writes `Data!E1`, and verifies all shared `Data` handles
+  become dirty with the expected aggregate materialized diagnostics.
+- A third `save_as()` cleans the handles, records the later materialized
+  handoff, leaves the second-stage and prior no-op outputs unchanged, and
+  reopens with the post-noop `E1` edit plus earlier formulas intact.
+- A third no-op `save_as()` preserves the public catalog/save-state snapshot,
+  keeps materialized diagnostics empty, and writes package entries
+  byte-equivalent to the third output.
+
+Non-goals:
+- No production behavior changes, commit/close semantics, overwrite mode,
+  rollback, transaction replay, formula evaluation, cached value preservation,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

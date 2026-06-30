@@ -4082,6 +4082,10 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-noop-output.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-third-output.xlsx");
+    const std::filesystem::path third_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-third-noop-output.xlsx");
 
     const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
 
@@ -4237,7 +4241,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     check_workbook_editor_public_catalog_preserved(
         reopened, catalog_before_noop,
         "single-sheet reopen no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
         "single-sheet reopen no-op output should match second-stage output");
 
     check_reopened_clean_sheet_output(noop_output, "Data",
@@ -4279,6 +4284,124 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
             check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
                     reopened_b1.number_value() == 99.0,
                 "single-sheet reopen no-op Untouched output should preserve B1");
+        });
+
+    fastxlsx::WorksheetEditor after_noop_data = reopened.worksheet("Data");
+    check(!after_noop_data.has_pending_changes(),
+        "single-sheet reopen post-noop reacquire should stay clean");
+    after_noop_data.set_cell("E1", fastxlsx::CellValue::text("single-reopen-third"));
+    check(reopened_data.has_pending_changes() &&
+            second_data_reacquired.has_pending_changes() &&
+            after_noop_data.has_pending_changes(),
+        "single-sheet reopen post-noop edit should dirty all shared Data handles");
+    check(after_noop_data.cell_count() == 9,
+        "single-sheet reopen post-noop edit should add one sparse cell");
+    check_cell_range_equals(after_noop_data.used_range(), 1, 1, 3, 5,
+        "single-sheet reopen post-noop edit should expand bounds to E1");
+    check(reopened.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "single-sheet reopen post-noop edit should expose Data as dirty");
+    check(reopened.pending_materialized_cell_count() == after_noop_data.cell_count(),
+        "single-sheet reopen post-noop edit should expose dirty cell count");
+
+    reopened.save_as(third_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !after_noop_data.has_pending_changes(),
+        "single-sheet reopen third save should clean all Data handles");
+    check(reopened.pending_change_count() == 2,
+        "single-sheet reopen third save should record the later handoff");
+    check(reopened.has_pending_changes(),
+        "single-sheet reopen third save should retain staged handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen third save should clear dirty materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen third save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "single-sheet reopen third save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "single-sheet reopen third save should leave second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "single-sheet reopen third save should leave prior no-op output unchanged");
+
+    fastxlsx::WorksheetEditor third_data_reacquired = reopened.worksheet("Data");
+    check(!third_data_reacquired.has_pending_changes(),
+        "single-sheet reopen third-save reacquire should be clean");
+    const fastxlsx::CellValue third_e1 = third_data_reacquired.get_cell("E1");
+    check(third_e1.kind() == fastxlsx::CellValueKind::Text &&
+            third_e1.text_value() == "single-reopen-third",
+        "single-sheet reopen third-save reacquire should read saved E1");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "single-reopen-third",
+        "single-sheet reopen third output should contain post-noop E1 text");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "B1+5",
+        "single-sheet reopen third output should preserve second-stage formula");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "B3*2",
+        "single-sheet reopen third output should preserve appended formula");
+    check_contains(third_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "single-sheet reopen third output should preserve Untouched");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_third_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_third_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(third_noop_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !after_noop_data.has_pending_changes() &&
+            !third_data_reacquired.has_pending_changes(),
+        "single-sheet reopen third no-op save should keep Data handles clean");
+    check(reopened.pending_change_count() == 2,
+        "single-sheet reopen third no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "single-sheet reopen third no-op save should retain staged handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen third no-op save should keep diagnostics empty");
+    check(!reopened.last_edit_error().has_value(),
+        "single-sheet reopen third no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_third_noop,
+        "single-sheet reopen third no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_third_noop,
+        "single-sheet reopen third no-op save");
+    check(fastxlsx::test::read_zip_entries(third_noop_output) == third_entries,
+        "single-sheet reopen third no-op output should match third output");
+
+    check_reopened_clean_sheet_output(third_noop_output, "Data",
+        "single-sheet reopen third no-op Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 9,
+                "single-sheet reopen third no-op Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 5,
+                "single-sheet reopen third no-op Data output should expose final bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "B1+5",
+                "single-sheet reopen third no-op Data output should preserve C1");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "B3*2",
+                "single-sheet reopen third no-op Data output should preserve C3");
+            const fastxlsx::CellValue reopened_e1 = reopened_sheet.get_cell("E1");
+            check(reopened_e1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e1.text_value() == "single-reopen-third",
+                "single-sheet reopen third no-op Data output should read E1");
+        });
+    check_reopened_clean_sheet_output(third_noop_output, "Untouched",
+        "single-sheet reopen third no-op Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "single-sheet reopen third no-op Untouched output should keep sparse count");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "single-sheet reopen third no-op Untouched output should preserve A1");
         });
 }
 

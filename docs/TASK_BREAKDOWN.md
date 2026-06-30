@@ -52617,6 +52617,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1309 - Pin fresh-reopen second-stage dirty summaries
+
+Type: public `WorkbookEditor` / `WorksheetEditor` fresh-reopen dirty-summary
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Pin that dirty materialized sessions in a fresh reopened editor expose
+`pending_worksheet_edits()` summaries before the second-stage `save_as()`.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`
+  and
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- Verifies the single-sheet second-stage dirty edit exposes one dirty `Data`
+  materialized summary.
+- Verifies the multi-sheet second-stage dirty edit exposes source-order dirty
+  `Data` and `Untouched` materialized summaries.
+- Checks each summary has no replacement flags and reports the matching
+  materialized cell count and memory estimate for the active `WorksheetEditor`
+  handle.
+
+Non-goals:
+- No summary-generation redesign, save behavior change, commit/close semantics,
+  pending-count redesign, rollback, transaction replay, formula evaluation,
+  cached value preservation, cross-sheet dependency synchronization,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition changes, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

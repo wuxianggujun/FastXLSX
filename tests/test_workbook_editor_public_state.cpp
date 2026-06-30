@@ -4016,6 +4016,34 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     check(reopened.estimated_pending_materialized_memory_usage() ==
             second_stage_dirty_memory,
         "multi-sheet retry reopen second-stage edits should aggregate dirty memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "multi-sheet retry reopen second-stage edits should expose two dirty summaries");
+        if (summaries.size() == 2) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "Data" &&
+                    summaries[0].materialized_dirty,
+                "multi-sheet retry reopen second-stage Data summary should be dirty");
+            check(!summaries[0].sheet_data_replaced &&
+                    !summaries[0].targeted_cells_replaced &&
+                    summaries[0].materialized_cell_count == reopened_data.cell_count() &&
+                    summaries[0].estimated_materialized_memory_usage ==
+                        reopened_data.estimated_memory_usage(),
+                "multi-sheet retry reopen second-stage Data summary should match materialized state");
+            check(summaries[1].source_name == "Untouched" &&
+                    summaries[1].planned_name == "Untouched" &&
+                    summaries[1].materialized_dirty,
+                "multi-sheet retry reopen second-stage Untouched summary should be dirty");
+            check(!summaries[1].sheet_data_replaced &&
+                    !summaries[1].targeted_cells_replaced &&
+                    summaries[1].materialized_cell_count == reopened_untouched.cell_count() &&
+                    summaries[1].estimated_materialized_memory_usage ==
+                        reopened_untouched.estimated_memory_usage(),
+                "multi-sheet retry reopen second-stage Untouched summary should match materialized state");
+        }
+    }
     check(reopened.pending_change_count() == 0,
         "multi-sheet retry reopen second-stage edits should not add handoffs before save");
 
@@ -4440,6 +4468,24 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     const std::size_t second_stage_dirty_memory = reopened_data.estimated_memory_usage();
     check(reopened.estimated_pending_materialized_memory_usage() == second_stage_dirty_memory,
         "single-sheet reopen second-stage edits should expose dirty memory usage");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "single-sheet reopen second-stage edits should expose one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "Data" &&
+                    summary.materialized_dirty,
+                "single-sheet reopen second-stage summary should be dirty Data");
+            check(!summary.sheet_data_replaced &&
+                    !summary.targeted_cells_replaced &&
+                    summary.materialized_cell_count == reopened_data.cell_count() &&
+                    summary.estimated_materialized_memory_usage == second_stage_dirty_memory,
+                "single-sheet reopen second-stage summary should match materialized state");
+        }
+    }
     check(reopened.pending_change_count() == 0,
         "single-sheet reopen second-stage edits should not add a handoff before save");
 

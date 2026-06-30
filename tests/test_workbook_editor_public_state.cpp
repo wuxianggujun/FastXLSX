@@ -21433,6 +21433,7 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
     check(sheet.name() == "RenamedData",
         "shift after rename materialized handle should expose the planned name");
     sheet.insert_rows(2, 1);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     check(sheet.has_pending_changes(),
         "shift after rename insert_rows should dirty the planned-name materialized handle");
@@ -21441,6 +21442,8 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
         "shift after rename should report dirty materialized state under the planned name");
     check(editor.pending_materialized_cell_count() == 3,
         "shift after rename should expose the shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "shift after rename should expose the shifted materialized memory estimate");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -21467,7 +21470,8 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
     check(editor.pending_change_count() == 2,
         "shift after rename save_as should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift after rename save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -21535,6 +21539,7 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
     editor.rename_sheet("Data", "RenamedData");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_rows(2, 2);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     check(sheet.cell_count() == 7,
         "renamed formula shift should preserve sparse count while shifting records");
@@ -21555,6 +21560,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
         "renamed formula shift should report dirty materialized state under the planned name");
     check(editor.pending_materialized_cell_count() == 7,
         "renamed formula shift should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "renamed formula shift should report shifted materialized memory estimate");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -21562,7 +21569,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
     check(editor.pending_change_count() == 2,
         "renamed formula shift save_as should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula shift save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -22523,6 +22531,7 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
     editor.rename_sheet("Data", "RenamedData");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_columns(2, 1);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     check(sheet.cell_count() == 7,
         "renamed column formula shift should preserve sparse count while shifting records");
@@ -22550,6 +22559,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
         "renamed column formula shift should report dirty materialized state under the planned name");
     check(editor.pending_materialized_cell_count() == 7,
         "renamed column formula shift should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "renamed column formula shift should report shifted materialized memory estimate");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -22557,7 +22568,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
     check(editor.pending_change_count() == 2,
         "renamed column formula shift save_as should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed column formula shift save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -24162,6 +24174,7 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
     editor.rename_sheet("Data", "RenamedData");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.delete_columns(1, 1);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     check(sheet.cell_count() == 4,
         "renamed formula delete_columns should remove deleted-column records");
@@ -24185,6 +24198,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
         "renamed formula delete_columns should report dirty materialized state under the planned name");
     check(editor.pending_materialized_cell_count() == 4,
         "renamed formula delete_columns should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "renamed formula delete_columns should report shifted materialized memory estimate");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -24192,7 +24207,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
     check(editor.pending_change_count() == 2,
         "renamed formula delete_columns save_as should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete_columns save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -25883,6 +25899,7 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
     editor.rename_sheet("Data", "RenamedData");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.delete_rows(1, 1);
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
 
     check(sheet.cell_count() == 5,
         "renamed formula delete_rows should remove deleted-row records");
@@ -25906,6 +25923,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
         "renamed formula delete_rows should report dirty materialized state under the planned name");
     check(editor.pending_materialized_cell_count() == 5,
         "renamed formula delete_rows should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "renamed formula delete_rows should report shifted materialized memory estimate");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -25913,7 +25932,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
     check(editor.pending_change_count() == 2,
         "renamed formula delete_rows save_as should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete_rows save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

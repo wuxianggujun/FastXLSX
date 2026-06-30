@@ -48043,6 +48043,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1189 - Pin renamed shift dirty memory diagnostics
+
+Type: public `WorksheetEditor` renamed sparse-shift dirty materialized memory
+diagnostic regression.
+
+Status: completed.
+
+Goal: prove the early shift-after-rename regressions expose the same aggregate
+materialized memory estimate as the active planned-name materialized session,
+and clear that aggregate after `save_as()`.
+
+Coverage:
+- Adds `WorksheetEditor::estimated_memory_usage()` snapshots after planned-name
+  row insert, styled row-formula insert, styled column-formula insert, styled
+  delete-column `#REF!`, and styled delete-row `#REF!` shifts.
+- Verifies `estimated_pending_materialized_memory_usage()` matches that dirty
+  session estimate while `pending_materialized_worksheet_names()` and
+  `pending_materialized_cell_count()` report the planned-name sparse session.
+- Verifies the materialized `save_as()` flush clears names, cell count, and
+  aggregate memory diagnostics back to zero before the existing reopened/no-op
+  save checks run.
+
+Non-goals:
+- No memory-accounting changes, workbook-level guardrails, new shift semantics,
+  formula repair/evaluation, metadata/range repair, calcChain rebuild beyond
+  existing behavior, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

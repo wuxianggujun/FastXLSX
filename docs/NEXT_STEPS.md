@@ -1459,6 +1459,10 @@ The renamed full-calculation formula-audit saved-reacquire no-op paths now also
 pair their second clean save-state snapshot with a catalog snapshot after
 invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard
 checks, without expanding formula repair or metadata synchronization.
+The early renamed shift-after-rename regressions now also pin aggregate dirty
+materialized memory diagnostics against the active `WorksheetEditor` estimate
+and verify they clear after the materialized flush, without changing guardrail
+or low-memory editing policy.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

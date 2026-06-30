@@ -50613,6 +50613,39 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1263 - Pin materialized-only formula source audit boundary
+
+Type: public `WorksheetEditor` in-memory source/materialized audit regression.
+
+Status: completed.
+
+Goal: prove formulas created only in an unsaved materialized sparse session do
+not leak into `source_formula_reference_audits()`, while remaining visible
+through `formula_reference_audits()`.
+
+Coverage:
+- Starts from a source workbook with no formula cells and adds dirty `C2`
+  formula `Data!A1+Data!B1` through `WorksheetEditor::set_cell()`.
+- Verifies `source_formula_reference_audits()` stays empty and preserves dirty
+  materialized diagnostics.
+- Verifies `formula_reference_audits()` reports the dirty materialized `Data!A1`
+  and `Data!B1` references from the sparse store without changing diagnostics.
+
+Non-goals:
+- No source/materialized audit merging, source worksheet XML mutation, implicit
+  save of dirty formula cells, formula evaluation, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

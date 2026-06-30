@@ -50948,6 +50948,52 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1271 - Add generated in-memory clear/erase QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+in-memory clear/erase persistence.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that `clear_cell_value()` saves
+an explicit blank cell while `erase_cell()` removes a represented cell, and
+that both behaviors survive ZIP/XML and workbook readback checks.
+
+Coverage:
+- Adds `generated_in_memory_clear_erase` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- The generated source workbook contains `Data!A1` text, `Data!B1` formula,
+  `Data!C1` text, `Data!A2` number, and an untouched `Notes` sheet.
+- The scenario opens the source through public `WorkbookEditor`, verifies the
+  source formula, clears `B1`, checks public `try_cell("B1")` returns
+  `CellValueKind::Blank`, erases `C1`, checks public `try_cell("C1")` is empty,
+  writes `D1`, and saves.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML checks verify `B1` is
+  represented without formula/value/inline-string payload, `C1` is absent,
+  `A1` / `A2` / `D1` persist, formulas are removed, `xl/calcChain.xml` is
+  absent, `Notes!A1` persists, and optional XlsxWriter reference workbooks can
+  be created.
+- Extends the optional Excel COM sidecar with the same value/blank/erased-cell
+  smoke.
+
+Non-goals:
+- No production behavior changes, tombstones, dense clear/erase semantics,
+  formula evaluation, cached value preservation, worksheet metadata/range
+  repair, calcChain rebuild, sharedStrings/styles migration, relationship
+  repair, broader Patch/materialized composition, default CTest/CI expansion,
+  or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_clear_erase --work-dir build\\qa\\workbook-editor-in-memory-clear-erase --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

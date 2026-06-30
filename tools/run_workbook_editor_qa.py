@@ -38,6 +38,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_delete_column_formula",
     "generated_in_memory_insert_column_formula",
     "generated_in_memory_delete_row_formula",
+    "generated_in_memory_clear_erase",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -491,6 +492,21 @@ def worksheet_formula_cells(path: Path, sheet_name: str) -> dict[str, str]:
         if formula is not None:
             formulas[reference] = "".join(formula.itertext())
     return formulas
+
+
+def worksheet_cell_elements(path: Path, sheet_name: str) -> dict[str, ElementTree.Element]:
+    sheet_entries = workbook_sheet_entry_map(path)
+    worksheet_entry = sheet_entries.get(sheet_name)
+    require(worksheet_entry is not None, f"worksheet cells: sheet not found: {sheet_name}")
+    root = ElementTree.fromstring(read_zip_bytes(path, worksheet_entry))
+    cells: dict[str, ElementTree.Element] = {}
+    for cell in root.iter():
+        if xml_local_name(cell.tag) != "c":
+            continue
+        reference = cell.attrib.get("r")
+        if reference:
+            cells[reference] = cell
+    return cells
 
 
 def worksheet_formula_cached_values(path: Path, sheet_name: str) -> dict[str, list[str]]:
@@ -1064,6 +1080,79 @@ def verify_generated_in_memory_delete_row_formula(path: Path) -> tuple[dict[str,
             "sheetnames": workbook.sheetnames,
             "Data!A1": data["A1"].value,
             "Data!B1": data["B1"].value,
+            "Data!A2": data["A2"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_clear_erase(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated in-memory clear/erase: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory clear/erase: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"generated in-memory clear/erase: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="A1"' in data_xml and "keep-a1" in data_xml,
+            "generated in-memory clear/erase: missing preserved A1 text")
+    require('<c r="A2"><v>8</v></c>' in data_xml,
+            "generated in-memory clear/erase: missing preserved A2 number")
+    require('r="D1"' in data_xml and "new-d1" in data_xml,
+            "generated in-memory clear/erase: missing new D1 text")
+    require("erase-me" not in data_xml,
+            "generated in-memory clear/erase: erased C1 text remained")
+
+    formulas = worksheet_formula_cells(path, "Data")
+    require("B1" not in formulas,
+            f"generated in-memory clear/erase: cleared B1 formula remained {formulas!r}")
+    cells = worksheet_cell_elements(path, "Data")
+    b1 = cells.get("B1")
+    require(b1 is not None,
+            f"generated in-memory clear/erase: explicit blank B1 missing {sorted(cells)}")
+    require(
+        not any(xml_local_name(child.tag) in {"f", "v", "is"} for child in b1),
+        "generated in-memory clear/erase: explicit blank B1 kept formula/value payload",
+    )
+    require("C1" not in cells,
+            f"generated in-memory clear/erase: erased C1 remained represented {sorted(cells)}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+    zip_report["represented_cells"] = sorted(cells)
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"generated in-memory clear/erase: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "keep-a1",
+                "generated in-memory clear/erase: A1 mismatch")
+        require(data["B1"].value is None,
+                f"generated in-memory clear/erase: B1 mismatch {data['B1'].value!r}")
+        require(data["C1"].value is None,
+                f"generated in-memory clear/erase: C1 mismatch {data['C1'].value!r}")
+        require(data["D1"].value == "new-d1",
+                "generated in-memory clear/erase: D1 mismatch")
+        require(data["A2"].value == 8,
+                "generated in-memory clear/erase: A2 mismatch")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory clear/erase: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!C1": data["C1"].value,
+            "Data!D1": data["D1"].value,
             "Data!A2": data["A2"].value,
             "Notes!A1": notes["A1"].value,
         }
@@ -2371,6 +2460,14 @@ def create_xlsxwriter_reference(
             data.write_formula("B1", "=A1+A2")
             data.write_number("A2", 6)
             notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_clear_erase":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write("A1", "keep-a1")
+            data.write_blank("B1", None)
+            data.write("D1", "new-d1")
+            data.write_number("A2", 8)
+            notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
@@ -2463,6 +2560,8 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_column_formula(output_path)
     elif scenario == "generated_in_memory_delete_row_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula(output_path)
+    elif scenario == "generated_in_memory_clear_erase":
+        zip_xml, openpyxl_report = verify_generated_in_memory_clear_erase(output_path)
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

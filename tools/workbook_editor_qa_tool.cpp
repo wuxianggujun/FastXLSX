@@ -480,6 +480,28 @@ std::filesystem::path write_in_memory_delete_row_formula_source(const std::files
     return path;
 }
 
+std::filesystem::path write_in_memory_clear_erase_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("keep-a1"),
+            CellView::formula(R"(A1&"-formula")"),
+            CellView::text("erase-me"),
+        });
+        data.append_row({CellView::number(8.0)});
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1453,6 +1475,46 @@ Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_clear_erase(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_clear_erase_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-clear-erase-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-clear-erase-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).clear_cell_value(B1)",
+        "worksheet(Data).erase_cell(C1)",
+        "worksheet(Data).set_cell(D1,text)",
+    };
+    report.notes = {
+        "Original Data!A1 and Data!A2 should remain source-backed",
+        "Original Data!B1 formula should become an explicit blank cell",
+        "Original Data!C1 should be erased rather than serialized as blank",
+        "New Data!D1 should be written from the materialized sparse store",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    require_formula_cell(data, "B1", R"(A1&"-formula")");
+    data.clear_cell_value("B1");
+    const std::optional<CellValue> cleared = data.try_cell("B1");
+    if (!cleared.has_value() || cleared->kind() != fastxlsx::CellValueKind::Blank) {
+        throw std::runtime_error("clear_cell_value(B1) did not expose an explicit blank cell");
+    }
+    data.erase_cell("C1");
+    if (data.try_cell("C1").has_value()) {
+        throw std::runtime_error("erase_cell(C1) left a represented cell");
+    }
+    data.set_cell("D1", CellValue::text("new-d1"));
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -1874,6 +1936,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_delete_row_formula") {
         return run_generated_in_memory_delete_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_clear_erase") {
+        return run_generated_in_memory_clear_erase(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

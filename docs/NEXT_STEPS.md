@@ -42,6 +42,9 @@ save/reopen checks.
 The same generated QA lane now covers the remaining current shift directions
 with `generated_in_memory_insert_column_formula` and
 `generated_in_memory_delete_row_formula`.
+It also covers `generated_in_memory_clear_erase`, which verifies a source-backed
+formula cell cleared to explicit blank, a source-backed text cell erased from
+the represented cell set, a new materialized text cell, save, and reopen checks.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

@@ -362,6 +362,22 @@ source-backed cell shifts, formula text translation, save, and reopen checks.
 They are local QA only and do not expand production semantics beyond the
 current small-file in-memory row/column shift paths.
 
+For generated in-memory clear/erase persistence smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_clear_erase `
+  --work-dir build\qa\workbook-editor-in-memory-clear-erase
+```
+
+This scenario covers `WorksheetEditor::clear_cell_value()` preserving an
+explicit blank cell, `WorksheetEditor::erase_cell()` removing a represented
+cell, a new materialized text write, save, and reopen checks. It is local QA
+only and does not add tombstones, metadata repair, sharedStrings/styles
+migration, calcChain rebuild, or low-memory random editing.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

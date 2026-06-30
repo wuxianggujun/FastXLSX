@@ -49360,6 +49360,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1229 - Pin styled formula delete-row option-mismatch diagnostics
+
+Type: public `WorksheetEditor` styled formula delete-row option-mismatch
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove delete-row styled formula option-mismatch recovery keeps clean public
+diagnostics through rejected option access and reports dirty materialized memory
+for the later shared column shift.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_mismatch_preserves_styled_session()`
+  so first-save cleanup, rejected option-access cleanliness, later valid shared
+  `insert_columns()`, second-save cleanup, no-op save stability, and reopened
+  output verify materialized memory diagnostics.
+- Keeps existing option-mismatch rejection, deleted-row formula translation,
+  style-id preservation, no-op save, and reopened-output checks unchanged.
+
+Non-goals:
+- No option matching changes, deleted-row formula translation changes, style
+  preservation changes, rename semantic changes, row/column shift semantic
+  changes, memory-accounting changes, metadata/range repair, relationship
+  repair, calcChain rebuild, sharedStrings/styles migration, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

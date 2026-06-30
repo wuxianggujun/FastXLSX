@@ -32200,7 +32200,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
     check(editor.pending_change_count() == 1,
         "shift reacquire path-equivalent failed save first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire path-equivalent failed save first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire path-equivalent failed save first save should keep diagnostics clear");
@@ -32281,7 +32282,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire path-equivalent failed save safe retry should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire path-equivalent failed save safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire path-equivalent failed save safe retry should record the later handoff");
@@ -32416,7 +32418,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
     check(editor.pending_change_count() == 1,
         "shift reacquire empty-output failed save first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire empty-output failed save first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire empty-output failed save first save should keep diagnostics clear");
@@ -32497,7 +32500,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire empty-output failed save safe retry should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire empty-output failed save safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire empty-output failed save safe retry should record the later handoff");
@@ -32636,7 +32640,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
     check(editor.pending_change_count() == 1,
         "shift reacquire missing-parent failed save first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing-parent failed save first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing-parent failed save first save should keep diagnostics clear");
@@ -32719,7 +32724,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire missing-parent failed save safe retry should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing-parent failed save safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire missing-parent failed save safe retry should record the later handoff");
@@ -32859,7 +32865,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
     check(editor.pending_change_count() == 1,
         "shift reacquire file-parent failed save first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire file-parent failed save first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire file-parent failed save first save should keep diagnostics clear");
@@ -32943,7 +32950,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire file-parent failed save safe retry should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire file-parent failed save safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire file-parent failed save safe retry should record the later handoff");
@@ -33082,7 +33090,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
     check(editor.pending_change_count() == 1,
         "shift reacquire directory-output failed save first save should record one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire directory-output failed save first save should clear dirty diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire directory-output failed save first save should keep diagnostics clear");
@@ -33165,7 +33174,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "shift reacquire directory-output failed save safe retry should clean both handles");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire directory-output failed save safe retry should clear dirty diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire directory-output failed save safe retry should record the later handoff");

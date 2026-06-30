@@ -1561,6 +1561,9 @@ memory checks around the rejected source-overwrite save.
 The failed-save retry reacquire path now pins clean materialized memory after
 first/safe/third saves and clean reacquire, plus dirty memory for the
 post-retry delete-row mutation.
+The rejected-output failed-save variants now pin clean materialized memory after
+their initial saves and safe retries for path-equivalent source, empty output,
+missing parent, file parent, and directory output cases.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

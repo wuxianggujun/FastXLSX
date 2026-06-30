@@ -61,6 +61,9 @@ flushes both while preserving an untouched sheet.
 Public-state coverage also pins the same multi-worksheet saved-session hygiene:
 matching reacquires stay clean after save and a later no-op `save_as()` keeps
 the output byte-stable.
+It also pins the matching failed-save retry path: a rejected source-overwrite
+save keeps both dirty materialized worksheets and source bytes intact, then a
+safe retry plus final no-op save remain stable.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

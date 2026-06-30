@@ -15778,6 +15778,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15850,7 +15852,7 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         "delete_rows styled source formula save_as should omit old trailing row coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "delete_rows styled source formula should preserve untouched worksheets");
-    check_reopened_shift_output(output, "delete_rows styled source formula",
+    const auto inspect_delete_rows_styled_formula_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "delete_rows styled source formula reopened output should keep shifted sparse count");
@@ -15871,7 +15873,38 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value(),
                 "delete_rows styled source formula reopened output should keep old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "delete_rows styled source formula",
+        inspect_delete_rows_styled_formula_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows styled source formula no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_rows styled source formula no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_rows styled source formula no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_rows styled source formula no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_rows styled source formula no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows styled source formula no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "delete_rows styled source formula no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "delete_rows styled source formula no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "delete_rows styled source formula no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output,
+        "delete_rows styled source formula no-op save",
+        inspect_delete_rows_styled_formula_output);
 }
 
 void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift()
@@ -15984,6 +16017,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -16059,7 +16094,7 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         "delete_columns styled source formula save_as should omit deleted trailing coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "delete_columns styled source formula should preserve untouched worksheets");
-    check_reopened_shift_output(output, "delete_columns styled source formula",
+    const auto inspect_delete_columns_styled_formula_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,
                 "delete_columns styled source formula reopened output should keep shifted sparse count");
@@ -16083,7 +16118,38 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value(),
                 "delete_columns styled source formula reopened output should keep old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "delete_columns styled source formula",
+        inspect_delete_columns_styled_formula_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_columns styled source formula no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_columns styled source formula no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_columns styled source formula no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_columns styled source formula no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_columns styled source formula no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_columns styled source formula no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "delete_columns styled source formula no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "delete_columns styled source formula no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "delete_columns styled source formula no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output,
+        "delete_columns styled source formula no-op save",
+        inspect_delete_columns_styled_formula_output);
 }
 
 void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift()

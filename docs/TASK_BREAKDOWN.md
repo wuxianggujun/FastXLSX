@@ -48519,6 +48519,40 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1206 - Pin shift guard and overflow aggregate memory
+
+Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove row/column shift no-op and validation-failure paths keep aggregate
+materialized memory clean, while overflow failures preserve the pre-existing
+dirty materialized memory.
+
+Coverage:
+- Extends zero-count and out-of-range row/column shift no-op/validation paths so
+  they verify aggregate materialized memory remains zero.
+- Extends row and column overflow failure paths so they snapshot dirty worksheet
+  memory before the rejected shift and verify the failed shift preserves both
+  aggregate dirty cell count and aggregate dirty memory.
+
+Non-goals:
+- No validation rule changes, overflow rejection changes, row/column shift
+  semantic changes, dirty-state preservation changes, memory-accounting changes,
+  new guardrails, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

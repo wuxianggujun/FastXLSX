@@ -34477,6 +34477,10 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "zero-count row/column shifts should not dirty a clean materialized worksheet");
         check(sheet.cell_count() == 3,
             "zero-count row/column shifts should preserve sparse cell count");
+        check(editor.pending_materialized_cell_count() == 0,
+            "zero-count row/column shifts should not contribute pending materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "zero-count row/column shifts should not contribute pending materialized memory");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_zero_count_noops,
             "zero-count row/column shifts");
     }
@@ -34511,6 +34515,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "nonzero row/column shift no-ops should preserve sparse cell count");
         check(editor.pending_materialized_cell_count() == 0,
             "nonzero row/column shift no-ops should not contribute pending materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "nonzero row/column shift no-ops should not contribute pending materialized memory");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "nonzero row/column shift no-ops should preserve source-backed cells");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_nonzero_noops,
@@ -34626,6 +34632,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "delete_columns invalid-count failure should preserve source cells");
         check(editor.pending_materialized_cell_count() == 0,
             "shift validation failures should not contribute pending materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "shift validation failures should not contribute pending materialized memory");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_validation_failures,
             "shift validation failures");
         const std::optional<std::string> shift_validation_error = editor.last_edit_error();
@@ -34684,6 +34692,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         sheet.set_cell(1048576, 1, fastxlsx::CellValue::text("row-edge"));
         const std::size_t dirty_count = sheet.cell_count();
+        const std::size_t dirty_memory = sheet.estimated_memory_usage();
         const WorkbookEditorPublicCatalogSnapshot catalog_before_row_overflow =
             workbook_editor_public_catalog_snapshot(editor);
         bool row_overflow_failed = false;
@@ -34698,6 +34707,10 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows should reject shifts that move a represented cell past the row limit");
         check(sheet.cell_count() == dirty_count,
             "insert_rows overflow failure should preserve sparse cell count");
+        check(editor.pending_materialized_cell_count() == dirty_count,
+            "insert_rows overflow failure should preserve pending materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+            "insert_rows overflow failure should preserve pending materialized memory");
         check(sheet.get_cell("A1048576").text_value() == "row-edge",
             "insert_rows overflow failure should preserve the edge cell");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
@@ -34792,6 +34805,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         sheet.set_cell(1, 16384, fastxlsx::CellValue::text("column-edge"));
         const std::size_t dirty_count = sheet.cell_count();
+        const std::size_t dirty_memory = sheet.estimated_memory_usage();
         const WorkbookEditorPublicCatalogSnapshot catalog_before_column_overflow =
             workbook_editor_public_catalog_snapshot(editor);
         bool column_overflow_failed = false;
@@ -34806,6 +34820,10 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_columns should reject shifts that move a represented cell past the column limit");
         check(sheet.cell_count() == dirty_count,
             "insert_columns overflow failure should preserve sparse cell count");
+        check(editor.pending_materialized_cell_count() == dirty_count,
+            "insert_columns overflow failure should preserve pending materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+            "insert_columns overflow failure should preserve pending materialized memory");
         check(sheet.get_cell("XFD1").text_value() == "column-edge",
             "insert_columns overflow failure should preserve the edge cell");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",

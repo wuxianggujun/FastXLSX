@@ -69,7 +69,9 @@ rewrites stationary materialized formula cells when an insert/delete row or
 column operation affects only their referenced coordinates: formula-only
 changes dirty the session, flush through `save_as()`, preserve untouched
 worksheets, and reopen cleanly without extending into non-materialized
-worksheet scans or metadata repair. The retry/guard shard also pins that
+worksheet scans or metadata repair. A follow-up clean no-op save now snapshots
+catalog/save-state diagnostics, keeps summaries empty, emits a byte-equivalent
+package, and reopens with the same rewritten formula. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

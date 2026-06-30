@@ -2578,6 +2578,7 @@ template <typename ShiftOperation>
 void check_public_stationary_formula_shift_case(
     std::string_view source_name,
     std::string_view output_name,
+    std::string_view noop_output_name,
     std::string_view initial_formula,
     std::string_view expected_formula,
     std::string_view label,
@@ -2586,6 +2587,7 @@ void check_public_stationary_formula_shift_case(
     const std::filesystem::path source =
         write_two_sheet_source_with_stationary_formula(source_name, initial_formula);
     const std::filesystem::path output = artifact(output_name);
+    const std::filesystem::path noop_output = artifact(noop_output_name);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -2651,25 +2653,60 @@ void check_public_stationary_formula_shift_case(
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         std::string(label) + " save_as should preserve untouched worksheets");
 
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
-    check(!reopened_sheet.has_pending_changes(),
-        std::string(label) + " reopened output should materialize cleanly");
-    check(reopened_sheet.cell_count() == 4,
-        std::string(label) + " reopened output should keep sparse count");
-    check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
-        std::string(label) + " reopened output should keep sparse bounds");
-    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("C1");
-    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_formula.text_value() == expected_formula,
-        std::string(label) + " reopened output should read the rewritten formula");
-    check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0,
-        std::string(label) + " reopened output should keep dirty diagnostics empty");
-    check(reopened.pending_worksheet_edits().empty() &&
-            !reopened.last_edit_error().has_value(),
-        std::string(label) + " reopened output should keep public state clean");
+    const auto check_reopened_output =
+        [&](const std::filesystem::path& path, std::string_view scenario_label) {
+            const std::string scenario(scenario_label);
+            fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(path);
+            fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+            check(!reopened_sheet.has_pending_changes(),
+                scenario + " should materialize cleanly");
+            check(reopened_sheet.cell_count() == 4,
+                scenario + " should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                scenario + " should keep sparse bounds");
+            const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("C1");
+            check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_formula.text_value() == expected_formula,
+                scenario + " should read the rewritten formula");
+            check(reopened.pending_materialized_worksheet_names().empty() &&
+                    reopened.pending_materialized_cell_count() == 0 &&
+                    reopened.estimated_pending_materialized_memory_usage() == 0,
+                scenario + " should keep dirty diagnostics empty");
+            check(reopened.pending_worksheet_edits().empty() &&
+                    !reopened.last_edit_error().has_value(),
+                scenario + " should keep public state clean");
+        };
+
+    check_reopened_output(output, std::string(label) + " reopened output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes(),
+        std::string(label) + " no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        std::string(label) + " no-op save should not add a second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        std::string(label) + " no-op save should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        std::string(label) + " no-op save should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, std::string(label) + " no-op save");
+    check(!editor.last_edit_error().has_value(),
+        std::string(label) + " no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, std::string(label) + " no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, std::string(label) + " no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        std::string(label) + " no-op output should match the materialized output");
+    check_reopened_output(noop_output, std::string(label) + " no-op output");
 }
 
 std::filesystem::path write_two_sheet_source_with_large_clear_payload(std::string_view name)
@@ -16384,6 +16421,7 @@ void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
     check_public_stationary_formula_shift_case(
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-rows-source.xlsx",
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-rows-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-rows-noop-output.xlsx",
         "A3+B1",
         "A4+B1",
         "stationary formula insert_rows",
@@ -16392,6 +16430,7 @@ void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
     check_public_stationary_formula_shift_case(
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-rows-source.xlsx",
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-rows-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-rows-noop-output.xlsx",
         "A3+B1",
         "#REF!+B1",
         "stationary formula delete_rows",
@@ -16400,6 +16439,7 @@ void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
     check_public_stationary_formula_shift_case(
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-columns-source.xlsx",
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-columns-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-insert-columns-noop-output.xlsx",
         "D1+B1",
         "E1+B1",
         "stationary formula insert_columns",
@@ -16408,6 +16448,7 @@ void test_public_worksheet_editor_shifts_rewrite_stationary_formula_references()
     check_public_stationary_formula_shift_case(
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-columns-source.xlsx",
         "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-columns-output.xlsx",
+        "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-columns-noop-output.xlsx",
         "D1+B1",
         "#REF!+B1",
         "stationary formula delete_columns",

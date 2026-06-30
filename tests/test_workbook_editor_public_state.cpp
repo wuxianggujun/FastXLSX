@@ -21481,6 +21481,8 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
                 "shift after rename summary should combine rename and materialized dirty state");
             check(summaries[0].materialized_cell_count == 3,
                 "shift after rename summary should report shifted sparse count");
+            check(summaries[0].estimated_materialized_memory_usage == shifted_memory,
+                "shift after rename summary should report shifted memory estimate");
         }
     }
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
@@ -27708,6 +27710,7 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
         "renamed shift reacquire should keep old row coordinates absent");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "renamed shift reacquire later shift should dirty the shared planned-name session");
     check(editor.pending_materialized_worksheet_names()
@@ -27715,6 +27718,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
         "renamed shift reacquire later shift should report dirty state under the planned name");
     check(editor.pending_materialized_cell_count() == 3,
         "renamed shift reacquire later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "renamed shift reacquire later shift should report the shared memory estimate");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -27728,6 +27733,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
                 "renamed shift reacquire later shift summary should retain rename and dirty state");
             check(summaries[0].materialized_cell_count == 3,
                 "renamed shift reacquire later shift summary should report sparse count");
+            check(summaries[0].estimated_materialized_memory_usage == shifted_memory,
+                "renamed shift reacquire later shift summary should report memory estimate");
         }
     }
     check(sheet.get_cell("C1").number_value() == 1.0 &&
@@ -28285,6 +28292,7 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
         "renamed shift option mismatch matching reacquire should keep old row absent");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "renamed shift option mismatch later shift should dirty the shared planned-name session");
     check(editor.pending_materialized_worksheet_names()
@@ -28292,6 +28300,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
         "renamed shift option mismatch later shift should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 3,
         "renamed shift option mismatch later shift should report the shared sparse count once");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+        "renamed shift option mismatch later shift should report the shared memory estimate");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -28305,6 +28315,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
                 "renamed shift option mismatch later shift summary should retain planned state");
             check(summaries[0].materialized_cell_count == 3,
                 "renamed shift option mismatch later shift summary should report sparse count");
+            check(summaries[0].estimated_materialized_memory_usage == shifted_memory,
+                "renamed shift option mismatch later shift summary should report memory estimate");
         }
     }
     const fastxlsx::CellValue shifted_number = sheet.get_cell("C1");

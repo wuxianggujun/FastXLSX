@@ -48259,6 +48259,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1195 - Pin shift-after-rename summary memory
+
+Type: public `WorkbookEditor` shift-after-rename materialized summary memory
+regression.
+
+Status: completed.
+
+Goal: prove early shift-after-rename dirty summaries expose the same memory
+estimate as aggregate dirty materialized diagnostics.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_uses_planned_name()`
+  so its dirty edit summary reports the shifted memory estimate.
+- Extends `test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session()`
+  and `test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_planned_session()`
+  to snapshot the shifted shared session memory after the later column insert.
+- Verifies aggregate `estimated_pending_materialized_memory_usage()` and
+  `WorkbookEditorWorksheetEditSummary::estimated_materialized_memory_usage`
+  match the active `WorksheetEditor::estimated_memory_usage()`.
+
+Non-goals:
+- No rename semantic changes, shift semantic changes, saved-session reacquire
+  changes, option-matching changes, memory-accounting changes, new guardrails,
+  formula translation changes, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

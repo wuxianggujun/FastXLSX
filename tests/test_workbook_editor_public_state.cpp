@@ -15450,6 +15450,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         "full-calc insert_rows setup should report Data dirty");
     check(editor.pending_materialized_cell_count() == dirty_cell_count,
         "full-calc insert_rows setup should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "full-calc insert_rows setup should report shifted sparse memory");
 
     editor.request_full_calculation();
 

@@ -48519,6 +48519,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1202 - Pin full-calc insert-row setup aggregate memory
+
+Type: public `WorksheetEditor` full-calculation insert-row setup aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove a dirty insert-row shift reports aggregate materialized memory
+before `request_full_calculation()` queues workbook metadata on top of the
+materialized session.
+
+Coverage:
+- Extends `test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()`
+  so the setup phase immediately after `insert_rows()` verifies aggregate
+  `estimated_pending_materialized_memory_usage()` against the shifted
+  `WorksheetEditor::estimated_memory_usage()`.
+- Leaves the existing post-`request_full_calculation()` materialized memory,
+  saved XML, reopened output, and no-op-save assertions unchanged.
+
+Non-goals:
+- No full-calculation metadata changes, row shift semantic changes,
+  formula-translation changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

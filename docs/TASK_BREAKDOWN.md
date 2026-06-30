@@ -50543,6 +50543,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1261 - Pin range formula dirty source audit boundary
+
+Type: public `WorksheetEditor` in-memory source-audit regression.
+
+Status: completed.
+
+Goal: prove source formula audits keep their original source-XML boundary while
+range and whole-axis stationary formula rewrites are still dirty in the
+materialized session.
+
+Coverage:
+- Adds a row-insert case where dirty materialized `C1` rewrites from
+  `SUM(Data!A3:B3)+Data!3:3` to `SUM(Data!A4:B4)+Data!4:4`.
+- Adds a column-insert case where dirty materialized `C1` rewrites from
+  `SUM(Data!D1:E1)+Data!D:E` to `SUM(Data!E1:F1)+Data!E:F`.
+- Verifies `source_formula_reference_audits()` preserves pending materialized
+  diagnostics and reports only the original source tokens
+  `Data!A3:B3` / `Data!3:3` and `Data!D1:E1` / `Data!D:E`, not the shifted
+  materialized tokens.
+
+Non-goals:
+- No source/materialized audit merging, source worksheet XML mutation, formula
+  evaluation, worksheet metadata range synchronization, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

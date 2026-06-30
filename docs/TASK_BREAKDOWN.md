@@ -48483,6 +48483,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1201 - Pin direct styled-formula delete-shift aggregate memory
+
+Type: public `WorksheetEditor` direct styled-formula delete-shift aggregate
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove direct delete-row/delete-column shifts of source-backed styled
+formula cells expose aggregate dirty materialized memory diagnostics that match
+the active `WorksheetEditor` estimate before the materialized save handoff.
+
+Coverage:
+- Extends `test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()`
+  to snapshot shifted worksheet memory and verify dirty materialized worksheet
+  name, shifted sparse count, and aggregate memory before save.
+- Extends `test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()`
+  with the same dirty-name, shifted-count, and memory checks.
+- Keeps existing `StyleId` preservation, `#REF!` translation, saved XML, reopened
+  output, and no-op-save assertions unchanged.
+
+Non-goals:
+- No delete shift semantic changes, formula-translation changes, source style
+  preservation changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

@@ -1491,6 +1491,9 @@ diagnostics after represented sparse records are removed.
 Whole-store clear/erase reacquire coverage now pins aggregate dirty
 materialized memory diagnostics before both the first clear save and later
 reused-session follow-up saves.
+Direct styled-formula delete-shift coverage now pins aggregate dirty
+materialized memory diagnostics alongside `StyleId` preservation and `#REF!`
+translation checks.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

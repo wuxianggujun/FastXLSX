@@ -16256,8 +16256,13 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
             shifted_column_four[0].value.has_style() &&
             shifted_column_four[0].value.style_id().value() == styled_formula_style.value(),
         "delete_rows styled source formula column_cells should keep shifted formula style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "delete_rows styled source formula should report Data as dirty");
     check(editor.pending_materialized_cell_count() == 5,
         "delete_rows styled source formula should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "delete_rows styled source formula should report shifted sparse memory");
     check(!editor.last_edit_error().has_value(),
         "delete_rows styled source formula should keep diagnostics clear");
 
@@ -16530,8 +16535,13 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
             shifted_column_three[0].value.has_style() &&
             shifted_column_three[0].value.style_id().value() == styled_formula_style.value(),
         "delete_columns styled source formula column_cells should keep shifted formula style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "delete_columns styled source formula should report Data as dirty");
     check(editor.pending_materialized_cell_count() == 4,
         "delete_columns styled source formula should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "delete_columns styled source formula should report shifted sparse memory");
     check(!editor.last_edit_error().has_value(),
         "delete_columns styled source formula should keep diagnostics clear");
 

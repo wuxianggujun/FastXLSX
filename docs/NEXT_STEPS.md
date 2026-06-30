@@ -105,7 +105,9 @@ formula coordinates and tokens, rather than the materialized `Data!#REF!` /
 `Data!B3` / `Data!C2` tokens. Dirty-only formulas inserted through
 `WorksheetEditor::set_cell()` stay out of `source_formula_reference_audits()`
 until saved, while `formula_reference_audits()` still reports those in-memory
-formula references from the materialized sparse store.
+formula references from the materialized sparse store; after `save_as()` and a
+fresh reopen, both source and materialized audits report the saved formula tokens
+from the output workbook while keeping the reopened editor clean.
 The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,

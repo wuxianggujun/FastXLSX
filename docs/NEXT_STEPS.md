@@ -1506,6 +1506,8 @@ Formula-translation shift coverage now pins dirty materialized count and memory
 before saving rich reference-shape and out-of-bounds `#REF!` formula shifts.
 Shift guard/no-op/overflow coverage now pins aggregate materialized memory for
 clean no-op/validation paths and dirty overflow rejection paths.
+Shift formula memory-budget failure coverage now pins aggregate materialized
+memory at zero after rejected formula translation.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

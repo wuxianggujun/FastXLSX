@@ -34950,6 +34950,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
         "failed insert_rows memory-budget mutation should not dirty the editor");
     check(editor.pending_materialized_cell_count() == 0,
         "failed insert_rows memory-budget mutation should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed insert_rows memory-budget mutation should not expose dirty materialized memory");
     check(sheet.cell_count() == baseline_count,
         "failed insert_rows memory-budget mutation should preserve sparse cell count");
     check(sheet.estimated_memory_usage() == baseline_memory,

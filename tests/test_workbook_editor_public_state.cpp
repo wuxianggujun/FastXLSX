@@ -725,7 +725,11 @@ check_public_state_source_formula_audits_preserve_editor_diagnostics(
 }
 
 struct WorkbookEditorPublicSaveStateSnapshot {
+    bool has_pending_changes{};
     std::size_t pending_change_count{};
+    std::vector<std::string> pending_materialized_worksheet_names;
+    std::size_t pending_materialized_cell_count{};
+    std::size_t estimated_pending_materialized_memory_usage{};
     std::size_t pending_replacement_cell_count{};
     std::size_t estimated_pending_replacement_memory_usage{};
     std::vector<std::string> pending_replacement_worksheet_names;
@@ -737,7 +741,11 @@ WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot
     const fastxlsx::WorkbookEditor& editor)
 {
     return {
+        editor.has_pending_changes(),
         editor.pending_change_count(),
+        editor.pending_materialized_worksheet_names(),
+        editor.pending_materialized_cell_count(),
+        editor.estimated_pending_materialized_memory_usage(),
         editor.pending_replacement_cell_count(),
         editor.estimated_pending_replacement_memory_usage(),
         editor.pending_replacement_worksheet_names(),
@@ -751,8 +759,19 @@ void check_workbook_editor_public_save_state_preserved(
     const WorkbookEditorPublicSaveStateSnapshot& before,
     std::string_view scenario)
 {
+    check(editor.has_pending_changes() == before.has_pending_changes,
+        std::string(scenario) + " should preserve pending-change state");
     check(editor.pending_change_count() == before.pending_change_count,
         std::string(scenario) + " should preserve public pending change count");
+    check(editor.pending_materialized_worksheet_names()
+            == before.pending_materialized_worksheet_names,
+        std::string(scenario) + " should preserve pending materialized worksheet names");
+    check(editor.pending_materialized_cell_count()
+            == before.pending_materialized_cell_count,
+        std::string(scenario) + " should preserve pending materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == before.estimated_pending_materialized_memory_usage,
+        std::string(scenario) + " should preserve materialized memory estimate");
     check(editor.pending_replacement_cell_count()
             == before.pending_replacement_cell_count,
         std::string(scenario) + " should preserve pending replacement cell count");

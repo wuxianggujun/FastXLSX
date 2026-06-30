@@ -47895,6 +47895,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1185 - Pin public save-state pending diagnostics
+
+Type: public `WorkbookEditor` save-state snapshot pending-diagnostic helper
+regression.
+
+Status: completed.
+
+Goal: make every save-state preservation regression that uses the public
+save-state helper also prove `has_pending_changes()` and materialized pending
+diagnostics are preserved.
+
+Coverage:
+- Extends `WorkbookEditorPublicSaveStateSnapshot` with `has_pending_changes()`.
+- Extends the same snapshot with `pending_materialized_worksheet_names()`,
+  `pending_materialized_cell_count()`, and
+  `estimated_pending_materialized_memory_usage()`.
+- Extends `check_workbook_editor_public_save_state_preserved()` to compare
+  those fields, so existing no-op save and failure-recovery save-state
+  regressions pin the public pending-change boolean and materialized aggregate
+  diagnostics without adding per-test duplicate checks.
+
+Non-goals:
+- No new public state APIs.
+- No production dirty-session or save semantics changes.
+- No metadata/range repair, formula repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

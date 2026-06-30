@@ -813,6 +813,53 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement sheet names");
 }
 
+void check_public_state_single_data_dirty_materialized_summary(
+    const fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditor& sheet,
+    std::size_t expected_pending_change_count,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+    const std::size_t expected_cell_count = sheet.cell_count();
+    const std::size_t expected_memory_usage = sheet.estimated_memory_usage();
+
+    check(editor.has_pending_changes(),
+        prefix + " should expose pending public state");
+    check(editor.pending_change_count() == expected_pending_change_count,
+        prefix + " should not count dirty materialized sessions as staged handoffs");
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " should not expose replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        prefix + " should expose Data as the dirty materialized worksheet");
+    check(editor.pending_materialized_cell_count() == expected_cell_count,
+        prefix + " should expose the dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_memory_usage,
+        prefix + " should expose the dirty materialized memory estimate");
+
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+        editor.pending_worksheet_edits();
+    check(summaries.size() == 1,
+        prefix + " should expose one dirty materialized summary");
+    if (summaries.size() == 1) {
+        const auto& summary = summaries[0];
+        check(summary.source_name == "Data" &&
+                summary.planned_name == "Data" &&
+                !summary.renamed,
+            prefix + " summary should identify Data without rename state");
+        check(!summary.sheet_data_replaced &&
+                !summary.targeted_cells_replaced &&
+                summary.replacement_cell_count == 0 &&
+                summary.estimated_replacement_memory_usage == 0,
+            prefix + " summary should not expose replacement state");
+        check(summary.materialized_dirty &&
+                summary.materialized_cell_count == expected_cell_count &&
+                summary.estimated_materialized_memory_usage == expected_memory_usage,
+            prefix + " summary should match the dirty materialized state");
+    }
+}
+
 void check_public_state_renamed_dirty_materialized_summary_memory(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& first_handle,
@@ -33100,6 +33147,8 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
         "shift reacquire noop save should keep sparse count after the first shift");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
         "shift reacquire noop save should expose the shifted source row before save");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift reacquire noop save pre-save shift");
 
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
@@ -33196,6 +33245,8 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
         "delete_columns reacquire noop save should expose the translated formula before save");
     check(sheet.get_cell("C2").text_value() == "tail-d2",
         "delete_columns reacquire noop save should expose the shifted dirty cell before save");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_columns reacquire noop save pre-save shift");
 
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
@@ -33303,6 +33354,8 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
         "delete_rows reacquire noop save should expose the translated formula before save");
     check(sheet.get_cell("B3").text_value() == "tail-b4",
         "delete_rows reacquire noop save should expose the shifted dirty cell before save");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_rows reacquire noop save pre-save shift");
 
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
@@ -33418,6 +33471,8 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
         "insert_columns reacquire noop save should expose the translated formula before save");
     check(sheet.get_cell("E3").text_value() == "extra-c3",
         "insert_columns reacquire noop save should expose the shifted dirty cell before save");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "insert_columns reacquire noop save pre-save shift");
 
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
@@ -33523,6 +33578,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift try-reacquire pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift try-reacquire first save should clean the original borrowed handle");
@@ -33670,6 +33727,8 @@ void test_public_worksheet_editor_shift_try_reacquire_noop_save_preserves_saved_
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.insert_rows(2, 1);
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "shift try-reacquire noop save pre-save shift");
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "shift try-reacquire noop save first save should clean the original borrowed handle");

@@ -164,6 +164,10 @@ dirty `Data` summary for single-sheet reopen edits, or source-order dirty `Data`
 and `Untouched` summaries for multi-sheet reopen edits.
 After those edits have been saved, the following no-op `save_as()` keeps dirty
 summaries empty while preserving the staged handoff count.
+Row/column shift reacquire/no-op coverage now also pins the pre-save dirty
+diagnostics for those small-file shifts: `Data` is the only dirty materialized
+worksheet, cell/memory estimates match the active session, no staged handoff is
+counted yet, and the dirty summary carries no replacement flags.
 Post-noop third-stage edits now mirror that memory diagnostic coverage before
 their later save: single-sheet dirtiness reports the `Data` session estimate,
 while multi-sheet dirtiness reports the aggregate `Data` plus `Untouched`

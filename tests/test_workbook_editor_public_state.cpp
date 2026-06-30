@@ -17332,6 +17332,124 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
         "stationary formula range saved reopen materialized audit shifted whole row");
 }
 
+void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_audits_saved_rewrite()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_stationary_formula(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-column-range-reopen-audit-source.xlsx",
+            "SUM(Data!D1:E1)+Data!D:E");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-stationary-formula-column-range-reopen-audit-output.xlsx");
+
+    constexpr std::string_view expected_formula = "SUM(Data!E1:F1)+Data!E:F";
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.insert_columns(4, 1);
+
+        const fastxlsx::CellValue rewritten_formula = sheet.get_cell("C1");
+        check(rewritten_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                rewritten_formula.text_value() == expected_formula,
+            "stationary formula column range saved reopen audit setup should expose the rewritten formula");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "stationary formula column range saved reopen audit setup should clean the materialized sheet");
+        check(editor.pending_change_count() == 1,
+            "stationary formula column range saved reopen audit setup should record one materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "stationary formula column range saved reopen audit setup should clear materialized diagnostics");
+    }
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
+        "stationary formula column range saved reopen audit should expose saved worksheets");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula column range saved reopen audit setup");
+
+    const auto check_saved_audit =
+        [&](const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit>& audits,
+            std::string_view qualified_reference_text,
+            std::string_view reference_text,
+            std::string_view message_prefix) {
+            const fastxlsx::WorkbookEditorFormulaReferenceAudit* audit =
+                find_public_state_formula_audit(
+                    audits, 1, 3, qualified_reference_text);
+            check(audit != nullptr,
+                std::string(message_prefix) + " should expose the saved audit entry");
+            if (audit == nullptr) {
+                return;
+            }
+
+            check(audit->formula_sheet_source_name == "Data" &&
+                    audit->formula_sheet_planned_name == "Data" &&
+                    audit->formula_text == expected_formula,
+                std::string(message_prefix) + " should report the saved formula cell");
+            check(audit->sheet_qualifier_text == "Data!" &&
+                    audit->reference_text == reference_text &&
+                    audit->referenced_sheet_name == "Data",
+                std::string(message_prefix) + " should report saved formula tokens");
+            check(audit->matched_current_workbook_sheet &&
+                    audit->matched_source_sheet_name == "Data" &&
+                    audit->matched_planned_sheet_name == "Data",
+                std::string(message_prefix) + " should match the reopened Data sheet");
+            check(!audit->references_renamed_source_name &&
+                    audit->references_planned_sheet_name &&
+                    !audit->external_workbook_qualifier &&
+                    !audit->sheet_range_qualifier,
+                std::string(message_prefix) + " should keep qualifier flags clean");
+        };
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        check_public_state_source_formula_audits_preserve_editor_diagnostics(
+            reopened, "stationary formula column range saved reopen source audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula column range saved reopen after source audit");
+    check(source_audits.size() == 2,
+        "stationary formula column range saved reopen source audit should report both saved references");
+    check(find_public_state_formula_audit(source_audits, 1, 3, "Data!D1:E1") == nullptr,
+        "stationary formula column range saved reopen source audit should not report the original column range");
+    check(find_public_state_formula_audit(source_audits, 1, 3, "Data!D:E") == nullptr,
+        "stationary formula column range saved reopen source audit should not report the original whole columns");
+    check_saved_audit(
+        source_audits, "Data!E1:F1", "E1:F1",
+        "stationary formula column range saved reopen source audit shifted column range");
+    check_saved_audit(
+        source_audits, "Data!E:F", "E:F",
+        "stationary formula column range saved reopen source audit shifted whole columns");
+
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
+        "stationary formula column range saved reopen audit should materialize Data cleanly");
+    const std::optional<fastxlsx::CellValue> reopened_formula =
+        reopened_sheet.try_cell("C1");
+    check(reopened_formula.has_value() &&
+            reopened_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula->text_value() == expected_formula,
+        "stationary formula column range saved reopen audit should read the saved formula");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> materialized_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            reopened, "stationary formula column range saved reopen materialized audit");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula column range saved reopen after materialized audit");
+    check(materialized_audits.size() == 2,
+        "stationary formula column range saved reopen materialized audit should report both saved references");
+    check(find_public_state_formula_audit(materialized_audits, 1, 3, "Data!D1:E1") == nullptr,
+        "stationary formula column range saved reopen materialized audit should not report the original column range");
+    check(find_public_state_formula_audit(materialized_audits, 1, 3, "Data!D:E") == nullptr,
+        "stationary formula column range saved reopen materialized audit should not report the original whole columns");
+    check_saved_audit(
+        materialized_audits, "Data!E1:F1", "E1:F1",
+        "stationary formula column range saved reopen materialized audit shifted column range");
+    check_saved_audit(
+        materialized_audits, "Data!E:F", "E:F",
+        "stationary formula column range saved reopen materialized audit shifted whole columns");
+}
+
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -38243,6 +38361,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_saved_rewrite();
             test_public_worksheet_editor_stationary_formula_delete_column_saved_reopen_audits_skip_ref();
             test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_saved_rewrite();
+            test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_audits_saved_rewrite();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();

@@ -90,7 +90,9 @@ while skipping persisted `Data!#REF!`; the column-side saved-output path now
 mirrors that boundary for `Data!E1` / `Data!B1` after insert and surviving
 `Data!B1` after persisted `Data!#REF!` delete-column output. Range saved-output
 coverage also verifies persisted `Data!A4:B4` and `Data!4:4` audit tokens
-replace the original `Data!A3:B3` / `Data!3:3` source tokens. The retry/guard shard also pins that
+replace the original `Data!A3:B3` / `Data!3:3` source tokens, and column-range
+coverage mirrors that boundary for persisted `Data!E1:F1` / `Data!E:F` replacing
+the original `Data!D1:E1` / `Data!D:E` tokens. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

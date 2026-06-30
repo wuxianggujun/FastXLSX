@@ -53004,6 +53004,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1318 - Pin dirty shift overflow summaries
+
+Type: public `WorksheetEditor` row/column shift overflow rejection diagnostics
+regression.
+
+Status: completed.
+
+Goal:
+Verify rejected row/column overflow shifts preserve the existing dirty
+materialized public-state summary while retaining the shift diagnostic.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()`.
+- Covers dirty `insert_rows()` row-limit overflow and dirty `insert_columns()`
+  column-limit overflow after an edge cell has already made the materialized
+  `Data` session dirty.
+- Verifies the rejected overflow keeps `pending_change_count()` at zero,
+  preserves the expected `last_edit_error()`, exposes `Data` as the only dirty
+  materialized worksheet, reports matching materialized count/memory, leaves
+  replacement diagnostics empty, and publishes one dirty materialized summary
+  before the later safe save.
+
+Non-goals:
+- No overflow validation behavior change, row/column shift behavior change,
+  rollback behavior change, diagnostic text change, save behavior change,
+  summary-generation redesign, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

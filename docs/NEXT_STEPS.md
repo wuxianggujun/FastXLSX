@@ -1820,6 +1820,8 @@ The clean side of those shift guard paths now also pins empty pending
 summaries, zero handoff count, and empty replacement diagnostics for
 zero-count no-ops, nonzero out-of-range no-ops, validation failures, and
 formula-translation memory-budget failures.
+Dirty row/column overflow rejection coverage now also pins the retained dirty
+materialized summary and preserved shift diagnostic before the later safe save.
 Full-calculation-before-shift setup coverage now also pins dirty materialized
 memory at zero after `request_full_calculation()` and after clean worksheet
 materialization, before insert/delete column shifts dirty the session.

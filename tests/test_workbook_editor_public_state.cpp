@@ -817,7 +817,8 @@ void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
     std::size_t expected_pending_change_count,
-    std::string_view scenario)
+    std::string_view scenario,
+    const std::optional<std::string>& expected_last_edit_error = std::nullopt)
 {
     const std::string prefix = std::string(scenario);
     const std::size_t expected_cell_count = sheet.cell_count();
@@ -827,8 +828,8 @@ void check_public_state_single_data_dirty_materialized_summary(
         prefix + " should expose pending public state");
     check(editor.pending_change_count() == expected_pending_change_count,
         prefix + " should not count dirty materialized sessions as staged handoffs");
-    check(!editor.last_edit_error().has_value(),
-        prefix + " should keep diagnostics clear");
+    check(editor.last_edit_error() == expected_last_edit_error,
+        prefix + " should expose the expected last_edit_error state");
     check_workbook_editor_no_replacement_diagnostics(
         editor, prefix + " should not expose replacement diagnostics");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
@@ -38606,6 +38607,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         const std::optional<std::string> row_overflow_error = editor.last_edit_error();
         check(row_overflow_error.has_value(),
             "insert_rows overflow failure should retain the shift overflow diagnostic");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "insert_rows overflow failure", row_overflow_error);
 
         editor.save_as(output);
         check(editor.last_edit_error() == row_overflow_error,
@@ -38719,6 +38722,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         const std::optional<std::string> column_overflow_error = editor.last_edit_error();
         check(column_overflow_error.has_value(),
             "insert_columns overflow failure should retain the shift overflow diagnostic");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "insert_columns overflow failure", column_overflow_error);
 
         editor.save_as(output);
         check(editor.last_edit_error() == column_overflow_error,

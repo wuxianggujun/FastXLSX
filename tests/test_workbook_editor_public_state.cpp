@@ -17456,7 +17456,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_option
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 7,
+                        summaries[0].materialized_cell_count == 7 &&
+                        summaries[0].estimated_materialized_memory_usage == shifted_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }
@@ -17590,7 +17591,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_missin
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 7,
+                        summaries[0].materialized_cell_count == 7 &&
+                        summaries[0].estimated_materialized_memory_usage == shifted_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }
@@ -17724,7 +17726,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_invali
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 7,
+                        summaries[0].materialized_cell_count == 7 &&
+                        summaries[0].estimated_materialized_memory_usage == shifted_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }
@@ -17885,7 +17888,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_invali
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 7,
+                        summaries[0].materialized_cell_count == 7 &&
+                        summaries[0].estimated_materialized_memory_usage == shifted_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }
@@ -18069,7 +18073,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_invali
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == 7,
+                        summaries[0].materialized_cell_count == 7 &&
+                        summaries[0].estimated_materialized_memory_usage == shifted_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }
@@ -18241,7 +18246,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_invali
                         summaries[0].planned_name == "RenamedData" &&
                         summaries[0].renamed &&
                         summaries[0].materialized_dirty &&
-                        summaries[0].materialized_cell_count == expected_cell_count,
+                        summaries[0].materialized_cell_count == expected_cell_count &&
+                        summaries[0].estimated_materialized_memory_usage == expected_memory,
                     label + " should preserve the renamed dirty summary");
             }
         }

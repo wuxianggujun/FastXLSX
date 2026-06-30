@@ -48184,6 +48184,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1193 - Pin formula-audit preserve-state summary memory
+
+Type: public `WorkbookEditor` renamed full-calculation formula-audit
+preserve-state materialized summary memory regression.
+
+Status: completed.
+
+Goal: prove rejected access/mutation/shift diagnostics and recovery paths keep
+dirty materialized edit summaries aligned with aggregate materialized memory
+diagnostics.
+
+Coverage:
+- Extends the renamed formula-audit option-mismatch, missing-query,
+  invalid-read, invalid-mutation, invalid-shift, and invalid-diagnostic-recovery
+  dirty-state helpers.
+- Verifies each `WorkbookEditorWorksheetEditSummary::estimated_materialized_memory_usage`
+  equals the same shifted or recovered `WorksheetEditor::estimated_memory_usage()`
+  value already used for aggregate materialized diagnostics.
+- Keeps the existing source/planned name, rename flag, dirty flag, and sparse
+  cell-count assertions unchanged.
+
+Non-goals:
+- No option-matching changes, missing-sheet behavior changes,
+  invalid-operation diagnostic changes, formula-audit semantic changes,
+  full-calculation metadata changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

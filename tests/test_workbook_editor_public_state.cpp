@@ -6654,10 +6654,15 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
         "append_row should preserve formula text as a formula cell");
     check(sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Blank,
         "append_row should represent explicit blank values");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
     check(sheet.has_pending_changes(),
         "append_row should dirty the materialized worksheet when values are appended");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "append_row should report the dirty materialized worksheet name");
     check(editor.pending_materialized_cell_count() == 7,
         "append_row should contribute appended sparse records to aggregate diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "append_row should contribute appended sparse records to aggregate memory diagnostics");
     check(!editor.last_edit_error().has_value(),
         "successful append_row should keep diagnostics clear");
 
@@ -7058,10 +7063,15 @@ void test_public_worksheet_editor_set_row_replaces_sparse_row()
         "set_row should preserve represented cells outside the target row");
     check(!sheet.try_cell("B2").has_value(),
         "set_row should not synthesize cells outside the target row");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
     check(sheet.has_pending_changes(),
         "set_row should dirty the materialized worksheet when values are replaced");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "set_row should report the dirty materialized worksheet name");
     check(editor.pending_materialized_cell_count() == 5,
         "set_row should contribute the replaced sparse records to aggregate diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "set_row should contribute the replaced sparse records to aggregate memory diagnostics");
     check(!editor.last_edit_error().has_value(),
         "successful set_row should keep diagnostics clear");
 
@@ -7724,10 +7734,15 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
         "set_column should preserve represented cells outside the target column");
     check(!sheet.try_cell("B2").has_value(),
         "set_column should not synthesize cells outside the target column");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
     check(sheet.has_pending_changes(),
         "set_column should dirty the materialized worksheet when values are replaced");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "set_column should report the dirty materialized worksheet name");
     check(editor.pending_materialized_cell_count() == 5,
         "set_column should contribute the replaced sparse records to aggregate diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "set_column should contribute the replaced sparse records to aggregate memory diagnostics");
     check(!editor.last_edit_error().has_value(),
         "successful set_column should keep diagnostics clear");
 

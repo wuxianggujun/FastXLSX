@@ -27845,7 +27845,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
     check(editor.pending_change_count() == 2,
         "renamed formula delete-row reacquire first save should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-row reacquire first save should clear dirty materialized diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed formula delete-row reacquire first save should keep diagnostics clear");
@@ -27898,6 +27899,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
         "renamed formula delete-row reacquire should keep dirty diagnostics empty");
 
     reacquired.insert_columns(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "renamed formula delete-row reacquire later column shift should dirty the shared session");
     check(editor.pending_materialized_worksheet_names()
@@ -27905,6 +27907,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
         "renamed formula delete-row reacquire later column shift should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 5,
         "renamed formula delete-row reacquire later column shift should keep the styled sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory &&
+            sheet.estimated_memory_usage() == shifted_memory,
+        "renamed formula delete-row reacquire later column shift should report styled materialized memory");
     const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("E1");
     check(shifted_formula.has_value() &&
             shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
@@ -27928,7 +27933,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
     check(editor.pending_change_count() == 3,
         "renamed formula delete-row reacquire second save should record the later materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-row reacquire second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
@@ -28004,7 +28010,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed formula delete-row reacquire reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-row reacquire reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 5,
         "renamed formula delete-row reacquire reopened output should keep shifted sparse count");

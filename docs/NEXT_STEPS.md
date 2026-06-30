@@ -1528,6 +1528,8 @@ reopened materialized memory diagnostics.
 The delete-row invalid-read and snapshot-read styled-session paths now carry
 matching clean/dirty/reopened materialized memory diagnostics through read-only
 checks and recovery shifts.
+The delete-row reacquire styled-session path now pins matching clean reacquire,
+dirty recovery-shift, no-op save, and reopened materialized memory diagnostics.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

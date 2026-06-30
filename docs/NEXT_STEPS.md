@@ -55,6 +55,9 @@ reopen.
 It now also covers `generated_in_memory_retry_noop_save`, which exercises the
 same overwritten single-sheet final shape through a rejected source-overwrite
 `save_as()`, safe retry, and byte-identical no-op save.
+It also covers `generated_in_memory_retry_path_equivalent_noop_save`, which
+uses a path-equivalent source output path for the rejected save before the same
+safe retry and byte-identical no-op output checks.
 It also covers `generated_in_memory_retry_reopen_modify_noop_save`, which opens
 that safe retry output through a fresh editor, applies second-stage edits, and
 requires the final no-op save to be byte-identical to the second-stage output.

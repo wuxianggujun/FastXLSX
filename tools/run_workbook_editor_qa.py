@@ -42,6 +42,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_append_row_formula",
     "generated_in_memory_overwrite_formula_text",
     "generated_in_memory_retry_noop_save",
+    "generated_in_memory_retry_path_equivalent_noop_save",
     "generated_in_memory_retry_reopen_modify_noop_save",
     "generated_in_memory_retry_reopen_modify_post_noop_third_save",
     "generated_in_memory_reopen_modify_save",
@@ -1346,6 +1347,23 @@ def verify_generated_in_memory_retry_noop_save(
     zip_report.update(source_report)
     zip_report["retry_error_message"] = tool_report["error_message"]
     zip_report["retry_noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_retry_path_equivalent_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory path-equivalent retry no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_retry_noop_save(
+        path,
+        tool_report,
+    )
+    require(
+        "save_as(path-equivalent-source) rejected" in tool_report.get("mutations", []),
+        f"{label}: tool did not report the path-equivalent rejection stage",
+    )
+    zip_report["path_equivalent_retry"] = "checked"
     return zip_report, openpyxl_report
 
 
@@ -3170,6 +3188,7 @@ def create_xlsxwriter_reference(
         elif scenario in {
             "generated_in_memory_overwrite_formula_text",
             "generated_in_memory_retry_noop_save",
+            "generated_in_memory_retry_path_equivalent_noop_save",
         }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
@@ -3332,6 +3351,11 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(output_path)
     elif scenario == "generated_in_memory_retry_noop_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_retry_noop_save(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_retry_path_equivalent_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_retry_path_equivalent_noop_save(
             output_path,
             tool_report,
         )

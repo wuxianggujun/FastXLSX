@@ -47932,6 +47932,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1186 - Pin basic saved-reacquire catalog no-op state
+
+Type: public `WorksheetEditor` saved-session reacquire no-op-save catalog-state
+regression.
+
+Status: completed.
+
+Goal: prove the existing basic saved-session sparse-shift no-op save paths also
+preserve the public workbook catalog snapshot.
+
+Coverage:
+- Adds `WorkbookEditorPublicCatalogSnapshot` capture before clean no-op saves
+  in the handle-reuse and saved-session reacquire sparse-shift tests.
+- Covers `worksheet()` and `try_worksheet()` reacquire paths plus
+  `insert_rows()`, `insert_columns()`, `delete_rows()`, and `delete_columns()`
+  projections that already verify save-state snapshots and output-entry
+  stability.
+- Verifies `source_worksheet_names()`, `worksheet_names()`, and
+  `worksheet_catalog()` remain stable across those no-op saves without adding
+  another materialized handoff.
+
+Non-goals:
+- No new shift semantics, sheet catalog mutation, sheet rename/delete,
+  relationship repair, metadata/range repair, formula repair beyond existing
+  moved-cell text translation, calcChain rebuild, sharedStrings/styles
+  migration, broader Patch/materialized composition, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

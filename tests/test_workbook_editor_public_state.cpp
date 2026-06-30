@@ -28972,6 +28972,8 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         "shift handle reuse second save should clear aggregate dirty materialized count");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -28987,6 +28989,9 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         "shift handle reuse no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift handle reuse no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift handle reuse no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift handle reuse no-op output should match the second output");
@@ -29125,6 +29130,8 @@ void test_public_worksheet_editor_shift_reacquire_reuses_saved_session()
     check_not_contains(second_xml, R"(r="A2")",
         "shift reacquire second output should keep the old row coordinate absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29140,6 +29147,9 @@ void test_public_worksheet_editor_shift_reacquire_reuses_saved_session()
         "shift reacquire second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift reacquire second no-op output should match the second output");
@@ -29226,6 +29236,8 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29242,6 +29254,9 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
         "shift reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift reacquire noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -29321,6 +29336,8 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29337,6 +29354,9 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
         "delete_columns reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "delete_columns reacquire noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "delete_columns reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -29430,6 +29450,8 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29446,6 +29468,9 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
         "delete_rows reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "delete_rows reacquire noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "delete_rows reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -29539,6 +29564,8 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29555,6 +29582,9 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
         "insert_columns reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "insert_columns reacquire noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "insert_columns reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
@@ -29689,6 +29719,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
     check_not_contains(second_xml, R"(r="A2")",
         "shift try-reacquire second output should keep the old row coordinate absent");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29704,6 +29736,9 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
         "shift try-reacquire second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift try-reacquire second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift try-reacquire second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift try-reacquire second no-op output should match the second output");
@@ -29773,6 +29808,8 @@ void test_public_worksheet_editor_shift_try_reacquire_noop_save_preserves_saved_
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -29789,6 +29826,9 @@ void test_public_worksheet_editor_shift_try_reacquire_noop_save_preserves_saved_
         "shift try-reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "shift try-reacquire noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "shift try-reacquire noop save");
 
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);

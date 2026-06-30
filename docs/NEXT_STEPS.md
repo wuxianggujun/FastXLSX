@@ -1447,6 +1447,10 @@ The same snapshot now also captures `has_pending_changes()` and materialized
 pending diagnostics, so existing save-state preservation checks pin the public
 dirty boolean and materialized aggregate names/counts/memory across no-op saves
 without per-test duplicate assertions.
+The basic saved-session reacquire no-op save paths now pair that save-state
+snapshot with a catalog snapshot, covering handle reuse, `worksheet()` /
+`try_worksheet()` reacquire, and row/column sparse-shift projections without
+claiming broader catalog mutation support.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

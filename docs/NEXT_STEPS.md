@@ -112,7 +112,10 @@ exact-source saves now preserve that same materialized-only audit split and
 leave source package bytes unchanged until a later safe retry writes the formula
 into the output workbook. A follow-up no-op save after that safe retry now keeps
 public save-state diagnostics stable, emits byte-equivalent package entries, and
-fresh-reopens with the persisted formula references.
+fresh-reopens with the persisted formula references. Same-editor post-save
+audits now make the routing explicit: source audits keep scanning the original
+source XML, while materialized audits report the clean saved formula without
+re-dirtying the session.
 The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,

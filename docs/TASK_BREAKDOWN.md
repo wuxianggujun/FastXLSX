@@ -50401,6 +50401,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1257 - Pin stationary formula range saved reopen audit boundary
+
+Type: public `WorksheetEditor` in-memory saved-output audit regression.
+
+Status: completed.
+
+Goal: prove supported row-range and whole-row stationary formula rewrites are
+visible as saved worksheet XML after `save_as()` and a fresh
+`WorkbookEditor::open(output)`.
+
+Coverage:
+- Adds a row-insert stationary formula case where `C1` rewrites from
+  `SUM(Data!A3:B3)+Data!3:3` to `SUM(Data!A4:B4)+Data!4:4`, then saves and
+  reopens the output workbook.
+- Verifies fresh-open `source_formula_reference_audits()` scans the saved
+  worksheet XML and reports `Data!A4:B4` / `Data!4:4`, not the original
+  `Data!A3:B3` / `Data!3:3` source tokens.
+- Verifies clean materialization of `Data` reads the saved formula and
+  `formula_reference_audits()` reports the same saved range / whole-row tokens
+  without dirtying the reopened editor.
+
+Non-goals:
+- No complete Excel range-shrink semantics, formula evaluation, worksheet
+  metadata range synchronization, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

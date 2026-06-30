@@ -88,7 +88,9 @@ coverage now verifies saved-output source/materialized audits see the persisted
 the delete-side saved-output path keeps only the surviving `Data!B1` reference
 while skipping persisted `Data!#REF!`; the column-side saved-output path now
 mirrors that boundary for `Data!E1` / `Data!B1` after insert and surviving
-`Data!B1` after persisted `Data!#REF!` delete-column output. The retry/guard shard also pins that
+`Data!B1` after persisted `Data!#REF!` delete-column output. Range saved-output
+coverage also verifies persisted `Data!A4:B4` and `Data!4:4` audit tokens
+replace the original `Data!A3:B3` / `Data!3:3` source tokens. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

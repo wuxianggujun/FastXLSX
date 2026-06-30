@@ -4183,6 +4183,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
                 "multi-sheet retry reopen post-noop Untouched summary should match materialized state");
         }
     }
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen post-noop edit should not add handoffs before save");
 
     reopened.save_as(third_output);
     check(!reopened_data.has_pending_changes() &&
@@ -4589,6 +4591,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
                 "single-sheet reopen post-noop summary should match materialized state");
         }
     }
+    check(reopened.pending_change_count() == 1,
+        "single-sheet reopen post-noop edit should not add a handoff before save");
 
     reopened.save_as(third_output);
     check(!reopened_data.has_pending_changes() &&

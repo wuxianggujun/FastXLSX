@@ -14891,6 +14891,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -14999,7 +15001,7 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         "insert_rows save_as should not keep the old dirty row coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "insert_rows should preserve untouched worksheets");
-    check_reopened_shift_output(output, "insert_rows",
+    const auto inspect_insert_rows_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 8,
                 "insert_rows reopened output should keep shifted sparse count");
@@ -15047,7 +15049,36 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
                     !reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("C3").has_value(),
                 "insert_rows reopened output should keep old sparse coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "insert_rows", inspect_insert_rows_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_rows no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "insert_rows no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "insert_rows no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "insert_rows no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_rows no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_rows no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "insert_rows no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "insert_rows no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "insert_rows no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "insert_rows no-op save",
+        inspect_insert_rows_output);
 }
 
 void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
@@ -15215,6 +15246,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-rows-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15283,7 +15316,7 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         "delete_rows save_as should omit deleted row text cells");
     check_not_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
         "delete_rows save_as should omit deleted row numeric cells");
-    check_reopened_shift_output(output, "delete_rows",
+    const auto inspect_delete_rows_output =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "delete_rows reopened output should keep shifted sparse count");
@@ -15312,7 +15345,36 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
                     !reopened_sheet.try_cell("C4").has_value() &&
                     !reopened_sheet.try_cell("B4").has_value(),
                 "delete_rows reopened output should keep deleted and old coordinates absent");
-        });
+        };
+    check_reopened_shift_output(output, "delete_rows", inspect_delete_rows_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_rows no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_rows no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_rows no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_rows no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "delete_rows no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "delete_rows no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "delete_rows no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output, "delete_rows no-op save",
+        inspect_delete_rows_output);
 }
 
 void test_public_worksheet_editor_insert_columns_shifts_sparse_records()

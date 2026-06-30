@@ -1541,6 +1541,9 @@ the rejected mismatched options, second save, no-op save, and reopened output.
 The non-styled missing-query path now carries the same clean materialized
 diagnostics through missing/old-name lookups and adds aggregate dirty memory
 for the recovery column shift.
+The non-styled invalid-read and invalid-mutation paths now carry matching clean
+materialized diagnostics through rejected reads/mutations and add aggregate
+dirty memory for their recovery column shifts.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

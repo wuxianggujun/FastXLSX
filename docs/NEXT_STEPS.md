@@ -39,6 +39,9 @@ It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same
 save/reopen checks.
+The same generated QA lane now covers the remaining current shift directions
+with `generated_in_memory_insert_column_formula` and
+`generated_in_memory_delete_row_formula`.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

@@ -345,6 +345,23 @@ output with ZIP/XML, `openpyxl`, optional XlsxWriter reference, and optional
 Excel COM. It is local QA only and does not expand production semantics beyond
 the small-file in-memory column-delete path.
 
+For the remaining generated in-memory shift/formula smokes, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_insert_column_formula `
+  --scenario generated_in_memory_delete_row_formula `
+  --work-dir build\qa\workbook-editor-in-memory-shift-formulas
+```
+
+These scenarios cover `WorksheetEditor::insert_columns()` and
+`WorksheetEditor::delete_rows()` on generated existing workbooks, including
+source-backed cell shifts, formula text translation, save, and reopen checks.
+They are local QA only and do not expand production semantics beyond the
+current small-file in-memory row/column shift paths.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

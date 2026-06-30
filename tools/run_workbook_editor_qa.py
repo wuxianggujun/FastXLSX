@@ -36,6 +36,8 @@ GENERATED_SCENARIOS = [
     "generated_rename_materialized",
     "generated_in_memory_insert_formula",
     "generated_in_memory_delete_column_formula",
+    "generated_in_memory_insert_column_formula",
+    "generated_in_memory_delete_row_formula",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -954,6 +956,115 @@ def verify_generated_in_memory_delete_column_formula(path: Path) -> tuple[dict[s
             "Data!A1": data["A1"].value,
             "Data!B1": data["B1"].value,
             "Data!C1": data["C1"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_insert_column_formula(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated in-memory insert column formula: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory insert column formula: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"generated in-memory insert column formula: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="A1"' in data_xml and "item" in data_xml,
+            "generated in-memory insert column formula: missing source A1 text")
+    require('r="B1"' in data_xml and "inserted-col" in data_xml,
+            "generated in-memory insert column formula: missing inserted B1 text")
+    require('<c r="C1"><v>2</v></c>' in data_xml,
+            "generated in-memory insert column formula: missing shifted C1 number")
+    formulas = worksheet_formula_cells(path, "Data")
+    require(formulas.get("D1") == "C1*2",
+            f"generated in-memory insert column formula: shifted D1 formula mismatch {formulas!r}")
+    require("C1" not in formulas,
+            f"generated in-memory insert column formula: stale C1 formula remained {formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"generated in-memory insert column formula: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "item", "generated in-memory insert column formula: A1 mismatch")
+        require(data["B1"].value == "inserted-col",
+                "generated in-memory insert column formula: B1 mismatch")
+        require(data["C1"].value == 2, "generated in-memory insert column formula: C1 mismatch")
+        require(data["D1"].value == "=C1*2",
+                f"generated in-memory insert column formula: D1 mismatch {data['D1'].value!r}")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory insert column formula: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!C1": data["C1"].value,
+            "Data!D1": data["D1"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_delete_row_formula(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated in-memory delete row formula: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory delete row formula: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"generated in-memory delete row formula: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require("drop-row" not in data_xml,
+            "generated in-memory delete row formula: deleted row text remained")
+    require('<c r="A1"><v>4</v></c>' in data_xml,
+            "generated in-memory delete row formula: missing shifted A1 number")
+    require('<c r="A2"><v>6</v></c>' in data_xml,
+            "generated in-memory delete row formula: missing shifted A2 number")
+    formulas = worksheet_formula_cells(path, "Data")
+    require(formulas.get("B1") == "A1+A2",
+            f"generated in-memory delete row formula: shifted B1 formula mismatch {formulas!r}")
+    require("B2" not in formulas,
+            f"generated in-memory delete row formula: stale B2 formula remained {formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"generated in-memory delete row formula: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == 4, "generated in-memory delete row formula: A1 mismatch")
+        require(data["B1"].value == "=A1+A2",
+                f"generated in-memory delete row formula: B1 mismatch {data['B1'].value!r}")
+        require(data["A2"].value == 6, "generated in-memory delete row formula: A2 mismatch")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory delete row formula: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!A2": data["A2"].value,
             "Notes!A1": notes["A1"].value,
         }
     finally:
@@ -2245,6 +2356,21 @@ def create_xlsxwriter_reference(
             data.write_formula("B1", "=A1+C1")
             data.write("C1", "tail")
             notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_insert_column_formula":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write("A1", "item")
+            data.write("B1", "inserted-col")
+            data.write_number("C1", 2)
+            data.write_formula("D1", "=C1*2")
+            notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_delete_row_formula":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write_number("A1", 4)
+            data.write_formula("B1", "=A1+A2")
+            data.write_number("A2", 6)
+            notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
@@ -2333,6 +2459,10 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula(output_path)
     elif scenario == "generated_in_memory_delete_column_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_column_formula(output_path)
+    elif scenario == "generated_in_memory_insert_column_formula":
+        zip_xml, openpyxl_report = verify_generated_in_memory_insert_column_formula(output_path)
+    elif scenario == "generated_in_memory_delete_row_formula":
+        zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula(output_path)
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

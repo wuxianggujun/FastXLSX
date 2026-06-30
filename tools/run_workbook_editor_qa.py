@@ -39,6 +39,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_insert_column_formula",
     "generated_in_memory_delete_row_formula",
     "generated_in_memory_clear_erase",
+    "generated_in_memory_append_row_formula",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1154,6 +1155,73 @@ def verify_generated_in_memory_clear_erase(path: Path) -> tuple[dict[str, Any], 
             "Data!C1": data["C1"].value,
             "Data!D1": data["D1"].value,
             "Data!A2": data["A2"].value,
+            "Notes!A1": notes["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_append_row_formula(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated in-memory append row formula: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory append row formula: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"generated in-memory append row formula: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="A1"' in data_xml and "item" in data_xml,
+            "generated in-memory append row formula: missing source A1 text")
+    require('r="A2"' in data_xml and "source-row" in data_xml,
+            "generated in-memory append row formula: missing source A2 text")
+    require('<c r="B2"><v>10</v></c>' in data_xml,
+            "generated in-memory append row formula: missing source B2 number")
+    require('r="A3"' in data_xml and "appended-row" in data_xml,
+            "generated in-memory append row formula: missing appended A3 text")
+    require('<c r="B3"><v>4</v></c>' in data_xml,
+            "generated in-memory append row formula: missing appended B3 number")
+    formulas = worksheet_formula_cells(path, "Data")
+    require(formulas.get("C3") == "B3*2",
+            f"generated in-memory append row formula: appended C3 formula mismatch {formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"generated in-memory append row formula: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "item", "generated in-memory append row formula: A1 mismatch")
+        require(data["B1"].value == "value", "generated in-memory append row formula: B1 mismatch")
+        require(data["C1"].value == "double", "generated in-memory append row formula: C1 mismatch")
+        require(data["A2"].value == "source-row",
+                "generated in-memory append row formula: A2 mismatch")
+        require(data["B2"].value == 10, "generated in-memory append row formula: B2 mismatch")
+        require(data["A3"].value == "appended-row",
+                "generated in-memory append row formula: A3 mismatch")
+        require(data["B3"].value == 4, "generated in-memory append row formula: B3 mismatch")
+        require(data["C3"].value == "=B3*2",
+                f"generated in-memory append row formula: C3 mismatch {data['C3'].value!r}")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory append row formula: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A1": data["A1"].value,
+            "Data!B1": data["B1"].value,
+            "Data!C1": data["C1"].value,
+            "Data!A2": data["A2"].value,
+            "Data!B2": data["B2"].value,
+            "Data!A3": data["A3"].value,
+            "Data!B3": data["B3"].value,
+            "Data!C3": data["C3"].value,
             "Notes!A1": notes["A1"].value,
         }
     finally:
@@ -2468,6 +2536,16 @@ def create_xlsxwriter_reference(
             data.write("D1", "new-d1")
             data.write_number("A2", 8)
             notes.write("A1", "preserved")
+        elif scenario == "generated_in_memory_append_row_formula":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write_row("A1", ["item", "value", "double"])
+            data.write("A2", "source-row")
+            data.write_number("B2", 10)
+            data.write("A3", "appended-row")
+            data.write_number("B3", 4)
+            data.write_formula("C3", "=B3*2")
+            notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
@@ -2562,6 +2640,8 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula(output_path)
     elif scenario == "generated_in_memory_clear_erase":
         zip_xml, openpyxl_report = verify_generated_in_memory_clear_erase(output_path)
+    elif scenario == "generated_in_memory_append_row_formula":
+        zip_xml, openpyxl_report = verify_generated_in_memory_append_row_formula(output_path)
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

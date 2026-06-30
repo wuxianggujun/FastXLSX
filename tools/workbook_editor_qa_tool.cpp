@@ -502,6 +502,31 @@ std::filesystem::path write_in_memory_clear_erase_source(const std::filesystem::
     return path;
 }
 
+std::filesystem::path write_in_memory_append_row_formula_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("item"),
+            CellView::text("value"),
+            CellView::text("double"),
+        });
+        data.append_row({
+            CellView::text("source-row"),
+            CellView::number(10.0),
+        });
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1515,6 +1540,39 @@ Report run_generated_in_memory_clear_erase(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_append_row_formula(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_append_row_formula_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).append_row(text,number,formula)",
+    };
+    report.notes = {
+        "Original Data!A1:C1 header row should stay in place",
+        "Original Data!A2:B2 source row should stay in place",
+        "Appended Data!A3:C3 should be written from the materialized sparse store",
+        "Appended formula B3*2 should survive save/reopen",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    data.append_row({
+        CellValue::text("appended-row"),
+        CellValue::number(4.0),
+        CellValue::formula("B3*2"),
+    });
+    require_formula_cell(data, "C3", "B3*2");
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -1939,6 +1997,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_clear_erase") {
         return run_generated_in_memory_clear_erase(options);
+    }
+    if (options.scenario == "generated_in_memory_append_row_formula") {
+        return run_generated_in_memory_append_row_formula(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

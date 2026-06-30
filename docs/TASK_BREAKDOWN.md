@@ -50994,6 +50994,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1272 - Add generated in-memory append-row formula QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+in-memory append-row persistence.
+
+Status: completed.
+
+Goal: add generated small-workbook QA evidence that `append_row()` writes a new
+materialized row containing text, number, and formula cells while preserving
+source rows and untouched worksheets through save and readback.
+
+Coverage:
+- Adds `generated_in_memory_append_row_formula` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- The generated source workbook contains a `Data` header row, a source data
+  row, and an untouched `Notes` sheet.
+- The scenario opens the source through public `WorkbookEditor`, appends
+  `A3:C3` with text/number/formula cells, verifies `C3` through the public read
+  model, and saves.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  verify source rows, appended values, appended formula text, absence of
+  `xl/calcChain.xml`, `Notes!A1`, and optional XlsxWriter reference workbooks.
+- Extends the optional Excel COM sidecar with the same value/formula smoke.
+
+Non-goals:
+- No production behavior changes, formula evaluation, cached value generation
+  or preservation, append-table/metadata synchronization, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_append_row_formula --work-dir build\\qa\\workbook-editor-in-memory-append-row-formula --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

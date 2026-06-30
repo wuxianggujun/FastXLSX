@@ -490,6 +490,33 @@ function Verify-GeneratedInMemoryClearErase {
     }
 }
 
+function Verify-GeneratedInMemoryAppendRowFormula {
+    param([object]$Workbook)
+
+    $data = $null
+    $notes = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $notes = Get-Worksheet $Workbook "Notes"
+        Assert-CellValue $data "A1" "item" "Data!A1"
+        Assert-CellValue $data "B1" "value" "Data!B1"
+        Assert-CellValue $data "C1" "double" "Data!C1"
+        Assert-CellValue $data "A2" "source-row" "Data!A2"
+        Assert-CellValue $data "B2" 10 "Data!B2"
+        Assert-CellValue $data "A3" "appended-row" "Data!A3"
+        Assert-CellValue $data "B3" 4 "Data!B3"
+        Assert-Formula $data "C3" "=B3*2" "Data!C3 formula"
+        Assert-CellValue $notes "A1" "preserved" "Notes!A1"
+    }
+    finally {
+        foreach ($object in @($notes, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStyleRejection {
     param([object]$Workbook)
 
@@ -589,6 +616,7 @@ function Verify-Case {
             "generated_in_memory_insert_column_formula" { Verify-GeneratedInMemoryInsertColumnFormula $workbook }
             "generated_in_memory_delete_row_formula" { Verify-GeneratedInMemoryDeleteRowFormula $workbook }
             "generated_in_memory_clear_erase" { Verify-GeneratedInMemoryClearErase $workbook }
+            "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

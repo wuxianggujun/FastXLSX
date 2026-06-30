@@ -52963,6 +52963,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1317 - Pin clean shift guard summaries
+
+Type: public `WorksheetEditor` row/column shift clean-state diagnostics
+regression.
+
+Status: completed.
+
+Goal:
+Extend the clean public-state diagnostics contract around row/column shift
+no-op and guard-failure paths so they cannot expose stale summaries or
+replacement diagnostics.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state()`
+  and `test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()`.
+- Covers zero-count row/column shifts, nonzero out-of-range no-op shifts,
+  row/column shift validation failures, and formula-translation memory-budget
+  failures.
+- Verifies the clean paths keep `has_pending_changes()` false,
+  `pending_change_count()` at zero, pending worksheet summaries empty,
+  replacement diagnostics empty, dirty materialized worksheet names empty, and
+  aggregate materialized count/memory at zero. Follow-up no-op saves also keep
+  replacement diagnostics empty while preserving output bytes.
+
+Non-goals:
+- No row/column shift behavior change, validation behavior change,
+  memory-guard behavior change, diagnostic text change, save behavior change,
+  summary-generation redesign, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

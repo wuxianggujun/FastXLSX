@@ -38337,12 +38337,18 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "zero-count row/column shifts should clear prior public edit diagnostics");
         check(!sheet.has_pending_changes(),
             "zero-count row/column shifts should not dirty a clean materialized worksheet");
+        check_workbook_editor_public_no_pending_state(
+            editor, "zero-count row/column shifts");
         check(sheet.cell_count() == 3,
             "zero-count row/column shifts should preserve sparse cell count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "zero-count row/column shifts should not expose dirty worksheet names");
         check(editor.pending_materialized_cell_count() == 0,
             "zero-count row/column shifts should not contribute pending materialized cells");
         check(editor.estimated_pending_materialized_memory_usage() == 0,
             "zero-count row/column shifts should not contribute pending materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "zero-count row/column shifts");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_zero_count_noops,
             "zero-count row/column shifts");
     }
@@ -38373,12 +38379,18 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "nonzero row/column shift no-ops should clear prior public edit diagnostics");
         check(!sheet.has_pending_changes(),
             "nonzero row/column shift no-ops should not dirty a clean materialized worksheet");
+        check_workbook_editor_public_no_pending_state(
+            editor, "nonzero row/column shift no-ops");
         check(sheet.cell_count() == 3,
             "nonzero row/column shift no-ops should preserve sparse cell count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "nonzero row/column shift no-ops should not expose dirty worksheet names");
         check(editor.pending_materialized_cell_count() == 0,
             "nonzero row/column shift no-ops should not contribute pending materialized cells");
         check(editor.estimated_pending_materialized_memory_usage() == 0,
             "nonzero row/column shift no-ops should not contribute pending materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "nonzero row/column shift no-ops");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "nonzero row/column shift no-ops should preserve source-backed cells");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_nonzero_noops,
@@ -38408,6 +38420,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "nonzero row/column shift no-op save should keep dirty memory estimate empty");
         check(editor.pending_worksheet_edits().empty(),
             "nonzero row/column shift no-op save should keep materialized summaries empty");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "nonzero row/column shift no-op save");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
             "nonzero row/column shift no-op save");
@@ -38492,10 +38506,16 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "delete_columns invalid-count failure should not dirty the materialized worksheet");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "delete_columns invalid-count failure should preserve source cells");
+        check_workbook_editor_public_no_pending_state(
+            editor, "shift validation failures");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "shift validation failures should not expose dirty worksheet names");
         check(editor.pending_materialized_cell_count() == 0,
             "shift validation failures should not contribute pending materialized cells");
         check(editor.estimated_pending_materialized_memory_usage() == 0,
             "shift validation failures should not contribute pending materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "shift validation failures");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_validation_failures,
             "shift validation failures");
         const std::optional<std::string> shift_validation_error = editor.last_edit_error();
@@ -38528,6 +38548,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "shift validation failure noop save should keep dirty memory estimate empty");
         check(editor.pending_worksheet_edits().empty(),
             "shift validation failure noop save should keep materialized summaries empty");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "shift validation failure noop save");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
             "shift validation failure noop save");
@@ -38810,10 +38832,16 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
         "failed insert_rows memory-budget mutation should not dirty the materialized session");
     check(!editor.has_pending_changes(),
         "failed insert_rows memory-budget mutation should not dirty the editor");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed insert_rows memory-budget mutation");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed insert_rows memory-budget mutation should not expose dirty materialized names");
     check(editor.pending_materialized_cell_count() == 0,
         "failed insert_rows memory-budget mutation should not expose dirty materialized cells");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "failed insert_rows memory-budget mutation should not expose dirty materialized memory");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "failed insert_rows memory-budget mutation");
     check(sheet.cell_count() == baseline_count,
         "failed insert_rows memory-budget mutation should preserve sparse cell count");
     check(sheet.estimated_memory_usage() == baseline_memory,
@@ -38866,6 +38894,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
         "shift memory guard failure noop save should not expose dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "shift memory guard failure noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift memory guard failure noop save");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "shift memory guard failure noop save");

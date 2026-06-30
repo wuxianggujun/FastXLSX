@@ -1816,6 +1816,10 @@ Shift guard/no-op/overflow coverage now pins aggregate materialized memory for
 clean no-op/validation paths and dirty overflow rejection paths.
 Shift formula memory-budget failure coverage now pins aggregate materialized
 memory at zero after rejected formula translation.
+The clean side of those shift guard paths now also pins empty pending
+summaries, zero handoff count, and empty replacement diagnostics for
+zero-count no-ops, nonzero out-of-range no-ops, validation failures, and
+formula-translation memory-budget failures.
 Full-calculation-before-shift setup coverage now also pins dirty materialized
 memory at zero after `request_full_calculation()` and after clean worksheet
 materialization, before insert/delete column shifts dirty the session.

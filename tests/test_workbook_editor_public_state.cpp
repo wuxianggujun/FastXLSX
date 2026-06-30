@@ -25496,7 +25496,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
     check(editor.pending_change_count() == 2,
         "renamed formula delete-column invalid reads first save should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid reads first save should clear dirty materialized diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed formula delete-column invalid reads first save should keep diagnostics clear");
@@ -25577,6 +25578,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid reads should keep old shifted coordinates absent");
 
     reacquired.insert_rows(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
         "renamed formula delete-column invalid reads later shift should dirty the shared styled session");
     check(editor.pending_materialized_worksheet_names()
@@ -25584,6 +25586,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid reads later shift should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 4,
         "renamed formula delete-column invalid reads later shift should keep the styled sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory &&
+            sheet.estimated_memory_usage() == shifted_memory,
+        "renamed formula delete-column invalid reads later shift should report styled materialized memory");
     const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C3");
     check(shifted_formula.has_value() &&
             shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
@@ -25606,7 +25611,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
     check(editor.pending_change_count() == 3,
         "renamed formula delete-column invalid reads second save should record the later materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid reads second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
@@ -25682,7 +25688,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed formula delete-column invalid reads reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid reads reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 4,
         "renamed formula delete-column invalid reads reopened output should keep shifted sparse count");
@@ -25736,7 +25744,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
     check(editor.pending_change_count() == 2,
         "renamed formula delete-column snapshot reads first save should count rename plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column snapshot reads first save should clear dirty materialized diagnostics");
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
@@ -25863,6 +25872,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
         "renamed formula delete-column snapshot reads should preserve delete-column bounds");
 
     reacquired.insert_rows(2, 1);
+    const std::size_t shifted_memory = reacquired.estimated_memory_usage();
     check(all_cells[3].reference.row == 2 && all_cells[3].reference.column == 3 &&
             all_cells[3].value.text_value() == "#REF!+A1" &&
             all_cells[3].value.style_id().value() == styled_formula_style.value(),
@@ -25886,6 +25896,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
         "renamed formula delete-column snapshot reads later shift should report RenamedData dirty once");
     check(editor.pending_materialized_cell_count() == 4,
         "renamed formula delete-column snapshot reads later shift should keep the styled sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory &&
+            sheet.estimated_memory_usage() == shifted_memory,
+        "renamed formula delete-column snapshot reads later shift should report styled materialized memory");
     const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C3");
     check(shifted_formula.has_value() &&
             shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
@@ -25900,7 +25913,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
     check(editor.pending_change_count() == 3,
         "renamed formula delete-column snapshot reads second save should record the later materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column snapshot reads second save should clear dirty diagnostics again");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -25952,7 +25966,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
     check(!reopened.has_pending_changes() && !reopened_sheet.has_pending_changes(),
         "renamed formula delete-column snapshot reads reopened output should start clean");
     check(reopened.pending_change_count() == 0 &&
-            reopened.pending_materialized_cell_count() == 0,
+            reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column snapshot reads reopened output should not expose dirty diagnostics");
     check(reopened_sheet.cell_count() == 4,
         "renamed formula delete-column snapshot reads reopened output should keep shifted sparse count");

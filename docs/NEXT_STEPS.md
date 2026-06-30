@@ -1511,6 +1511,9 @@ pin the same materialized memory cleanup and recovery-shift diagnostics.
 The matching delete-column invalid-mutation and missing-query styled-session
 paths now carry those clean/dirty/reopened diagnostics through rejection and
 recovery shifts.
+The delete-column invalid-read and snapshot-read styled-session paths now pin
+the same clean/dirty/reopened materialized memory diagnostics through read-only
+checks and recovery shifts.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

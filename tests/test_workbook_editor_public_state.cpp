@@ -3901,6 +3901,167 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
         });
 }
 
+void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-source.xlsx");
+    const std::filesystem::path retry_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell("A1", fastxlsx::CellValue::text("multi-retry-reopen-data"));
+    untouched.set_cell("B1", fastxlsx::CellValue::text("multi-retry-reopen-untouched"));
+    const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "multi-sheet retry reopen should reject saving over the source workbook");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet retry reopen rejected save should keep both handles dirty");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen rejected save should leave source bytes unchanged");
+
+    editor.save_as(retry_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet retry reopen safe save should clean first editor handles");
+    const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
+    check_contains(retry_entries.at("xl/worksheets/sheet1.xml"), "multi-retry-reopen-data",
+        "multi-sheet retry reopen output should contain first-stage Data edit");
+    check_contains(retry_entries.at("xl/worksheets/sheet2.xml"), "multi-retry-reopen-untouched",
+        "multi-sheet retry reopen output should contain first-stage Untouched edit");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(retry_output);
+    fastxlsx::WorksheetEditor reopened_data = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_untouched = reopened.worksheet("Untouched");
+    check(!reopened.has_pending_changes() &&
+            !reopened_data.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes(),
+        "multi-sheet retry reopen fresh editor should start clean");
+    const fastxlsx::CellValue reopened_data_a1 = reopened_data.get_cell("A1");
+    check(reopened_data_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_data_a1.text_value() == "multi-retry-reopen-data",
+        "multi-sheet retry reopen fresh editor should read first-stage Data!A1");
+    const fastxlsx::CellValue reopened_untouched_b1 = reopened_untouched.get_cell("B1");
+    check(reopened_untouched_b1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_untouched_b1.text_value() == "multi-retry-reopen-untouched",
+        "multi-sheet retry reopen fresh editor should read first-stage Untouched!B1");
+
+    reopened_data.set_cell("C3", fastxlsx::CellValue::text("multi-retry-reopen-second-data"));
+    reopened_untouched.set_cell("C1", fastxlsx::CellValue::formula("Data!B1+1"));
+    check(reopened_data.has_pending_changes() && reopened_untouched.has_pending_changes(),
+        "multi-sheet retry reopen second-stage edits should dirty both handles");
+    {
+        const std::vector<std::string> names = reopened.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen second-stage edits should expose both dirty names");
+    }
+    check(reopened.pending_materialized_cell_count() ==
+            reopened_data.cell_count() + reopened_untouched.cell_count(),
+        "multi-sheet retry reopen second-stage edits should aggregate dirty cells");
+
+    reopened.save_as(second_output);
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen second-stage save should clear materialized diagnostics");
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen second-stage save should record both handoffs");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen second-stage save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen second-stage save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
+        "multi-sheet retry reopen second-stage save should leave retry output unchanged");
+
+    fastxlsx::WorksheetEditor second_data_reacquired = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor second_untouched_reacquired = reopened.worksheet("Untouched");
+    check(!second_data_reacquired.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen second-stage save should reacquire clean handles");
+    const fastxlsx::CellValue second_data_c3 = second_data_reacquired.get_cell("C3");
+    check(second_data_c3.kind() == fastxlsx::CellValueKind::Text &&
+            second_data_c3.text_value() == "multi-retry-reopen-second-data",
+        "multi-sheet retry reopen second-stage reacquire should read Data!C3");
+    const fastxlsx::CellValue second_untouched_c1 =
+        second_untouched_reacquired.get_cell("C1");
+    check(second_untouched_c1.kind() == fastxlsx::CellValueKind::Formula &&
+            second_untouched_c1.text_value() == "Data!B1+1",
+        "multi-sheet retry reopen second-stage reacquire should read Untouched!C1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "multi-retry-reopen-second-data",
+        "multi-sheet retry reopen second output should contain second-stage Data edit");
+    check_contains(second_entries.at("xl/worksheets/sheet2.xml"), "Data!B1+1",
+        "multi-sheet retry reopen second output should contain second-stage formula");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen no-op save should not add another handoff");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen no-op save should keep materialized diagnostics empty");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "multi-sheet retry reopen no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "multi-sheet retry reopen no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "multi-sheet retry reopen no-op output should match second-stage output");
+
+    fastxlsx::WorksheetEditor noop_data_reacquired = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor noop_untouched_reacquired = reopened.worksheet("Untouched");
+    check(!noop_data_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen no-op save should reacquire clean handles");
+
+    check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet retry reopen Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "multi-sheet retry reopen Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "multi-sheet retry reopen Data output should expose second-stage bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "multi-retry-reopen-data",
+                "multi-sheet retry reopen Data output should read first-stage A1");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "multi-retry-reopen-second-data",
+                "multi-sheet retry reopen Data output should read second-stage C3");
+        });
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "multi-sheet retry reopen Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet retry reopen Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                "multi-sheet retry reopen Untouched output should expose formula bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "multi-retry-reopen-untouched",
+                "multi-sheet retry reopen Untouched output should read first-stage B1");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "Data!B1+1",
+                "multi-sheet retry reopen Untouched output should read second-stage C1 formula");
+        });
+}
+
 void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner()
 {
     const std::filesystem::path source =
@@ -39611,6 +39772,7 @@ int main(int argc, char* argv[])
             test_public_workbook_editor_pending_materialized_aggregate_diagnostics();
             test_public_workbook_editor_multi_sheet_materialized_noop_save_stability();
             test_public_workbook_editor_multi_sheet_materialized_failed_save_retry();
+            test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save();
             test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner();
             test_public_workbook_editor_pending_summaries_include_materialized_dirty_state();
             test_public_workbook_editor_pending_materialized_summaries_move_with_owner();

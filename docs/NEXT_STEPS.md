@@ -70,6 +70,10 @@ byte-identical to the second-stage saved output.
 Public-state coverage also pins the same multi-worksheet saved-session hygiene:
 matching reacquires stay clean after save and a later no-op `save_as()` keeps
 the output byte-stable.
+It also pins the failed-save retry output as a fresh `WorkbookEditor` source:
+the reopened editor can dirty both materialized sheets again, save, and then
+no-op save byte-stably while leaving the original source and retry output
+unchanged.
 It also pins the matching failed-save retry path: a rejected source-overwrite
 save keeps both dirty materialized worksheets and source bytes intact, then a
 safe retry plus final no-op save remain stable.

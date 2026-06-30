@@ -311,6 +311,23 @@ build trees, then from fallback discovery under `build/`. This prevents stale
 local tool binaries from hiding newly added generated scenarios, but it remains
 local QA convenience and not a CMake preset or CI policy.
 
+For the focused generated in-memory row-insertion/formula smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_in_memory_insert_formula `
+  --work-dir build\qa\workbook-editor-in-memory-insert-formula
+```
+
+This scenario opens a generated existing workbook through `WorkbookEditor`,
+uses `WorksheetEditor::insert_rows()` on a materialized sheet, writes a new
+formula row, verifies the shifted source-backed formula, and validates the
+saved output with ZIP/XML, `openpyxl`, optional XlsxWriter reference, and
+optional Excel COM. It is local QA only and does not expand production
+semantics beyond the small-file in-memory row-shift path.
+
 Shared formula materialization is covered by default CTest through
 `fastxlsx.formula`, `fastxlsx.unit`, and
 `fastxlsx.workbook_editor.source-success`, including the internal

@@ -392,6 +392,32 @@ std::filesystem::path write_two_sheet_source(const std::filesystem::path& path)
     return path;
 }
 
+std::filesystem::path write_in_memory_insert_formula_source(const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("item"),
+            CellView::text("value"),
+            CellView::text("double"),
+        });
+        data.append_row({
+            CellView::text("source-row"),
+            CellView::number(3.0),
+            CellView::formula("B2*2"),
+        });
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_formula_reference_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1239,6 +1265,42 @@ Report run_generated_rename_materialized(const CliOptions& options)
     return report;
 }
 
+Report run_generated_in_memory_insert_formula(const CliOptions& options)
+{
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_insert_formula_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-insert-formula-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-insert-formula-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).insert_rows(2,1)",
+        "worksheet(Data).set_cell(A2,text)",
+        "worksheet(Data).set_cell(B2,number)",
+        "worksheet(Data).set_cell(C2,formula)",
+    };
+    report.notes = {
+        "Inserted Data!A2:C2 should be written from the materialized sparse store",
+        "Original Data!A2:C2 source row should shift to row 3",
+        "Original source formula B2*2 should be translated to B3*2",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    data.insert_rows(2, 1);
+    require_formula_cell(data, "C3", "B3*2");
+    data.set_cell(2, 1, CellValue::text("inserted-row"));
+    data.set_cell(2, 2, CellValue::number(5.0));
+    data.set_cell(2, 3, CellValue::formula("B2*2"));
+    require_formula_cell(data, "C2", "B2*2");
+    require_formula_cell(data, "C3", "B3*2");
+    editor.save_as(report.output);
+    return report;
+}
+
 Report run_generated_shared_formula_materialization(const CliOptions& options)
 {
     Report report;
@@ -1648,6 +1710,9 @@ Report run_scenario(const CliOptions& options)
 {
     if (options.scenario == "generated_rename_materialized") {
         return run_generated_rename_materialized(options);
+    }
+    if (options.scenario == "generated_in_memory_insert_formula") {
+        return run_generated_in_memory_insert_formula(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

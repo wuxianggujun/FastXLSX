@@ -50822,6 +50822,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1268 - Add generated in-memory insert formula QA scenario
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+in-memory row shifts.
+
+Status: completed.
+
+Goal: prove the local QA runner exercises a generated small existing workbook
+through public `WorkbookEditor` / `WorksheetEditor` row insertion, materialized
+formula insertion, source-backed formula shift, save, and reopen checks.
+
+Coverage:
+- Adds `generated_in_memory_insert_formula` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Creates a two-sheet source workbook, inserts a row before source row 2,
+  writes materialized `A2:C2`, and verifies the shifted source formula at `C3`
+  changed from `B2*2` to `B3*2` before save.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  verify `Data!A2:C3`, `Notes!A1`, absence of `xl/calcChain.xml`, and the
+  optional XlsxWriter reference workbook.
+- Extends the optional Excel COM sidecar with the same value/formula smoke.
+
+Non-goals:
+- No production behavior changes, formula evaluation, cached value generation
+  or preservation, worksheet metadata range synchronization, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_insert_formula --work-dir build\\qa\\workbook-editor-in-memory-insert-formula --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

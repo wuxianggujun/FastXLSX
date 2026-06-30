@@ -373,6 +373,32 @@ function Verify-GeneratedPublicE2E {
     }
 }
 
+function Verify-GeneratedInMemoryInsertFormula {
+    param([object]$Workbook)
+
+    $data = $null
+    $notes = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $notes = Get-Worksheet $Workbook "Notes"
+        Assert-CellValue $data "A1" "item" "Data!A1"
+        Assert-CellValue $data "A2" "inserted-row" "Data!A2"
+        Assert-CellValue $data "B2" 5 "Data!B2"
+        Assert-Formula $data "C2" "=B2*2" "Data!C2 formula"
+        Assert-CellValue $data "A3" "source-row" "Data!A3"
+        Assert-CellValue $data "B3" 3 "Data!B3"
+        Assert-Formula $data "C3" "=B3*2" "Data!C3 formula"
+        Assert-CellValue $notes "A1" "preserved" "Notes!A1"
+    }
+    finally {
+        foreach ($object in @($notes, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedStyleRejection {
     param([object]$Workbook)
 
@@ -467,6 +493,7 @@ function Verify-Case {
 
         switch ($scenario) {
             "generated_rename_materialized" { Verify-GeneratedRenameMaterialized $workbook }
+            "generated_in_memory_insert_formula" { Verify-GeneratedInMemoryInsertFormula $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

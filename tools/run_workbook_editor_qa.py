@@ -34,6 +34,7 @@ NAMESPACES = {
 
 GENERATED_SCENARIOS = [
     "generated_rename_materialized",
+    "generated_in_memory_insert_formula",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -834,6 +835,71 @@ def verify_generated_rename_materialized(path: Path) -> tuple[dict[str, Any], di
             "EditedData!A1": edited["A1"].value,
             "EditedData!B2": edited["B2"].value,
             "Untouched!A1": untouched["A1"].value,
+        }
+    finally:
+        workbook.close()
+
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_insert_formula(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report: dict[str, Any] = {}
+    names = zip_names(path)
+    require("xl/workbook.xml" in names, "generated in-memory insert formula: missing workbook.xml")
+    require("xl/calcChain.xml" not in names,
+            "generated in-memory insert formula: unexpected calcChain.xml")
+    sheet_entries = workbook_sheet_entry_map(path)
+    require(sheet_entries == {
+        "Data": "xl/worksheets/sheet1.xml",
+        "Notes": "xl/worksheets/sheet2.xml",
+    }, f"generated in-memory insert formula: unexpected sheet map {sheet_entries!r}")
+
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="A2"' in data_xml and "inserted-row" in data_xml,
+            "generated in-memory insert formula: missing inserted A2 text")
+    require('<c r="B2"><v>5</v></c>' in data_xml,
+            "generated in-memory insert formula: missing inserted B2 number")
+    require('r="A3"' in data_xml and "source-row" in data_xml,
+            "generated in-memory insert formula: missing shifted source A3 text")
+    require('<c r="B3"><v>3</v></c>' in data_xml,
+            "generated in-memory insert formula: missing shifted source B3 number")
+    formulas = worksheet_formula_cells(path, "Data")
+    require(formulas.get("C2") == "B2*2",
+            f"generated in-memory insert formula: inserted C2 formula mismatch {formulas!r}")
+    require(formulas.get("C3") == "B3*2",
+            f"generated in-memory insert formula: shifted C3 formula mismatch {formulas!r}")
+    zip_report["sheet_entries"] = sheet_entries
+    zip_report["formulas"] = formulas
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        require(workbook.sheetnames == ["Data", "Notes"],
+                f"generated in-memory insert formula: unexpected sheetnames {workbook.sheetnames!r}")
+        data = workbook["Data"]
+        notes = workbook["Notes"]
+        require(data["A1"].value == "item", "generated in-memory insert formula: A1 mismatch")
+        require(data["A2"].value == "inserted-row",
+                "generated in-memory insert formula: A2 mismatch")
+        require(data["B2"].value == 5, "generated in-memory insert formula: B2 mismatch")
+        require(data["C2"].value == "=B2*2",
+                f"generated in-memory insert formula: C2 mismatch {data['C2'].value!r}")
+        require(data["A3"].value == "source-row",
+                "generated in-memory insert formula: A3 mismatch")
+        require(data["B3"].value == 3, "generated in-memory insert formula: B3 mismatch")
+        require(data["C3"].value == "=B3*2",
+                f"generated in-memory insert formula: C3 mismatch {data['C3'].value!r}")
+        require(notes["A1"].value == "preserved",
+                "generated in-memory insert formula: Notes!A1 mismatch")
+        openpyxl_report = {
+            "sheetnames": workbook.sheetnames,
+            "Data!A2": data["A2"].value,
+            "Data!B2": data["B2"].value,
+            "Data!C2": data["C2"].value,
+            "Data!A3": data["A3"].value,
+            "Data!B3": data["B3"].value,
+            "Data!C3": data["C3"].value,
+            "Notes!A1": notes["A1"].value,
         }
     finally:
         workbook.close()
@@ -2106,6 +2172,17 @@ def create_xlsxwriter_reference(
             edited.write("A1", "materialized-edit")
             edited.write_number("B2", 42)
             untouched.write("A1", "keep-me")
+        elif scenario == "generated_in_memory_insert_formula":
+            data = workbook.add_worksheet("Data")
+            notes = workbook.add_worksheet("Notes")
+            data.write_row("A1", ["item", "value", "double"])
+            data.write("A2", "inserted-row")
+            data.write_number("B2", 5)
+            data.write_formula("C2", "=B2*2")
+            data.write("A3", "source-row")
+            data.write_number("B3", 3)
+            data.write_formula("C3", "=B3*2")
+            notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
@@ -2190,6 +2267,8 @@ def run_generated_case(
 
     if scenario == "generated_rename_materialized":
         zip_xml, openpyxl_report = verify_generated_rename_materialized(output_path)
+    elif scenario == "generated_in_memory_insert_formula":
+        zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula(output_path)
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
             output_path,

@@ -30,6 +30,11 @@ outputs with ZIP/XML and `openpyxl`, and can optionally invoke the Excel COM
 sidecar for no-repair open checks. This is local compatibility evidence for the
 covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
 not a broad guarantee for unsupported Excel object models.
+The generated QA lane also includes `generated_in_memory_insert_formula`, which
+drives a tiny existing workbook through `WorksheetEditor::insert_rows()`, writes
+a new materialized formula row, verifies the shifted source-backed formula,
+saves, and reopens the output through ZIP/XML, `openpyxl`, optional XlsxWriter,
+and optional Excel COM checks.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

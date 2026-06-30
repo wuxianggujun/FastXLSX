@@ -1538,6 +1538,9 @@ memory after safe saves/reopens and dirty memory for the post-retry delete-row
 mutation.
 The non-styled option-mismatch path now pins clean materialized memory across
 the rejected mismatched options, second save, no-op save, and reopened output.
+The non-styled missing-query path now carries the same clean materialized
+diagnostics through missing/old-name lookups and adds aggregate dirty memory
+for the recovery column shift.
 Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty

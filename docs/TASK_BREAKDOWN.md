@@ -49619,6 +49619,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1236 - Pin non-styled rename-shift missing-query diagnostics
+
+Type: public `WorksheetEditor` non-styled rename-shift missing-query
+materialized memory regression.
+
+Status: completed.
+
+Goal: prove missing-sheet and old-source-name queries after saving a renamed
+shifted worksheet keep materialized diagnostics clean, while a later matching
+reacquire and shared column shift reports aggregate dirty materialized memory.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_missing_query_preserves_planned_session()`
+  so first-save cleanup, missing/old-name queries, second-save cleanup, and
+  reopened output verify clean materialized names, cell count, and memory usage.
+- Adds aggregate dirty materialized memory after the recovery `insert_columns()`
+  mutation.
+- Keeps the existing matching reacquire, no-op save, package XML, and reopened
+  sparse-state checks unchanged.
+
+Non-goals:
+- No missing-sheet lookup changes, saved-session lookup changes, rename
+  semantic changes, row/column shift semantic changes, memory-accounting
+  changes, metadata/range repair, relationship repair, calcChain rebuild,
+  sharedStrings/styles migration, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

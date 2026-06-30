@@ -35247,6 +35247,9 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "successful in-budget mutation should dirty the editor");
     check(editor.pending_materialized_cell_count() == baseline_count,
         "successful overwrite should keep the sparse cell count stable");
+    const std::size_t recovered_memory = sheet.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
+        "successful overwrite should expose recovered materialized memory");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -35356,6 +35359,9 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "successful overwrite under max_cells should dirty the editor");
     check(editor.pending_materialized_cell_count() == baseline_count,
         "successful overwrite under max_cells should keep the sparse cell count stable");
+    const std::size_t recovered_memory = sheet.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
+        "successful overwrite under max_cells should expose recovered materialized memory");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);

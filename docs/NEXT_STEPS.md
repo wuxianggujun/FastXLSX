@@ -1511,6 +1511,9 @@ memory at zero after rejected formula translation.
 Source-load `max_cells` guard failure coverage now pins materialized names,
 dirty cell count, and materialized memory at zero after rejected source
 materialization.
+Mutation guard recovery coverage now pins aggregate materialized memory after
+the valid overwrite that follows rejected memory-budget and `max_cells`
+mutations.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

@@ -48589,6 +48589,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1209 - Pin mutation guard recovery aggregate memory
+
+Type: public `WorksheetEditor` mutation guard recovery aggregate materialized
+memory regression.
+
+Status: completed.
+
+Goal: prove successful overwrite recovery after a rejected mutation guard path
+exposes aggregate dirty materialized memory that matches the active
+`WorksheetEditor` session before save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()`
+  so the valid overwrite after a rejected memory-budget mutation snapshots
+  `WorksheetEditor::estimated_memory_usage()` and verifies
+  `estimated_pending_materialized_memory_usage()` reports that recovered dirty
+  session before save.
+- Extends `test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()`
+  with the same recovered dirty-session memory check after a rejected
+  `max_cells` mutation.
+- Keeps existing rejected-cell absence, sparse-count stability, saved output,
+  no-op save stability, and reopened clean-sheet checks unchanged.
+
+Non-goals:
+- No mutation rollback changes, overwrite semantic changes, memory-budget or
+  `max_cells` enforcement changes, memory-accounting changes, new guardrails,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1206 - Pin shift guard and overflow aggregate memory
 
 Type: public `WorksheetEditor` row/column shift guard/no-op/overflow aggregate

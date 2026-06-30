@@ -16567,6 +16567,69 @@ void test_public_worksheet_editor_stationary_formula_shift_audits_rewritten_refe
         "Data!B1", "B1", "stationary formula shift audit stable B reference");
 }
 
+void test_public_worksheet_editor_stationary_formula_delete_audits_skip_ref()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_stationary_formula(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-audit-source.xlsx",
+            "Data!A3+Data!B1");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.delete_rows(3, 1);
+
+    constexpr std::string_view expected_formula = "Data!#REF!+Data!B1";
+    check(sheet.has_pending_changes(),
+        "stationary formula delete audit setup should dirty the materialized sheet");
+    check(sheet.cell_count() == 4,
+        "stationary formula delete audit setup should keep sparse cell count stable");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "stationary formula delete audit setup should keep sparse bounds stable");
+    const fastxlsx::CellValue rewritten_formula = sheet.get_cell("C1");
+    check(rewritten_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            rewritten_formula.text_value() == expected_formula,
+        "stationary formula delete audit setup should expose the #REF! formula");
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_change_count() == 0 &&
+            editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 4 &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "stationary formula delete audit setup should keep only materialized diagnostics dirty");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "stationary formula delete audit");
+    check(audits.size() == 1,
+        "stationary formula delete audit should report only the surviving reference");
+    check(find_public_state_formula_audit(audits, 1, 3, "Data!#REF!") == nullptr,
+        "stationary formula delete audit should skip Data!#REF! as a reference");
+
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* surviving_audit =
+        find_public_state_formula_audit(audits, 1, 3, "Data!B1");
+    check(surviving_audit != nullptr,
+        "stationary formula delete audit should expose the surviving B reference");
+    if (surviving_audit != nullptr) {
+        check(surviving_audit->formula_sheet_source_name == "Data" &&
+                surviving_audit->formula_sheet_planned_name == "Data" &&
+                surviving_audit->formula_text == expected_formula,
+            "stationary formula delete audit should report the current formula cell");
+        check(surviving_audit->sheet_qualifier_text == "Data!" &&
+                surviving_audit->reference_text == "B1" &&
+                surviving_audit->referenced_sheet_name == "Data",
+            "stationary formula delete audit should report surviving formula tokens");
+        check(surviving_audit->matched_current_workbook_sheet &&
+                surviving_audit->matched_source_sheet_name == "Data" &&
+                surviving_audit->matched_planned_sheet_name == "Data",
+            "stationary formula delete audit should match the current Data sheet");
+        check(!surviving_audit->references_renamed_source_name &&
+                surviving_audit->references_planned_sheet_name &&
+                !surviving_audit->external_workbook_qualifier &&
+                !surviving_audit->sheet_range_qualifier,
+            "stationary formula delete audit should keep qualifier flags clean");
+    }
+}
+
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -37470,6 +37533,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shifts_rewrite_stationary_formula_references();
             test_public_worksheet_editor_stationary_formula_shift_audits_rewritten_references();
+            test_public_worksheet_editor_stationary_formula_delete_audits_skip_ref();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();

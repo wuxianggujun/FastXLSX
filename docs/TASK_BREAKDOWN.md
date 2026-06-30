@@ -50154,6 +50154,41 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1250 - Pin stationary formula delete audit skips REF
+
+Type: public `WorksheetEditor` in-memory formula-audit regression.
+
+Status: completed.
+
+Goal: prove delete-side stationary formula rewrites remain lexical in public
+formula-reference audits: `#REF!` output is not treated as a valid reference,
+while surviving references remain visible.
+
+Coverage:
+- Adds a dirty materialized `C1` formula case where `delete_rows(3, 1)`
+  rewrites `Data!A3+Data!B1` to `Data!#REF!+Data!B1` without moving the formula
+  cell.
+- Verifies `WorkbookEditor::formula_reference_audits()` skips `Data!#REF!` and
+  reports only the surviving `Data!B1` reference at `C1`.
+- Reuses the public diagnostic-preservation helper to prove the read-only audit
+  call preserves pending materialized diagnostics, edit summaries, catalog, and
+  last-error state.
+
+Non-goals:
+- No `#REF!` repair, formula evaluation, non-materialized worksheet formula
+  scans, worksheet metadata range synchronization, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -77,7 +77,9 @@ session and source package bytes until a later safe save. Public-state coverage
 also pins supported cell-range and whole-axis stationary formulas such as
 `SUM(A3:B3)+3:3` and `SUM(D1:E1)+D:E`, and verifies
 `formula_reference_audits()` observes the rewritten `Data!A4` plus stable
-`Data!B1` references without changing dirty diagnostics. The retry/guard shard also pins that
+`Data!B1` references without changing dirty diagnostics. Delete-side stationary
+formula audits now also skip `Data!#REF!` while keeping the surviving `Data!B1`
+reference visible. The retry/guard shard also pins that
 path-equivalent source-overwrite failures follow the same safe-retry/no-op-save
 boundary: after safe retry, matching `worksheet("Data")` reacquire stays clean,
 pending materialized diagnostics remain empty, and a later no-op `save_as()`

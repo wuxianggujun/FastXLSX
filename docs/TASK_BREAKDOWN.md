@@ -52300,6 +52300,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1301 - Pin single-sheet path-equivalent retry post-noop public-state stability
+
+Type: public `WorkbookEditor` / `WorksheetEditor` single-sheet exact and
+path-equivalent failed-save retry, reopen/modify/no-op, and post-noop
+third-save regression.
+
+Status: completed.
+
+Goal:
+Pin the single-worksheet counterpart to P8.1300: once `Data` is dirty, exact
+and path-equivalent source-overwrite `save_as()` failures must preserve dirty
+state and source bytes so the later safe retry/reopen/no-op/post-noop flow
+remains valid.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`.
+- Adds a path-equivalent source path using
+  `source.parent_path() / "." / source.filename()`.
+- Verifies exact and path-equivalent rejected saves keep the `Data` handle
+  dirty, preserve dirty diagnostics, and leave source package bytes unchanged.
+- Reuses the existing safe retry, fresh reopen/edit, no-op save, post-noop
+  third save, final byte-identical no-op save, clean reacquire, and reopened
+  workbook assertions for `Data` and `Untouched`.
+
+Non-goals:
+- No overwrite mode, path repair, rollback, transaction replay, production
+  save behavior, formula evaluation, cached value preservation, metadata/range
+  repair, calcChain rebuild, sharedStrings/styles migration, relationship
+  repair, Patch/materialized composition changes, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

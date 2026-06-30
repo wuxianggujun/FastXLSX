@@ -137,6 +137,10 @@ It also pins path-equivalent source-overwrite rejection before that same
 multi-worksheet retry/reopen/no-op/post-noop path: both dirty materialized
 handles remain dirty, the source package bytes stay unchanged, and the later
 safe retry still drives the existing end-to-end checks.
+The single-worksheet public-state path now mirrors that first-save guard too:
+exact and path-equivalent source-overwrite failures preserve the dirty `Data`
+session and source bytes before the same retry/reopen/no-op/post-noop flow
+continues.
 It also pins the failed-save retry output as a fresh `WorkbookEditor` source:
 the reopened editor can dirty both materialized sheets again, save, and then
 no-op save byte-stably while leaving the original source and retry output

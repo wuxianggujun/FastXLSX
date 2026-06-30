@@ -3627,6 +3627,128 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
         });
 }
 
+void test_public_workbook_editor_multi_sheet_materialized_noop_save_stability()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-multi-noop-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-noop-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-noop-output-copy.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell("A1", fastxlsx::CellValue::text("multi-noop-data"));
+    untouched.set_cell("B1", fastxlsx::CellValue::text("multi-noop-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet materialized no-op setup should dirty both handles");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet materialized no-op setup should expose both dirty names");
+    }
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet materialized save should clean both original handles");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "multi-sheet materialized save should clear dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "multi-sheet materialized save should clear dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized save should clear dirty memory aggregate");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized save should record both materialized handoffs");
+    check(editor.pending_worksheet_edits().empty(),
+        "multi-sheet materialized save should leave no dirty summaries");
+
+    fastxlsx::WorksheetEditor data_reacquired = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched_reacquired = editor.worksheet("Untouched");
+    check(!data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized clean reacquire should keep both handles clean");
+    const fastxlsx::CellValue reacquired_data_a1 = data_reacquired.get_cell("A1");
+    check(reacquired_data_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_data_a1.text_value() == "multi-noop-data",
+        "multi-sheet materialized reacquire should read saved Data!A1");
+    const fastxlsx::CellValue reacquired_untouched_b1 =
+        untouched_reacquired.get_cell("B1");
+    check(reacquired_untouched_b1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_untouched_b1.text_value() == "multi-noop-untouched",
+        "multi-sheet materialized reacquire should read saved Untouched!B1");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "multi-noop-data",
+        "multi-sheet materialized output should contain saved Data edit");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "multi-noop-untouched",
+        "multi-sheet materialized output should contain saved Untouched edit");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized no-op save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized no-op save should keep dirty diagnostics empty");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "multi-sheet materialized no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "multi-sheet materialized no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "multi-sheet materialized no-op output should match first output");
+
+    check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet materialized Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet materialized Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "multi-sheet materialized Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "multi-noop-data",
+                "multi-sheet materialized Data reopened output should read saved A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "multi-sheet materialized Data reopened output should keep source B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "multi-sheet materialized Data reopened output should keep source A2");
+        });
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "multi-sheet materialized Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "multi-sheet materialized Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "multi-sheet materialized Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "multi-sheet materialized Untouched reopened output should keep source A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "multi-noop-untouched",
+                "multi-sheet materialized Untouched reopened output should read saved B1");
+        });
+}
+
 void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner()
 {
     const std::filesystem::path source =
@@ -39335,6 +39457,7 @@ int main(int argc, char* argv[])
             test_public_workbook_editor_pending_materialized_names_track_dirty_state();
             test_public_workbook_editor_pending_materialized_names_move_with_owner();
             test_public_workbook_editor_pending_materialized_aggregate_diagnostics();
+            test_public_workbook_editor_multi_sheet_materialized_noop_save_stability();
             test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner();
             test_public_workbook_editor_pending_summaries_include_materialized_dirty_state();
             test_public_workbook_editor_pending_materialized_summaries_move_with_owner();

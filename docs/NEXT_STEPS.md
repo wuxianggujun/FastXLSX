@@ -58,6 +58,9 @@ second in-memory edit, and verifies the final workbook after save and reopen.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.
+Public-state coverage also pins the same multi-worksheet saved-session hygiene:
+matching reacquires stay clean after save and a later no-op `save_as()` keeps
+the output byte-stable.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

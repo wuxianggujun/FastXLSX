@@ -154,6 +154,9 @@ unchanged.
 Fresh-reopen second-stage edits now also keep dirty memory diagnostics explicit
 for both the single-worksheet and multi-worksheet paths before their next safe
 `save_as()`.
+The same reopen point is now pinned as clean before any second-stage edit:
+zero pending change count, no dirty materialized diagnostics, and no edit
+summaries.
 Those second-stage dirty edits also keep `pending_change_count()` at zero until
 `save_as()` turns the materialized sessions into staged handoffs.
 Their `pending_worksheet_edits()` summaries are pinned at the same point: one

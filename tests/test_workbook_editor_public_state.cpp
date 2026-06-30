@@ -3990,6 +3990,14 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
             !reopened_data.has_pending_changes() &&
             !reopened_untouched.has_pending_changes(),
         "multi-sheet retry reopen fresh editor should start clean");
+    check(reopened.pending_change_count() == 0,
+        "multi-sheet retry reopen fresh editor should expose zero pending changes");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen fresh editor should expose clean materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen fresh editor should expose no edit summaries");
     const fastxlsx::CellValue reopened_data_a1 = reopened_data.get_cell("A1");
     check(reopened_data_a1.kind() == fastxlsx::CellValueKind::Text &&
             reopened_data_a1.text_value() == "multi-retry-reopen-data",
@@ -4447,6 +4455,14 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     fastxlsx::WorksheetEditor reopened_data = reopened.worksheet("Data");
     check(!reopened.has_pending_changes() && !reopened_data.has_pending_changes(),
         "single-sheet reopen fresh editor should start clean");
+    check(reopened.pending_change_count() == 0,
+        "single-sheet reopen fresh editor should expose zero pending changes");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen fresh editor should expose clean materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen fresh editor should expose no edit summaries");
     const fastxlsx::CellValue first_stage_c3 = reopened_data.get_cell("C3");
     check(first_stage_c3.kind() == fastxlsx::CellValueKind::Formula &&
             first_stage_c3.text_value() == "B3*2",

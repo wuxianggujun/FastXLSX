@@ -52658,6 +52658,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1310 - Pin fresh-reopen clean diagnostics
+
+Type: public `WorkbookEditor` / `WorksheetEditor` fresh-reopen clean-state
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Pin that a freshly reopened editor exposes clean public diagnostics before any
+second-stage materialized edits are applied.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()`
+  and
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- Verifies a freshly reopened single-sheet editor reports
+  `pending_change_count() == 0`.
+- Verifies a freshly reopened multi-sheet editor reports
+  `pending_change_count() == 0`.
+- Verifies both paths expose no dirty materialized worksheet names, cells,
+  memory usage, or pending edit summaries before the next edit.
+
+Non-goals:
+- No open/save behavior change, commit/close semantics, clean-state redesign,
+  summary-generation redesign, rollback, transaction replay, formula evaluation,
+  cached value preservation, cross-sheet dependency synchronization,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, Patch/materialized composition changes, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

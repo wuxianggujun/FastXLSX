@@ -466,6 +466,38 @@ function Verify-GeneratedInMemoryDeleteRowFormula {
     }
 }
 
+function Verify-GeneratedInMemoryStationaryFormulaShift {
+    param([object]$Workbook)
+
+    $data = $null
+    $notes = $null
+    try {
+        $data = Get-Worksheet $Workbook "Data"
+        $notes = Get-Worksheet $Workbook "Notes"
+        Assert-CellValue $data "A1" "item" "Data!A1"
+        Assert-CellValue $data "B1" "label" "Data!B1"
+        Assert-FormulaIn $data "C1" @(
+            '=SUM($A$4,C$4,Data!$A$4,$E$1,$E1,Data!$E$1,#REF!,#REF!,Data!#REF!,#REF!,Data!#REF!)',
+            '=SUM($A$4,C$4,Data!$A$4,$E$1,$E1,Data!$E$1,#REF!,#REF!,#REF!,#REF!,#REF!)'
+        ) "Data!C1 formula"
+        Assert-CellValue $data "D1" $null "Data!D1 inserted blank"
+        Assert-CellValue $data "E1" 4 "Data!E1"
+        Assert-CellValue $data "F1" "survive-column" "Data!F1"
+        Assert-CellValue $data "G1" $null "Data!G1 deleted column"
+        Assert-CellValue $data "A4" "row-target" "Data!A4"
+        Assert-CellValue $data "C4" "c3-target" "Data!C4"
+        Assert-CellValue $data "A7" $null "Data!A7 deleted row"
+        Assert-CellValue $notes "A1" "preserved" "Notes!A1"
+    }
+    finally {
+        foreach ($object in @($notes, $data)) {
+            if ($null -ne $object) {
+                [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($object)
+            }
+        }
+    }
+}
+
 function Verify-GeneratedInMemoryClearErase {
     param([object]$Workbook)
 
@@ -755,6 +787,7 @@ function Verify-Case {
             "generated_in_memory_delete_column_formula" { Verify-GeneratedInMemoryDeleteColumnFormula $workbook }
             "generated_in_memory_insert_column_formula" { Verify-GeneratedInMemoryInsertColumnFormula $workbook }
             "generated_in_memory_delete_row_formula" { Verify-GeneratedInMemoryDeleteRowFormula $workbook }
+            "generated_in_memory_stationary_formula_shift" { Verify-GeneratedInMemoryStationaryFormulaShift $workbook }
             "generated_in_memory_clear_erase" { Verify-GeneratedInMemoryClearErase $workbook }
             "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }

@@ -515,6 +515,41 @@ std::filesystem::path write_in_memory_delete_row_formula_source(const std::files
     return path;
 }
 
+std::filesystem::path write_in_memory_stationary_formula_shift_source(
+    const std::filesystem::path& path)
+{
+    ensure_parent_directory(path);
+
+    WorkbookWriter writer = WorkbookWriter::create(path);
+    {
+        WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({
+            CellView::text("item"),
+            CellView::text("label"),
+            CellView::formula(
+                "SUM($A$3,C$3,Data!$A$3,$D$1,$D1,Data!$D$1,$F$1,F$1,Data!$F$1,A6,Data!A6)"),
+            CellView::number(4.0),
+            CellView::text("survive-column"),
+            CellView::text("delete-column"),
+        });
+        data.append_row({CellView::text("keep-row-two")});
+        data.append_row({
+            CellView::text("row-target"),
+            CellView::text("middle"),
+            CellView::text("c3-target"),
+        });
+        data.append_row({CellView::text("row-four")});
+        data.append_row({CellView::text("row-five")});
+        data.append_row({CellView::text("delete-row")});
+    }
+    {
+        WorksheetWriter notes = writer.add_worksheet("Notes");
+        notes.append_row({CellView::text("preserved")});
+    }
+    writer.close();
+    return path;
+}
+
 std::filesystem::path write_in_memory_clear_erase_source(const std::filesystem::path& path)
 {
     ensure_parent_directory(path);
@@ -1603,6 +1638,43 @@ Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
     WorksheetEditor data = editor.worksheet("Data");
     data.delete_rows(1, 1);
     require_formula_cell(data, "B1", "A1+A2");
+    editor.save_as(report.output);
+    return report;
+}
+
+Report run_generated_in_memory_stationary_formula_shift(const CliOptions& options)
+{
+    static constexpr std::string_view kExpectedFormula =
+        "SUM($A$4,C$4,Data!$A$4,$E$1,$E1,Data!$E$1,#REF!,#REF!,Data!#REF!,#REF!,Data!#REF!)";
+
+    Report report;
+    report.scenario = options.scenario;
+    report.report_path = options.report;
+    report.source = write_in_memory_stationary_formula_shift_source(resolve_generated_source(
+        options, "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-source.xlsx"));
+    report.output = resolve_output_path(
+        options, "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-output.xlsx");
+    report.source_sheet_name = "Data";
+    report.mutations = {
+        "worksheet(Data).insert_rows(3,1)",
+        "worksheet(Data).insert_columns(4,1)",
+        "worksheet(Data).delete_rows(7,1)",
+        "worksheet(Data).delete_columns(7,1)",
+    };
+    report.notes = {
+        "Stationary Data!C1 should stay in place while its references are structurally rewritten",
+        "Affected absolute and mixed row/column markers should be preserved on surviving references",
+        "Deleted row and column references should become #REF!",
+        "Notes sheet should remain preserved",
+    };
+
+    WorkbookEditor editor = WorkbookEditor::open(report.source);
+    WorksheetEditor data = editor.worksheet("Data");
+    data.insert_rows(3, 1);
+    data.insert_columns(4, 1);
+    data.delete_rows(7, 1);
+    data.delete_columns(7, 1);
+    require_formula_cell(data, "C1", kExpectedFormula);
     editor.save_as(report.output);
     return report;
 }
@@ -2964,6 +3036,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_delete_row_formula") {
         return run_generated_in_memory_delete_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_stationary_formula_shift") {
+        return run_generated_in_memory_stationary_formula_shift(options);
     }
     if (options.scenario == "generated_in_memory_clear_erase") {
         return run_generated_in_memory_clear_erase(options);

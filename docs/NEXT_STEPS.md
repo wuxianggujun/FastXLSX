@@ -255,6 +255,10 @@ reference visible. Stationary formulas with absolute and mixed `$` markers are
 now covered on insert/delete rows and columns as lexical structural rewrites:
 affected `$A$3` / `C$3` / `$D1` references move while preserving markers, and
 deleted absolute references become `#REF!` in saved/reopened output. The
+opt-in generated workbook-editor QA runner now mirrors that lane with
+`generated_in_memory_stationary_formula_shift`, saving and reopening a
+combined row/column insert/delete workbook through ZIP/XML, `openpyxl`,
+optional XlsxWriter, and optional Excel COM checks. The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same

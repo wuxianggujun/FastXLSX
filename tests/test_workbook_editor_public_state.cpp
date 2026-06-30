@@ -803,6 +803,8 @@ void check_public_state_renamed_shift_formula_audit_noop_save(
         workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_noop =
+        editor.pending_worksheet_edits();
 
     editor.save_as(noop_output);
 
@@ -816,6 +818,9 @@ void check_public_state_renamed_shift_formula_audit_noop_save(
         noop_scenario + " should keep dirty diagnostics clear");
     check_workbook_editor_no_replacement_diagnostics(
         editor, noop_scenario + " should not queue replacement diagnostics");
+    check(workbook_editor_edit_summaries_equal(
+            editor.pending_worksheet_edits(), summaries_before_noop),
+        noop_scenario + " should preserve pending edit summaries");
     check(!editor.last_edit_error().has_value(),
         noop_scenario + " should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -843,6 +848,8 @@ void check_public_state_renamed_clean_noop_save(
         workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_noop =
+        editor.pending_worksheet_edits();
 
     editor.save_as(noop_output);
 
@@ -856,6 +863,9 @@ void check_public_state_renamed_clean_noop_save(
         noop_scenario + " should keep dirty diagnostics clear");
     check_workbook_editor_no_replacement_diagnostics(
         editor, noop_scenario + " should not queue replacement diagnostics");
+    check(workbook_editor_edit_summaries_equal(
+            editor.pending_worksheet_edits(), summaries_before_noop),
+        noop_scenario + " should preserve pending edit summaries");
     check(!editor.last_edit_error().has_value(),
         noop_scenario + " should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

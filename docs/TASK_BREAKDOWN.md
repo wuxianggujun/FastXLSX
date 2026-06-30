@@ -47831,6 +47831,38 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1183 - Pin renamed no-op summary state
+
+Type: public `WorkbookEditor` renamed materialized no-op-save summary-state
+regression.
+
+Status: completed.
+
+Goal: prove shared renamed no-op-save helpers preserve
+`pending_worksheet_edits()` summaries across clean no-op `save_as()` calls.
+
+Coverage:
+- Extends `check_public_state_renamed_shift_formula_audit_noop_save()` to
+  snapshot `pending_worksheet_edits()` before the no-op save and compare the
+  summary vector afterwards.
+- Extends `check_public_state_renamed_clean_noop_save()` with the same summary
+  snapshot/preservation check.
+- Keeps the existing catalog/save-state snapshots, replacement diagnostics,
+  materialized diagnostics, output-entry equality, and reopened readback checks
+  for the renamed full-calculation formula-audit and renamed clean-shift paths.
+
+Non-goals:
+- Does not add sheet rename formula qualifier repair, formula evaluation, new
+  summary semantics, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

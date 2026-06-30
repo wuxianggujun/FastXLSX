@@ -3915,6 +3915,10 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-noop-output.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-third-output.xlsx");
+    const std::filesystem::path third_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-third-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -4069,6 +4073,154 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
             check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
                     reopened_c1.text_value() == "Data!B1+1",
                 "multi-sheet retry reopen Untouched output should read second-stage C1 formula");
+        });
+
+    noop_data_reacquired.set_cell("D3", fastxlsx::CellValue::formula("B1+7"));
+    noop_untouched_reacquired.set_cell(
+        "D1", fastxlsx::CellValue::text("multi-retry-reopen-third-untouched"));
+    check(reopened_data.has_pending_changes() &&
+            second_data_reacquired.has_pending_changes() &&
+            noop_data_reacquired.has_pending_changes() &&
+            reopened_untouched.has_pending_changes() &&
+            second_untouched_reacquired.has_pending_changes() &&
+            noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen post-noop edit should dirty all shared handles");
+    check(noop_data_reacquired.cell_count() == 5,
+        "multi-sheet retry reopen post-noop Data edit should add one sparse cell");
+    check(noop_untouched_reacquired.cell_count() == 4,
+        "multi-sheet retry reopen post-noop Untouched edit should add one sparse cell");
+    check_cell_range_equals(noop_data_reacquired.used_range(), 1, 1, 3, 4,
+        "multi-sheet retry reopen post-noop Data edit should expand bounds to D3");
+    check_cell_range_equals(noop_untouched_reacquired.used_range(), 1, 1, 1, 4,
+        "multi-sheet retry reopen post-noop Untouched edit should expand bounds to D1");
+    {
+        const std::vector<std::string> names = reopened.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen post-noop edit should expose both dirty names");
+    }
+    check(reopened.pending_materialized_cell_count() ==
+            noop_data_reacquired.cell_count() + noop_untouched_reacquired.cell_count(),
+        "multi-sheet retry reopen post-noop edit should aggregate dirty cell count");
+
+    reopened.save_as(third_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !noop_data_reacquired.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen third save should clean all shared handles");
+    check(reopened.pending_change_count() == 4,
+        "multi-sheet retry reopen third save should record later handoffs");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen third save should retain staged Patch handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen third save should clear materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen third save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen third save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
+        "multi-sheet retry reopen third save should leave retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "multi-sheet retry reopen third save should leave second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "multi-sheet retry reopen third save should leave prior no-op output unchanged");
+
+    fastxlsx::WorksheetEditor third_data_reacquired = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor third_untouched_reacquired = reopened.worksheet("Untouched");
+    check(!third_data_reacquired.has_pending_changes() &&
+            !third_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen third-save reacquire should be clean");
+    const fastxlsx::CellValue third_data_d3 = third_data_reacquired.get_cell("D3");
+    check(third_data_d3.kind() == fastxlsx::CellValueKind::Formula &&
+            third_data_d3.text_value() == "B1+7",
+        "multi-sheet retry reopen third-save reacquire should read Data!D3");
+    const fastxlsx::CellValue third_untouched_d1 =
+        third_untouched_reacquired.get_cell("D1");
+    check(third_untouched_d1.kind() == fastxlsx::CellValueKind::Text &&
+            third_untouched_d1.text_value() == "multi-retry-reopen-third-untouched",
+        "multi-sheet retry reopen third-save reacquire should read Untouched!D1");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "B1+7",
+        "multi-sheet retry reopen third output should contain post-noop Data formula");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        "multi-retry-reopen-second-data",
+        "multi-sheet retry reopen third output should preserve second-stage Data text");
+    check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
+        "multi-retry-reopen-third-untouched",
+        "multi-sheet retry reopen third output should contain post-noop Untouched text");
+    check_contains(third_entries.at("xl/worksheets/sheet2.xml"), "Data!B1+1",
+        "multi-sheet retry reopen third output should preserve second-stage Untouched formula");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_third_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_third_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(third_noop_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !noop_data_reacquired.has_pending_changes() &&
+            !third_data_reacquired.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes() &&
+            !third_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen third no-op save should keep handles clean");
+    check(reopened.pending_change_count() == 4,
+        "multi-sheet retry reopen third no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen third no-op save should retain staged Patch handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen third no-op save should keep diagnostics empty");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen third no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_third_noop,
+        "multi-sheet retry reopen third no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_third_noop,
+        "multi-sheet retry reopen third no-op save");
+    check(fastxlsx::test::read_zip_entries(third_noop_output) == third_entries,
+        "multi-sheet retry reopen third no-op output should match third output");
+
+    check_reopened_clean_sheet_output(third_noop_output, "Data",
+        "multi-sheet retry reopen third no-op Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "multi-sheet retry reopen third no-op Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "multi-sheet retry reopen third no-op Data output should expose final bounds");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "multi-retry-reopen-second-data",
+                "multi-sheet retry reopen third no-op Data output should preserve C3");
+            const fastxlsx::CellValue reopened_d3 = reopened_sheet.get_cell("D3");
+            check(reopened_d3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d3.text_value() == "B1+7",
+                "multi-sheet retry reopen third no-op Data output should read D3");
+        });
+    check_reopened_clean_sheet_output(third_noop_output, "Untouched",
+        "multi-sheet retry reopen third no-op Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "multi-sheet retry reopen third no-op Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 4,
+                "multi-sheet retry reopen third no-op Untouched output should expose final bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "Data!B1+1",
+                "multi-sheet retry reopen third no-op Untouched output should preserve C1");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d1.text_value() == "multi-retry-reopen-third-untouched",
+                "multi-sheet retry reopen third no-op Untouched output should read D1");
         });
 }
 

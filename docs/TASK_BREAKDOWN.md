@@ -51608,6 +51608,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1286 - Pin multi-sheet post-noop third-save public-state stability
+
+Type: public `WorkbookEditor` / `WorksheetEditor` multi-sheet post-noop
+continued-edit regression.
+
+Status: completed.
+
+Goal: prove the failed-save retry / fresh-reopen multi-worksheet editor remains
+usable for another materialized edit/save cycle after a clean no-op `save_as()`.
+
+Coverage:
+- Extends
+  `test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()`.
+- After the second-stage output and byte-equivalent no-op output, the test
+  writes `Data!D3` and `Untouched!D1`, then verifies all shared handles for both
+  sheets become dirty with the expected aggregate materialized diagnostics.
+- A third `save_as()` cleans all shared handles, records the later staged
+  handoffs, leaves the retry, second-stage, and prior no-op outputs unchanged,
+  and reopens with the post-noop edits plus earlier formula/text payloads
+  intact.
+- A third no-op `save_as()` preserves the public catalog/save-state snapshot,
+  keeps materialized diagnostics empty, and writes package entries
+  byte-equivalent to the third output.
+
+Non-goals:
+- No production behavior changes, commit/close semantics, overwrite mode,
+  rollback, transaction replay, formula evaluation, cached value preservation,
+  cross-sheet dependency synchronization, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

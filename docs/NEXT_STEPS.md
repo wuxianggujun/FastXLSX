@@ -86,6 +86,10 @@ It also pins the failed-save retry output as a fresh `WorkbookEditor` source:
 the reopened editor can dirty both materialized sheets again, save, and then
 no-op save byte-stably while leaving the original source and retry output
 unchanged.
+That same multi-worksheet public-state path now also mutates both clean sheets
+again after the no-op save, writes a third output without changing the retry,
+second-stage, or prior no-op outputs, and verifies a third no-op save remains
+byte-equivalent to that third output.
 It also pins the matching failed-save retry path: a rejected source-overwrite
 save keeps both dirty materialized worksheets and source bytes intact, then a
 safe retry plus final no-op save remain stable.

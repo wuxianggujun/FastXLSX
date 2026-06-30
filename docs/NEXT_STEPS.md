@@ -1431,6 +1431,10 @@ large-file low-memory random editing.
 The saved erase outputs are reopened in public-state coverage to verify clean
 readback for removed coordinates, remaining source-backed cells, and remaining
 dirty sparse cells after row and column erases.
+The inclusive row/column range erase saves now also snapshot catalog/save-state
+before a clean no-op `save_as()`, proving pending counts, replacement
+diagnostics, erased range absence, non-target dirty cells, and reopened bounds
+stay stable after the first materialized flush.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

@@ -47796,6 +47796,41 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
 
+### P8.1182 - Pin range row-column erase no-op state
+
+Type: public `WorksheetEditor` inclusive row/column range sparse-erase
+no-op-save public state regression.
+
+Status: completed.
+
+Goal: prove inclusive sparse row/column range erase saves stay stable across
+clean no-op `save_as()` calls after successful materialized flushes.
+
+Coverage:
+- Reuses the existing `erase_rows(1, 2)` path that removes all represented
+  source-backed records in the target row range, preserves a non-target dirty
+  sparse cell, shrinks projected bounds, and saves once.
+- Reuses the existing `erase_columns(1, 2)` path that removes all represented
+  source-backed records in the target column range, preserves a non-target
+  dirty sparse cell, shrinks projected bounds, and saves once.
+- Captures public catalog/save-state after each successful materialized save,
+  performs `save_as(noop_output)`, and checks materialized handles stay clean,
+  pending counts, replacement diagnostics, clear `last_edit_error()`,
+  catalog/save-state preservation, output-entry equality, erased range
+  absence, non-target dirty cell preservation, and reopened bounds stability.
+
+Non-goals:
+- Does not add row/column metadata synchronization, dense row/column deletion,
+  tombstones, formula repair, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair,
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests` passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state` passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure` passes.
+
 ### P8.1087 - Pin range-erase reacquire second-flush no-op public save state
 
 Type: public `WorksheetEditor` range-erase saved-session reacquire

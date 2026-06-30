@@ -14013,6 +14013,8 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-rows-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-rows-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -14047,7 +14049,7 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "erase_rows should omit erased row-two text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "erase_rows should omit erased row-one numeric cells");
-        check_reopened_clean_sheet_output(output, "Data", "erase_rows",
+        const auto inspect_erase_rows_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 1,
                     "erase_rows reopened output should keep remaining sparse count");
@@ -14063,7 +14065,45 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
                 check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_d4.text_value() == "range-extra",
                     "erase_rows reopened output should keep non-target row edits");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "erase_rows",
+            inspect_erase_rows_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_rows no-op save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "erase_rows no-op save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_rows no-op save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_rows no-op save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_rows no-op save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "erase_rows no-op save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_rows no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_rows no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "erase_rows no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "erase_rows no-op save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "erase_rows no-op save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data", "erase_rows no-op save",
+            inspect_erase_rows_output);
     }
 
     {
@@ -14575,6 +14615,8 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
     {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-columns-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-columns-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -14609,7 +14651,7 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "erase_columns should omit erased column row-two text cells");
         check_not_contains(worksheet_xml, R"(r="B1")",
             "erase_columns should omit erased second-column numeric cells");
-        check_reopened_clean_sheet_output(output, "Data", "erase_columns",
+        const auto inspect_erase_columns_output =
             [](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 1,
                     "erase_columns reopened output should keep remaining sparse count");
@@ -14625,7 +14667,45 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
                 check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_d4.text_value() == "column-range-extra",
                     "erase_columns reopened output should keep non-target column edits");
-            });
+            };
+        check_reopened_clean_sheet_output(output, "Data", "erase_columns",
+            inspect_erase_columns_output);
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "erase_columns no-op save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "erase_columns no-op save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_columns no-op save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_columns no-op save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_columns no-op save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "erase_columns no-op save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "erase_columns no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "erase_columns no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "erase_columns no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "erase_columns no-op save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "erase_columns no-op save should keep output entries stable");
+        check_reopened_clean_sheet_output(noop_output, "Data", "erase_columns no-op save",
+            inspect_erase_columns_output);
     }
 
     {

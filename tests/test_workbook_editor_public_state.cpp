@@ -4107,6 +4107,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
             reopened.pending_materialized_cell_count() == 0 &&
             reopened.estimated_pending_materialized_memory_usage() == 0,
         "multi-sheet retry reopen no-op save should keep materialized diagnostics empty");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen no-op save should keep dirty summaries empty");
     check(!reopened.last_edit_error().has_value(),
         "multi-sheet retry reopen no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -4564,6 +4566,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
             reopened.pending_materialized_cell_count() == 0 &&
             reopened.estimated_pending_materialized_memory_usage() == 0,
         "single-sheet reopen no-op save should keep materialized diagnostics empty");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen no-op save should keep dirty summaries empty");
     check(!reopened.last_edit_error().has_value(),
         "single-sheet reopen no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

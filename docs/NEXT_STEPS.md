@@ -162,6 +162,8 @@ Those second-stage dirty edits also keep `pending_change_count()` at zero until
 Their `pending_worksheet_edits()` summaries are pinned at the same point: one
 dirty `Data` summary for single-sheet reopen edits, or source-order dirty `Data`
 and `Untouched` summaries for multi-sheet reopen edits.
+After those edits have been saved, the following no-op `save_as()` keeps dirty
+summaries empty while preserving the staged handoff count.
 Post-noop third-stage edits now mirror that memory diagnostic coverage before
 their later save: single-sheet dirtiness reports the `Data` session estimate,
 while multi-sheet dirtiness reports the aggregate `Data` plus `Untouched`

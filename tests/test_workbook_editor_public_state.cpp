@@ -10383,10 +10383,15 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_row should convert target-row numeric cells to blanks");
         check(sheet.get_cell("A2").text_value() == "placeholder-a2",
             "clear_row should preserve represented cells outside the target row");
+        const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
         check(sheet.has_pending_changes(),
             "clear_row should dirty the materialized worksheet when records are cleared");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            "clear_row should report the dirty materialized worksheet name");
         check(editor.pending_materialized_cell_count() == 3,
             "clear_row should keep blank records in aggregate diagnostics");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+            "clear_row should keep blank records in aggregate memory diagnostics");
         check(!editor.last_edit_error().has_value(),
             "successful clear_row should keep diagnostics clear");
 
@@ -10846,10 +10851,15 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "clear_column should clear target-column row-two text cells");
         check(sheet.get_cell("B1").number_value() == 1.0,
             "clear_column should preserve represented cells outside the target column");
+        const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
         check(sheet.has_pending_changes(),
             "clear_column should dirty the materialized worksheet when records are cleared");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            "clear_column should report the dirty materialized worksheet name");
         check(editor.pending_materialized_cell_count() == 3,
             "clear_column should keep blank records in aggregate diagnostics");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+            "clear_column should keep blank records in aggregate memory diagnostics");
         check(!editor.last_edit_error().has_value(),
             "successful clear_column should keep diagnostics clear");
 

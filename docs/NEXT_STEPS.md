@@ -1484,6 +1484,8 @@ Base sparse row/column shift coverage now pins aggregate dirty materialized
 memory diagnostics for direct insert/delete row and column shifts before save.
 Base append/set row/column coverage now pins the same aggregate dirty
 materialized memory diagnostics for direct sparse mutations before save.
+Base clear row/column coverage now pins aggregate dirty materialized memory
+diagnostics after represented cells become explicit blanks.
 The same opt-in workbook-editor QA runner now also has an external image
 fixture smoke path: `external_fixture_image_replace_smoke` scans caller
 fixtures for `xl/media/*.png|jpg|jpeg`, selects the worksheet containing the

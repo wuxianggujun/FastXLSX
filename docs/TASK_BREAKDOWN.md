@@ -51446,6 +51446,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1282 - Pin retained handoff diagnostics after materialized saves
+
+Type: public `WorkbookEditor` post-save diagnostics contract regression for
+materialized `WorksheetEditor` handoffs.
+
+Status: completed.
+
+Goal: prove a successful `save_as()` can leave staged Patch handoff diagnostics
+visible while all materialized dirty-session diagnostics are already clean.
+
+Coverage:
+- Extends the multi-sheet failed-save retry/no-op public-state test so the first
+  safe save and final no-op save assert `has_pending_changes()` remains true
+  from retained staged Patch handoffs while materialized handles and aggregate
+  dirty diagnostics are clean.
+- Extends the retry-output fresh reopen/edit/no-op public-state test so the
+  first-stage safe save, second-stage save, and final no-op save assert the same
+  retained-handoff boundary.
+- Documents that `has_pending_changes()` is a coarse pending save-as diagnostic
+  and can remain true after successful save even when
+  `pending_materialized_worksheet_names()`, `pending_materialized_cell_count()`,
+  `estimated_pending_materialized_memory_usage()`, and dirty summaries are clean.
+
+Non-goals:
+- No production behavior changes, commit/close semantics, overwrite mode,
+  rollback, transaction replay, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -3811,6 +3811,8 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
         "multi-sheet materialized retry save should clear dirty memory aggregate");
     check(editor.pending_change_count() == 2,
         "multi-sheet materialized retry save should record both materialized handoffs");
+    check(editor.has_pending_changes(),
+        "multi-sheet materialized retry save should retain staged Patch handoffs");
     check(editor.pending_worksheet_edits().empty(),
         "multi-sheet materialized retry save should leave no dirty summaries");
     check(!editor.last_edit_error().has_value(),
@@ -3849,6 +3851,8 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
         "multi-sheet materialized retry no-op save should keep all handles clean");
     check(editor.pending_change_count() == 2,
         "multi-sheet materialized retry no-op save should not add another handoff");
+    check(editor.has_pending_changes(),
+        "multi-sheet materialized retry no-op save should retain staged Patch handoffs");
     check(editor.pending_materialized_worksheet_names().empty() &&
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
@@ -3929,6 +3933,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     editor.save_as(retry_output);
     check(!data.has_pending_changes() && !untouched.has_pending_changes(),
         "multi-sheet retry reopen safe save should clean first editor handles");
+    check(editor.has_pending_changes(),
+        "multi-sheet retry reopen safe save should retain first-stage staged handoffs");
     const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
     check_contains(retry_entries.at("xl/worksheets/sheet1.xml"), "multi-retry-reopen-data",
         "multi-sheet retry reopen output should contain first-stage Data edit");
@@ -3971,6 +3977,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen second-stage save should clear materialized diagnostics");
     check(reopened.pending_change_count() == 2,
         "multi-sheet retry reopen second-stage save should record both handoffs");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen second-stage save should retain staged Patch handoffs");
     check(reopened.pending_worksheet_edits().empty(),
         "multi-sheet retry reopen second-stage save should leave no dirty summaries");
     check(!reopened.last_edit_error().has_value(),
@@ -4008,6 +4016,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     reopened.save_as(noop_output);
     check(reopened.pending_change_count() == 2,
         "multi-sheet retry reopen no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen no-op save should retain staged Patch handoffs");
     check(reopened.pending_materialized_worksheet_names().empty() &&
             reopened.pending_materialized_cell_count() == 0 &&
             reopened.estimated_pending_materialized_memory_usage() == 0,

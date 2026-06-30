@@ -1847,7 +1847,9 @@ public:
     /// diagnostics, output-plan reasons, or a full unsaved-change model. Failed
     /// edits leave this state unchanged. This read-only diagnostic does not
     /// flush or reload materialized WorksheetEditor sessions, mutate catalog
-    /// state, or update last_edit_error().
+    /// state, or update last_edit_error(). After a successful save_as(), this
+    /// can remain true for retained staged Patch handoffs even when all
+    /// materialized WorksheetEditor diagnostics are clean.
     [[nodiscard]] bool has_pending_changes() const noexcept;
 
     /// Returns a coarse count of successful public edit calls queued in this
@@ -2513,7 +2515,9 @@ public:
     /// sheet to its source name.
     /// Successful save_as() is also not a commit/close operation: queued public
     /// edit diagnostics remain visible so callers may save the same planned
-    /// state to another output path or continue editing.
+    /// state to another output path or continue editing. Consequently,
+    /// has_pending_changes() can remain true after a successful save even when
+    /// pending materialized diagnostics are empty.
     ///
     /// @param path Output `.xlsx` path; must differ from the source package.
     /// @throws FastXlsxError if the output path is rejected or the package cannot

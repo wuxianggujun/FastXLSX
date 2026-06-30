@@ -77,6 +77,10 @@ unchanged.
 It also pins the matching failed-save retry path: a rejected source-overwrite
 save keeps both dirty materialized worksheets and source bytes intact, then a
 safe retry plus final no-op save remain stable.
+That same default coverage now explicitly separates retained staged Patch
+handoffs from dirty materialized sessions: after successful retry/no-op saves,
+`has_pending_changes()` can remain true while materialized names, counts, memory,
+and dirty summaries are clean.
 The public Patch facade now also has large-worksheet targeted cell paths:
 `WorkbookEditor::replace_cells(sheet, span<WorksheetCellUpdate>)` replaces only
 existing cells by default, while

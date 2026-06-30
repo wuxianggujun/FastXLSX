@@ -65,6 +65,10 @@ It also covers
 `generated_in_memory_retry_path_equivalent_reopen_modify_noop_save`, which uses
 a path-equivalent source output path for the rejected first save before the
 same safe-retry, fresh reopen/edit, and byte-identical no-op checks.
+It also covers
+`generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save`,
+which continues that path-equivalent retry/reopen/no-op path with a third edit
+and byte-identical final no-op save.
 It now also covers
 `generated_in_memory_retry_reopen_modify_post_noop_third_save`, which edits
 `Data` again after that clean no-op save and requires the final no-op save to

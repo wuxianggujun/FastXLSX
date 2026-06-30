@@ -45,6 +45,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_retry_path_equivalent_noop_save",
     "generated_in_memory_retry_reopen_modify_noop_save",
     "generated_in_memory_retry_path_equivalent_reopen_modify_noop_save",
+    "generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save",
     "generated_in_memory_retry_reopen_modify_post_noop_third_save",
     "generated_in_memory_reopen_modify_save",
     "generated_in_memory_reopen_modify_noop_save",
@@ -1464,6 +1465,21 @@ def verify_generated_in_memory_retry_reopen_modify_post_noop_third_save(
         workbook.close()
 
     zip_report["retry_reopen_post_noop_third_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory retry path-equivalent reopen modify post-noop third save"
+    zip_report, openpyxl_report = verify_generated_in_memory_retry_reopen_modify_post_noop_third_save(
+        path,
+        tool_report,
+    )
+    require("first:save_as(path-equivalent-source) rejected" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the path-equivalent rejected save stage")
+    zip_report["path_equivalent_retry"] = "checked"
     return zip_report, openpyxl_report
 
 
@@ -3250,6 +3266,7 @@ def create_xlsxwriter_reference(
         elif scenario in {
             "generated_in_memory_retry_reopen_modify_noop_save",
             "generated_in_memory_retry_path_equivalent_reopen_modify_noop_save",
+            "generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save",
             "generated_in_memory_retry_reopen_modify_post_noop_third_save",
             "generated_in_memory_reopen_modify_save",
             "generated_in_memory_reopen_modify_noop_save",
@@ -3266,6 +3283,7 @@ def create_xlsxwriter_reference(
             data.write_number("B3", 4)
             data.write_formula("C3", "=B3*2")
             if scenario in {
+                "generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_retry_reopen_modify_post_noop_third_save",
                 "generated_in_memory_reopen_modify_post_noop_third_save",
             }:
@@ -3421,6 +3439,13 @@ def run_generated_case(
     elif scenario == "generated_in_memory_retry_path_equivalent_reopen_modify_noop_save":
         zip_xml, openpyxl_report = (
             verify_generated_in_memory_retry_path_equivalent_reopen_modify_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save(
                 output_path,
                 tool_report,
             )

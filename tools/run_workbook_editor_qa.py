@@ -47,6 +47,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_multi_sheet_retry_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
+    "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_escaped_sheet_name",
@@ -1613,6 +1614,50 @@ def verify_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory multi-sheet retry reopen modify post-noop third save"
+    zip_report, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(
+        path,
+        tool_report,
+    )
+    mutations = tool_report.get("mutations", [])
+    require("fourth:worksheet(Data).set_cell(E1,text)" in mutations,
+            f"{label}: tool did not report the post-noop Data edit")
+    require("fourth:worksheet(Summary).set_cell(D1,formula)" in mutations,
+            f"{label}: tool did not report the post-noop Summary edit")
+    require("fifth:save_as(third-noop-output)" in mutations,
+            f"{label}: tool did not report the final no-op save stage")
+
+    sheet_entries = zip_report["sheet_entries"]
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="E1"' in data_xml and "retry-reopened-post-noop-data" in data_xml,
+            f"{label}: missing post-noop Data!E1 text")
+    summary_formulas = worksheet_formula_cells(path, "Summary")
+    require(summary_formulas.get("D1") == "Data!B1+20",
+            f"{label}: Summary!D1 formula mismatch {summary_formulas!r}")
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        data = workbook["Data"]
+        summary = workbook["Summary"]
+        require(data["E1"].value == "retry-reopened-post-noop-data",
+                f"{label}: Data!E1 mismatch")
+        require(summary["D1"].value == "=Data!B1+20",
+                f"{label}: Summary!D1 mismatch {summary['D1'].value!r}")
+        openpyxl_report["Data!E1"] = data["E1"].value
+        openpyxl_report["Summary!D1"] = summary["D1"].value
+    finally:
+        workbook.close()
+
+    zip_report["summary_formulas"] = summary_formulas
+    zip_report["post_noop_third_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_source_formula_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -2957,6 +3002,7 @@ def create_xlsxwriter_reference(
             "generated_in_memory_multi_sheet_retry_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
+            "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
         }:
             data = workbook.add_worksheet("Data")
             summary = workbook.add_worksheet("Summary")
@@ -2972,9 +3018,13 @@ def create_xlsxwriter_reference(
             if scenario in {
                 "generated_in_memory_multi_sheet_retry_reopen_modify_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
+                "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
             }:
                 data.write("D1", "retry-reopened-data")
                 summary.write_formula("C1", "=Data!B1+10")
+            if scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save":
+                data.write("E1", "retry-reopened-post-noop-data")
+                summary.write_formula("D1", "=Data!B1+20")
             notes.write("A1", "preserved")
         elif scenario == "generated_shared_formula_materialization":
             shared = workbook.add_worksheet("SharedFormula")
@@ -3097,6 +3147,13 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(
             output_path,
             tool_report,
+        )
+    elif scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save(
+                output_path,
+                tool_report,
+            )
         )
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(

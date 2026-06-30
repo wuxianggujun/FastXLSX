@@ -1903,25 +1903,42 @@ Report run_generated_in_memory_multi_sheet_retry_save(const CliOptions& options)
 
 Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool verify_post_noop_third_save)
 {
+    const bool verify_clean_noop = verify_noop_save || verify_post_noop_third_save;
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_multi_sheet_save_source(resolve_generated_source(options,
-        verify_noop_save
-            ? "fastxlsx-qa-ms-retry-reopen-noop-source.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-source.xlsx"));
-    report.output = resolve_output_path(options,
-        verify_noop_save
-            ? "fastxlsx-qa-ms-retry-reopen-noop-output.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-output.xlsx");
+
+    std::string source_filename =
+        "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-source.xlsx";
+    std::string output_filename =
+        "fastxlsx-workbook-editor-qa-in-memory-multi-sheet-retry-reopen-output.xlsx";
+    if (verify_clean_noop) {
+        source_filename = "fastxlsx-qa-ms-retry-reopen-noop-source.xlsx";
+        output_filename = "fastxlsx-qa-ms-retry-reopen-noop-output.xlsx";
+    }
+    if (verify_post_noop_third_save) {
+        source_filename = "fastxlsx-qa-ms-retry-reopen-post-noop-third-source.xlsx";
+        output_filename = "fastxlsx-qa-ms-retry-reopen-post-noop-third-output.xlsx";
+    }
+
+    report.source = write_in_memory_multi_sheet_save_source(
+        resolve_generated_source(options, source_filename));
+    report.output = resolve_output_path(options, output_filename);
     const std::filesystem::path retry_output =
         report.output.parent_path() / "retry-intermediate.xlsx";
     const std::filesystem::path second_stage_output =
-        verify_noop_save ? report.output.parent_path() / "second-stage-output.xlsx" : report.output;
+        verify_clean_noop ? report.output.parent_path() / "second-stage-output.xlsx" : report.output;
+    const std::filesystem::path prior_noop_output =
+        report.output.parent_path() / "prior-noop-output.xlsx";
+    const std::filesystem::path third_stage_output =
+        report.output.parent_path() / "third-stage-output.xlsx";
     ensure_parent_directory(retry_output);
     ensure_parent_directory(second_stage_output);
+    ensure_parent_directory(prior_noop_output);
+    ensure_parent_directory(third_stage_output);
     ensure_parent_directory(report.output);
     report.source_sheet_name = "Data";
     report.mutations = {
@@ -1937,8 +1954,14 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         "second:worksheet(Summary).set_cell(C1,formula)",
         "second:save_as(output)",
     };
-    if (verify_noop_save) {
+    if (verify_clean_noop) {
         report.mutations.push_back("third:save_as(noop-output)");
+    }
+    if (verify_post_noop_third_save) {
+        report.mutations.push_back("fourth:worksheet(Data).set_cell(E1,text)");
+        report.mutations.push_back("fourth:worksheet(Summary).set_cell(D1,formula)");
+        report.mutations.push_back("fourth:save_as(third-stage-output)");
+        report.mutations.push_back("fifth:save_as(third-noop-output)");
     }
     report.notes = {
         "Source-overwrite save_as should fail before the safe retry",
@@ -1946,9 +1969,13 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         "Second-stage edits should preserve first-stage Data and Summary materialized changes",
         "Notes sheet should remain preserved in the final output",
     };
-    if (verify_noop_save) {
+    if (verify_clean_noop) {
         report.notes.push_back(
             "No-op save after the second-stage flush should be byte-identical");
+    }
+    if (verify_post_noop_third_save) {
+        report.notes.push_back(
+            "Post-noop third-stage edits should save and no-op save byte-identically");
     }
 
     {
@@ -1990,11 +2017,28 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
     summary.set_cell("C1", CellValue::formula("Data!B1+10"));
     require_formula_cell(summary, "C1", "Data!B1+10");
     reopened.save_as(second_stage_output);
-    if (verify_noop_save) {
-        reopened.save_as(report.output);
-        if (!file_bytes_equal(second_stage_output, report.output)) {
+    if (verify_clean_noop) {
+        const std::filesystem::path clean_noop_output =
+            verify_post_noop_third_save ? prior_noop_output : report.output;
+        reopened.save_as(clean_noop_output);
+        if (!file_bytes_equal(second_stage_output, clean_noop_output)) {
             throw std::runtime_error(
                 "retry reopen modify no-op save output should be byte-identical");
+        }
+    }
+    if (verify_post_noop_third_save) {
+        data.set_cell("E1", CellValue::text("retry-reopened-post-noop-data"));
+        summary.set_cell("D1", CellValue::formula("Data!B1+20"));
+        require_formula_cell(summary, "D1", "Data!B1+20");
+        reopened.save_as(third_stage_output);
+        if (!file_bytes_equal(second_stage_output, prior_noop_output)) {
+            throw std::runtime_error(
+                "post-noop third save should leave the prior no-op output unchanged");
+        }
+        reopened.save_as(report.output);
+        if (!file_bytes_equal(third_stage_output, report.output)) {
+            throw std::runtime_error(
+                "post-noop third no-op save output should be byte-identical");
         }
     }
     return report;
@@ -2003,13 +2047,20 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
 Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save(const CliOptions& options)
 {
     return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
-        options, false);
+        options, false, false);
 }
 
 Report run_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(const CliOptions& options)
 {
     return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
-        options, true);
+        options, true, false);
+}
+
+Report run_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options, true, true);
 }
 
 Report run_generated_shared_formula_materialization(const CliOptions& options)
@@ -2460,6 +2511,10 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save") {
         return run_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save") {
+        return run_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save(options);
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);

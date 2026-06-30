@@ -79,6 +79,11 @@ reopens that safe retry output through a fresh editor, applies second-stage
 It also covers `generated_in_memory_multi_sheet_retry_reopen_modify_noop_save`,
 which repeats that path and then requires a final no-op `save_as()` to be
 byte-identical to the second-stage saved output.
+It now also covers
+`generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save`,
+which edits `Data` and `Summary` again after that clean no-op save, writes a
+third-stage output, and requires the final no-op save to be byte-identical to
+that third output.
 Public-state coverage also pins the same multi-worksheet saved-session hygiene:
 matching reacquires stay clean after save and a later no-op `save_as()` keeps
 the output byte-stable.

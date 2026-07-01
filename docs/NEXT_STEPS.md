@@ -4056,6 +4056,12 @@ calls stay clean, preserve source-backed `Data`, emit source-identical outputs
 across both saves, and reopen unchanged. This is missing row/column clear
 clean-save hygiene only, not dense row/column materialization, missing-cell
 synthesis, metadata creation, or rollback.
+Zero-count row/column shifts now also have default copy-original/no-op save
+coverage after clearing a prior edit diagnostic. `insert_rows(..., 0)`,
+`delete_rows(..., 0)`, `insert_columns(..., 0)`, and `delete_columns(..., 0)`
+stay clean, preserve source-backed `Data`, emit source-identical outputs across
+both saves, and reopen unchanged. This is zero-count shift clean-save hygiene
+only, not structural metadata movement, dimension repair, or relationship sync.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

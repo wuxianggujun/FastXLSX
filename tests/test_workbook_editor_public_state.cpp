@@ -40459,6 +40459,12 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-guards-source.xlsx");
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-zero-count-noop-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-zero-count-noop-save-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -40490,8 +40496,65 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "zero-count row/column shifts should not contribute pending materialized memory");
         check_workbook_editor_no_replacement_diagnostics(
             editor, "zero-count row/column shifts");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "zero-count row/column shifts should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "zero-count row/column shifts should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "zero-count row/column shifts should preserve source A2");
         check_workbook_editor_public_catalog_preserved(editor, catalog_before_zero_count_noops,
             "zero-count row/column shifts");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_save,
+            "zero-count row/column shift save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_save,
+            "zero-count row/column shift save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "zero-count row/column shift save");
+        check(!sheet.has_pending_changes(),
+            "zero-count row/column shift save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "zero-count row/column shift save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "zero-count row/column shift save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "zero-count row/column shift save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "zero-count row/column shift noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "zero-count row/column shift noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "zero-count row/column shift noop save");
+        check(!sheet.has_pending_changes(),
+            "zero-count row/column shift noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "zero-count row/column shift noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "zero-count row/column shift noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "zero-count row/column shift noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "zero-count row/column shift noop save");
     }
 
     {

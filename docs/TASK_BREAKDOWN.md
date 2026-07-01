@@ -54559,6 +54559,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1356 - Pin zero-count row/column shift no-op save stability
+
+Type: default public-state regression coverage for zero-count row/column shift
+clean-save stability.
+
+Status: completed.
+
+Goal:
+Prove zero-count row/column shifts that clear a prior edit diagnostic remain
+copy-original and no-op save stable when they do not dirty the clean
+source-backed materialized session.
+
+Coverage:
+- Extends the existing zero-count `insert_rows()`, `delete_rows()`,
+  `insert_columns()`, and `delete_columns()` clean no-op branch.
+- Verifies the zero-count shifts clear the prior invalid-mutation diagnostic,
+  preserve source cells and sparse count, keep the editor clean, and leave
+  materialized/replacement diagnostics empty.
+- Saves a copy-original output and a follow-up no-op output while preserving
+  public catalog/save-state snapshots.
+- Verifies outputs are source-entry-identical, no-op outputs match the first
+  outputs byte-for-byte, and reopened `Data` remains unchanged.
+
+Non-goals:
+- No coordinate clamping, structural metadata movement, row/column dimension
+  repair, formula translation beyond existing represented-cell shift behavior,
+  rollback machinery, relationship repair, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

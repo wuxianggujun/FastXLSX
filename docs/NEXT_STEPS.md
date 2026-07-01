@@ -225,6 +225,10 @@ Those delete-side rich formula paths now also run a second clean no-op
 `save_as()` after the post-noop edit: the saved-session diagnostics stay clean,
 no extra handoff is recorded, the output remains byte-stable, and a fresh reopen
 still reads the translated formula plus the later formula edit.
+The delete-side `#REF!` formula paths now carry the same repeated no-op save
+coverage after their post-noop edits, preserving the translated `#REF!` formula,
+the later formula edit, shifted source cells, and clean diagnostics across a
+fresh reopen.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

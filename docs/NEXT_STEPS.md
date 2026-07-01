@@ -3963,6 +3963,12 @@ unchanged, preserve the public failure diagnostic across copy-original and
 follow-up no-op saves, and reopen unchanged. This remains rejection-only
 guardrail coverage, not dense range editing, caller-supplied non-default style
 writes, style migration, or relationship repair.
+Single-cell value-only style rejection now has matching default public-state
+coverage for both `set_cell_value(row, column, ...)` and strict A1
+`set_cell_value("A1", ...)`: rejected non-default `StyleId` payloads keep
+source-backed `Data` cells unchanged, preserve the public diagnostic across
+copy-original and follow-up no-op saves, and reopen unchanged. This does not
+add caller-supplied non-default style writes or style migration.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

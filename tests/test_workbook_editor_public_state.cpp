@@ -10151,6 +10151,125 @@ void check_reopened_default_data_overwrite_output(
         });
 }
 
+void test_public_worksheet_editor_set_cell_value_style_rejection_noop_save()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-style-reject-source.xlsx");
+    const std::filesystem::path style_id_source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-style-id-source.xlsx");
+    const std::filesystem::path row_column_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-style-reject-output.xlsx");
+    const std::filesystem::path row_column_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-style-reject-noop-output.xlsx");
+    const std::filesystem::path a1_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-a1-style-reject-output.xlsx");
+    const std::filesystem::path a1_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-a1-style-reject-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_id_source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("StyleIds");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+        });
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    auto check_single_value_style_rejection_noop =
+        [&](std::string_view scenario, const std::filesystem::path& output,
+            const std::filesystem::path& noop_output,
+            const std::function<void(fastxlsx::WorksheetEditor&)>& reject_action) {
+            const std::string prefix(scenario);
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+            bool failed = false;
+            try {
+                reject_action(sheet);
+            } catch (const fastxlsx::FastXlsxError& error) {
+                failed = true;
+                check_contains(error.what(), "StyleId",
+                    prefix + " should expose the unsupported StyleId boundary");
+            }
+            check(failed,
+                prefix + " should reject caller-supplied non-default StyleId values");
+            check(editor.last_edit_error().has_value() &&
+                    editor.last_edit_error()->find("set_cell_value()") != std::string::npos,
+                prefix + " should retain the public edit diagnostic");
+            check_workbook_editor_public_no_pending_state(editor, prefix);
+            check(!sheet.has_pending_changes(),
+                prefix + " should keep the materialized sheet clean");
+            check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+                prefix + " should preserve source A1");
+            check(sheet.get_cell("B1").number_value() == 1.0,
+                prefix + " should preserve source B1");
+            check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+                prefix + " should preserve source A2");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " should not queue replacement diagnostics");
+
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(output);
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_save, prefix + " save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_save, prefix + " save");
+            check_workbook_editor_public_no_pending_state(editor, prefix + " save");
+            check(!sheet.has_pending_changes(),
+                prefix + " save should keep the materialized sheet clean");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " save should not queue replacement diagnostics");
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            check(output_entries == source_entries,
+                prefix + " save should copy source entries");
+            check_reopened_default_data_sheet_output(output, prefix + " save");
+
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(noop_output);
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_noop, prefix + " noop save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_noop, prefix + " noop save");
+            check_workbook_editor_public_no_pending_state(editor, prefix + " noop save");
+            check(!sheet.has_pending_changes(),
+                prefix + " noop save should keep the materialized sheet clean");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " noop save should not queue replacement diagnostics");
+            const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+            check(noop_entries == source_entries,
+                prefix + " noop save should still copy source entries");
+            check(noop_entries == output_entries,
+                prefix + " noop output should match the first output");
+            check_reopened_default_data_sheet_output(noop_output, prefix + " noop save");
+        };
+
+    check_single_value_style_rejection_noop(
+        "set_cell_value row-column style rejection", row_column_output,
+        row_column_noop_output,
+        [non_default_style](fastxlsx::WorksheetEditor& sheet) {
+            sheet.set_cell_value(
+                1, 1,
+                fastxlsx::CellValue::text("single-value-styled-rejected")
+                    .with_style(non_default_style));
+        });
+
+    check_single_value_style_rejection_noop(
+        "set_cell_value A1 style rejection", a1_output, a1_noop_output,
+        [non_default_style](fastxlsx::WorksheetEditor& sheet) {
+            sheet.set_cell_value(
+                "B1", fastxlsx::CellValue::number(99.0).with_style(non_default_style));
+        });
+}
+
 void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
 {
     const std::filesystem::path source =
@@ -41062,6 +41181,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_cells_range_reacquires_saved_state();
             test_public_worksheet_editor_erase_cells_memory_budget_release();
             test_public_worksheet_editor_initializer_list_batch_overloads();
+            test_public_worksheet_editor_set_cell_value_style_rejection_noop_save();
             test_public_worksheet_editor_append_row_appends_after_sparse_max_row();
             test_public_worksheet_editor_append_row_noop_and_guardrails();
             test_public_worksheet_editor_set_row_replaces_sparse_row();

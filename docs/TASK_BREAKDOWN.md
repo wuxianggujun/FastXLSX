@@ -54796,6 +54796,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1362 - Pin same-editor formula audit no-op save stability
+
+Type: default public-state regression coverage for same-editor saved formula
+audit no-op save hygiene.
+
+Status: completed.
+
+Goal:
+Prove a materialized-only formula save remains stable after the same editor runs
+source/materialized formula audit inspections and then performs a follow-up
+clean no-op `save_as()`.
+
+Coverage:
+- Extends `test_public_worksheet_editor_materialized_only_formula_same_editor_saved_audits()`
+  with a follow-up clean no-op save after the same-editor source and
+  materialized formula audit checks.
+- Verifies the first save writes `Data!A1+Data!B1` into `C2`, keeps the
+  materialized handle clean, and clears aggregate materialized diagnostics.
+- Captures public catalog/save-state snapshots before the no-op save and
+  verifies the no-op preserves them, keeps materialized/replacement diagnostics
+  and dirty summaries empty, and preserves the single retained handoff count.
+- Verifies the no-op package entries match the first output byte-for-byte and
+  a fresh reopen reads the saved `C2` formula.
+
+Non-goals:
+- No same-editor source-audit retargeting to saved output, formula evaluation,
+  cached formula result preservation, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

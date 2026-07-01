@@ -21004,6 +21004,9 @@ void test_public_worksheet_editor_materialized_only_formula_same_editor_saved_au
     const std::filesystem::path output =
         artifact(
             "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-same-editor-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-same-editor-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!A1+Data!B1";
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -21081,6 +21084,39 @@ void test_public_worksheet_editor_materialized_only_formula_same_editor_saved_au
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "materialized-only formula same-editor saved audits should keep materialized state clean");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "materialized-only formula same-editor saved audit no-op should keep the sheet clean");
+    check(editor.pending_change_count() == 1,
+        "materialized-only formula same-editor saved audit no-op should preserve one handoff");
+    check(editor.pending_worksheet_edits().empty(),
+        "materialized-only formula same-editor saved audit no-op should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "materialized-only formula same-editor saved audit no-op");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "materialized-only formula same-editor saved audit no-op");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "materialized-only formula same-editor saved audit no-op");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "materialized-only formula same-editor saved audit no-op should keep output entries stable");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "materialized-only formula same-editor saved audit no-op reopen");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> reopened_formula =
+        reopened_sheet.try_cell("C2");
+    check(reopened_formula.has_value() &&
+            reopened_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula->text_value() == expected_formula,
+        "materialized-only formula same-editor saved audit no-op should reopen the saved formula");
 }
 
 void test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_saved_formula()

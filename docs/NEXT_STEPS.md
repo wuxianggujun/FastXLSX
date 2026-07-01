@@ -1744,6 +1744,10 @@ preserve that memory alongside the dirty sparse count.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.
+The same-editor materialized-only formula audit path now also saves again after
+source/materialized audit inspection, requiring clean diagnostics, stable public
+save/catalog snapshots, byte-identical package entries, and saved formula
+readback.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

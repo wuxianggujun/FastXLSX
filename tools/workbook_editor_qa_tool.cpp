@@ -2967,7 +2967,9 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_s
         false);
 }
 
-Report run_generated_shared_formula_materialization(const CliOptions& options)
+Report run_generated_shared_formula_materialization_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -2981,11 +2983,18 @@ Report run_generated_shared_formula_materialization(const CliOptions& options)
         "worksheet(SharedFormula).try_cell(C1:C3,D1:D3):expect_formula_materialized",
         "worksheet(SharedFormula).set_cell(E4,text)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "C1:C3 and D1:D3 should be ordinary formula cells after materialization",
         "Shared formula metadata and stale cached values should be absent from dirty output",
         "Untouched sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after shared formula materialization should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor sheet = editor.worksheet("SharedFormula");
@@ -3000,8 +3009,23 @@ Report run_generated_shared_formula_materialization(const CliOptions& options)
     }
 
     sheet.set_cell(4, 5, CellValue::text("shared-formula-qa-edit"));
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "shared-formula-first-save.xlsx",
+        "shared formula no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_shared_formula_materialization(const CliOptions& options)
+{
+    return run_generated_shared_formula_materialization_impl(options, false);
+}
+
+Report run_generated_shared_formula_materialization_noop_save(const CliOptions& options)
+{
+    return run_generated_shared_formula_materialization_impl(options, true);
 }
 
 Report run_generated_shared_formula_boundary_materialization(const CliOptions& options)
@@ -3045,7 +3069,9 @@ Report run_generated_shared_formula_boundary_materialization(const CliOptions& o
     return report;
 }
 
-Report run_generated_shared_formula_office_like_materialization(const CliOptions& options)
+Report run_generated_shared_formula_office_like_materialization_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -3059,12 +3085,19 @@ Report run_generated_shared_formula_office_like_materialization(const CliOptions
         "worksheet(OfficeLikeShared).try_cell(C1:D3,F2:G3,E1):expect_office_like_shared_formulas",
         "worksheet(OfficeLikeShared).set_cell(H6,text)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Two shared formula si groups should coexist on the same worksheet",
         "2D shared formula refs should materialize every follower as ordinary formula text",
         "Interleaved ordinary formulas and values should survive dirty projection",
         "Stale cached formula values should be absent from dirty output",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after office-like shared formula materialization should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor sheet = editor.worksheet("OfficeLikeShared");
@@ -3085,8 +3118,23 @@ Report run_generated_shared_formula_office_like_materialization(const CliOptions
     }
 
     sheet.set_cell(6, 8, CellValue::text("office-like-shared-formula-edit"));
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "office-like-shared-formula-first-save.xlsx",
+        "office-like shared formula no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_shared_formula_office_like_materialization(const CliOptions& options)
+{
+    return run_generated_shared_formula_office_like_materialization_impl(options, false);
+}
+
+Report run_generated_shared_formula_office_like_materialization_noop_save(const CliOptions& options)
+{
+    return run_generated_shared_formula_office_like_materialization_impl(options, true);
 }
 
 Report run_generated_style_passthrough(const CliOptions& options)
@@ -3523,11 +3571,17 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_shared_formula_materialization") {
         return run_generated_shared_formula_materialization(options);
     }
+    if (options.scenario == "generated_shared_formula_materialization_noop_save") {
+        return run_generated_shared_formula_materialization_noop_save(options);
+    }
     if (options.scenario == "generated_shared_formula_boundary_materialization") {
         return run_generated_shared_formula_boundary_materialization(options);
     }
     if (options.scenario == "generated_shared_formula_office_like_materialization") {
         return run_generated_shared_formula_office_like_materialization(options);
+    }
+    if (options.scenario == "generated_shared_formula_office_like_materialization_noop_save") {
+        return run_generated_shared_formula_office_like_materialization_noop_save(options);
     }
     if (options.scenario == "generated_style_passthrough") {
         return run_generated_style_passthrough(options);

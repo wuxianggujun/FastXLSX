@@ -2023,6 +2023,9 @@ formula `ref` ranges, multiple `si` groups in one worksheet, ordinary formulas
 and values interleaved with shared formula followers, and stale cached formula
 result cleanup; the dirty output is checked as ordinary formula elements with
 0 shared formula metadata elements, and is opened by the Excel COM verifier.
+The generated shared-formula and Office-like materialization lanes now also
+have no-op save variants that require the follow-up clean `save_as()` package
+to be byte-identical after the dirty materialized output has flushed.
 P8.587 strengthens those generated shared-formula QA reports without changing
 runtime behavior: each generated shared-formula scenario now records
 `checked_formula_cells`, `output_formula_cells`, `openpyxl.formula_cells`,

@@ -1104,6 +1104,7 @@ cmake --preset windows-nmake-release -DFASTXLSX_BUILD_QA_TOOLS=ON
 cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
 py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_materialization `
+  --scenario generated_shared_formula_materialization_noop_save `
   --excel-verify `
   --work-dir build\qa\workbook-editor-shared-formula
 ```
@@ -1115,6 +1116,9 @@ records `checked_formula_cells`, `output_formula_cells`,
 `openpyxl.formula_cells`, `formula_output.shared_metadata_removed`, and
 `cached_formula_values_removed` so the exact materialized formulas and removed
 stale cache state are visible without unpacking the workbook manually.
+The no-op variant saves the same materialized edit once and then requires a
+follow-up clean `save_as()` output to be byte-identical before running the same
+ZIP/XML, `openpyxl`, and optional Excel COM checks.
 
 For the opt-in rename formula rewrite QA smoke, run:
 
@@ -1253,6 +1257,7 @@ For an Office/LibreOffice-like generated shared-formula shape smoke, run:
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_office_like_materialization `
+  --scenario generated_shared_formula_office_like_materialization_noop_save `
   --excel-verify `
   --work-dir build\qa\workbook-editor-shared-formula-office-like
 ```
@@ -1265,6 +1270,8 @@ metadata elements and no stale cached `<v>` values. The Excel verifier opens
 this output read-only and checks representative materialized formulas plus the
 untouched sheet. The Python report now lists all checked Office-like formula
 cells and the openpyxl readback formulas, not only representative cells.
+The no-op variant repeats the Office-like dirty materialization output and
+requires the follow-up clean `save_as()` package to be byte-identical.
 
 To smoke-test third-party fixture workbooks such as xlnt or OpenXLSX samples,
 keep them outside the repository and pass a fixture root explicitly. These

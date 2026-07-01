@@ -79,8 +79,10 @@ GENERATED_SCENARIOS = [
     "generated_formula_rename_defined_names_only",
     "generated_formula_rename_default_audit",
     "generated_shared_formula_materialization",
+    "generated_shared_formula_materialization_noop_save",
     "generated_shared_formula_boundary_materialization",
     "generated_shared_formula_office_like_materialization",
+    "generated_shared_formula_office_like_materialization_noop_save",
     "generated_style_passthrough",
     "generated_image_replace",
     "generated_public_e2e",
@@ -2965,6 +2967,17 @@ def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[st
     return zip_report, openpyxl_report
 
 
+def verify_generated_shared_formula_materialization_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_shared_formula_materialization(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            "generated shared formula materialization no-op save: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_shared_formula_boundary_materialization(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     zip_report: dict[str, Any] = {}
     names = zip_names(path)
@@ -3103,6 +3116,20 @@ def verify_generated_shared_formula_office_like_materialization(
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_generated_shared_formula_office_like_materialization_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_shared_formula_office_like_materialization(path)
+    require(
+        "save_as(noop-output)" in tool_report.get("mutations", []),
+        "generated office-like shared formula materialization no-op save: "
+        "tool did not report the no-op save stage",
+    )
+    zip_report["noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -3682,7 +3709,10 @@ def create_xlsxwriter_reference(
                 data.write("E1", "retry-reopened-post-noop-data")
                 summary.write_formula("D1", "=Data!B1+20")
             notes.write("A1", "preserved")
-        elif scenario == "generated_shared_formula_materialization":
+        elif scenario in {
+            "generated_shared_formula_materialization",
+            "generated_shared_formula_materialization_noop_save",
+        }:
             shared = workbook.add_worksheet("SharedFormula")
             untouched = workbook.add_worksheet("Untouched")
             for row_index, (left, right) in enumerate([(1, 2), (4, 5), (7, 8)]):
@@ -3695,7 +3725,10 @@ def create_xlsxwriter_reference(
                     f"=SUM(A{excel_row}:B{excel_row})+$A{excel_row}+A$1+$A$1")
             shared.write("E4", "shared-formula-qa-edit")
             untouched.write("A1", "keep-shared-formula-qa")
-        elif scenario == "generated_shared_formula_office_like_materialization":
+        elif scenario in {
+            "generated_shared_formula_office_like_materialization",
+            "generated_shared_formula_office_like_materialization_noop_save",
+        }:
             shared = workbook.add_worksheet("OfficeLikeShared")
             untouched = workbook.add_worksheet("Untouched")
             values = [(1, 2), (10, 20), (100, 200)]
@@ -3973,10 +4006,20 @@ def run_generated_case(
         )
     elif scenario == "generated_shared_formula_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_materialization(output_path)
+    elif scenario == "generated_shared_formula_materialization_noop_save":
+        zip_xml, openpyxl_report = verify_generated_shared_formula_materialization_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_shared_formula_boundary_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_boundary_materialization(output_path)
     elif scenario == "generated_shared_formula_office_like_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_office_like_materialization(output_path)
+    elif scenario == "generated_shared_formula_office_like_materialization_noop_save":
+        zip_xml, openpyxl_report = verify_generated_shared_formula_office_like_materialization_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_style_passthrough":
         zip_xml, openpyxl_report = verify_generated_style_passthrough(output_path)
     elif scenario == "generated_image_replace":

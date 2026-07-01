@@ -5660,6 +5660,28 @@ void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()
         "A1 overload second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "A1 overload second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "A1 overload second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "A1 overload second no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "A1 overload second no-op save reopened output should expose dirty-session bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "A1 overload second no-op save reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "A1 overload second no-op save reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "A1 overload second no-op save reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "a1-overload-new",
+                "A1 overload second no-op save reopened output should read inserted D4 text");
+        });
 }
 
 void test_public_worksheet_editor_a1_overloads_reject_invalid_references()

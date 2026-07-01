@@ -341,7 +341,9 @@ for handle reads, invalid reads/mutations, missing erase no-ops, and the later
 valid shift to verify clean public state and source-backed cell readback.
 The retry/projection shard also reopens saved blank/erase, scalar/formula, and
 text-escape projection outputs to verify clean public state and value-kind
-readback after the saved XML projection.
+readback after the saved XML projection. A1 overload edit coverage now also
+reopens the second no-op output, verifying repeated byte-stable no-op saves
+remain readable with source-backed `A1` / `B1`, erased `A2`, and inserted `D4`.
 The same-handle materialized save path now also reopens the first and second
 outputs, verifying the borrowed handle remains reusable while earlier output
 artifacts stay clean and isolated from later edits. The second-save no-op output

@@ -43900,6 +43900,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-noop-output.xlsx");
         const std::filesystem::path post_noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-post-noop-output.xlsx");
+        const std::filesystem::path post_noop_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-post-noop-noop-output.xlsx");
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -44025,7 +44027,7 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula post-noop save should keep the translated formula XML");
         check_contains(post_noop_xml, R"(<c r="D3"><f>C3+A1</f></c>)",
             "delete_rows rich formula post-noop save should write the post-noop formula");
-        check_reopened_shift_output(post_noop_output, "delete_rows rich formula post-noop save",
+        const auto inspect_reopened_delete_row_post_noop_formula =
             [&expected](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "delete_rows rich formula post-noop save reopened output should keep sparse count");
@@ -44051,7 +44053,42 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_rows rich formula post-noop save reopened output should keep shifted source rows");
                 check(!reopened_sheet.try_cell("C4").has_value(),
                     "delete_rows rich formula post-noop save reopened output should keep old coordinate absent");
-            });
+            };
+        check_reopened_shift_output(post_noop_output, "delete_rows rich formula post-noop save",
+            inspect_reopened_delete_row_post_noop_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(post_noop_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_rows rich formula post-noop noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 2,
+            "delete_rows rich formula post-noop noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_rows rich formula post-noop noop save should keep dirty diagnostics clear");
+        check(!editor.last_edit_error().has_value(),
+            "delete_rows rich formula post-noop noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_post_noop_noop,
+            "delete_rows rich formula post-noop noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_post_noop_noop,
+            "delete_rows rich formula post-noop noop save");
+        const auto post_noop_noop_entries =
+            fastxlsx::test::read_zip_entries(post_noop_noop_output);
+        check(post_noop_noop_entries == post_noop_entries,
+            "delete_rows rich formula post-noop noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "delete_rows rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_reopened_shift_output(post_noop_noop_output,
+            "delete_rows rich formula post-noop noop save",
+            inspect_reopened_delete_row_post_noop_formula);
     }
 
     {
@@ -44061,6 +44098,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-noop-output.xlsx");
         const std::filesystem::path post_noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-post-noop-output.xlsx");
+        const std::filesystem::path post_noop_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-post-noop-noop-output.xlsx");
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -44186,7 +44225,7 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula post-noop save should keep the translated formula XML");
         check_contains(post_noop_xml, R"(<c r="D2"><f>C2+A1</f></c>)",
             "delete_columns rich formula post-noop save should write the post-noop formula");
-        check_reopened_shift_output(post_noop_output, "delete_columns rich formula post-noop save",
+        const auto inspect_reopened_delete_column_post_noop_formula =
             [&expected](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "delete_columns rich formula post-noop save reopened output should keep sparse count");
@@ -44212,7 +44251,42 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_columns rich formula post-noop save reopened output should keep shifted source columns");
                 check(!reopened_sheet.try_cell("B2").has_value(),
                     "delete_columns rich formula post-noop save reopened output should keep empty intermediate column absent");
-            });
+            };
+        check_reopened_shift_output(post_noop_output, "delete_columns rich formula post-noop save",
+            inspect_reopened_delete_column_post_noop_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(post_noop_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_columns rich formula post-noop noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 2,
+            "delete_columns rich formula post-noop noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_columns rich formula post-noop noop save should keep dirty diagnostics clear");
+        check(!editor.last_edit_error().has_value(),
+            "delete_columns rich formula post-noop noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_post_noop_noop,
+            "delete_columns rich formula post-noop noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_post_noop_noop,
+            "delete_columns rich formula post-noop noop save");
+        const auto post_noop_noop_entries =
+            fastxlsx::test::read_zip_entries(post_noop_noop_output);
+        check(post_noop_noop_entries == post_noop_entries,
+            "delete_columns rich formula post-noop noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "delete_columns rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_reopened_shift_output(post_noop_noop_output,
+            "delete_columns rich formula post-noop noop save",
+            inspect_reopened_delete_column_post_noop_formula);
     }
 }
 

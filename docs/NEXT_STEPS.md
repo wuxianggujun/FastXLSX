@@ -221,6 +221,10 @@ formula save keeps the translated formula intact.
 The same matrix now covers `delete_columns()` with a moved `C2` formula and a
 later `D2` formula save, pinning the column-deletion side of the same translator
 and post-noop reuse behavior.
+Those delete-side rich formula paths now also run a second clean no-op
+`save_as()` after the post-noop edit: the saved-session diagnostics stay clean,
+no extra handoff is recorded, the output remains byte-stable, and a fresh reopen
+still reads the translated formula plus the later formula edit.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

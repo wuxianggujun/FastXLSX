@@ -7180,6 +7180,20 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
         "used_range second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "used_range second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "used_range second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 0,
+                "used_range second no-op reopen should keep the cleared sheet empty");
+            check(!reopened_sheet.used_range().has_value(),
+                "used_range second no-op reopen should expose no sparse bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "used_range second no-op reopen should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "used_range second no-op reopen should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "used_range second no-op reopen should keep erased A2 absent");
+        });
 }
 
 void test_public_worksheet_editor_contains_cell_tracks_represented_state()

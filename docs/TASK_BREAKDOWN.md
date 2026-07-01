@@ -55383,6 +55383,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1377 - Reopen used_range second no-op output
+
+Type: default public-state regression coverage for `used_range()` no-op output
+readability.
+
+Status: completed.
+
+Goal:
+Prove the dirty/empty `used_range()` inspection path still produces a clean,
+readable empty worksheet after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_used_range_tracks_sparse_bounds()` after
+  the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies zero sparse records, no `used_range()`, and absent erased `A1`,
+  `B1`, and `A2`.
+- Leaves the existing diagnostic-preservation reads, full sparse range erase,
+  first output reopen, catalog/save-state snapshots, dirty diagnostics, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No used-range algorithm changes, diagnostic preservation semantic changes,
+  missing-cell behavior changes, blank serialization changes, commit/close
+  semantics, in-place overwrite, rollback, transaction replay, metadata/range
+  repair, calcChain rebuild, sharedStrings/styles migration, relationship
+  repair, broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -97,6 +97,7 @@ GENERATED_SCENARIOS = [
     "generated_public_e2e",
     "generated_public_e2e_noop_save",
     "generated_non_default_style_rejection",
+    "generated_non_default_style_rejection_noop_save",
 ]
 
 GENERATED_CASE_DIRECTORY_ALIASES = {
@@ -3450,6 +3451,24 @@ def verify_generated_non_default_style_rejection(
     return zip_report, openpyxl_report
 
 
+def verify_generated_non_default_style_rejection_noop_save(
+    source_path: Path,
+    output_path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_non_default_style_rejection(
+        source_path,
+        output_path,
+        tool_report,
+    )
+    require(
+        "save_as(noop-output)" in tool_report.get("mutations", []),
+        "generated style rejection no-op save: tool did not report the no-op save stage",
+    )
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def workbook_sheetnames(path: Path) -> list[str]:
     openpyxl = load_openpyxl()
     workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
@@ -4197,6 +4216,13 @@ def run_generated_case(
         source_path = Path(tool_report["source"])
         zip_xml, openpyxl_report = verify_generated_non_default_style_rejection(
             source_path, output_path, tool_report
+        )
+    elif scenario == "generated_non_default_style_rejection_noop_save":
+        source_path = Path(tool_report["source"])
+        zip_xml, openpyxl_report = verify_generated_non_default_style_rejection_noop_save(
+            source_path,
+            output_path,
+            tool_report,
         )
     else:  # pragma: no cover - guarded by argparse
         raise RuntimeError(f"unsupported generated scenario: {scenario}")

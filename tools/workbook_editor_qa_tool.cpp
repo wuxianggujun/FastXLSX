@@ -3519,21 +3519,34 @@ Report run_generated_public_e2e_noop_save(const CliOptions& options)
     return run_generated_public_e2e_impl(options, true);
 }
 
-Report run_generated_non_default_style_rejection(const CliOptions& options)
+Report run_generated_non_default_style_rejection_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_two_sheet_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-style-reject-source.xlsx"));
+        options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-style-reject-noop-source.xlsx"
+                         : "fastxlsx-workbook-editor-qa-style-reject-source.xlsx"));
     report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-style-reject-output.xlsx");
+        options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-style-reject-noop-output.xlsx"
+                         : "fastxlsx-workbook-editor-qa-style-reject-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {"worksheet(Data).set_cell(C3,styled_text):expect_reject"};
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "WorkbookEditor should reject non-default StyleId values in WorksheetEditor",
-        "A no-op save after rejection should still produce a copy-original workbook",
+        "A save after rejection should still produce a copy-original workbook",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after non-default style rejection should be byte-identical");
+    }
 
     StyleId non_default_style;
     {
@@ -3555,8 +3568,23 @@ Report run_generated_non_default_style_rejection(const CliOptions& options)
         report.status = "expected_rejection_observed";
         report.error_message = error.what();
     }
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "style-rejection-first-save.xlsx",
+        "style rejection no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_non_default_style_rejection(const CliOptions& options)
+{
+    return run_generated_non_default_style_rejection_impl(options, false);
+}
+
+Report run_generated_non_default_style_rejection_noop_save(const CliOptions& options)
+{
+    return run_generated_non_default_style_rejection_impl(options, true);
 }
 
 [[nodiscard]] std::string pick_fixture_sheet_name(
@@ -3879,6 +3907,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_non_default_style_rejection") {
         return run_generated_non_default_style_rejection(options);
+    }
+    if (options.scenario == "generated_non_default_style_rejection_noop_save") {
+        return run_generated_non_default_style_rejection_noop_save(options);
     }
     if (options.scenario == "fixture_rename_materialized") {
         return run_fixture_rename_materialized(options);

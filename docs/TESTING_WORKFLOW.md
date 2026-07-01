@@ -353,6 +353,24 @@ The no-op variant repeats the same output and requires the follow-up clean
 style migration, style merge, styles.xml repair, or full existing-file style
 editing.
 
+For generated non-default style rejection recovery smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_non_default_style_rejection `
+  --scenario generated_non_default_style_rejection_noop_save `
+  --work-dir build\qa\workbook-editor-style-rejection
+```
+
+This scenario verifies caller-supplied non-default `StyleId` values are rejected
+without mutating the materialized worksheet, then saves a copy-original output.
+The no-op variant repeats that recovery output and requires the follow-up clean
+`save_as()` package to be byte-identical. It is local QA only and does not add
+caller-supplied non-default style writes, style migration, style merge,
+styles.xml repair, or full existing-file style editing.
+
 For the generated rename/materialized persistence smoke, run:
 
 ```powershell

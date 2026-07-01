@@ -872,6 +872,7 @@ function Verify-Case {
             "generated_public_e2e" { Verify-GeneratedPublicE2E $workbook }
             "generated_public_e2e_noop_save" { Verify-GeneratedPublicE2E $workbook }
             "generated_non_default_style_rejection" { Verify-GeneratedStyleRejection $workbook }
+            "generated_non_default_style_rejection_noop_save" { Verify-GeneratedStyleRejection $workbook }
             "fixture_rename_materialized" { Verify-FixtureCase $workbook $toolReport }
             "fixture_materialized_only" { Verify-FixtureCase $workbook $toolReport }
             "fixture_image_replace" { Verify-FixtureImageReplace $workbook $toolReport }

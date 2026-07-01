@@ -3942,6 +3942,9 @@ the materialized session stays clean, no pending edit is queued, and a later
 no-op `save_as()` remains copy-original. This is covered for both row/column
 and strict A1 `set_cell()` overloads. This is still rejection-only hygiene, not
 style migration, merge, or preservation.
+The generated non-default style rejection QA lane now also has a no-op save
+variant that requires the follow-up clean `save_as()` package to be
+byte-identical after the copy-original recovery output has flushed.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

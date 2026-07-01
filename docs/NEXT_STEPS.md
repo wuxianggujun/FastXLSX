@@ -209,6 +209,9 @@ reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.
 The `insert_columns()` rich formula-shape path mirrors that coverage with a
 later `F2` formula save that preserves the translated `E2` formula.
+The `delete_rows()` `#REF!` formula path now has matching post-noop reuse
+coverage: a later `D3` formula save preserves the translated `C3` `#REF!`
+formula and leaves earlier first/no-op outputs unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

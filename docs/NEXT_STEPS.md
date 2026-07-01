@@ -3952,6 +3952,10 @@ public diagnostic across a copy-original save and follow-up no-op save, and
 reopen with the source-backed `Data` sheet unchanged. This remains rejection-only
 guardrail coverage, not caller-supplied non-default style writes or style
 migration.
+The full-cell `set_row()` / `set_column()` rejection paths now have the same
+default public-state save/no-op coverage, including retained failure diagnostics,
+source-identical recovery output, byte-identical follow-up no-op output, and
+clean materialized/replacement diagnostics.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

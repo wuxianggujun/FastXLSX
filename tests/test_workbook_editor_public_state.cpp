@@ -8880,6 +8880,10 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
     {
         const std::filesystem::path style_artifact =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-style-source.xlsx");
+        const std::filesystem::path style_reject_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-set-row-style-reject-output.xlsx");
+        const std::filesystem::path style_reject_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-style-reject-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_artifact);
@@ -8913,6 +8917,53 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "set_row style failure should not dirty the materialized worksheet");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "set_row style failure should preserve existing cells");
+        const auto style_reject_source_entries = fastxlsx::test::read_zip_entries(source);
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_style_reject_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_style_reject_save =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(style_reject_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_style_reject_save, "set_row style rejection save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_style_reject_save, "set_row style rejection save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row style rejection save");
+        check(!sheet.has_pending_changes(),
+            "set_row style rejection save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row style rejection save should not queue replacement diagnostics");
+        const auto style_reject_output_entries =
+            fastxlsx::test::read_zip_entries(style_reject_output);
+        check(style_reject_output_entries == style_reject_source_entries,
+            "set_row style rejection save should copy source entries");
+        check_reopened_default_data_sheet_output(
+            style_reject_output, "set_row style rejection save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_style_reject_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_style_reject_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(style_reject_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_style_reject_noop, "set_row style rejection noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_style_reject_noop, "set_row style rejection noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row style rejection noop save");
+        check(!sheet.has_pending_changes(),
+            "set_row style rejection noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row style rejection noop save should not queue replacement diagnostics");
+        const auto style_reject_noop_entries =
+            fastxlsx::test::read_zip_entries(style_reject_noop_output);
+        check(style_reject_noop_entries == style_reject_source_entries,
+            "set_row style rejection noop save should still copy source entries");
+        check(style_reject_noop_entries == style_reject_output_entries,
+            "set_row style rejection noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            style_reject_noop_output, "set_row style rejection noop save");
     }
 
     {
@@ -9530,6 +9581,10 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
     {
         const std::filesystem::path style_artifact =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-style-source.xlsx");
+        const std::filesystem::path style_reject_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-column-style-reject-output.xlsx");
+        const std::filesystem::path style_reject_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-column-style-reject-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_artifact);
@@ -9563,6 +9618,53 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "set_column style failure should not dirty the materialized worksheet");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "set_column style failure should preserve existing cells");
+        const auto style_reject_source_entries = fastxlsx::test::read_zip_entries(source);
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_style_reject_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_style_reject_save =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(style_reject_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_style_reject_save, "set_column style rejection save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_style_reject_save, "set_column style rejection save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_column style rejection save");
+        check(!sheet.has_pending_changes(),
+            "set_column style rejection save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_column style rejection save should not queue replacement diagnostics");
+        const auto style_reject_output_entries =
+            fastxlsx::test::read_zip_entries(style_reject_output);
+        check(style_reject_output_entries == style_reject_source_entries,
+            "set_column style rejection save should copy source entries");
+        check_reopened_default_data_sheet_output(
+            style_reject_output, "set_column style rejection save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_style_reject_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_style_reject_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(style_reject_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_style_reject_noop, "set_column style rejection noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_style_reject_noop, "set_column style rejection noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_column style rejection noop save");
+        check(!sheet.has_pending_changes(),
+            "set_column style rejection noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_column style rejection noop save should not queue replacement diagnostics");
+        const auto style_reject_noop_entries =
+            fastxlsx::test::read_zip_entries(style_reject_noop_output);
+        check(style_reject_noop_entries == style_reject_source_entries,
+            "set_column style rejection noop save should still copy source entries");
+        check(style_reject_noop_entries == style_reject_output_entries,
+            "set_column style rejection noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            style_reject_noop_output, "set_column style rejection noop save");
     }
 
     {

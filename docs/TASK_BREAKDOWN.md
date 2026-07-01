@@ -55533,6 +55533,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1381 - Reopen erase_cell second no-op output
+
+Type: default public-state regression coverage for single-cell erase no-op
+output readability.
+
+Status: completed.
+
+Goal:
+Prove the single-cell `erase_cell()` dirty-flush path still produces a clean,
+readable workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()`
+  after the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, shrunk bounds, source-backed `A1` / `B1`, and
+  erased `A2` absence.
+- Leaves the existing single-cell erase assertions, saved XML checks, first
+  output/no-op output reopens, catalog/save-state snapshots, dirty diagnostics,
+  and byte-stability assertions unchanged.
+
+Non-goals:
+- No tombstones, missing-cell synthesis, dense deletion, worksheet metadata
+  repair, source reload, commit/close semantics, in-place overwrite, rollback,
+  transaction replay, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

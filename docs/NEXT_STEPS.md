@@ -346,6 +346,9 @@ reopens the second no-op output, verifying repeated byte-stable no-op saves
 remain readable with source-backed `A1` / `B1`, erased `A2`, and inserted `D4`.
 Explicit blank coverage now mirrors that second-no-op readback shape for
 source-backed `A1` / `B1` / `A2`, explicit blank `D4`, and missing `E5`.
+Single-cell erase coverage now also reopens its second no-op output, verifying
+the shrunk `A1:B1` projection, source-backed `A1` / `B1`, and erased `A2`
+absence.
 The same-handle materialized save path now also reopens the first and second
 outputs, verifying the borrowed handle remains reusable while earlier output
 artifacts stay clean and isolated from later edits. The second-save no-op output

@@ -8021,6 +8021,23 @@ void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
         "erase_cell second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "erase_cell second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(second_noop_output, "Data", "erase_cell second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "erase_cell second no-op reopened output should keep remaining sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "erase_cell second no-op reopened output should keep shrunk bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "erase_cell second no-op reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "erase_cell second no-op reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "erase_cell second no-op reopened output should keep erased A2 absent");
+        });
 }
 
 void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()

@@ -166,6 +166,10 @@ path does not create the missing destination, the dirty shifted session remains
 usable after the safe retry/no-op save, and a later `C3` edit saves a
 fresh-reopenable post-noop output while source, first, and prior no-op outputs
 stay unchanged.
+The non-directory-parent failed-save retry path now has the same post-noop
+coverage: the rejected save preserves the parent file, the safe retry/no-op
+output remains reusable, and a later `C3` edit saves a fresh-reopenable
+post-noop output while source, first, and prior no-op outputs stay unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

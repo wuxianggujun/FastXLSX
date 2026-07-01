@@ -4455,6 +4455,28 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen third save should leave second output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "multi-sheet retry reopen third save should leave prior no-op output unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "multi-sheet retry reopen prior no-op Data after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "multi-sheet retry reopen prior no-op Data after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "multi-sheet retry reopen prior no-op Data after third save should keep second-stage bounds");
+            check(reopened_sheet.get_cell("C3").text_value() == "multi-retry-reopen-second-data",
+                "multi-sheet retry reopen prior no-op Data after third save should keep second-stage C3");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "multi-sheet retry reopen prior no-op Untouched after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet retry reopen prior no-op Untouched after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                "multi-sheet retry reopen prior no-op Untouched after third save should keep formula bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "Data!B1+1",
+                "multi-sheet retry reopen prior no-op Untouched after third save should keep C1 formula");
+        });
 
     fastxlsx::WorksheetEditor third_data_reacquired = reopened.worksheet("Data");
     fastxlsx::WorksheetEditor third_untouched_reacquired = reopened.worksheet("Untouched");
@@ -4888,6 +4910,31 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen third save should leave second output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "single-sheet reopen third save should leave prior no-op output unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "single-sheet reopen prior no-op Data after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "single-sheet reopen prior no-op Data after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "single-sheet reopen prior no-op Data after third save should keep second-stage bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "B1+5",
+                "single-sheet reopen prior no-op Data after third save should keep C1 formula");
+            check(reopened_sheet.get_cell("D1").text_value() == "single-reopen-second",
+                "single-sheet reopen prior no-op Data after third save should keep D1");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "single-sheet reopen prior no-op Untouched after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "single-sheet reopen prior no-op Untouched after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "single-sheet reopen prior no-op Untouched after third save should keep source bounds");
+            check(reopened_sheet.get_cell("A1").text_value() == "keep-me" &&
+                    reopened_sheet.get_cell("B1").number_value() == 99.0,
+                "single-sheet reopen prior no-op Untouched after third save should keep source cells");
+        });
 
     fastxlsx::WorksheetEditor third_data_reacquired = reopened.worksheet("Data");
     check(!third_data_reacquired.has_pending_changes(),
@@ -11473,6 +11520,27 @@ void check_reopened_delete_row_formula_column_shift_snapshot_noop_output(
                     !noop_sheet.try_cell("D2").has_value() &&
                     !noop_sheet.try_cell("A3").has_value(),
                 "renamed formula delete-row snapshot no-op output should keep old coordinates absent");
+        });
+}
+
+void check_reopened_renamed_shift_noop_output(
+    const std::filesystem::path& output,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output, "RenamedData", scenario,
+        [](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 3,
+                "renamed shift no-op output should keep sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 3, 3,
+                "renamed shift no-op output should expose combined bounds");
+            check(noop_sheet.get_cell("C1").number_value() == 1.0,
+                "renamed shift no-op output should read shifted B1");
+            check(noop_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "renamed shift no-op output should read shifted A2");
+            check(!noop_sheet.try_cell("B1").has_value() &&
+                    !noop_sheet.try_cell("A2").has_value(),
+                "renamed shift no-op output should keep old coordinates absent");
         });
 }
 
@@ -35453,6 +35521,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
         "renamed shift reacquire no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift reacquire no-op output should match the second output");
+    check_reopened_renamed_shift_noop_output(
+        noop_output, "renamed shift reacquire no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -35787,6 +35857,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         "renamed shift failed save after retry no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift failed save after retry no-op output should match the safe retry output");
+    check_reopened_renamed_shift_noop_output(
+        noop_output, "renamed shift failed save after retry no-op output");
 
     after_retry.delete_rows(3, 1);
     const std::size_t deleted_memory = after_retry.estimated_memory_usage();
@@ -36058,6 +36130,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
         "renamed shift option mismatch no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift option mismatch no-op output should match the second output");
+    check_reopened_renamed_shift_noop_output(
+        noop_output, "renamed shift option mismatch no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -36242,6 +36316,8 @@ void test_public_worksheet_editor_shift_after_rename_missing_query_preserves_pla
         "renamed shift missing query no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift missing query no-op output should match the second output");
+    check_reopened_renamed_shift_noop_output(
+        noop_output, "renamed shift missing query no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -36449,6 +36525,8 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
         "renamed shift invalid reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift invalid reads no-op output should match the second output");
+    check_reopened_renamed_shift_noop_output(
+        noop_output, "renamed shift invalid reads no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -36669,6 +36747,8 @@ void test_public_worksheet_editor_shift_after_rename_invalid_mutations_preserve_
         "renamed shift invalid mutations no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift invalid mutations no-op output should match the second output");
+    check_reopened_renamed_shift_noop_output(
+        noop_output, "renamed shift invalid mutations no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

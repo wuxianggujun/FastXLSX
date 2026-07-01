@@ -1889,6 +1889,13 @@ snapshot-read, and reacquire styled-session paths now mirror the same no-op
 output readback after their later column shifts; the snapshot-read case also
 checks fresh `row_cells()` / `column_cells()` views of the translated styled
 `E1` formula output.
+The non-styled renamed planned-session paths now get the same no-op output
+readability check across reacquire reuse, failed-save retry, option mismatch,
+missing query, invalid reads, and invalid mutations: each fresh-reopens the
+byte-stable no-op output and verifies the combined `A1:C3` shifted state.
+The single-sheet and multi-sheet materialized reopen/modify/no-op loops now
+also fresh-reopen their prior no-op outputs after later third-stage saves,
+pinning that subsequent edits do not corrupt already-written clean no-op files.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

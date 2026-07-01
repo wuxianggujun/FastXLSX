@@ -194,6 +194,9 @@ The row-shift cross-handle path now also carries post-noop evidence: after both
 `Data` and `Untouched` are saved and a clean no-op output is proven byte-stable,
 later edits on both materialized handles save a fresh-reopenable output while
 the earlier first/no-op outputs stay unchanged.
+The column-shift cross-handle path mirrors that post-noop evidence with later
+edits on both `Data` and `Untouched`, preserving the shifted dirty columns and
+leaving earlier first/no-op outputs unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

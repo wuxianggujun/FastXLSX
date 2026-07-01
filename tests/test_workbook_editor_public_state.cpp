@@ -42693,6 +42693,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
         artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-post-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -42876,6 +42878,106 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
     check_reopened_clean_sheet_output(noop_output, "Untouched",
         "cross-handle column shift Untouched noop save",
         inspect_reopened_cross_handle_column_untouched);
+
+    data.set_cell("F2", fastxlsx::CellValue::text("post-noop-cross-handle-column-data"));
+    untouched.set_cell("D2", fastxlsx::CellValue::text("post-noop-cross-handle-column-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle column shift post-noop edits should dirty both saved handles");
+    check(data.cell_count() == 5 && untouched.cell_count() == 4,
+        "cross-handle column shift post-noop edits should add one sparse cell per handle");
+    check_cell_range_equals(data.used_range(), 1, 1, 2, 6,
+        "cross-handle column shift post-noop Data edit should expand bounds to F2");
+    check_cell_range_equals(untouched.used_range(), 1, 1, 2, 4,
+        "cross-handle column shift post-noop Untouched edit should expand bounds to D2");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 2 &&
+            post_noop_dirty_names[0] == "Data" &&
+            post_noop_dirty_names[1] == "Untouched",
+        "cross-handle column shift post-noop edits should expose both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() == 9,
+        "cross-handle column shift post-noop edits should aggregate both dirty sparse counts");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data.estimated_memory_usage() + untouched.estimated_memory_usage(),
+        "cross-handle column shift post-noop edits should aggregate both dirty memory estimates");
+    check(editor.pending_change_count() == 2,
+        "cross-handle column shift post-noop edits should retain prior flushed handoffs before save");
+    check(data.get_cell("E2").text_value() == "data-dirty-column-tail" &&
+            untouched.get_cell("C2").text_value() == "untouched-dirty-column-tail",
+        "cross-handle column shift post-noop edits should preserve existing dirty cells");
+
+    editor.save_as(post_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift post-noop save should clean both materialized handles");
+    check(editor.pending_change_count() == 4,
+        "cross-handle column shift post-noop save should record two additional handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle column shift post-noop save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle column shift post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle column shift post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle column shift post-noop save should leave the prior no-op output unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    const std::string post_noop_untouched_xml = post_noop_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(post_noop_data_xml, R"(<c r="F2")",
+        "cross-handle column shift post-noop save should write the Data post-noop cell");
+    check_contains(post_noop_untouched_xml, R"(<c r="D2")",
+        "cross-handle column shift post-noop save should write the Untouched post-noop cell");
+    check_reopened_shift_output(post_noop_output, "cross-handle column shift Data post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "cross-handle column shift Data post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 6,
+                "cross-handle column shift Data post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "cross-handle column shift Data post-noop save reopened output should keep shifted source column");
+            const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+            check(reopened_e2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e2.text_value() == "data-dirty-column-tail",
+                "cross-handle column shift Data post-noop save reopened output should keep shifted dirty column");
+            const fastxlsx::CellValue reopened_f2 = reopened_sheet.get_cell("F2");
+            check(reopened_f2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_f2.text_value() == "post-noop-cross-handle-column-data",
+                "cross-handle column shift Data post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle column shift Data post-noop save reopened output should keep old coordinates absent");
+        });
+    check_reopened_clean_sheet_output(post_noop_output, "Untouched",
+        "cross-handle column shift Untouched post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle column shift Untouched post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "cross-handle column shift Untouched post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle column shift Untouched post-noop save reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle column shift Untouched post-noop save reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-column-tail",
+                "cross-handle column shift Untouched post-noop save reopened output should keep prior dirty cell");
+            const fastxlsx::CellValue reopened_d2 = reopened_sheet.get_cell("D2");
+            check(reopened_d2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d2.text_value() == "post-noop-cross-handle-column-untouched",
+                "cross-handle column shift Untouched post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("E2").has_value(),
+                "cross-handle column shift Untouched post-noop save reopened output should not shift columns");
+        });
 }
 
 void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state()

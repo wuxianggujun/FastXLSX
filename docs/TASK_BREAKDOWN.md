@@ -57943,6 +57943,51 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1438 - Post-noop edits after column-shift cross-handle save
+
+Type: default public-state regression coverage for cross-handle column-shift
+reuse after a clean no-op save.
+
+Status: completed.
+
+Goal:
+Prove a column-shifted `Data` materialized session and an independently dirty
+`Untouched` materialized session remain reusable after both handles are saved
+and a clean no-op output is proven byte-stable, and that later edits on both
+handles produce another pair of materialized handoffs without mutating earlier
+outputs.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state()`
+  after the existing no-op output byte-stability and fresh-reopen checks.
+- Adds post-noop edits to `Data!F2` and `Untouched!D2`, verifies both handles
+  re-dirty in catalog order, sparse counts and bounds expand independently,
+  aggregate dirty cell count/memory reflects both handles, and the prior two
+  staged handoffs remain retained before save.
+- Saves a post-noop output, verifies the first save and prior no-op output bytes
+  remain unchanged, checks the staged handoff count advances from `2` to `4`,
+  and fresh-reopens the new output to verify shifted `Data` source/dirty cells,
+  the new `Data!F2` edit, preserved `Untouched` source/dirty cells, and the new
+  `Untouched!D2` edit.
+
+Non-goals:
+- No production logic changes, cross-sheet dependency synchronization, save
+  behavior changes, staged handoff retention changes, commit/close semantics,
+  rollback, transaction replay, row/column shift semantic changes, formula
+  evaluation, cached value preservation, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

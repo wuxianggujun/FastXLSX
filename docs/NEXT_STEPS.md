@@ -201,6 +201,9 @@ The delete-rows cross-handle path now has the same post-noop reuse coverage:
 after `Data` rows are removed and both handles are saved/no-op verified, later
 edits on both sheets save a fresh-reopenable output without mutating earlier
 outputs.
+The delete-columns cross-handle path mirrors that reuse coverage while avoiding
+old deleted coordinates: later `D1` edits on both sheets save cleanly and the
+old `D2` coordinates remain absent.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

@@ -1852,6 +1852,9 @@ column shifts.
 The adjacent failed-save retry and option-mismatch styled-session paths now also
 pin clean materialized memory after safe saves/rejected option access, dirty
 memory after the later shared shift, and reopened clean diagnostics.
+The failed-save retry path now also reopens its final clean no-op output, so the
+safe retry's byte-stable save has fresh readback evidence for the renamed sheet,
+translated styled formula, shifted source cells, and absent old coordinates.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

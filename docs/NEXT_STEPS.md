@@ -151,6 +151,11 @@ rejected source-overwrite save preserves the dirty shifted session and source
 bytes, the safe retry plus clean no-op output leave that saved session reusable,
 and a later `C3` edit re-dirties both shared handles before saving a
 fresh-reopenable post-noop output while earlier outputs remain unchanged.
+The path-equivalent failed-save retry path now mirrors that evidence: a rejected
+path-equivalent source-overwrite save keeps the dirty shifted session and source
+bytes intact, the safe retry/no-op output remains reusable, and a later `C3`
+edit saves a fresh-reopenable post-noop output without mutating source, first,
+or prior no-op outputs.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

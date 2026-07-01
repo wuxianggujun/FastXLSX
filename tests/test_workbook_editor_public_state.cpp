@@ -4956,6 +4956,10 @@ void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-move-source.xlsx");
     const std::filesystem::path target_source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-move-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-move-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-move-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
@@ -4990,6 +4994,97 @@ void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner
         "move assignment should replace target materialized cell aggregate");
     check(target.estimated_pending_materialized_memory_usage() == moved_memory,
         "move assignment should replace target materialized memory aggregate");
+
+    target.save_as(output);
+    check(target.pending_materialized_cell_count() == 0,
+        "save_as after aggregate move assignment should clear dirty materialized cell count");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after aggregate move assignment should clear dirty materialized memory");
+    check(target.pending_change_count() == 1,
+        "save_as after aggregate move assignment should count the assigned materialized handoff");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-aggregate-dirty",
+        "aggregate move-assigned editor should save assigned dirty materialized payload");
+    check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+        "discarded-aggregate-dirty",
+        "aggregate move assignment should not leak discarded target dirty materialized payload");
+
+    const auto inspect_materialized_aggregate_move_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "materialized aggregate move Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "materialized aggregate move Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "moved-aggregate-dirty",
+                "materialized aggregate move Data reopened output should read moved dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "materialized aggregate move Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "materialized aggregate move Data reopened output should keep source-backed A2");
+        };
+    const auto inspect_materialized_aggregate_move_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "materialized aggregate move Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "materialized aggregate move Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "materialized aggregate move Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "materialized aggregate move Untouched reopened output should keep source-backed B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized aggregate move Data",
+        inspect_materialized_aggregate_move_data);
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "materialized aggregate move Untouched",
+        inspect_materialized_aggregate_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(noop_output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "aggregate move-assigned no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "aggregate move-assigned no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "aggregate move-assigned no-op save should keep dirty memory aggregate empty");
+    check(target.pending_worksheet_edits().empty(),
+        "aggregate move-assigned no-op save should keep dirty summaries empty");
+    check(target.pending_change_count() == 1,
+        "aggregate move-assigned no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "aggregate move-assigned no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_noop,
+        "aggregate move-assigned no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_noop,
+        "aggregate move-assigned no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "aggregate move-assigned no-op output should match first output");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "materialized aggregate move no-op Data",
+        inspect_materialized_aggregate_move_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "materialized aggregate move no-op Untouched",
+        inspect_materialized_aggregate_move_untouched);
 }
 
 void test_public_workbook_editor_pending_summaries_include_materialized_dirty_state()

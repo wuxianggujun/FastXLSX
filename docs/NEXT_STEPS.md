@@ -4091,6 +4091,12 @@ stable, the clean no-op save preserves public save-state/catalog snapshots,
 emits byte-stable package entries, and reopens both sheets unchanged. This is
 retained-summary save hygiene only, not commit semantics, replacement cleanup,
 metadata repair, or relationship sync.
+Move-owned aggregate materialized diagnostics now have the same save/no-op
+coverage: moved cell-count and memory diagnostics survive move construction and
+move assignment, the first save clears the aggregate diagnostics and drops the
+discarded target dirty payload, and the clean no-op save stays byte-stable while
+both sheets reopen unchanged. This is aggregate diagnostics hygiene only, not
+transaction transfer semantics, rollback, metadata repair, or relationship sync.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

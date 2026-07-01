@@ -54754,6 +54754,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1361 - Pin move-owned aggregate materialized diagnostics no-op save stability
+
+Type: default public-state regression coverage for move-owned aggregate
+materialized diagnostics no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove materialized cell-count and memory diagnostics transferred through
+`WorkbookEditor` move construction and move assignment flush cleanly on save and
+remain no-op save stable afterward.
+
+Coverage:
+- Extends the aggregate materialized diagnostics move-owner test with a first
+  safe `save_as()` and a follow-up clean no-op `save_as()`.
+- Verifies move construction and move assignment preserve the assigned `Data`
+  aggregate cell-count and memory diagnostics while clearing moved-from
+  editors.
+- Verifies the first save clears aggregate materialized diagnostics, records
+  one assigned materialized handoff, and does not leak the discarded target's
+  dirty `Untouched` payload.
+- Captures public catalog/save-state snapshots before the no-op save, verifies
+  the clean no-op preserves them, and keeps materialized/replacement
+  diagnostics and dirty summaries empty.
+- Verifies no-op package entries match the first output byte-for-byte and both
+  sheets reopen with the moved `Data` cells and untouched source-backed cells
+  intact.
+
+Non-goals:
+- No transaction transfer semantics, rollback, moved-handle guarantees beyond
+  existing public diagnostics, metadata/range repair, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

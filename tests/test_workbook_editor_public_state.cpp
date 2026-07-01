@@ -3363,6 +3363,25 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
                     reopened_a2.text_value() == "placeholder-a2",
                 "same-handle second save reopened output should keep source-backed A2");
         });
+    check_reopened_clean_sheet_output(noop_output, "Data", "same-handle second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "same-handle second no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "same-handle second no-op save reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "same-handle-first-save",
+                "same-handle second no-op save reopened output should retain first edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "same-handle-second-save",
+                "same-handle second no-op save reopened output should read later B1 edit");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "same-handle second no-op save reopened output should keep source-backed A2");
+        });
 }
 
 void test_public_workbook_editor_pending_materialized_names_track_dirty_state()

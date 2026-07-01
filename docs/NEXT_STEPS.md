@@ -344,7 +344,10 @@ text-escape projection outputs to verify clean public state and value-kind
 readback after the saved XML projection.
 The same-handle materialized save path now also reopens the first and second
 outputs, verifying the borrowed handle remains reusable while earlier output
-artifacts stay clean and isolated from later edits.
+artifacts stay clean and isolated from later edits. The second-save no-op output
+is now reopened as well, proving the byte-stable no-op package remains readable
+as a clean `WorkbookEditor` materialized session with the saved `A1` / `B1`
+edits and source-backed `A2`.
 The range-erase reacquire path also reopens both saved outputs, pinning the
 empty first projection and the later single-cell C3 projection after handle
 reacquisition.

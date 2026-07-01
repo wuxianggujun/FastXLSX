@@ -55160,6 +55160,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1371 - Reopen same-handle no-op save output
+
+Type: default public-state regression coverage for same-handle saved-session
+no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the existing same-handle post-save edit path produces a clean no-op output
+that is not only byte-stable against the second save, but also readable through
+a fresh `WorkbookEditor` materialized session.
+
+Coverage:
+- Extends `test_public_worksheet_editor_handle_remains_valid_after_save_as()`
+  after the second-save no-op output byte comparison.
+- Reopens `noop_output` through `check_reopened_clean_sheet_output()` and
+  verifies sparse count, bounds, saved `A1`, saved `B1`, and source-backed `A2`
+  read cleanly.
+- Leaves the existing failed source-overwrite guard, first/second output
+  isolation, catalog/save-state snapshot, dirty diagnostics, and byte-stability
+  assertions unchanged.
+
+Non-goals:
+- No commit/close semantics, in-place overwrite, rollback, transaction replay,
+  new handle lifetime guarantees beyond the existing borrowed-handle path,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

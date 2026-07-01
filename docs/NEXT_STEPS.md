@@ -214,6 +214,10 @@ coverage: a later `D3` formula save preserves the translated `C3` `#REF!`
 formula and leaves earlier first/no-op outputs unchanged.
 The `delete_columns()` `#REF!` formula path mirrors that coverage with a later
 `D1` formula save that preserves the translated `C1` `#REF!` formula.
+The rich formula-shape matrix now also covers `delete_rows()`: the moved `C3`
+formula preserves relative/absolute/range/qualified/whole-axis/skip-token
+translation behavior, the clean no-op output is byte-stable, and a later `D3`
+formula save keeps the translated formula intact.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

@@ -1862,6 +1862,9 @@ The invalid-mutation recovery path now mirrors the final no-op reopen check
 after rejected formula mutations and the later valid shared-session shift.
 The missing-query recovery path now does the same after rejected missing/old-name
 lookups and the later valid shared-session shift.
+The invalid-read recovery path now mirrors that no-op reopen check after
+rejected scalar, A1, range, batch, row/column, and valid-missing reads followed
+by the later valid shared-session shift.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

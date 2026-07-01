@@ -56257,6 +56257,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1399 - Reopen renamed styled-formula invalid-read no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+invalid-read recovery no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula invalid-read recovery path still produces a
+clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_preserve_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies the
+  planned `RenamedData` sheet name remains the only visible catalog name.
+- Verifies the reopened no-op output starts clean, exposes no dirty diagnostics,
+  keeps sparse count `7`, bounds `A1:E5`, translated styled formula
+  `E4 = B3+C3`, shifted source-backed cells `C1`, `C4`, `D4`, and `A5`, and
+  keeps old coordinates `B1`, `B4`, and `D2` absent.
+- Leaves the existing invalid-read rejection, diagnostic clearing, later
+  shared-session column shift, save-state/catalog snapshots, saved-output
+  reopen, and byte-stability assertions unchanged.
+
+Non-goals:
+- No read validation changes, diagnostic policy changes, rename semantic
+  changes, row/column shift semantic changes, formula translation changes,
+  style preservation changes, saved-session reacquire policy changes, formula
+  evaluation, cached values, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

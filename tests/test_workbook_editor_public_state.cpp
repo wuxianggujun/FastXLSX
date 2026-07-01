@@ -37391,6 +37391,8 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-reacquire-noop-first-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-reacquire-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-reacquire-post-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -37498,6 +37500,71 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
                     !reopened_sheet.try_cell("C4").has_value(),
                 "delete_rows reacquire noop save reopened output should keep deleted and old coordinates absent");
         });
+
+    reacquired.set_cell("D3", fastxlsx::CellValue::text("post-noop-delete-rows"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "delete_rows reacquire post-noop edit should dirty both shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "delete_rows reacquire post-noop edit should add one sparse cell on both handles");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 3, 4,
+        "delete_rows reacquire post-noop edit should expand bounds to D3");
+    const fastxlsx::CellValue post_noop_cell = reacquired.get_cell("D3");
+    check(post_noop_cell.kind() == fastxlsx::CellValueKind::Text &&
+            post_noop_cell.text_value() == "post-noop-delete-rows",
+        "delete_rows reacquire post-noop edit should expose the new dirty cell");
+    const fastxlsx::CellValue post_noop_formula = reacquired.get_cell("C3");
+    check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            post_noop_formula.text_value() == "A1+B3",
+        "delete_rows reacquire post-noop edit should keep the translated formula");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, reacquired, 1, "delete_rows reacquire post-noop edit");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "delete_rows reacquire post-noop save should clean both shared handles");
+    check(editor.pending_change_count() == 2,
+        "delete_rows reacquire post-noop save should record the second materialized handoff");
+    check(editor.has_pending_changes(),
+        "delete_rows reacquire post-noop save should retain staged materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "delete_rows reacquire post-noop save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows reacquire post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "delete_rows reacquire post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "delete_rows reacquire post-noop save should leave the prior no-op output unchanged");
+    check_reopened_shift_output(post_noop_output, "delete_rows reacquire post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "delete_rows reacquire post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "delete_rows reacquire post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a2",
+                "delete_rows reacquire post-noop save reopened output should keep shifted source A2");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b3.text_value() == "tail-b4",
+                "delete_rows reacquire post-noop save reopened output should keep shifted dirty cell");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "A1+B3",
+                "delete_rows reacquire post-noop save reopened output should keep translated formula");
+            const fastxlsx::CellValue reopened_d3 = reopened_sheet.get_cell("D3");
+            check(reopened_d3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d3.text_value() == "post-noop-delete-rows",
+                "delete_rows reacquire post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value() &&
+                    !reopened_sheet.try_cell("C4").has_value(),
+                "delete_rows reacquire post-noop save reopened output should keep deleted and old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_saved_session()
@@ -37508,6 +37575,8 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-reacquire-noop-first-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-reacquire-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-reacquire-post-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -37616,6 +37685,74 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
                     !reopened_sheet.try_cell("C2").has_value() &&
                     !reopened_sheet.try_cell("C3").has_value(),
                 "insert_columns reacquire noop save reopened output should keep inserted and old coordinates absent");
+        });
+
+    reacquired.set_cell("F3", fastxlsx::CellValue::text("post-noop-insert-columns"));
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "insert_columns reacquire post-noop edit should dirty both shared handles");
+    check(sheet.cell_count() == 6 && reacquired.cell_count() == 6,
+        "insert_columns reacquire post-noop edit should add one sparse cell on both handles");
+    check_cell_range_equals(reacquired.used_range(), 1, 1, 3, 6,
+        "insert_columns reacquire post-noop edit should expand bounds to F3");
+    const fastxlsx::CellValue post_noop_cell = reacquired.get_cell("F3");
+    check(post_noop_cell.kind() == fastxlsx::CellValueKind::Text &&
+            post_noop_cell.text_value() == "post-noop-insert-columns",
+        "insert_columns reacquire post-noop edit should expose the new dirty cell");
+    const fastxlsx::CellValue post_noop_formula = reacquired.get_cell("E2");
+    check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            post_noop_formula.text_value() == "C1+D1",
+        "insert_columns reacquire post-noop edit should keep the translated formula");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, reacquired, 1, "insert_columns reacquire post-noop edit");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "insert_columns reacquire post-noop save should clean both shared handles");
+    check(editor.pending_change_count() == 2,
+        "insert_columns reacquire post-noop save should record the second materialized handoff");
+    check(editor.has_pending_changes(),
+        "insert_columns reacquire post-noop save should retain staged materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns reacquire post-noop save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns reacquire post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "insert_columns reacquire post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "insert_columns reacquire post-noop save should leave the prior no-op output unchanged");
+    check_reopened_shift_output(post_noop_output, "insert_columns reacquire post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 6,
+                "insert_columns reacquire post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "insert_columns reacquire post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "insert_columns reacquire post-noop save reopened output should keep source A1");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_d1.number_value() == 1.0,
+                "insert_columns reacquire post-noop save reopened output should keep shifted source B1");
+            const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+            check(reopened_e2.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_e2.text_value() == "C1+D1",
+                "insert_columns reacquire post-noop save reopened output should keep translated formula");
+            const fastxlsx::CellValue reopened_e3 = reopened_sheet.get_cell("E3");
+            check(reopened_e3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e3.text_value() == "extra-c3",
+                "insert_columns reacquire post-noop save reopened output should keep shifted dirty cell");
+            const fastxlsx::CellValue reopened_f3 = reopened_sheet.get_cell("F3");
+            check(reopened_f3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_f3.text_value() == "post-noop-insert-columns",
+                "insert_columns reacquire post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "insert_columns reacquire post-noop save reopened output should keep inserted and old coordinates absent");
         });
 }
 

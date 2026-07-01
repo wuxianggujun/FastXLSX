@@ -3969,6 +3969,12 @@ coverage for both `set_cell_value(row, column, ...)` and strict A1
 source-backed `Data` cells unchanged, preserve the public diagnostic across
 copy-original and follow-up no-op saves, and reopen unchanged. This does not
 add caller-supplied non-default style writes or style migration.
+`append_row()` style rejection now has matching default public-state save/no-op
+coverage: a rejected caller-supplied non-default `StyleId` append leaves the
+sparse count and source `Data` cells unchanged, keeps the appended row absent,
+preserves the public diagnostic across copy-original and follow-up no-op saves,
+and reopens unchanged. This is still append guardrail hygiene, not row insertion,
+row metadata creation, or style migration.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

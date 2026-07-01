@@ -53994,6 +53994,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1341 - Pin append-row style rejection no-op public-state stability
+
+Type: default public-state regression coverage for append-row caller-supplied
+non-default `StyleId` rejection no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend the rejection save hygiene shape to `WorksheetEditor::append_row()`.
+
+Coverage:
+- Extends the existing append-row public-state guardrail regression with a
+  caller-supplied non-default `StyleId` rejection branch.
+- Verifies the rejected append keeps the materialized session clean, preserves
+  source-backed `Data` cells and sparse count, and does not leave `A3`
+  readable.
+- Saves a copy-original recovery output and a follow-up no-op output while
+  preserving public catalog/save-state snapshots, including retained
+  `last_edit_error()` diagnostics.
+- Verifies no materialized/replacement diagnostics are queued, both outputs are
+  source-entry-identical, and the no-op output matches the first recovery output.
+- Reopens both outputs and checks the source `Data` sheet remains unchanged.
+
+Non-goals:
+- No caller-supplied non-default style writes, row insertion, row metadata
+  creation, style migration, style merge, styles.xml repair, relationship
+  repair, broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

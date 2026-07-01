@@ -8467,6 +8467,106 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     }
 
     {
+        const std::filesystem::path style_id_source = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-style-id-source.xlsx");
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-style-reject-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-style-reject-noop-output.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_id_source);
+            non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+            fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("StyleIds");
+            styled_sheet.append_row({
+                fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            });
+            writer.close();
+        }
+
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool failed = false;
+        try {
+            sheet.append_row({
+                fastxlsx::CellValue::text("append-row-styled-rejected")
+                    .with_style(non_default_style),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "StyleId",
+                "append_row style rejection should expose the unsupported StyleId boundary");
+        }
+        check(failed, "append_row should reject caller-supplied non-default StyleId values");
+        check(editor.last_edit_error().has_value(),
+            "failed append_row style mutation should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(), "StyleId",
+                "append_row style rejection diagnostic should mention StyleId");
+        }
+        check_workbook_editor_public_no_pending_state(editor, "append_row style rejection");
+        check(!sheet.has_pending_changes(),
+            "append_row style rejection should keep the materialized sheet clean");
+        check(sheet.cell_count() == 3,
+            "append_row style rejection should preserve sparse cell count");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row style rejection should not leave rejected appended cells readable");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "append_row style rejection should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "append_row style rejection should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "append_row style rejection should preserve source A2");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row style rejection should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "append_row style rejection save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row style rejection save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row style rejection save");
+        check(!sheet.has_pending_changes(),
+            "append_row style rejection save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row style rejection save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row style rejection save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "append_row style rejection save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row style rejection noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row style rejection noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row style rejection noop save");
+        check(!sheet.has_pending_changes(),
+            "append_row style rejection noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row style rejection noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "append_row style rejection noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "append_row style rejection noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "append_row style rejection noop save");
+    }
+
+    {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
         std::vector<fastxlsx::CellValue> too_wide(

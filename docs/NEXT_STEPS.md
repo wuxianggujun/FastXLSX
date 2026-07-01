@@ -393,6 +393,8 @@ and outside-coordinate sparse cells.
 The `contains_cell()` inspection path now also saves and reopens the dirty
 projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.
+Its second no-op output now also fresh-reopens with the same represented cells,
+source values, explicit blank, inserted text, bounds, and erased A2 absence.
 The handle-level read-only inspection coverage now also snapshots source names,
 planned names, and the full worksheet catalog around `used_range()`,
 `contains_cell()`, `row_cells()`, `column_cells()`, and invalid

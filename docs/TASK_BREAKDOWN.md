@@ -55420,6 +55420,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1378 - Reopen contains_cell second no-op output
+
+Type: default public-state regression coverage for `contains_cell()` no-op output
+readability.
+
+Status: completed.
+
+Goal:
+Prove the `contains_cell()` dirty inspection path still produces a clean,
+readable workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_contains_cell_tracks_represented_state()`
+  after the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, dirty bounds, represented `A1` / `B3` / `D4`,
+  erased `A2` absence, source-backed `A1` / `B1` values, explicit blank `B3`,
+  and inserted `D4`.
+- Leaves the existing diagnostic-preserving valid/invalid contains checks, first
+  output reopen, catalog/save-state snapshots, dirty diagnostics, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No coordinate validation changes, A1 parser changes, diagnostic preservation
+  semantic changes, missing-cell behavior changes, blank serialization changes,
+  commit/close semantics, in-place overwrite, rollback, transaction replay,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -7373,6 +7373,37 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
         "contains_cell second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "contains_cell second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "contains_cell second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "contains_cell second no-op reopen should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "contains_cell second no-op reopen should expose dirty-session bounds");
+            check(reopened_sheet.contains_cell("A1"),
+                "contains_cell second no-op reopen should report source-backed A1");
+            check(reopened_sheet.contains_cell("B3"),
+                "contains_cell second no-op reopen should report explicit B3 blank");
+            check(reopened_sheet.contains_cell("D4"),
+                "contains_cell second no-op reopen should report inserted D4 text");
+            check(!reopened_sheet.contains_cell("A2"),
+                "contains_cell second no-op reopen should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "contains_cell second no-op reopen should keep source-backed A1 text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "contains_cell second no-op reopen should keep source-backed B1 number");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Blank,
+                "contains_cell second no-op reopen should read explicit B3 blank");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "contains-new",
+                "contains_cell second no-op reopen should read inserted D4 text");
+        });
 }
 
 void test_public_worksheet_editor_row_and_column_cells_snapshot()

@@ -53619,6 +53619,52 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1332 - Add generated shared formula boundary no-op QA scenario
+
+Type: opt-in workbook-editor QA runner coverage for shared formula
+parser-boundary materialization post-flush no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated shared-formula boundary materialization path can save
+the existing parser-boundary output, then issue a follow-up clean `save_as()`
+whose output is byte-identical.
+
+Coverage:
+- Adds `generated_shared_formula_boundary_materialization_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated shared-formula boundary source workbook, public
+  `WorksheetEditor::try_cell()` materialization assertions, and dirty `F4`
+  write from the existing QA scenario.
+- Saves once to a first output, performs a second clean `save_as()` to the
+  scenario output, and compares both packages byte-for-byte in the QA tool.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  validate the final no-op output and confirm the tool report includes the
+  no-op stage.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  keeps skipping both synthetic parser-boundary variants for the documented
+  reason.
+- Documents the scenario in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No formula parser broadening, formula evaluation, cached formula result
+  generation, shared formula metadata preservation, sheet/external reference
+  validation, calcChain rebuild, sharedStrings/styles migration, relationship
+  repair, default CTest/CI expansion, broader Patch/materialized composition,
+  or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_shared_formula_boundary_materialization_noop_save --work-dir build\\qa\\workbook-editor-shared-formula-boundary-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

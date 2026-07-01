@@ -2014,10 +2014,11 @@ also includes
 `generated_shared_formula_boundary_materialization`, which pins quoted strings,
 structured references, name-like tokens, R1C1-like text, whole-row/whole-column
 references, bracketed tokens, and sheet-qualified A1 / whole-axis translation
-boundaries in a generated source/output smoke. That boundary case remains
-ZIP/XML and `openpyxl` validation only because some tokens are deliberately
-synthetic parser-boundary inputs, not an Excel UI compatibility smoke. It also
-includes
+boundaries in a generated source/output smoke; the boundary lane now also has a
+no-op save variant requiring the follow-up clean `save_as()` package to be
+byte-identical. That boundary case remains ZIP/XML and `openpyxl` validation
+only because some tokens are deliberately synthetic parser-boundary inputs, not
+an Excel UI compatibility smoke. It also includes
 `generated_shared_formula_office_like_materialization`, which pins 2D shared
 formula `ref` ranges, multiple `si` groups in one worksheet, ordinary formulas
 and values interleaved with shared formula followers, and stale cached formula

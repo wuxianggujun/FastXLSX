@@ -1253,6 +1253,7 @@ For the generated shared-formula translator boundary smoke, run:
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_shared_formula_boundary_materialization `
+  --scenario generated_shared_formula_boundary_materialization_noop_save `
   --work-dir build\qa\workbook-editor-shared-formula-boundaries
 ```
 
@@ -1269,6 +1270,8 @@ some deliberately inserted parser-boundary tokens are not intended to be an
 Excel UI compatibility smoke. The same JSON report fields document that this is
 `excel_ui_smoke=not_run_synthetic_parser_boundary` while still proving 0 shared
 formula metadata and no cached formula `<v>` values in the dirty output.
+The no-op variant repeats the same boundary materialization output and requires
+the follow-up clean `save_as()` package to be byte-identical.
 
 For an Office/LibreOffice-like generated shared-formula shape smoke, run:
 

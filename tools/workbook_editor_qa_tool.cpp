@@ -3148,25 +3148,40 @@ Report run_generated_shared_formula_materialization_noop_save(const CliOptions& 
     return run_generated_shared_formula_materialization_impl(options, true);
 }
 
-Report run_generated_shared_formula_boundary_materialization(const CliOptions& options)
+Report run_generated_shared_formula_boundary_materialization_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_shared_formula_boundary_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-shared-formula-boundary-source.xlsx"));
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-shared-formula-boundary-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-shared-formula-boundary-source.xlsx"));
     report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-shared-formula-boundary-output.xlsx");
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-shared-formula-boundary-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-shared-formula-boundary-output.xlsx");
     report.source_sheet_name = "SharedBoundaries";
     report.mutations = {
         "worksheet(SharedBoundaries).try_cell(C1:C2,D1,E2):expect_formula_boundaries",
         "worksheet(SharedBoundaries).set_cell(F4,text)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Shared formula boundary followers should become ordinary formula text",
         "Quoted strings, structured references, names, and R1C1-like text should not be rewritten",
         "Sheet-qualified A1 references and whole-row/whole-column ranges should still translate under the narrow materializer rule",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after shared formula boundary materialization should be byte-identical");
+    }
 
     constexpr std::string_view expected_c1 =
         R"(A1+SharedBoundaries!A1+'Other Sheet'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)&"A1"+[Book.xlsx]Sheet1!A1)";
@@ -3185,8 +3200,24 @@ Report run_generated_shared_formula_boundary_materialization(const CliOptions& o
     }
 
     sheet.set_cell(4, 6, CellValue::text("shared-formula-boundary-edit"));
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "shared-formula-boundary-first-save.xlsx",
+        "shared formula boundary no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_shared_formula_boundary_materialization(const CliOptions& options)
+{
+    return run_generated_shared_formula_boundary_materialization_impl(options, false);
+}
+
+Report run_generated_shared_formula_boundary_materialization_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_shared_formula_boundary_materialization_impl(options, true);
 }
 
 Report run_generated_shared_formula_office_like_materialization_impl(
@@ -3733,6 +3764,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_shared_formula_boundary_materialization") {
         return run_generated_shared_formula_boundary_materialization(options);
+    }
+    if (options.scenario == "generated_shared_formula_boundary_materialization_noop_save") {
+        return run_generated_shared_formula_boundary_materialization_noop_save(options);
     }
     if (options.scenario == "generated_shared_formula_office_like_materialization") {
         return run_generated_shared_formula_office_like_materialization(options);

@@ -793,7 +793,8 @@ function Verify-Case {
             reason = "read-only source formula audit does not produce an output workbook"
         }
     }
-    if ($scenario -eq "generated_shared_formula_boundary_materialization") {
+    if ($scenario -eq "generated_shared_formula_boundary_materialization" -or
+        $scenario -eq "generated_shared_formula_boundary_materialization_noop_save") {
         return [ordered]@{
             name = [string]$Case.name
             status = "skipped"

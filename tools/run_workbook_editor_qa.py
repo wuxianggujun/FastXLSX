@@ -86,6 +86,7 @@ GENERATED_SCENARIOS = [
     "generated_shared_formula_materialization",
     "generated_shared_formula_materialization_noop_save",
     "generated_shared_formula_boundary_materialization",
+    "generated_shared_formula_boundary_materialization_noop_save",
     "generated_shared_formula_office_like_materialization",
     "generated_shared_formula_office_like_materialization_noop_save",
     "generated_style_passthrough",
@@ -3064,6 +3065,17 @@ def verify_generated_shared_formula_boundary_materialization(path: Path) -> tupl
     return zip_report, openpyxl_report
 
 
+def verify_generated_shared_formula_boundary_materialization_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_shared_formula_boundary_materialization(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            "generated shared formula boundary no-op save: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_shared_formula_office_like_materialization(
     path: Path,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -4089,6 +4101,11 @@ def run_generated_case(
         )
     elif scenario == "generated_shared_formula_boundary_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_boundary_materialization(output_path)
+    elif scenario == "generated_shared_formula_boundary_materialization_noop_save":
+        zip_xml, openpyxl_report = verify_generated_shared_formula_boundary_materialization_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_shared_formula_office_like_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_office_like_materialization(output_path)
     elif scenario == "generated_shared_formula_office_like_materialization_noop_save":

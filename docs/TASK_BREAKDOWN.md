@@ -53665,6 +53665,52 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1333 - Add generated style passthrough no-op QA scenario
+
+Type: opt-in workbook-editor QA runner coverage for existing style id
+passthrough post-flush no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated style passthrough path can save the existing
+same-workbook style id output, then issue a follow-up clean `save_as()` whose
+output is byte-identical.
+
+Coverage:
+- Adds `generated_style_passthrough_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated styled source workbook and whole-`sheetData`
+  replacement from the existing QA scenario.
+- Verifies the final workbook still has `xl/styles.xml`, `Data!A1` uses the
+  existing non-default style id and `0.00` number format, and explicit default
+  `StyleId{}` does not serialize as `s="0"`.
+- Saves once to a first output, performs a second clean `save_as()` to the
+  scenario output, and compares both packages byte-for-byte in the QA tool.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML, `openpyxl`, and
+  optional XlsxWriter reference checks validate the final no-op output and
+  confirm the tool report includes the no-op stage.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  validates the same final workbook shape.
+- Documents the scenario in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No style migration, style merge, stylesheet semantic editing,
+  `styles.xml` repair, caller-supplied arbitrary non-default style write API,
+  relationship repair, default CTest/CI expansion, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_style_passthrough_noop_save --work-dir build\\qa\\workbook-editor-style-passthrough-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

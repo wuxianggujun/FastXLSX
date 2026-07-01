@@ -3288,7 +3288,7 @@ Report run_generated_shared_formula_office_like_materialization_noop_save(const 
     return run_generated_shared_formula_office_like_materialization_impl(options, true);
 }
 
-Report run_generated_style_passthrough(const CliOptions& options)
+Report run_generated_style_passthrough_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -3296,27 +3296,54 @@ Report run_generated_style_passthrough(const CliOptions& options)
 
     StyleId number_style;
     report.source = write_styled_source(
-        resolve_generated_source(options, "fastxlsx-workbook-editor-qa-style-source.xlsx"),
+        resolve_generated_source(
+            options,
+            verify_noop_save ? "fastxlsx-workbook-editor-qa-style-noop-source.xlsx"
+                             : "fastxlsx-workbook-editor-qa-style-source.xlsx"),
         number_style);
     report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-style-output.xlsx");
+        options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-style-noop-output.xlsx"
+                         : "fastxlsx-workbook-editor-qa-style-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "replace_sheet_data:Data",
         "style_passthrough:non_default_style",
         "style_normalization:default_style_zero",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Data!A1 should be 9.5 with style 1/number format 0.00",
         "Data!B1 should be explicit default without s=\"0\"",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after style passthrough should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     editor.replace_sheet_data("Data",
         {{CellValue::number(9.5).with_style(number_style),
             CellValue::text("explicit default").with_style(StyleId {})}});
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "style-passthrough-first-save.xlsx",
+        "style passthrough no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_style_passthrough(const CliOptions& options)
+{
+    return run_generated_style_passthrough_impl(options, false);
+}
+
+Report run_generated_style_passthrough_noop_save(const CliOptions& options)
+{
+    return run_generated_style_passthrough_impl(options, true);
 }
 
 Report run_generated_image_replace(const CliOptions& options)
@@ -3776,6 +3803,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_style_passthrough") {
         return run_generated_style_passthrough(options);
+    }
+    if (options.scenario == "generated_style_passthrough_noop_save") {
+        return run_generated_style_passthrough_noop_save(options);
     }
     if (options.scenario == "generated_image_replace") {
         return run_generated_image_replace(options);

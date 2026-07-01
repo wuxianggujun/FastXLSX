@@ -865,6 +865,7 @@ function Verify-Case {
             "generated_shared_formula_office_like_materialization" { Verify-GeneratedSharedFormulaOfficeLikeMaterialization $workbook }
             "generated_shared_formula_office_like_materialization_noop_save" { Verify-GeneratedSharedFormulaOfficeLikeMaterialization $workbook }
             "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }
+            "generated_style_passthrough_noop_save" { Verify-GeneratedStylePassthrough $workbook }
             "generated_image_replace" { Verify-GeneratedImageReplace $workbook }
             "generated_public_e2e" { Verify-GeneratedPublicE2E $workbook }
             "generated_public_e2e_noop_save" { Verify-GeneratedPublicE2E $workbook }

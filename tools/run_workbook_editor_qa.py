@@ -90,6 +90,7 @@ GENERATED_SCENARIOS = [
     "generated_shared_formula_office_like_materialization",
     "generated_shared_formula_office_like_materialization_noop_save",
     "generated_style_passthrough",
+    "generated_style_passthrough_noop_save",
     "generated_image_replace",
     "generated_public_e2e",
     "generated_public_e2e_noop_save",
@@ -3198,6 +3199,17 @@ def verify_generated_style_passthrough(path: Path) -> tuple[dict[str, Any], dict
     return zip_report, openpyxl_report
 
 
+def verify_generated_style_passthrough_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_style_passthrough(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            "generated style passthrough no-op save: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_image_replace(path: Path, replacement_image: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     zip_report: dict[str, Any] = {}
     names = zip_names(path)
@@ -3796,7 +3808,10 @@ def create_xlsxwriter_reference(
             shared.write_formula(2, 6, "=SUM($A3:C3)+D$1")
             shared.write("H6", "office-like-shared-formula-edit")
             untouched.write("A1", "keep-office-like-shared-formula-qa")
-        elif scenario == "generated_style_passthrough":
+        elif scenario in {
+            "generated_style_passthrough",
+            "generated_style_passthrough_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             style = workbook.add_format({"num_format": "0.00"})
             data.write_number("A1", 9.5, style)
@@ -3833,7 +3848,10 @@ def create_xlsxwriter_reference(
     reference = openpyxl.load_workbook(reference_path, read_only=False, data_only=False)
     try:
         info = {"status": "created", "sheetnames": reference.sheetnames}
-        if scenario == "generated_style_passthrough":
+        if scenario in {
+            "generated_style_passthrough",
+            "generated_style_passthrough_noop_save",
+        }:
             info["Data!A1.number_format"] = reference["Data"]["A1"].number_format
         return info
     finally:
@@ -4115,6 +4133,11 @@ def run_generated_case(
         )
     elif scenario == "generated_style_passthrough":
         zip_xml, openpyxl_report = verify_generated_style_passthrough(output_path)
+    elif scenario == "generated_style_passthrough_noop_save":
+        zip_xml, openpyxl_report = verify_generated_style_passthrough_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_image_replace":
         require(replacement_image is not None, "generated image replace: missing replacement image in tool report")
         zip_xml, openpyxl_report = verify_generated_image_replace(output_path, replacement_image)

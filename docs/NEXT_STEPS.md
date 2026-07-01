@@ -3921,6 +3921,9 @@ coerced to default style, and duplicate exact default-style attributes now have
 public facade hygiene coverage. Qualified style-like attributes such as
 `x:s="0"` also fail as unsupported cell metadata, not as default-style
 normalization.
+The generated style passthrough QA lane now also has a no-op save variant that
+requires the follow-up clean `save_as()` package to be byte-identical after the
+existing non-default style id passthrough output has flushed.
 Caller-supplied explicit default `StyleId{0}` on
 `WorksheetEditor::set_cell()` is normalized to no style handle: readback and
 `sparse_cells()` snapshots do not expose a default style, and dirty save-as

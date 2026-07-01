@@ -314,6 +314,25 @@ build trees, then from fallback discovery under `build/`. This prevents stale
 local tool binaries from hiding newly added generated scenarios, but it remains
 local QA convenience and not a CMake preset or CI policy.
 
+For generated existing-file style passthrough smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_style_passthrough `
+  --scenario generated_style_passthrough_noop_save `
+  --work-dir build\qa\workbook-editor-style-passthrough
+```
+
+This scenario covers whole-`sheetData` replacement using an existing non-default
+style id, explicit default style normalization without `s="0"`, ZIP/XML,
+`openpyxl`, optional XlsxWriter reference, and optional Excel COM validation.
+The no-op variant repeats the same output and requires the follow-up clean
+`save_as()` package to be byte-identical. It is local QA only and does not add
+style migration, style merge, styles.xml repair, or full existing-file style
+editing.
+
 For the generated rename/materialized persistence smoke, run:
 
 ```powershell

@@ -106,6 +106,11 @@ coverage for a row-shifted `WorksheetEditor`: after a byte-stable clean no-op
 save, a later `C3` edit re-dirties the shared handles with aligned public
 materialized diagnostics, saves as the next handoff, leaves earlier outputs
 unchanged, and fresh-reopens with both shifted `A3` and new `C3` values.
+The delete-column saved/reacquired no-op path now has the same coverage for a
+formula-translated shifted session: after the clean no-op save, a later `D2`
+edit re-dirties the shared handles, preserves the translated `B1` formula
+diagnostics, saves as the next handoff, leaves earlier outputs unchanged, and
+fresh-reopens with shifted `A1`, translated `B1`, shifted `C2`, and new `D2`.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

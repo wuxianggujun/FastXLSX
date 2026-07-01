@@ -2910,6 +2910,9 @@ worksheet formulas, and calcChain absence stay on the documented boundary.
 This is QA hardening for the existing explicit policy, not a semantic formula
 engine, default formula rewrite, non-materialized worksheet rewrite, or
 relationship repair.
+The same five generated formula rename lanes now also have no-op save variants
+that require the follow-up clean `save_as()` package to be byte-identical after
+the rename/materialized formula output has flushed.
 P8.593 pins the local workbook-editor QA runner's default executable discovery:
 when both default and minizip build-tree copies of
 `fastxlsx_workbook_editor_qa_tool.exe` exist, `tools/run_workbook_editor_qa.py`

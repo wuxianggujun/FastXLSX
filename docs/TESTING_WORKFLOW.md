@@ -1125,6 +1125,7 @@ For the opt-in rename formula rewrite QA smoke, run:
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_rewrite `
+  --scenario generated_formula_rename_rewrite_noop_save `
   --work-dir build\qa\workbook-editor-formula-rename-rewrite `
   --excel-verify
 ```
@@ -1139,12 +1140,15 @@ unchanged 3D sheet-range references, preserved string literals, no invented
 Excel COM is a read-only compatibility smoke for the renamed sheet and
 representative rewritten formula cells; exact boundary semantics remain the
 ZIP/XML checks.
+The no-op variant repeats the same rename/materialized formula rewrite output
+and requires the follow-up clean `save_as()` package to be byte-identical.
 
 For the escaped sheet-name variant of the same rewrite policy, run:
 
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_escaped_sheet_name `
+  --scenario generated_formula_rename_escaped_sheet_name_noop_save `
   --work-dir build\qa\workbook-editor-formula-rename-escaped-sheet `
   --excel-verify
 ```
@@ -1158,12 +1162,15 @@ use quoted formula qualifiers with doubled apostrophes, external-workbook and
 non-materialized worksheet formula is unchanged, and no `xl/calcChain.xml` is
 invented. Excel COM is a read-only compatibility smoke for the escaped sheet
 name and representative formulas.
+The no-op variant requires the clean follow-up `save_as()` package to match the
+escaped-name first output byte-for-byte.
 
 For the chained rename variant of the same rewrite policy, run:
 
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_chain_rewrite `
+  --scenario generated_formula_rename_chain_rewrite_noop_save `
   --work-dir build\qa\workbook-editor-formula-rename-chain `
   --excel-verify
 ```
@@ -1179,12 +1186,15 @@ worksheet formulas. External-workbook references, 3D sheet ranges, string
 literals, non-materialized worksheet formulas, and calcChain absence stay on
 the documented boundary. Excel COM is a read-only compatibility smoke for the
 final sheet and representative formulas.
+The no-op variant requires the clean follow-up `save_as()` package to match the
+chained-rename first output byte-for-byte.
 
 For the middle `RewriteDefinedNames` policy QA smoke, run:
 
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_defined_names_only `
+  --scenario generated_formula_rename_defined_names_only_noop_save `
   --work-dir build\qa\workbook-editor-formula-rename-defined-names `
   --excel-verify
 ```
@@ -1198,12 +1208,15 @@ references, unchanged 3D sheet-range references, preserved string literals, no
 invented `xl/calcChain.xml`, and an unchanged non-materialized worksheet
 formula. Excel COM is a read-only compatibility smoke for the renamed sheet and
 representative unchanged formula cells.
+The no-op variant requires the clean follow-up `save_as()` package to match the
+definedNames-only first output byte-for-byte.
 
 For the paired default rename policy QA smoke, run:
 
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_formula_rename_default_audit `
+  --scenario generated_formula_rename_default_audit_noop_save `
   --work-dir build\qa\workbook-editor-formula-rename-default `
   --excel-verify
 ```
@@ -1215,6 +1228,8 @@ worksheet formulas, external-workbook references, 3D sheet-range references,
 string literals, the non-materialized worksheet formula, and calcChain absence
 remain unchanged. The report also records formula and definedName rename-risk
 audits so the default catalog-only behavior stays explicit.
+The no-op variant requires the clean follow-up `save_as()` package to match the
+default policy first output byte-for-byte.
 
 For the source-worksheet formula reference diagnostic smoke, run:
 

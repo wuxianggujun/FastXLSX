@@ -1163,7 +1163,9 @@ Report run_generated_source_formula_audit(const CliOptions& options)
     return report;
 }
 
-Report run_generated_formula_rename_rewrite(const CliOptions& options)
+Report run_generated_formula_rename_rewrite_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1179,11 +1181,18 @@ Report run_generated_formula_rename_rewrite(const CliOptions& options)
         "rename_sheet:Data->RenamedData:RewriteDefinedNamesAndMaterializedWorksheetFormulas",
         "save_as",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Opt-in rename formula policy should rewrite direct local definedName references",
         "Opt-in rename formula policy should rewrite only already-materialized worksheet formulas",
         "External workbook references, 3D sheet-range references, string literals, and non-materialized worksheet formulas should remain unchanged",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after formula rename rewrite should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -1233,11 +1242,28 @@ Report run_generated_formula_rename_rewrite(const CliOptions& options)
             "formula rename rewrite QA should preserve one external and one 3D definedName reference");
     }
 
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "formula-rename-rewrite-first-save.xlsx",
+        "formula rename rewrite no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_formula_rename_escaped_sheet_name(const CliOptions& options)
+Report run_generated_formula_rename_rewrite(const CliOptions& options)
+{
+    return run_generated_formula_rename_rewrite_impl(options, false);
+}
+
+Report run_generated_formula_rename_rewrite_noop_save(const CliOptions& options)
+{
+    return run_generated_formula_rename_rewrite_impl(options, true);
+}
+
+Report run_generated_formula_rename_escaped_sheet_name_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     static constexpr std::string_view kRenamedSheetName = "Renamed & O'Brien";
 
@@ -1255,12 +1281,19 @@ Report run_generated_formula_rename_escaped_sheet_name(const CliOptions& options
         "rename_sheet:Data->Renamed & O'Brien:RewriteDefinedNamesAndMaterializedWorksheetFormulas",
         "save_as",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Opt-in rename formula policy should quote and escape special sheet names",
         "Apostrophes in formula sheet qualifiers should be doubled",
         "XML text/attributes should escape ampersands without changing formula semantics",
         "External workbook references, 3D sheet-range references, string literals, and non-materialized worksheet formulas should remain unchanged",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after escaped formula rename should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -1310,11 +1343,28 @@ Report run_generated_formula_rename_escaped_sheet_name(const CliOptions& options
             "escaped formula rename QA should preserve one external and one 3D definedName reference");
     }
 
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "formula-rename-escaped-first-save.xlsx",
+        "escaped formula rename no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_formula_rename_chain_rewrite(const CliOptions& options)
+Report run_generated_formula_rename_escaped_sheet_name(const CliOptions& options)
+{
+    return run_generated_formula_rename_escaped_sheet_name_impl(options, false);
+}
+
+Report run_generated_formula_rename_escaped_sheet_name_noop_save(const CliOptions& options)
+{
+    return run_generated_formula_rename_escaped_sheet_name_impl(options, true);
+}
+
+Report run_generated_formula_rename_chain_rewrite_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1331,11 +1381,18 @@ Report run_generated_formula_rename_chain_rewrite(const CliOptions& options)
         "rename_sheet:TemporaryData->FinalData:RewriteDefinedNamesAndMaterializedWorksheetFormulas",
         "save_as",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Opt-in chained rename formula policy should rewrite original source-name references",
         "Opt-in chained rename formula policy should rewrite current planned-name references",
         "External workbook references, 3D sheet-range references, string literals, and non-materialized worksheet formulas should remain unchanged",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after chained formula rename should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -1387,11 +1444,28 @@ Report run_generated_formula_rename_chain_rewrite(const CliOptions& options)
             "formula rename chain QA should preserve one external and one 3D definedName reference");
     }
 
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "formula-rename-chain-first-save.xlsx",
+        "formula rename chain no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_formula_rename_defined_names_only(const CliOptions& options)
+Report run_generated_formula_rename_chain_rewrite(const CliOptions& options)
+{
+    return run_generated_formula_rename_chain_rewrite_impl(options, false);
+}
+
+Report run_generated_formula_rename_chain_rewrite_noop_save(const CliOptions& options)
+{
+    return run_generated_formula_rename_chain_rewrite_impl(options, true);
+}
+
+Report run_generated_formula_rename_defined_names_only_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1407,11 +1481,18 @@ Report run_generated_formula_rename_defined_names_only(const CliOptions& options
         "rename_sheet:Data->RenamedData:RewriteDefinedNames",
         "save_as",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "RewriteDefinedNames should rewrite direct local definedName references",
         "RewriteDefinedNames should not rewrite already-materialized worksheet formulas",
         "External workbook references, 3D sheet-range references, string literals, and non-materialized worksheet formulas should remain unchanged",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after definedNames-only formula rename should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -1460,11 +1541,28 @@ Report run_generated_formula_rename_defined_names_only(const CliOptions& options
             "definedNames-only formula rename QA should preserve one external and one 3D definedName reference");
     }
 
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "formula-rename-defined-names-first-save.xlsx",
+        "definedNames-only formula rename no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_formula_rename_default_audit(const CliOptions& options)
+Report run_generated_formula_rename_defined_names_only(const CliOptions& options)
+{
+    return run_generated_formula_rename_defined_names_only_impl(options, false);
+}
+
+Report run_generated_formula_rename_defined_names_only_noop_save(const CliOptions& options)
+{
+    return run_generated_formula_rename_defined_names_only_impl(options, true);
+}
+
+Report run_generated_formula_rename_default_audit_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1480,12 +1578,19 @@ Report run_generated_formula_rename_default_audit(const CliOptions& options)
         "rename_sheet:Data->RenamedData:AuditOnly",
         "save_as",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Default rename_sheet should stay catalog-only",
         "Default rename_sheet should not rewrite direct local definedName formulas",
         "Default rename_sheet should not rewrite already-materialized worksheet formulas",
         "Formula and definedName audits should still report stale source-name risks",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after default formula rename audit should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -1527,8 +1632,23 @@ Report run_generated_formula_rename_default_audit(const CliOptions& options)
             "default formula rename QA should preserve one external and one 3D definedName reference");
     }
 
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "formula-rename-default-first-save.xlsx",
+        "default formula rename audit no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_formula_rename_default_audit(const CliOptions& options)
+{
+    return run_generated_formula_rename_default_audit_impl(options, false);
+}
+
+Report run_generated_formula_rename_default_audit_noop_save(const CliOptions& options)
+{
+    return run_generated_formula_rename_default_audit_impl(options, true);
 }
 
 Report run_generated_rename_materialized_impl(const CliOptions& options, bool verify_noop_save)
@@ -3556,17 +3676,32 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_formula_rename_rewrite") {
         return run_generated_formula_rename_rewrite(options);
     }
+    if (options.scenario == "generated_formula_rename_rewrite_noop_save") {
+        return run_generated_formula_rename_rewrite_noop_save(options);
+    }
     if (options.scenario == "generated_formula_rename_escaped_sheet_name") {
         return run_generated_formula_rename_escaped_sheet_name(options);
+    }
+    if (options.scenario == "generated_formula_rename_escaped_sheet_name_noop_save") {
+        return run_generated_formula_rename_escaped_sheet_name_noop_save(options);
     }
     if (options.scenario == "generated_formula_rename_chain_rewrite") {
         return run_generated_formula_rename_chain_rewrite(options);
     }
+    if (options.scenario == "generated_formula_rename_chain_rewrite_noop_save") {
+        return run_generated_formula_rename_chain_rewrite_noop_save(options);
+    }
     if (options.scenario == "generated_formula_rename_defined_names_only") {
         return run_generated_formula_rename_defined_names_only(options);
     }
+    if (options.scenario == "generated_formula_rename_defined_names_only_noop_save") {
+        return run_generated_formula_rename_defined_names_only_noop_save(options);
+    }
     if (options.scenario == "generated_formula_rename_default_audit") {
         return run_generated_formula_rename_default_audit(options);
+    }
+    if (options.scenario == "generated_formula_rename_default_audit_noop_save") {
+        return run_generated_formula_rename_default_audit_noop_save(options);
     }
     if (options.scenario == "generated_shared_formula_materialization") {
         return run_generated_shared_formula_materialization(options);

@@ -53526,6 +53526,56 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1330 - Add generated formula rename no-op QA scenarios
+
+Type: opt-in workbook-editor QA runner coverage for formula rename
+post-flush no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated QA path can save each existing formula rename policy
+output, then issue a follow-up clean `save_as()` whose output is
+byte-identical.
+
+Coverage:
+- Adds `generated_formula_rename_rewrite_noop_save`,
+  `generated_formula_rename_escaped_sheet_name_noop_save`,
+  `generated_formula_rename_chain_rewrite_noop_save`,
+  `generated_formula_rename_defined_names_only_noop_save`, and
+  `generated_formula_rename_default_audit_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated formula rename source workbooks, public
+  `rename_sheet()` policies, formula/definedName audit checks, and
+  materialized `Formula` sheet assertions from the existing QA scenarios.
+- Saves once to a first output, performs a second clean `save_as()` to the
+  scenario output, and compares both packages byte-for-byte in the QA tool.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML and `openpyxl` checks
+  validate the final no-op output and confirm the tool report includes the
+  no-op stage. The existing formula rename XlsxWriter reference skip remains
+  unchanged for these no-op variants.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  smoke reads the same final workbook shapes.
+- Documents the scenarios in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No rename policy semantic changes, default formula rewrite broadening,
+  formula evaluation, cached formula result preservation, non-materialized
+  worksheet XML scanning, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, default CTest/CI expansion, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_formula_rename_rewrite_noop_save --scenario generated_formula_rename_escaped_sheet_name_noop_save --scenario generated_formula_rename_chain_rewrite_noop_save --scenario generated_formula_rename_defined_names_only_noop_save --scenario generated_formula_rename_default_audit_noop_save --work-dir build\\qa\\workbook-editor-formula-rename-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

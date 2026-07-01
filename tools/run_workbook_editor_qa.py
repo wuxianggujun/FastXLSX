@@ -74,10 +74,15 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
     "generated_source_formula_audit",
     "generated_formula_rename_rewrite",
+    "generated_formula_rename_rewrite_noop_save",
     "generated_formula_rename_escaped_sheet_name",
+    "generated_formula_rename_escaped_sheet_name_noop_save",
     "generated_formula_rename_chain_rewrite",
+    "generated_formula_rename_chain_rewrite_noop_save",
     "generated_formula_rename_defined_names_only",
+    "generated_formula_rename_defined_names_only_noop_save",
     "generated_formula_rename_default_audit",
+    "generated_formula_rename_default_audit_noop_save",
     "generated_shared_formula_materialization",
     "generated_shared_formula_materialization_noop_save",
     "generated_shared_formula_boundary_materialization",
@@ -2901,6 +2906,21 @@ def verify_generated_formula_rename_default_audit(
     return zip_report, openpyxl_report
 
 
+def verify_generated_formula_rename_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+    verifier: Any,
+    label: str,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verifier(path, tool_report)
+    require(
+        "save_as(noop-output)" in tool_report.get("mutations", []),
+        f"{label}: tool did not report the no-op save stage",
+    )
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_shared_formula_materialization(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     zip_report: dict[str, Any] = {}
     names = zip_names(path)
@@ -3507,10 +3527,15 @@ def create_xlsxwriter_reference(
     if scenario in {
         "generated_source_formula_audit",
         "generated_formula_rename_rewrite",
+        "generated_formula_rename_rewrite_noop_save",
         "generated_formula_rename_escaped_sheet_name",
+        "generated_formula_rename_escaped_sheet_name_noop_save",
         "generated_formula_rename_chain_rewrite",
+        "generated_formula_rename_chain_rewrite_noop_save",
         "generated_formula_rename_defined_names_only",
+        "generated_formula_rename_defined_names_only_noop_save",
         "generated_formula_rename_default_audit",
+        "generated_formula_rename_default_audit_noop_save",
     }:
         return {"status": "skipped", "reason": f"no xlsxwriter reference for {scenario}"}
 
@@ -3984,25 +4009,60 @@ def run_generated_case(
             output_path,
             tool_report,
         )
+    elif scenario == "generated_formula_rename_rewrite_noop_save":
+        zip_xml, openpyxl_report = verify_generated_formula_rename_noop_save(
+            output_path,
+            tool_report,
+            verify_generated_formula_rename_rewrite,
+            "generated formula rename rewrite no-op save",
+        )
     elif scenario == "generated_formula_rename_escaped_sheet_name":
         zip_xml, openpyxl_report = verify_generated_formula_rename_escaped_sheet_name(
             output_path,
             tool_report,
+        )
+    elif scenario == "generated_formula_rename_escaped_sheet_name_noop_save":
+        zip_xml, openpyxl_report = verify_generated_formula_rename_noop_save(
+            output_path,
+            tool_report,
+            verify_generated_formula_rename_escaped_sheet_name,
+            "generated formula rename escaped sheet-name no-op save",
         )
     elif scenario == "generated_formula_rename_chain_rewrite":
         zip_xml, openpyxl_report = verify_generated_formula_rename_chain_rewrite(
             output_path,
             tool_report,
         )
+    elif scenario == "generated_formula_rename_chain_rewrite_noop_save":
+        zip_xml, openpyxl_report = verify_generated_formula_rename_noop_save(
+            output_path,
+            tool_report,
+            verify_generated_formula_rename_chain_rewrite,
+            "generated formula rename chain no-op save",
+        )
     elif scenario == "generated_formula_rename_defined_names_only":
         zip_xml, openpyxl_report = verify_generated_formula_rename_defined_names_only(
             output_path,
             tool_report,
         )
+    elif scenario == "generated_formula_rename_defined_names_only_noop_save":
+        zip_xml, openpyxl_report = verify_generated_formula_rename_noop_save(
+            output_path,
+            tool_report,
+            verify_generated_formula_rename_defined_names_only,
+            "generated formula rename definedNames-only no-op save",
+        )
     elif scenario == "generated_formula_rename_default_audit":
         zip_xml, openpyxl_report = verify_generated_formula_rename_default_audit(
             output_path,
             tool_report,
+        )
+    elif scenario == "generated_formula_rename_default_audit_noop_save":
+        zip_xml, openpyxl_report = verify_generated_formula_rename_noop_save(
+            output_path,
+            tool_report,
+            verify_generated_formula_rename_default_audit,
+            "generated formula rename default audit no-op save",
         )
     elif scenario == "generated_shared_formula_materialization":
         zip_xml, openpyxl_report = verify_generated_shared_formula_materialization(output_path)

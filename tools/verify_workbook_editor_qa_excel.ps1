@@ -850,10 +850,15 @@ function Verify-Case {
             "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifyPostNoopThirdSave $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
+            "generated_formula_rename_rewrite_noop_save" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }
+            "generated_formula_rename_escaped_sheet_name_noop_save" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }
             "generated_formula_rename_chain_rewrite" { Verify-GeneratedFormulaRenameChainRewrite $workbook }
+            "generated_formula_rename_chain_rewrite_noop_save" { Verify-GeneratedFormulaRenameChainRewrite $workbook }
             "generated_formula_rename_defined_names_only" { Verify-GeneratedFormulaRenameDefinedNamesOnly $workbook }
+            "generated_formula_rename_defined_names_only_noop_save" { Verify-GeneratedFormulaRenameDefinedNamesOnly $workbook }
             "generated_formula_rename_default_audit" { Verify-GeneratedFormulaRenameDefaultAudit $workbook }
+            "generated_formula_rename_default_audit_noop_save" { Verify-GeneratedFormulaRenameDefaultAudit $workbook }
             "generated_shared_formula_materialization" { Verify-GeneratedSharedFormulaMaterialization $workbook }
             "generated_shared_formula_materialization_noop_save" { Verify-GeneratedSharedFormulaMaterialization $workbook }
             "generated_shared_formula_office_like_materialization" { Verify-GeneratedSharedFormulaOfficeLikeMaterialization $workbook }

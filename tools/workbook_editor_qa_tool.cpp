@@ -2058,7 +2058,9 @@ Report run_generated_in_memory_append_row_formula_noop_save(const CliOptions& op
     return run_generated_in_memory_append_row_formula_impl(options, true);
 }
 
-Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
+Report run_generated_in_memory_overwrite_formula_text_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -2073,12 +2075,19 @@ Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
         "worksheet(Data).set_cell(B1,number)",
         "worksheet(Data).set_cell(C1,formula)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Original Data!A1 text should be overwritten",
         "Original Data!B1 number should be overwritten",
         "Original Data!C1 formula should be overwritten",
         "Data!A2 and Notes!A1 should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the overwrite formula/text mutation should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -2087,8 +2096,23 @@ Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
     data.set_cell("B1", CellValue::number(5.0));
     data.set_cell("C1", CellValue::formula("B1+10"));
     require_formula_cell(data, "C1", "B1+10");
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "overwrite-formula-text-first-save.xlsx",
+        "overwrite formula/text no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
+{
+    return run_generated_in_memory_overwrite_formula_text_impl(options, false);
+}
+
+Report run_generated_in_memory_overwrite_formula_text_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_overwrite_formula_text_impl(options, true);
 }
 
 Report run_generated_in_memory_retry_noop_save_impl(
@@ -3381,6 +3405,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_overwrite_formula_text") {
         return run_generated_in_memory_overwrite_formula_text(options);
+    }
+    if (options.scenario == "generated_in_memory_overwrite_formula_text_noop_save") {
+        return run_generated_in_memory_overwrite_formula_text_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_retry_noop_save") {
         return run_generated_in_memory_retry_noop_save(options);

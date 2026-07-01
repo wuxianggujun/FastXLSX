@@ -418,14 +418,16 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_in_memory_overwrite_formula_text `
+  --scenario generated_in_memory_overwrite_formula_text_noop_save `
   --work-dir build\qa\workbook-editor-in-memory-overwrite-formula-text
 ```
 
 This scenario covers `WorksheetEditor::set_cell()` overwriting source-backed
 text, number, and formula cells in a generated existing workbook while
-preserving a source row and an untouched sheet. It is local QA only and does
-not add metadata repair, sharedStrings/styles migration, calcChain rebuild, or
-low-memory random editing.
+preserving a source row and an untouched sheet, plus a byte-identical follow-up
+no-op save variant. It is local QA only and does not add metadata repair,
+sharedStrings/styles migration, calcChain rebuild, or low-memory random
+editing.
 
 For generated in-memory single-sheet failed-save retry plus no-op smoke, run:
 

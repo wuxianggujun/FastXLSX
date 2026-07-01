@@ -55,6 +55,8 @@ It also covers `generated_in_memory_overwrite_formula_text`, which overwrites
 source-backed text, number, and formula cells with `WorksheetEditor::set_cell()`
 and verifies old payload removal plus preserved rows/sheets after save and
 reopen.
+The overwrite generated lane now also has a direct no-op save variant that
+requires the clean follow-up `save_as()` output to be byte-identical.
 It now also covers `generated_in_memory_retry_noop_save`, which exercises the
 same overwritten single-sheet final shape through a rejected source-overwrite
 `save_as()`, safe retry, and byte-identical no-op save.

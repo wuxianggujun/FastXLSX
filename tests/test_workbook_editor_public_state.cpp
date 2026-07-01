@@ -17127,6 +17127,12 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-rows-source.xlsx");
 
     {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-missing-erase-row-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-missing-erase-row-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -17145,6 +17151,73 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "missing erase_row should not make the editor dirty");
         check(sheet.cell_count() == 3,
             "missing erase_row should not create or remove sparse records");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "missing erase_row should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "missing erase_row should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "missing erase_row should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing erase_row no-op");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "missing erase_row should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "missing erase_row should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "missing erase_row should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing erase_row should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_save,
+            "missing erase_row save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_save,
+            "missing erase_row save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing erase_row save");
+        check(!sheet.has_pending_changes(),
+            "missing erase_row save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing erase_row save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "missing erase_row save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "missing erase_row save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "missing erase_row noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "missing erase_row noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing erase_row noop save");
+        check(!sheet.has_pending_changes(),
+            "missing erase_row noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing erase_row noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "missing erase_row noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "missing erase_row noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "missing erase_row noop save");
     }
 
     {
@@ -17819,6 +17892,12 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-columns-source.xlsx");
 
     {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-missing-erase-column-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-missing-erase-column-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -17837,6 +17916,73 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "missing erase_column should not make the editor dirty");
         check(sheet.cell_count() == 3,
             "missing erase_column should not create or remove sparse records");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "missing erase_column should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "missing erase_column should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "missing erase_column should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing erase_column no-op");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "missing erase_column should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "missing erase_column should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "missing erase_column should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing erase_column should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_save,
+            "missing erase_column save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_save,
+            "missing erase_column save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing erase_column save");
+        check(!sheet.has_pending_changes(),
+            "missing erase_column save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing erase_column save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "missing erase_column save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "missing erase_column save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "missing erase_column noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "missing erase_column noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing erase_column noop save");
+        check(!sheet.has_pending_changes(),
+            "missing erase_column noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing erase_column noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "missing erase_column noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "missing erase_column noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "missing erase_column noop save");
     }
 
     {

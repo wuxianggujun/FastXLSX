@@ -54522,6 +54522,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1355 - Pin missing row/column clear no-op save stability
+
+Type: default public-state regression coverage for valid missing
+`clear_row()` / `clear_column()` clean-save stability.
+
+Status: completed.
+
+Goal:
+Prove valid missing row/column clear calls that clear a prior edit diagnostic
+remain copy-original and no-op save stable when they do not dirty the clean
+source-backed materialized session.
+
+Coverage:
+- Adds a missing `clear_row(3)` clean no-op branch and extends the existing
+  missing `clear_column(3)` branch.
+- Verifies each missing clear clears the prior invalid-mutation diagnostic,
+  preserves source cells and sparse count, keeps the editor clean, and leaves
+  materialized/replacement diagnostics empty.
+- Saves a copy-original output and a follow-up no-op output while preserving
+  public catalog/save-state snapshots.
+- Verifies outputs are source-entry-identical, no-op outputs match the first
+  outputs byte-for-byte, and reopened `Data` remains unchanged.
+
+Non-goals:
+- No dense row/column materialization, missing-cell synthesis, row/column
+  metadata creation, coordinate inference, rollback machinery, relationship
+  repair, broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

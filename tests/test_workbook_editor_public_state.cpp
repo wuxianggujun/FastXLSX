@@ -13296,6 +13296,100 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 
     {
         const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-missing-clear-row-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-missing-clear-row-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before missing clear_row no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before missing clear_row no-op");
+
+        sheet.clear_row(3);
+        check(!editor.last_edit_error().has_value(),
+            "missing clear_row should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "missing clear_row should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "missing clear_row should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "missing clear_row should not create or remove sparse records");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "missing clear_row should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "missing clear_row should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "missing clear_row should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing clear_row no-op");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "missing clear_row should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "missing clear_row should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "missing clear_row should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing clear_row should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_save,
+            "missing clear_row save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_save,
+            "missing clear_row save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing clear_row save");
+        check(!sheet.has_pending_changes(),
+            "missing clear_row save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing clear_row save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "missing clear_row save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "missing clear_row save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "missing clear_row noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "missing clear_row noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing clear_row noop save");
+        check(!sheet.has_pending_changes(),
+            "missing clear_row noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing clear_row noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "missing clear_row noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "missing clear_row noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "missing clear_row noop save");
+    }
+
+    {
+        const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-noop-output.xlsx");
@@ -13827,6 +13921,12 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-clear-column-source.xlsx");
 
     {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-missing-clear-column-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-missing-clear-column-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -13845,6 +13945,73 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "missing clear_column should not make the editor dirty");
         check(sheet.cell_count() == 3,
             "missing clear_column should not create or remove sparse records");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "missing clear_column should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "missing clear_column should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "missing clear_column should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing clear_column no-op");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "missing clear_column should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "missing clear_column should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "missing clear_column should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing clear_column should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_save,
+            "missing clear_column save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_save,
+            "missing clear_column save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing clear_column save");
+        check(!sheet.has_pending_changes(),
+            "missing clear_column save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing clear_column save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "missing clear_column save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "missing clear_column save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "missing clear_column noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "missing clear_column noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "missing clear_column noop save");
+        check(!sheet.has_pending_changes(),
+            "missing clear_column noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "missing clear_column noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "missing clear_column noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "missing clear_column noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "missing clear_column noop save");
     }
 
     {

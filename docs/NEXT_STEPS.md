@@ -4050,6 +4050,12 @@ empty saved materialized session. The calls stay clean, preserve public
 save-state/catalog diagnostics, emit byte-stable outputs, and reopen empty. This
 is empty whole-store clear/erase clean-save hygiene only, not tombstones, dense
 worksheet deletion, metadata repair, or source reload.
+Valid missing `clear_row()` / `clear_column()` calls now also have default
+copy-original/no-op save coverage after clearing a prior edit diagnostic. The
+calls stay clean, preserve source-backed `Data`, emit source-identical outputs
+across both saves, and reopen unchanged. This is missing row/column clear
+clean-save hygiene only, not dense row/column materialization, missing-cell
+synthesis, metadata creation, or rollback.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

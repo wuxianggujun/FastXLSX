@@ -1099,15 +1099,21 @@ void summarize_defined_name_audits(
     }
 }
 
-Report run_generated_source_formula_audit(const CliOptions& options)
+Report run_generated_source_formula_audit_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_formula_reference_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-source-formula-audit-source.xlsx"));
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-source-formula-audit-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-source-formula-audit-source.xlsx"));
     report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-source-formula-audit-output.xlsx");
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-source-formula-audit-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-source-formula-audit-output.xlsx");
     report.source_sheet_name = "Formula";
     report.renamed_sheet_name = "RenamedData";
     report.mutations = {
@@ -1115,12 +1121,19 @@ Report run_generated_source_formula_audit(const CliOptions& options)
         "rename_sheet:Data->RenamedData",
         "source_formula_reference_audits:after_rename",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Source worksheet formula audit should not materialize WorksheetEditor sessions",
         "Data!A1 should be flagged as a stale source-name formula risk after rename",
         "External workbook and 3D sheet-range qualifiers stay audit-only",
         "Saved output should keep original formula text unchanged",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after source formula audit rename should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     if (!editor.formula_reference_audits().empty()) {
@@ -1159,8 +1172,23 @@ Report run_generated_source_formula_audit(const CliOptions& options)
         throw std::runtime_error("source formula audit QA expected three local matched references");
     }
 
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "source-formula-audit-first-save.xlsx",
+        "source formula audit no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_source_formula_audit(const CliOptions& options)
+{
+    return run_generated_source_formula_audit_impl(options, false);
+}
+
+Report run_generated_source_formula_audit_noop_save(const CliOptions& options)
+{
+    return run_generated_source_formula_audit_impl(options, true);
 }
 
 Report run_generated_formula_rename_rewrite_impl(
@@ -3779,6 +3807,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_source_formula_audit") {
         return run_generated_source_formula_audit(options);
+    }
+    if (options.scenario == "generated_source_formula_audit_noop_save") {
+        return run_generated_source_formula_audit_noop_save(options);
     }
     if (options.scenario == "generated_formula_rename_rewrite") {
         return run_generated_formula_rename_rewrite(options);

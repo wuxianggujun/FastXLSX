@@ -53756,6 +53756,53 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1335 - Add generated source formula audit no-op QA scenario
+
+Type: opt-in workbook-editor QA runner coverage for source formula audit
+post-flush no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated source formula audit path can save the catalog rename
+output, then issue a follow-up clean `save_as()` whose output is byte-identical.
+
+Coverage:
+- Adds `generated_source_formula_audit_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated source-formula-audit workbook and `Data` ->
+  `RenamedData` catalog rename path from the existing QA scenario.
+- Verifies the report still classifies one stale source-name formula risk, one
+  external-workbook reference, one 3D sheet-range reference, and three local
+  matched references.
+- Verifies the saved workbook still keeps non-materialized source worksheet
+  formula text unchanged.
+- Saves once to a first output, performs a second clean `save_as()` to the
+  scenario output, and compares both packages byte-for-byte in the QA tool.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML, audit-report, and
+  `openpyxl` checks validate the final no-op output and confirm the tool report
+  includes the no-op stage.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  validates the same final workbook shape.
+- Documents the scenario in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No formula rewrite, stale source qualifier repair, formula evaluation, cached
+  result preservation, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, default CTest/CI expansion, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_source_formula_audit_noop_save --work-dir build\\qa\\workbook-editor-source-formula-audit-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

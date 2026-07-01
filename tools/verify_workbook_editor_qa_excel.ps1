@@ -850,6 +850,7 @@ function Verify-Case {
             "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifyPostNoopThirdSave $workbook }
             "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save" { Verify-GeneratedInMemoryMultiSheetRetryReopenModifyPostNoopThirdSave $workbook }
             "generated_source_formula_audit" { Verify-GeneratedSourceFormulaAudit $workbook }
+            "generated_source_formula_audit_noop_save" { Verify-GeneratedSourceFormulaAudit $workbook }
             "generated_formula_rename_rewrite" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_rewrite_noop_save" { Verify-GeneratedFormulaRenameRewrite $workbook }
             "generated_formula_rename_escaped_sheet_name" { Verify-GeneratedFormulaRenameEscapedSheetName $workbook }

@@ -1278,6 +1278,7 @@ For the source-worksheet formula reference diagnostic smoke, run:
 ```powershell
 py tools\run_workbook_editor_qa.py `
   --scenario generated_source_formula_audit `
+  --scenario generated_source_formula_audit_noop_save `
   --work-dir build\qa\workbook-editor-source-formula-audit
 ```
 
@@ -1286,6 +1287,8 @@ without materializing any `WorksheetEditor`, then renames `Data` to
 `RenamedData` and confirms the audit reports the stale `Data!A1` source-name
 risk while leaving source worksheet formula text unchanged in the saved output.
 External workbook qualifiers and 3D sheet-range qualifiers remain audit-only.
+The no-op variant requires the clean follow-up `save_as()` package to match the
+first source-audit rename output byte-for-byte.
 
 For the generated shared-formula translator boundary smoke, run:
 

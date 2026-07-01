@@ -1941,6 +1941,9 @@ before/after a `Data` -> `RenamedData` rename, verifies one stale source-name
 formula risk plus external-workbook and 3D sheet-range audit classification,
 and checks the saved workbook still keeps the non-materialized formula text
 unchanged.
+That generated source-audit lane now also has a no-op save variant requiring the
+post-rename clean `save_as()` output to remain byte-identical, without changing
+the audit-only formula boundary or repairing stale source qualifiers.
 The same audit boundary now extends to current workbook defined names through
 `WorkbookEditor::defined_name_formula_reference_audits()`: it materializes the
 small `xl/workbook.xml` metadata part from the current planned editor state

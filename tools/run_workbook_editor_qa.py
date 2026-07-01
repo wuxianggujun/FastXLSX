@@ -73,6 +73,7 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
     "generated_source_formula_audit",
+    "generated_source_formula_audit_noop_save",
     "generated_formula_rename_rewrite",
     "generated_formula_rename_rewrite_noop_save",
     "generated_formula_rename_escaped_sheet_name",
@@ -2304,6 +2305,17 @@ def verify_generated_source_formula_audit(
     return zip_report, openpyxl_report
 
 
+def verify_generated_source_formula_audit_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_source_formula_audit(path, tool_report)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            "generated source formula audit no-op save: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_formula_rename_rewrite(
     path: Path,
     tool_report: dict[str, Any],
@@ -3576,6 +3588,7 @@ def create_xlsxwriter_reference(
         return {"status": "skipped", "reason": "xlsxwriter not installed"}
     if scenario in {
         "generated_source_formula_audit",
+        "generated_source_formula_audit_noop_save",
         "generated_formula_rename_rewrite",
         "generated_formula_rename_rewrite_noop_save",
         "generated_formula_rename_escaped_sheet_name",
@@ -4063,6 +4076,11 @@ def run_generated_case(
         )
     elif scenario == "generated_source_formula_audit":
         zip_xml, openpyxl_report = verify_generated_source_formula_audit(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_source_formula_audit_noop_save":
+        zip_xml, openpyxl_report = verify_generated_source_formula_audit_noop_save(
             output_path,
             tool_report,
         )

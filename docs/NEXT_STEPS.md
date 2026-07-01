@@ -4001,6 +4001,12 @@ coverage: the rejected full-column call preserves the clean source-backed
 `Data` session, retains the public diagnostic across both saves, keeps
 materialized/replacement diagnostics empty, and reopens unchanged. This is
 full-column validation hygiene only, not coordinate clamping or rollback.
+`set_row_values()` validation and exact `max_cells` rejection now have matching
+copy-original/no-op coverage: row zero and a new row-prefix write over the
+configured sparse cell budget preserve the clean source-backed `Data` session,
+retain public diagnostics across both saves, keep materialized/replacement
+diagnostics empty, and reopen unchanged. This is value-prefix rejection hygiene
+only, not dense row writes, row insertion, budget auto-sizing, or rollback.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

@@ -11194,6 +11194,10 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "fastxlsx-workbook-editor-public-worksheet-set-row-values-empty-noop-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-set-row-values-empty-noop-second-output.xlsx");
+        const std::filesystem::path invalid_row_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-values-invalid-row-output.xlsx");
+        const std::filesystem::path invalid_row_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-values-invalid-row-noop-output.xlsx");
         const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -11287,6 +11291,89 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "set_row_values invalid-row failure should not dirty the materialized worksheet");
         check(sheet.cell_count() == 3,
             "set_row_values invalid-row failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "set_row_values invalid-row failure should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "set_row_values invalid-row failure should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "set_row_values invalid-row failure should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row_values invalid-row failure");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row_values invalid-row failure should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row_values invalid-row failure should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values invalid-row failure should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "set_row_values invalid-row failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_row_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_invalid_row_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(invalid_row_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_invalid_row_save,
+            "set_row_values invalid-row failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_invalid_row_save,
+            "set_row_values invalid-row failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor,
+            "set_row_values invalid-row failure save");
+        check(!sheet.has_pending_changes(),
+            "set_row_values invalid-row failure save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values invalid-row failure save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "set_row_values invalid-row failure save should not queue replacement diagnostics");
+        const auto invalid_row_output_entries =
+            fastxlsx::test::read_zip_entries(invalid_row_output);
+        check(invalid_row_output_entries == source_entries,
+            "set_row_values invalid-row failure save should copy source entries");
+        check_reopened_default_data_sheet_output(
+            invalid_row_output, "set_row_values invalid-row failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_row_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_invalid_row_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(invalid_row_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_invalid_row_noop,
+            "set_row_values invalid-row failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_invalid_row_noop,
+            "set_row_values invalid-row failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor,
+            "set_row_values invalid-row failure noop save");
+        check(!sheet.has_pending_changes(),
+            "set_row_values invalid-row failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values invalid-row failure noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "set_row_values invalid-row failure noop save should not queue replacement diagnostics");
+        const auto invalid_row_noop_entries =
+            fastxlsx::test::read_zip_entries(invalid_row_noop_output);
+        check(invalid_row_noop_entries == source_entries,
+            "set_row_values invalid-row failure noop save should still copy source entries");
+        check(invalid_row_noop_entries == invalid_row_output_entries,
+            "set_row_values invalid-row failure noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            invalid_row_noop_output, "set_row_values invalid-row failure noop save");
     }
 
     {
@@ -11294,6 +11381,11 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-values-budget-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-values-budget-noop-output.xlsx");
+        const std::filesystem::path reject_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-values-budget-reject-output.xlsx");
+        const std::filesystem::path reject_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-values-budget-reject-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -11320,6 +11412,87 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "failed set_row_values max_cells mutation should preserve sparse memory estimate");
         check(!sheet.try_cell("A3").has_value(),
             "failed set_row_values max_cells mutation should not leave rejected cells readable");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "failed set_row_values max_cells mutation should preserve row-prefix text");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "failed set_row_values max_cells mutation should preserve row tail cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "failed set_row_values max_cells mutation should preserve non-target rows");
+        check_workbook_editor_public_no_pending_state(
+            editor, "failed set_row_values max_cells mutation");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "failed set_row_values max_cells mutation should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "failed set_row_values max_cells mutation should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "failed set_row_values max_cells mutation should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "failed set_row_values max_cells mutation should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_reject_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_reject_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(reject_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_reject_save,
+            "set_row_values max_cells rejection save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_reject_save,
+            "set_row_values max_cells rejection save");
+        check_workbook_editor_public_no_pending_state(
+            editor,
+            "set_row_values max_cells rejection save");
+        check(!sheet.has_pending_changes(),
+            "set_row_values max_cells rejection save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values max_cells rejection save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "set_row_values max_cells rejection save should not queue replacement diagnostics");
+        const auto reject_output_entries = fastxlsx::test::read_zip_entries(reject_output);
+        check(reject_output_entries == source_entries,
+            "set_row_values max_cells rejection save should copy source entries");
+        check_reopened_default_data_sheet_output(
+            reject_output, "set_row_values max_cells rejection save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_reject_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_reject_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(reject_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_reject_noop,
+            "set_row_values max_cells rejection noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_reject_noop,
+            "set_row_values max_cells rejection noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor,
+            "set_row_values max_cells rejection noop save");
+        check(!sheet.has_pending_changes(),
+            "set_row_values max_cells rejection noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row_values max_cells rejection noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "set_row_values max_cells rejection noop save should not queue replacement diagnostics");
+        const auto reject_noop_entries = fastxlsx::test::read_zip_entries(reject_noop_output);
+        check(reject_noop_entries == source_entries,
+            "set_row_values max_cells rejection noop save should still copy source entries");
+        check(reject_noop_entries == reject_output_entries,
+            "set_row_values max_cells rejection noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            reject_noop_output, "set_row_values max_cells rejection noop save");
 
         sheet.set_row_values(1, {fastxlsx::CellValue::text("in-budget-row-value")});
         check(!editor.last_edit_error().has_value(),

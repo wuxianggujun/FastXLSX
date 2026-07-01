@@ -32451,7 +32451,6 @@ CMake dependency。
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
-
 ### P13.1 default `StyleId{}` clears per-cell style
 
 状态：基础完成。
@@ -53342,6 +53341,51 @@ Verification:
 - `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
   passes.
 - `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_insert_formula_noop_save --scenario generated_in_memory_delete_column_formula_noop_save --scenario generated_in_memory_insert_column_formula_noop_save --scenario generated_in_memory_delete_row_formula_noop_save --work-dir build\\qa\\workbook-editor-in-memory-moving-formula-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
+### P8.1326 - Add generated clear and append no-op QA scenarios
+
+Type: opt-in workbook-editor QA runner coverage for public `WorksheetEditor`
+clear/erase and append-row post-flush no-op save stability.
+
+Status: completed.
+
+Goal:
+Prove the opt-in generated QA path can save existing clear/erase and append-row
+materialized outputs and then issue a follow-up clean `save_as()` whose output
+is byte-identical.
+
+Coverage:
+- Adds `generated_in_memory_clear_erase_noop_save` and
+  `generated_in_memory_append_row_formula_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp`.
+- Reuses the generated clear/erase and append-row source workbooks, mutations,
+  and pre-save public readback assertions from the existing QA scenarios.
+- Saves once to a first output, performs a second clean `save_as()` to the
+  scenario output, and compares both packages byte-for-byte in the QA tool.
+- Extends `tools/run_workbook_editor_qa.py` so ZIP/XML, `openpyxl`, and
+  optional XlsxWriter reference checks validate the final no-op outputs and
+  confirm each tool report includes the no-op stage.
+- Extends `tools/verify_workbook_editor_qa_excel.ps1` so optional Excel COM
+  smoke reads the same final workbook shapes.
+- Documents the scenarios in `docs/TESTING_WORKFLOW.md`.
+
+Non-goals:
+- No production clear/erase or append-row semantic changes, tombstones, formula
+  evaluation, cached formula result preservation, metadata/range
+  synchronization, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, default CTest/CI expansion, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_clear_erase_noop_save --scenario generated_in_memory_append_row_formula_noop_save --work-dir build\\qa\\workbook-editor-in-memory-clear-append-noop-save --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
   passes.
 - `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
   passes.

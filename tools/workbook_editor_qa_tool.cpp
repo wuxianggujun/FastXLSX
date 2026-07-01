@@ -1941,7 +1941,7 @@ Report run_generated_in_memory_stationary_range_formula_shift_noop_save(const Cl
     return run_generated_in_memory_stationary_range_formula_shift_impl(options, true);
 }
 
-Report run_generated_in_memory_clear_erase(const CliOptions& options)
+Report run_generated_in_memory_clear_erase_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1956,6 +1956,9 @@ Report run_generated_in_memory_clear_erase(const CliOptions& options)
         "worksheet(Data).erase_cell(C1)",
         "worksheet(Data).set_cell(D1,text)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Original Data!A1 and Data!A2 should remain source-backed",
         "Original Data!B1 formula should become an explicit blank cell",
@@ -1963,6 +1966,10 @@ Report run_generated_in_memory_clear_erase(const CliOptions& options)
         "New Data!D1 should be written from the materialized sparse store",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the clear/erase mutation should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -1977,11 +1984,26 @@ Report run_generated_in_memory_clear_erase(const CliOptions& options)
         throw std::runtime_error("erase_cell(C1) left a represented cell");
     }
     data.set_cell("D1", CellValue::text("new-d1"));
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "clear-erase-first-save.xlsx",
+        "clear/erase no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_in_memory_append_row_formula(const CliOptions& options)
+Report run_generated_in_memory_clear_erase(const CliOptions& options)
+{
+    return run_generated_in_memory_clear_erase_impl(options, false);
+}
+
+Report run_generated_in_memory_clear_erase_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_clear_erase_impl(options, true);
+}
+
+Report run_generated_in_memory_append_row_formula_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1994,6 +2016,9 @@ Report run_generated_in_memory_append_row_formula(const CliOptions& options)
     report.mutations = {
         "worksheet(Data).append_row(text,number,formula)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Original Data!A1:C1 header row should stay in place",
         "Original Data!A2:B2 source row should stay in place",
@@ -2001,6 +2026,10 @@ Report run_generated_in_memory_append_row_formula(const CliOptions& options)
         "Appended formula B3*2 should survive save/reopen",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the appended formula row should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -2010,8 +2039,23 @@ Report run_generated_in_memory_append_row_formula(const CliOptions& options)
         CellValue::formula("B3*2"),
     });
     require_formula_cell(data, "C3", "B3*2");
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "append-row-formula-first-save.xlsx",
+        "append-row formula no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_in_memory_append_row_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_append_row_formula_impl(options, false);
+}
+
+Report run_generated_in_memory_append_row_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_append_row_formula_impl(options, true);
 }
 
 Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
@@ -3326,8 +3370,14 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_in_memory_clear_erase") {
         return run_generated_in_memory_clear_erase(options);
     }
+    if (options.scenario == "generated_in_memory_clear_erase_noop_save") {
+        return run_generated_in_memory_clear_erase_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_append_row_formula") {
         return run_generated_in_memory_append_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_append_row_formula_noop_save") {
+        return run_generated_in_memory_append_row_formula_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_overwrite_formula_text") {
         return run_generated_in_memory_overwrite_formula_text(options);

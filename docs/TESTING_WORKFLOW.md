@@ -382,14 +382,16 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_in_memory_clear_erase `
+  --scenario generated_in_memory_clear_erase_noop_save `
   --work-dir build\qa\workbook-editor-in-memory-clear-erase
 ```
 
 This scenario covers `WorksheetEditor::clear_cell_value()` preserving an
 explicit blank cell, `WorksheetEditor::erase_cell()` removing a represented
-cell, a new materialized text write, save, and reopen checks. It is local QA
-only and does not add tombstones, metadata repair, sharedStrings/styles
-migration, calcChain rebuild, or low-memory random editing.
+cell, a new materialized text write, save, reopen checks, and a byte-identical
+follow-up no-op save variant. It is local QA only and does not add tombstones,
+metadata repair, sharedStrings/styles migration, calcChain rebuild, or
+low-memory random editing.
 
 For generated in-memory append-row/formula persistence smoke, run:
 
@@ -398,14 +400,16 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_in_memory_append_row_formula `
+  --scenario generated_in_memory_append_row_formula_noop_save `
   --work-dir build\qa\workbook-editor-in-memory-append-row-formula
 ```
 
 This scenario covers `WorksheetEditor::append_row()` writing a new
 text/number/formula row to a generated existing workbook while preserving
-source rows and an untouched sheet. It is local QA only and does not add
-metadata synchronization, sharedStrings/styles migration, calcChain rebuild, or
-low-memory random editing.
+source rows and an untouched sheet, plus a byte-identical follow-up no-op save
+variant. It is local QA only and does not add metadata synchronization,
+sharedStrings/styles migration, calcChain rebuild, or low-memory random
+editing.
 
 For generated in-memory source-cell overwrite persistence smoke, run:
 

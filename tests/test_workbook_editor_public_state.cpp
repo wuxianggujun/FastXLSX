@@ -8772,6 +8772,117 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-max-cells-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-max-cells-failure-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text("max-cells-rejected")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+                "append_row max_cells failure should expose the guardrail diagnostic");
+        }
+        check(failed, "append_row should reject new sparse records past max_cells");
+        check(editor.last_edit_error().has_value(),
+            "append_row max_cells failure should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(), "max_cells",
+                "append_row max_cells failure diagnostic should mention max_cells");
+        }
+        check(!sheet.has_pending_changes(),
+            "append_row max_cells failure should keep the materialized sheet clean");
+        check(sheet.cell_count() == 3,
+            "append_row max_cells failure should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "append_row max_cells failure should preserve sparse memory estimate");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row max_cells failure should not leave rejected cells readable");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "append_row max_cells failure should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "append_row max_cells failure should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "append_row max_cells failure should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row max_cells failure");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row max_cells failure should not expose dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row max_cells failure should not expose dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row max_cells failure should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row max_cells failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "append_row max_cells failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row max_cells failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row max_cells failure save");
+        check(!sheet.has_pending_changes(),
+            "append_row max_cells failure save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row max_cells failure save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row max_cells failure save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row max_cells failure save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row max_cells failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row max_cells failure save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "append_row max_cells failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row max_cells failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row max_cells failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row max_cells failure noop save");
+        check(!sheet.has_pending_changes(),
+            "append_row max_cells failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row max_cells failure noop save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row max_cells failure noop save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row max_cells failure noop save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row max_cells failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "append_row max_cells failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "append_row max_cells failure noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "append_row max_cells failure noop save");
+    }
+
+    {
         const std::filesystem::path output =
             artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-output.xlsx");
         const std::filesystem::path noop_output =

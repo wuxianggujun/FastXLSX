@@ -3986,6 +3986,11 @@ pre-existing sparse `XFD1048576` edit survives the rejected append past row
 rejected value, and the follow-up no-op save is byte-identical. This remains
 save hygiene for a validation failure, not row insertion, metadata/range
 synchronization, or rollback machinery.
+`append_row()` exact `max_cells` rejection now has matching copy-original/no-op
+coverage: with a clean source-backed session already at the configured cell
+budget, the rejected append preserves source cells, keeps `A3` absent, retains
+the `max_cells` diagnostic across both saves, and reopens unchanged. This is
+budget guardrail hygiene only, not budget auto-sizing or rollback machinery.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

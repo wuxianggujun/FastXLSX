@@ -54109,6 +54109,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1344 - Pin append-row max-cells failure no-op public-state stability
+
+Type: default public-state regression coverage for append-row `max_cells`
+validation failure no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend rejection-only save hygiene to `WorksheetEditor::append_row()` when a
+clean source-backed materialized session is already at an exact `max_cells`
+budget.
+
+Coverage:
+- Adds an independent append-row `max_cells` rejection branch before the
+  existing budget-release recovery branch.
+- Verifies the rejected append updates `last_edit_error()`, preserves source
+  cells, sparse cell count, and sparse memory estimate, leaves `A3` absent, and
+  keeps materialized/replacement diagnostics clean.
+- Saves a copy-original output and a follow-up no-op output while preserving
+  public catalog/save-state snapshots, including the retained `max_cells`
+  diagnostic.
+- Verifies both outputs are source-entry-identical, the no-op output matches
+  the first output byte-for-byte, and reopened `Data` remains unchanged.
+
+Non-goals:
+- No budget auto-sizing, process-RSS accounting, rollback machinery, dense
+  append, row insertion, row metadata creation, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

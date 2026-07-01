@@ -54953,6 +54953,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1366 - Pin column-translated formula fresh-reopen audit no-op save stability
+
+Type: default public-state regression coverage for clean reopened
+column-translated formula audit no-op save hygiene.
+
+Status: completed.
+
+Goal:
+Prove a clean editor opened from a saved stationary formula column-insert
+rewrite can run source/materialized formula audit inspections and still perform
+a stable no-op `save_as()`.
+
+Coverage:
+- Extends `test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_saved_rewrite()`
+  with a follow-up clean no-op save after source/materialized formula audit
+  checks on the reopened editor.
+- Verifies the saved column-insert rewrite reports `Data!E1` and `Data!B1`
+  while omitting the old `Data!D1` reference from both audit views.
+- Captures public catalog/save-state snapshots before the no-op save and
+  verifies pending changes, materialized diagnostics, replacement diagnostics,
+  and dirty summaries remain empty.
+- Verifies the no-op package entries match the first saved output byte-for-byte
+  and a fresh reopen reads the translated `C1` formula.
+
+Non-goals:
+- No broader formula translation changes, formula evaluation, cached formula
+  result preservation, `#REF!` repair, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

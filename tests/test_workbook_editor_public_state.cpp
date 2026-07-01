@@ -11361,6 +11361,121 @@ void check_reopened_clean_sheet_output(
         prefix + " reopened readback should keep last_edit_error empty");
 }
 
+void check_reopened_delete_row_formula_noop_output(
+    const std::filesystem::path& output,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output, "RenamedData", scenario,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 5,
+                "renamed formula delete-row no-op output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 4,
+                "renamed formula delete-row no-op output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_d1 =
+                noop_sheet.try_cell("D1");
+            check(noop_d1.has_value() &&
+                    noop_d1->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_d1->text_value() == "#REF!+#REF!" &&
+                    noop_d1->has_style() &&
+                    noop_d1->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-row no-op output should read translated styled formula");
+            check(noop_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    noop_sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("C1").text_value() == "row2-gap-c2" &&
+                    noop_sheet.get_cell("A2").text_value() == "extra-c3",
+                "renamed formula delete-row no-op output should read shifted source rows");
+            check(!noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A3").has_value(),
+                "renamed formula delete-row no-op output should keep old coordinates absent");
+        });
+}
+
+void check_reopened_delete_row_formula_column_shift_noop_output(
+    const std::filesystem::path& output,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output, "RenamedData", scenario,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 5,
+                "renamed formula delete-row column-shift no-op output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 5,
+                "renamed formula delete-row column-shift no-op output should expose combined shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_e1 =
+                noop_sheet.try_cell("E1");
+            check(noop_e1.has_value() &&
+                    noop_e1->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_e1->text_value() == "#REF!+#REF!" &&
+                    noop_e1->has_style() &&
+                    noop_e1->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-row column-shift no-op output should read translated styled formula");
+            check(noop_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    noop_sheet.get_cell("C1").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("D1").text_value() == "row2-gap-c2" &&
+                    noop_sheet.get_cell("A2").text_value() == "extra-c3",
+                "renamed formula delete-row column-shift no-op output should read shifted source cells");
+            check(!noop_sheet.try_cell("B1").has_value() &&
+                    !noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A3").has_value(),
+                "renamed formula delete-row column-shift no-op output should keep old coordinates absent");
+        });
+}
+
+void check_reopened_delete_row_formula_column_shift_snapshot_noop_output(
+    const std::filesystem::path& output,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output, "RenamedData", scenario,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 5,
+                "renamed formula delete-row snapshot no-op output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 5,
+                "renamed formula delete-row snapshot no-op output should expose combined shifted bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> noop_row_one =
+                noop_sheet.row_cells(1);
+            check(noop_row_one.size() == 4,
+                "renamed formula delete-row snapshot no-op row_cells should expose shifted row one");
+            check(noop_row_one[0].reference.row == 1 &&
+                    noop_row_one[0].reference.column == 1 &&
+                    noop_row_one[0].value.text_value() == "placeholder-a2",
+                "renamed formula delete-row snapshot no-op row_cells should read shifted A2");
+            check(noop_row_one[1].reference.row == 1 &&
+                    noop_row_one[1].reference.column == 3 &&
+                    noop_row_one[1].value.text_value() == "row2-gap-b2",
+                "renamed formula delete-row snapshot no-op row_cells should read shifted B2");
+            check(noop_row_one[2].reference.row == 1 &&
+                    noop_row_one[2].reference.column == 4 &&
+                    noop_row_one[2].value.text_value() == "row2-gap-c2",
+                "renamed formula delete-row snapshot no-op row_cells should read shifted C2");
+            check(noop_row_one[3].reference.row == 1 &&
+                    noop_row_one[3].reference.column == 5 &&
+                    noop_row_one[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_row_one[3].value.text_value() == "#REF!+#REF!" &&
+                    noop_row_one[3].value.has_style() &&
+                    noop_row_one[3].value.style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-row snapshot no-op row_cells should read translated styled formula");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> noop_column_five =
+                noop_sheet.column_cells(5);
+            check(noop_column_five.size() == 1 &&
+                    noop_column_five[0].reference.row == 1 &&
+                    noop_column_five[0].reference.column == 5 &&
+                    noop_column_five[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_column_five[0].value.text_value() == "#REF!+#REF!" &&
+                    noop_column_five[0].value.has_style() &&
+                    noop_column_five[0].value.style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-row snapshot no-op column_cells should read translated styled formula");
+            check(!noop_sheet.try_cell("B1").has_value() &&
+                    !noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A3").has_value(),
+                "renamed formula delete-row snapshot no-op output should keep old coordinates absent");
+        });
+}
+
 void check_reopened_default_data_sheet_output(
     const std::filesystem::path& output,
     std::string_view scenario)
@@ -33659,6 +33774,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_
         "renamed formula delete-row failed save no-op retry");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed formula delete-row failed save no-op retry should keep output entries stable");
+    check_reopened_delete_row_formula_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row failed save no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -33887,6 +34005,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_
         "renamed formula delete-row option mismatch no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-row option mismatch no-op save should keep output entries stable");
+    check_reopened_delete_row_formula_column_shift_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row option mismatch no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -34127,6 +34248,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
         "renamed formula delete-row invalid mutations no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-row invalid mutations no-op save should keep output entries stable");
+    check_reopened_delete_row_formula_column_shift_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row invalid mutations no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -34356,6 +34480,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing
         "renamed formula delete-row missing query no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-row missing query no-op save should keep output entries stable");
+    check_reopened_delete_row_formula_column_shift_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row missing query no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -34608,6 +34735,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
         "renamed formula delete-row invalid reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-row invalid reads no-op save should keep output entries stable");
+    check_reopened_delete_row_formula_column_shift_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row invalid reads no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -34895,6 +35025,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_snapsho
         "renamed formula delete-row snapshot reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-row snapshot reads no-op save should keep output entries stable");
+    check_reopened_delete_row_formula_column_shift_snapshot_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row snapshot reads no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -35133,6 +35266,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
         "renamed formula delete-row reacquire no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-row reacquire no-op save should keep output entries stable");
+    check_reopened_delete_row_formula_column_shift_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-row reacquire no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

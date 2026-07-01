@@ -56628,6 +56628,299 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1408 - Reopen delete-row failed-save formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row failed-save retry no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row failed-save retry path still
+produces a clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_save_preserves_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:D2`,
+  shifted source-backed rows `A1`, `B1`, `C1`, and `A2`, translated styled
+  formula `D1 = #REF!+#REF!`, and old coordinates `D2` and `A3` absent.
+- Leaves the existing source-overwrite rejection, dirty-session preservation,
+  safe retry, save-state/catalog snapshots, saved-output reopen, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No failed-save policy changes, source-overwrite protection changes, rename
+  semantic changes, delete-row semantic changes, formula translation changes,
+  style preservation changes, formula evaluation, cached values,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1409 - Reopen delete-row option-mismatch formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row option-mismatch no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row option-mismatch path still produces
+a clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_mismatch_preserves_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:E2`,
+  shifted source-backed cells `A1`, `C1`, `D1`, and `A2`, translated styled
+  formula `E1 = #REF!+#REF!`, and old coordinates `B1`, `D2`, and `A3`
+  absent.
+- Leaves the existing option-mismatch rejection, matching reacquire, recovery
+  column shift, save-state/catalog snapshots, saved-output reopen, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No option-matching policy changes, rename semantic changes, delete-row or
+  column-shift semantic changes, formula translation changes, style
+  preservation changes, saved-session reacquire policy changes, formula
+  evaluation, cached values, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1410 - Reopen delete-row invalid-mutation formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row invalid-mutation recovery no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row invalid-mutation recovery path still
+produces a clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid_mutations_preserve_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:E2`,
+  shifted source-backed cells `A1`, `C1`, `D1`, and `A2`, translated styled
+  formula `E1 = #REF!+#REF!`, and old coordinates `B1`, `D2`, and `A3`
+  absent.
+- Leaves the existing invalid-mutation rejection, diagnostic clearing, recovery
+  column shift, save-state/catalog snapshots, saved-output reopen, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No mutation validation changes, diagnostic policy changes, rename semantic
+  changes, delete-row or column-shift semantic changes, formula translation
+  changes, style preservation changes, saved-session reacquire policy changes,
+  formula evaluation, cached values, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1411 - Reopen delete-row missing-query formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row missing-query recovery no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row missing-query recovery path still
+produces a clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing_query_preserves_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:E2`,
+  shifted source-backed cells `A1`, `C1`, `D1`, and `A2`, translated styled
+  formula `E1 = #REF!+#REF!`, and old coordinates `B1`, `D2`, and `A3`
+  absent.
+- Leaves the existing missing-query rejection, matching reacquire, recovery
+  column shift, save-state/catalog snapshots, saved-output reopen, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No sheet lookup policy changes, source-name fallback behavior changes, rename
+  semantic changes, delete-row or column-shift semantic changes, formula
+  translation changes, style preservation changes, saved-session reacquire
+  policy changes, formula evaluation, cached values, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1412 - Reopen delete-row invalid-read formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row invalid-read no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row invalid-read path still produces a
+clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid_reads_preserve_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:E2`,
+  shifted source-backed cells `A1`, `C1`, `D1`, and `A2`, translated styled
+  formula `E1 = #REF!+#REF!`, and old coordinates `B1`, `D2`, and `A3`
+  absent.
+- Leaves the existing invalid-read rejection checks, recovery column shift,
+  save-state/catalog snapshots, saved-output reopen, and byte-stability
+  assertions unchanged.
+
+Non-goals:
+- No read validation changes, diagnostic policy changes, rename semantic
+  changes, delete-row or column-shift semantic changes, formula translation
+  changes, style preservation changes, saved-session reacquire policy changes,
+  formula evaluation, cached values, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1413 - Reopen delete-row snapshot-read formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row snapshot-read no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row snapshot-read path still produces a
+clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_snapshot_reads_preserve_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:E2`,
+  row-one cells `A1`, `C1`, `D1`, and translated styled `E1`,
+  column-five formula readback, and old coordinates `B1`, `D2`, and `A3`
+  absent.
+- Leaves the existing full/range/row/column/batch snapshot checks, owning
+  snapshot lifetime checks, recovery column shift, saved-output reopen, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No snapshot lifetime changes, read validation changes, diagnostic policy
+  changes, rename semantic changes, delete-row or column-shift semantic
+  changes, formula translation changes, style preservation changes,
+  saved-session reacquire policy changes, formula evaluation, cached values,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1414 - Reopen delete-row reacquire formula no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+delete-row reacquire no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula delete-row reacquire path still produces a
+clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacquire_reuses_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies clean
+  public diagnostics through `check_reopened_clean_sheet_output()`.
+- Verifies the reopened no-op output keeps sparse count `5`, bounds `A1:E2`,
+  shifted source-backed cells `A1`, `C1`, `D1`, and `A2`, translated styled
+  formula `E1 = #REF!+#REF!`, and old coordinates `B1`, `D2`, and `A3`
+  absent.
+- Leaves the existing clean reacquire, recovery column shift,
+  save-state/catalog snapshots, saved-output reopen, and byte-stability
+  assertions unchanged.
+
+Non-goals:
+- No saved-session lookup changes, rename semantic changes, delete-row or
+  column-shift semantic changes, formula translation changes, style preservation
+  changes, formula evaluation, cached values, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

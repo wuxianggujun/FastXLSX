@@ -1881,6 +1881,14 @@ translated styled `C3` formula, shifted source-backed cells, row/column
 snapshot readback, and absent old coordinates.
 The delete-column reacquire path now mirrors that final no-op output readback
 after the clean saved-session reacquire and later recovery row shift.
+The matching delete-row failed-save retry path now fresh-reopens its byte-stable
+no-op output too, pinning the translated styled `D1` formula, shifted
+source-backed rows, clean diagnostics, and absent old coordinates.
+The delete-row option-mismatch, invalid-mutation, missing-query, invalid-read,
+snapshot-read, and reacquire styled-session paths now mirror the same no-op
+output readback after their later column shifts; the snapshot-read case also
+checks fresh `row_cells()` / `column_cells()` views of the translated styled
+`E1` formula output.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

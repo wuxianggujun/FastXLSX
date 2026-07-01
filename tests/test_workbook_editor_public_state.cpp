@@ -43576,6 +43576,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-noop-output.xlsx");
+        const std::filesystem::path post_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-post-noop-output.xlsx");
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -43659,6 +43661,75 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula noop save should keep output entries stable");
         check_reopened_shift_output(noop_output, "insert_rows rich formula noop save",
             inspect_reopened_row_formula);
+
+        sheet.set_cell("D3", fastxlsx::CellValue::formula("C3+A3"));
+        check(sheet.has_pending_changes(),
+            "insert_rows rich formula post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 5,
+            "insert_rows rich formula post-noop edit should add one sparse formula cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 3, 4,
+            "insert_rows rich formula post-noop edit should expand bounds to D3");
+        const fastxlsx::CellValue retained_formula = sheet.get_cell("C3");
+        check(retained_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                retained_formula.text_value() == expected,
+            "insert_rows rich formula post-noop edit should preserve translated formula");
+        const fastxlsx::CellValue post_noop_formula = sheet.get_cell("D3");
+        check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula.text_value() == "C3+A3",
+            "insert_rows rich formula post-noop edit should expose the new formula before save");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "insert_rows rich formula post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_rows rich formula post-noop save should clean the materialized handle");
+        check(editor.pending_change_count() == 2,
+            "insert_rows rich formula post-noop save should record the second handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_rows rich formula post-noop save should clear dirty materialized diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_rows rich formula post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "insert_rows rich formula post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "insert_rows rich formula post-noop save should leave the prior no-op output unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, expected_cell_xml,
+            "insert_rows rich formula post-noop save should keep the translated formula XML");
+        check_contains(post_noop_xml, R"(<c r="D3"><f>C3+A3</f></c>)",
+            "insert_rows rich formula post-noop save should write the post-noop formula");
+        check_reopened_shift_output(post_noop_output, "insert_rows rich formula post-noop save",
+            [&expected](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 5,
+                    "insert_rows rich formula post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                    "insert_rows rich formula post-noop save reopened output should expose post-noop bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == expected,
+                    "insert_rows rich formula post-noop save reopened output should keep translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_d3 =
+                    reopened_sheet.try_cell("D3");
+                check(reopened_d3.has_value() &&
+                        reopened_d3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_d3->text_value() == "C3+A3",
+                    "insert_rows rich formula post-noop save reopened output should keep post-noop formula");
+                const std::optional<fastxlsx::CellValue> reopened_a3 =
+                    reopened_sheet.try_cell("A3");
+                check(reopened_a3.has_value() &&
+                        reopened_a3->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3->text_value() == "placeholder-a2",
+                    "insert_rows rich formula post-noop save reopened output should keep shifted source rows");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_rows rich formula post-noop save reopened output should keep old coordinate absent");
+            });
     }
 
     {

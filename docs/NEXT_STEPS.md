@@ -204,6 +204,9 @@ outputs.
 The delete-columns cross-handle path mirrors that reuse coverage while avoiding
 old deleted coordinates: later `D1` edits on both sheets save cleanly and the
 old `D2` coordinates remain absent.
+The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
+reuse coverage: a later `D3` formula save preserves the already translated
+`C3` formula and leaves earlier first/no-op outputs unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

@@ -1843,6 +1843,9 @@ the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean
 materialized names/count/memory before reading shifted cells from the saved
 package.
+The saved/reacquired styled rename-shift path now also reopens its final clean
+no-op output, so the byte-stable save is backed by fresh readback evidence for
+the renamed sheet, translated styled formula, and shifted sparse records.
 Styled formula rename-shift coverage now carries the same materialized memory
 diagnostics through reopened clean output and saved/reacquired shared-session
 column shifts.

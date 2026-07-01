@@ -29753,6 +29753,33 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         "renamed formula reacquire no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula reacquire no-op save should keep output entries stable");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    check(reopened_noop.has_worksheet("RenamedData") && !reopened_noop.has_worksheet("Data"),
+        "renamed formula reacquire reopened no-op output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
+    check(!reopened_noop.has_pending_changes() && !reopened_noop_sheet.has_pending_changes(),
+        "renamed formula reacquire reopened no-op output should start clean");
+    check(reopened_noop_sheet.cell_count() == 7,
+        "renamed formula reacquire reopened no-op output should keep shifted sparse count");
+    check_cell_range_equals(reopened_noop_sheet.used_range(), 1, 1, 5, 5,
+        "renamed formula reacquire reopened no-op output should expose combined shifted bounds");
+    const std::optional<fastxlsx::CellValue> reopened_noop_e4 =
+        reopened_noop_sheet.try_cell("E4");
+    check(reopened_noop_e4.has_value() &&
+            reopened_noop_e4->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_e4->text_value() == "B3+C3" &&
+            reopened_noop_e4->has_style() &&
+            reopened_noop_e4->style_id().value() == styled_formula_style.value(),
+        "renamed formula reacquire reopened no-op output should read translated styled formula");
+    check(reopened_noop_sheet.get_cell("C1").number_value() == 1.0 &&
+            reopened_noop_sheet.get_cell("C4").text_value() == "row2-gap-b2" &&
+            reopened_noop_sheet.get_cell("D4").text_value() == "row2-gap-c2" &&
+            reopened_noop_sheet.get_cell("A5").text_value() == "extra-c3",
+        "renamed formula reacquire reopened no-op output should read shifted source cells");
+    check(!reopened_noop_sheet.try_cell("B1").has_value() &&
+            !reopened_noop_sheet.try_cell("B4").has_value() &&
+            !reopened_noop_sheet.try_cell("D2").has_value(),
+        "renamed formula reacquire reopened no-op output should keep old coordinates absent");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

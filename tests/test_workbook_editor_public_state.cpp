@@ -6628,6 +6628,35 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "range sparse_cells second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "range sparse_cells second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "range sparse_cells second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "range sparse_cells second no-op reopen should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "range sparse_cells second no-op reopen should expose dirty-session bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "range sparse_cells second no-op reopen should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 2.0,
+                "range sparse_cells second no-op reopen should read post-snapshot B1 edit");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "range sparse_cells second no-op reopen should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Blank,
+                "range sparse_cells second no-op reopen should read explicit B3 blank");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "range-new",
+                "range sparse_cells second no-op reopen should read in-range C3 text");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d4.text_value() == "range-excluded",
+                "range sparse_cells second no-op reopen should keep outside D4 text");
+        });
 }
 
 void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()

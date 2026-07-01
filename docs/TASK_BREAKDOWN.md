@@ -55307,6 +55307,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1375 - Reopen sparse range snapshot second no-op output
+
+Type: default public-state regression coverage for `sparse_cells(CellRange)`
+snapshot no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the bounded owning sparse range snapshot dirty-projection path still
+produces a clean, readable workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_sparse_cells_range_snapshot()` after
+  the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, dirty bounds, source-backed `A1`, post-snapshot
+  `B1`, erased `A2`, explicit blank `B3`, in-range `C3`, and outside-range
+  `D4`.
+- Leaves the existing range-limited owning snapshot checks, invalid-range
+  no-state-pollution checks, first output reopen, catalog/save-state snapshots,
+  dirty diagnostics, and byte-stability assertions unchanged.
+
+Non-goals:
+- No dense range reads, missing-cell synthesis, borrowed snapshot views,
+  streaming sparse iterators, range repair, metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

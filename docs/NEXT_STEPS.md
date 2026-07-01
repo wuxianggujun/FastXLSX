@@ -370,6 +370,9 @@ erased A2 absence.
 The bounded `sparse_cells(range)` snapshot path is also reopened to verify
 range-limited owning snapshots do not block later edits, outside-range cells
 survive, and erased source cells stay absent after save.
+Its second no-op output now also fresh-reopens with the same sparse count,
+bounds, source-backed A1, post-snapshot B1 edit, explicit B3 blank, in-range C3,
+outside-range D4, and erased A2 absence.
 The A1-string `sparse_cells("B1:C3")` path is reopened with the same dirty
 projection checks, pinning string-range parsing and saved sparse readback
 without extending the parser boundary.

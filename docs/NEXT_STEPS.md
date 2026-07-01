@@ -1748,6 +1748,9 @@ The same-editor materialized-only formula audit path now also saves again after
 source/materialized audit inspection, requiring clean diagnostics, stable public
 save/catalog snapshots, byte-identical package entries, and saved formula
 readback.
+The fresh-reopen materialized-only formula audit path now has the matching
+clean no-op save coverage after source/materialized audit reads, proving the
+newly opened editor keeps pending state empty and writes byte-identical output.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

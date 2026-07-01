@@ -5134,6 +5134,8 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-target.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-materialized-summary-move-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-move-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
@@ -5192,7 +5194,7 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
     check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-summary-dirty",
         "summary move assignment should not leak discarded target dirty materialized payload");
 
-    check_reopened_clean_sheet_output(output, "Data", "materialized summary move Data",
+    const auto inspect_materialized_summary_move_data =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "materialized summary move Data reopened output should keep sparse count");
@@ -5210,8 +5212,8 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
             check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a2.text_value() == "placeholder-a2",
                 "materialized summary move Data reopened output should keep source-backed A2");
-        });
-    check_reopened_clean_sheet_output(output, "Untouched", "materialized summary move Untouched",
+        };
+    const auto inspect_materialized_summary_move_untouched =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 2,
                 "materialized summary move Untouched reopened output should keep sparse count");
@@ -5225,7 +5227,47 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
             check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
                     reopened_b1.number_value() == 99.0,
                 "materialized summary move Untouched reopened output should keep source-backed B1");
-        });
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized summary move Data",
+        inspect_materialized_summary_move_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "materialized summary move Untouched",
+        inspect_materialized_summary_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(noop_output);
+    check(target.pending_worksheet_edits().empty(),
+        "summary move-assigned no-op save should keep dirty summaries empty");
+    check(target.pending_materialized_worksheet_names().empty(),
+        "summary move-assigned no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "summary move-assigned no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "summary move-assigned no-op save should keep dirty memory aggregate empty");
+    check(target.pending_change_count() == 1,
+        "summary move-assigned no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "summary move-assigned no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_noop,
+        "summary move-assigned no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_noop,
+        "summary move-assigned no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "summary move-assigned no-op output should match first output");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "materialized summary move no-op Data",
+        inspect_materialized_summary_move_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "materialized summary move no-op Untouched",
+        inspect_materialized_summary_move_untouched);
 }
 
 void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()

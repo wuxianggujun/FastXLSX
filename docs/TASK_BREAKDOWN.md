@@ -54260,6 +54260,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1348 - Pin set-column-values validation/max-cells failure no-op public-state stability
+
+Type: default public-state regression coverage for `set_column_values()`
+validation and `max_cells` failure no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend rejection-only save hygiene to value-prefix column writes when column
+zero is rejected or a clean source-backed materialized session is already at an
+exact `max_cells` budget.
+
+Coverage:
+- Extends the existing `set_column_values()` invalid-column guard branch.
+- Adds an independent exact `max_cells` rejection save/no-op branch before the
+  existing budget recovery path.
+- Verifies both rejected calls update `last_edit_error()`, preserve the clean
+  source-backed materialized session, keep sparse cell count, source cells, and
+  sparse memory estimates stable, leave rejected payloads absent, and keep
+  materialized/replacement diagnostics empty.
+- Saves copy-original outputs and follow-up no-op outputs while preserving
+  public catalog/save-state snapshots, including retained validation or
+  `max_cells` diagnostics.
+- Verifies outputs are source-entry-identical, no-op outputs match the first
+  outputs byte-for-byte, and reopened `Data` remains unchanged.
+
+Non-goals:
+- No coordinate clamping, dense column writes, column insertion, column
+  metadata creation, budget auto-sizing, process-RSS accounting, rollback
+  machinery, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

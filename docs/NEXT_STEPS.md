@@ -3945,6 +3945,13 @@ style migration, merge, or preservation.
 The generated non-default style rejection QA lane now also has a no-op save
 variant that requires the follow-up clean `save_as()` package to be
 byte-identical after the copy-original recovery output has flushed.
+Default public-state coverage now pins the same save hygiene for value-only
+row/column style rejection: rejected `set_row_values()` and
+`set_column_values()` calls keep the materialized session clean, preserve the
+public diagnostic across a copy-original save and follow-up no-op save, and
+reopen with the source-backed `Data` sheet unchanged. This remains rejection-only
+guardrail coverage, not caller-supplied non-default style writes or style
+migration.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

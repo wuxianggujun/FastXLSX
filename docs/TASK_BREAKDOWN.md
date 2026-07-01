@@ -53847,6 +53847,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1337 - Pin value-only style rejection no-op public-state stability
+
+Type: default public-state regression coverage for caller-supplied non-default
+`StyleId` rejection no-op save stability.
+
+Status: completed.
+
+Goal:
+Move the value-only row/column non-default `StyleId` rejection save hygiene into
+the default public-state shard.
+
+Coverage:
+- Extends `set_row_values()` and `set_column_values()` public-state style
+  rejection branches.
+- Verifies rejected caller-supplied non-default `StyleId` values keep the
+  materialized session clean and preserve source-backed `Data` cells.
+- Saves the clean recovery output and a follow-up no-op output, preserving
+  public catalog/save-state snapshots including the retained failure diagnostic.
+- Verifies materialized/replacement diagnostics remain empty, both outputs are
+  source-entry-identical, and the no-op output matches the first recovery output.
+- Reopens both outputs and checks the source `Data` sheet shape remains
+  unchanged.
+
+Non-goals:
+- No caller-supplied non-default style writes, style migration, style merge,
+  styles.xml repair, relationship repair, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

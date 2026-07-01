@@ -21424,6 +21424,9 @@ void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_
             "Data!A3+Data!B1");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-reopen-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!#REF!+Data!B1";
     {
@@ -21443,11 +21446,12 @@ void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_
         check(editor.pending_change_count() == 1,
             "stationary formula delete saved reopen audit setup should record one materialized handoff");
         check(editor.pending_materialized_worksheet_names().empty() &&
-                editor.pending_materialized_cell_count() == 0 &&
-                editor.estimated_pending_materialized_memory_usage() == 0,
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
             "stationary formula delete saved reopen audit setup should clear materialized diagnostics");
     }
 
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula delete saved reopen audit should expose saved worksheets");
@@ -21521,6 +21525,39 @@ void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_
         "stationary formula delete saved reopen materialized audit should skip Data!#REF!");
     check_surviving_audit(
         materialized_audits, "stationary formula delete saved reopen materialized audit");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 0,
+        "stationary formula delete saved reopen audit no-op should keep pending changes empty");
+    check(!reopened_sheet.has_pending_changes(),
+        "stationary formula delete saved reopen audit no-op should keep the materialized sheet clean");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened, "stationary formula delete saved reopen audit no-op");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula delete saved reopen audit no-op");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "stationary formula delete saved reopen audit no-op");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "stationary formula delete saved reopen audit no-op");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "stationary formula delete saved reopen audit no-op should keep output entries stable");
+
+    fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        noop_reopened, "stationary formula delete saved reopen audit no-op output");
+    fastxlsx::WorksheetEditor noop_sheet = noop_reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> noop_formula =
+        noop_sheet.try_cell("C1");
+    check(noop_formula.has_value() &&
+            noop_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula->text_value() == expected_formula,
+        "stationary formula delete saved reopen audit no-op output should read the saved formula");
 }
 
 void test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_saved_rewrite()

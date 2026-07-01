@@ -131,6 +131,12 @@ missing-sheet lookups and the clean no-op output leave the row-shifted session
 reusable, a later matching reacquire writes `C3`, and the next output
 fresh-reopens with shifted `A3` plus the new `C3` while earlier outputs remain
 unchanged.
+The invalid-read saved-session path now has matching post-noop evidence:
+rejected invalid scalar/A1/range/batch/row/column and valid-missing reads plus a
+clean no-op output leave the row-shifted session reusable, a later `C3` edit
+re-dirties the shared handles with aligned materialized diagnostics, and the
+next output fresh-reopens with shifted `A3` plus the new `C3` while earlier
+outputs remain unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

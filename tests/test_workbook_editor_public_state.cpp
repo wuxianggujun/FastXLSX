@@ -9337,6 +9337,12 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-width-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-width-failure-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
         std::vector<fastxlsx::CellValue> too_wide(
@@ -9357,9 +9363,86 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "set_row width failure should preserve sparse cell count");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "set_row width failure should preserve existing cells");
+        check(editor.last_edit_error().has_value(),
+            "set_row width failure should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(), "16384",
+                "set_row width failure diagnostic should mention the column limit");
+        }
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row width failure");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row width failure should not expose dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row width failure should not expose dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row width failure should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row width failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "set_row width failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "set_row width failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row width failure save");
+        check(!sheet.has_pending_changes(),
+            "set_row width failure save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row width failure save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row width failure save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row width failure save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row width failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "set_row width failure save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "set_row width failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "set_row width failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "set_row width failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row width failure noop save");
+        check(!sheet.has_pending_changes(),
+            "set_row width failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row width failure noop save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row width failure noop save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row width failure noop save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row width failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "set_row width failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "set_row width failure noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "set_row width failure noop save");
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-invalid-row-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-set-row-invalid-row-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -9376,6 +9459,73 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "set_row invalid-row failure should not dirty the materialized worksheet");
         check(sheet.cell_count() == 3,
             "set_row invalid-row failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "set_row invalid-row failure should preserve existing cells");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row invalid-row failure");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row invalid-row failure should not expose dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row invalid-row failure should not expose dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row invalid-row failure should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row invalid-row failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "set_row invalid-row failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "set_row invalid-row failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row invalid-row failure save");
+        check(!sheet.has_pending_changes(),
+            "set_row invalid-row failure save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row invalid-row failure save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row invalid-row failure save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row invalid-row failure save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row invalid-row failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "set_row invalid-row failure save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "set_row invalid-row failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "set_row invalid-row failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "set_row invalid-row failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "set_row invalid-row failure noop save");
+        check(!sheet.has_pending_changes(),
+            "set_row invalid-row failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "set_row invalid-row failure noop save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "set_row invalid-row failure noop save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "set_row invalid-row failure noop save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "set_row invalid-row failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "set_row invalid-row failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "set_row invalid-row failure noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "set_row invalid-row failure noop save");
     }
 
     {

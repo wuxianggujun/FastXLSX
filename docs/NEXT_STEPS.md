@@ -3991,6 +3991,11 @@ coverage: with a clean source-backed session already at the configured cell
 budget, the rejected append preserves source cells, keeps `A3` absent, retains
 the `max_cells` diagnostic across both saves, and reopens unchanged. This is
 budget guardrail hygiene only, not budget auto-sizing or rollback machinery.
+`set_row()` validation failures now have matching copy-original/no-op coverage
+for oversized row payloads and row zero: both rejected calls preserve the clean
+source-backed `Data` session, retain public diagnostics across both saves, keep
+materialized/replacement diagnostics empty, and reopen unchanged. This is
+full-row validation hygiene only, not coordinate clamping or rollback machinery.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

@@ -57675,6 +57675,53 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1432 - Post-noop edit after existing-directory failed-save retry
+
+Type: default public-state regression coverage for existing-directory
+failed-save retry saved-session reuse after a clean no-op save.
+
+Status: completed.
+
+Goal:
+Prove a row/column-shifted materialized `WorksheetEditor` session remains
+reusable after a rejected `save_as()` whose output path is an existing
+directory, safe retry, and clean no-op save, and that a later valid edit
+produces another materialized handoff without mutating source, the rejected
+directory, or earlier outputs.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save_preserves_dirty_session()`
+  after the byte-stable clean no-op output and no-op fresh-reopen checks.
+- Reuses the clean `after_retry` `Data` handle after rejected existing-directory
+  save, adds a post-noop `C3` materialized edit, checks all shared handles are
+  dirty, and validates sparse count, bounds, dirty materialized worksheet
+  names/count/memory, dirty summary, and retained two staged handoffs before
+  save.
+- Saves a post-noop output, verifies the rejected output directory is still a
+  directory, verifies the source workbook, first save, and prior no-op output
+  bytes remain unchanged, checks the staged handoff count advances from `2` to
+  `3`, and fresh-reopens the new output to verify clean diagnostics plus
+  shifted `C1`, shifted `A3`, and new `C3` readback.
+
+Non-goals:
+- No production logic changes, filesystem validation changes, directory-output
+  handling changes, save behavior changes, staged handoff retention changes,
+  commit/close semantics, rollback, transaction replay, row/column shift
+  semantic changes, formula evaluation, cached value preservation,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

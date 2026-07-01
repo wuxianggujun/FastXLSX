@@ -32195,6 +32195,31 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid mutations no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column invalid mutations no-op save should keep output entries stable");
+    check_reopened_clean_sheet_output(
+        noop_output, "RenamedData",
+        "renamed formula delete-column invalid mutations no-op output",
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 4,
+                "renamed formula delete-column invalid mutations no-op output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 3, 3,
+                "renamed formula delete-column invalid mutations no-op output should expose combined shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_c3 =
+                noop_sheet.try_cell("C3");
+            check(noop_c3.has_value() &&
+                    noop_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_c3->text_value() == "#REF!+A2" &&
+                    noop_c3->has_style() &&
+                    noop_c3->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-column invalid mutations no-op output should read translated styled formula");
+            check(noop_sheet.get_cell("A1").number_value() == 1.0 &&
+                    noop_sheet.get_cell("A3").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("B3").text_value() == "row2-gap-c2",
+                "renamed formula delete-column invalid mutations no-op output should read shifted source cells");
+            check(!noop_sheet.try_cell("A2").has_value() &&
+                    !noop_sheet.try_cell("C2").has_value() &&
+                    !noop_sheet.try_cell("D2").has_value(),
+                "renamed formula delete-column invalid mutations no-op output should keep old coordinates absent");
+        });
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -32421,6 +32446,31 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
         "renamed formula delete-column missing query no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column missing query no-op save should keep output entries stable");
+    check_reopened_clean_sheet_output(
+        noop_output, "RenamedData",
+        "renamed formula delete-column missing query no-op output",
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 4,
+                "renamed formula delete-column missing query no-op output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 3, 3,
+                "renamed formula delete-column missing query no-op output should expose combined shifted bounds");
+            const std::optional<fastxlsx::CellValue> noop_c3 =
+                noop_sheet.try_cell("C3");
+            check(noop_c3.has_value() &&
+                    noop_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_c3->text_value() == "#REF!+A2" &&
+                    noop_c3->has_style() &&
+                    noop_c3->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-column missing query no-op output should read translated styled formula");
+            check(noop_sheet.get_cell("A1").number_value() == 1.0 &&
+                    noop_sheet.get_cell("A3").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("B3").text_value() == "row2-gap-c2",
+                "renamed formula delete-column missing query no-op output should read shifted source cells");
+            check(!noop_sheet.try_cell("A2").has_value() &&
+                    !noop_sheet.try_cell("C2").has_value() &&
+                    !noop_sheet.try_cell("D2").has_value(),
+                "renamed formula delete-column missing query no-op output should keep old coordinates absent");
+        });
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

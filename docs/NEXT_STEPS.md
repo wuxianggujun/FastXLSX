@@ -1873,6 +1873,8 @@ for the translated styled `C2` formula, shifted source cells, and absent
 old/deleted coordinates.
 The delete-column option-mismatch path now mirrors that no-op reopen evidence
 after the matching reacquire and recovery row shift.
+The delete-column invalid-mutation and missing-query paths now have the same
+fresh no-op reopen coverage after their recovery row shifts.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

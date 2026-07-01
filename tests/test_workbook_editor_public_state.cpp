@@ -17244,6 +17244,12 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
     }
 
     {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-invalid-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-invalid-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -17278,6 +17284,85 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "erase_rows reversed failure should preserve sparse cell count");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "erase_rows reversed failure should preserve existing cells");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "erase_rows reversed failure should preserve source row-one tail cells");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "erase_rows reversed failure should preserve source row-two cells");
+        check_workbook_editor_public_no_pending_state(
+            editor, "erase_row invalid/reversed failure");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "erase_row invalid/reversed failure should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "erase_row invalid/reversed failure should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_row invalid/reversed failure should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "erase_row invalid/reversed failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_save,
+            "erase_row invalid/reversed failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_save,
+            "erase_row invalid/reversed failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor,
+            "erase_row invalid/reversed failure save");
+        check(!sheet.has_pending_changes(),
+            "erase_row invalid/reversed failure save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_row invalid/reversed failure save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "erase_row invalid/reversed failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "erase_row invalid/reversed failure save should copy source entries");
+        check_reopened_default_data_sheet_output(
+            output, "erase_row invalid/reversed failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor,
+            save_state_before_noop,
+            "erase_row invalid/reversed failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor,
+            catalog_before_noop,
+            "erase_row invalid/reversed failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor,
+            "erase_row invalid/reversed failure noop save");
+        check(!sheet.has_pending_changes(),
+            "erase_row invalid/reversed failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "erase_row invalid/reversed failure noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "erase_row invalid/reversed failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "erase_row invalid/reversed failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "erase_row invalid/reversed failure noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "erase_row invalid/reversed failure noop save");
     }
 
     {

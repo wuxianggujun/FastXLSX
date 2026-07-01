@@ -8567,6 +8567,12 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-width-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-width-failure-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
         std::vector<fastxlsx::CellValue> too_wide(
@@ -8585,6 +8591,58 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
             "width failure should not dirty the materialized worksheet");
         check(sheet.cell_count() == 3,
             "width failure should preserve sparse cell count");
+        check(!sheet.try_cell("A3").has_value(),
+            "width failure should not leak rejected appended cells");
+        check(editor.last_edit_error().has_value(),
+            "append_row width failure should update last_edit_error");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row width failure");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row width failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "append_row width failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row width failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row width failure save");
+        check(!sheet.has_pending_changes(),
+            "append_row width failure save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row width failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row width failure save should copy source entries");
+        check_reopened_default_data_sheet_output(output, "append_row width failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row width failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row width failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row width failure noop save");
+        check(!sheet.has_pending_changes(),
+            "append_row width failure noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row width failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "append_row width failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "append_row width failure noop output should match the first output");
+        check_reopened_default_data_sheet_output(
+            noop_output, "append_row width failure noop save");
     }
 
     {

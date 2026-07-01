@@ -54031,6 +54031,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1342 - Pin append-row width failure no-op public-state stability
+
+Type: default public-state regression coverage for append-row width validation
+failure no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend the failure save hygiene shape to the `WorksheetEditor::append_row()`
+input-width validation path.
+
+Coverage:
+- Extends the existing append-row width guardrail branch.
+- Verifies appending more than 16,384 values rejects before mutation, keeps the
+  materialized session clean, preserves source-backed `Data` cells and sparse
+  count, and does not leave `A3` readable.
+- Saves a copy-original recovery output and a follow-up no-op output while
+  preserving public catalog/save-state snapshots, including retained
+  `last_edit_error()` diagnostics.
+- Verifies no materialized/replacement diagnostics are queued, both outputs are
+  source-entry-identical, and the no-op output matches the first recovery output.
+- Reopens both outputs and checks the source `Data` sheet remains unchanged.
+
+Non-goals:
+- No dense append, row insertion, coordinate clamping, row metadata creation,
+  rollback machinery, relationship repair, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

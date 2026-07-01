@@ -3975,6 +3975,11 @@ sparse count and source `Data` cells unchanged, keeps the appended row absent,
 preserves the public diagnostic across copy-original and follow-up no-op saves,
 and reopens unchanged. This is still append guardrail hygiene, not row insertion,
 row metadata creation, or style migration.
+`append_row()` width validation failure now has the same copy-original/no-op
+save coverage: attempts to append more than 16,384 values keep the clean source
+session unchanged, retain the width diagnostic across both saves, leave the
+would-be appended row absent, and reopen unchanged. This does not add dense
+append, coordinate clamping, row insertion, or rollback machinery.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

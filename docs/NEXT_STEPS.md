@@ -622,6 +622,9 @@ preserves shifted materialized and original source audits without adding
 handoffs, keeps old source-name lookup unavailable, and a later valid
 `set_cell()` re-dirties the shared session before the second save/reopen keeps
 the shifted formula, new text cell, `fullCalcOnLoad="1"`, and no calcChain.
+Its clean no-op output after invalid-mutation recovery now also fresh-reopens,
+verifying the renamed sheet, shifted styled formula audit/readback, recovered
+C5 text, `fullCalcOnLoad="1"`, and absent calcChain remain readable.
 The failed-save retry path is pinned for that saved/reacquired state too:
 after a later valid `set_cell()` re-dirties the planned-name session, an exact
 source-overwrite `save_as()` rejection preserves dirty diagnostics,

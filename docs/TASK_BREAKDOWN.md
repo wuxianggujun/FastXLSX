@@ -55032,6 +55032,50 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1368 - Pin range formula fresh-reopen audit no-op save stability
+
+Type: default public-state regression coverage for clean reopened row-range and
+column-range formula audit no-op save hygiene.
+
+Status: completed.
+
+Goal:
+Prove clean editors opened from saved stationary formula row-range and
+column-range rewrites can run source/materialized formula audit inspections and
+still perform stable no-op `save_as()` calls.
+
+Coverage:
+- Extends `test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_saved_rewrite()`
+  and `test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_audits_saved_rewrite()`
+  with follow-up clean no-op saves after source/materialized formula audit
+  checks on the reopened editors.
+- Verifies the saved row-range rewrite reports `Data!A4:B4` and `Data!4:4`
+  while omitting the old `Data!A3:B3` and `Data!3:3` references from both audit
+  views.
+- Verifies the saved column-range rewrite reports `Data!E1:F1` and `Data!E:F`
+  while omitting the old `Data!D1:E1` and `Data!D:E` references from both audit
+  views.
+- Captures public catalog/save-state snapshots before each no-op save and
+  verifies pending changes, materialized diagnostics, replacement diagnostics,
+  and dirty summaries remain empty.
+- Verifies both no-op package entry sets match their first saved outputs
+  byte-for-byte and fresh reopens read the translated `C1` formulas.
+
+Non-goals:
+- No broader formula translation changes, formula evaluation, cached formula
+  result preservation, range metadata repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

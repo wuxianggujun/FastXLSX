@@ -21863,6 +21863,9 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
             "SUM(Data!A3:B3)+Data!3:3");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-reopen-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "SUM(Data!A4:B4)+Data!4:4";
     {
@@ -21887,6 +21890,7 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
             "stationary formula range saved reopen audit setup should clear materialized diagnostics");
     }
 
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula range saved reopen audit should expose saved worksheets");
@@ -21971,6 +21975,39 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
     check_saved_audit(
         materialized_audits, "Data!4:4", "4:4",
         "stationary formula range saved reopen materialized audit shifted whole row");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 0,
+        "stationary formula range saved reopen audit no-op should keep pending changes empty");
+    check(!reopened_sheet.has_pending_changes(),
+        "stationary formula range saved reopen audit no-op should keep the materialized sheet clean");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened, "stationary formula range saved reopen audit no-op");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula range saved reopen audit no-op");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "stationary formula range saved reopen audit no-op");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "stationary formula range saved reopen audit no-op");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "stationary formula range saved reopen audit no-op should keep output entries stable");
+
+    fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        noop_reopened, "stationary formula range saved reopen audit no-op output");
+    fastxlsx::WorksheetEditor noop_sheet = noop_reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> noop_formula =
+        noop_sheet.try_cell("C1");
+    check(noop_formula.has_value() &&
+            noop_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula->text_value() == expected_formula,
+        "stationary formula range saved reopen audit no-op output should read the saved formula");
 }
 
 void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_audits_saved_rewrite()
@@ -21981,6 +22018,9 @@ void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_a
             "SUM(Data!D1:E1)+Data!D:E");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-stationary-formula-column-range-reopen-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-stationary-formula-column-range-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "SUM(Data!E1:F1)+Data!E:F";
     {
@@ -22005,6 +22045,7 @@ void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_a
             "stationary formula column range saved reopen audit setup should clear materialized diagnostics");
     }
 
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula column range saved reopen audit should expose saved worksheets");
@@ -22089,6 +22130,39 @@ void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_a
     check_saved_audit(
         materialized_audits, "Data!E:F", "E:F",
         "stationary formula column range saved reopen materialized audit shifted whole columns");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 0,
+        "stationary formula column range saved reopen audit no-op should keep pending changes empty");
+    check(!reopened_sheet.has_pending_changes(),
+        "stationary formula column range saved reopen audit no-op should keep the materialized sheet clean");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened, "stationary formula column range saved reopen audit no-op");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "stationary formula column range saved reopen audit no-op");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "stationary formula column range saved reopen audit no-op");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "stationary formula column range saved reopen audit no-op");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "stationary formula column range saved reopen audit no-op should keep output entries stable");
+
+    fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        noop_reopened, "stationary formula column range saved reopen audit no-op output");
+    fastxlsx::WorksheetEditor noop_sheet = noop_reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> noop_formula =
+        noop_sheet.try_cell("C1");
+    check(noop_formula.has_value() &&
+            noop_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula->text_value() == expected_formula,
+        "stationary formula column range saved reopen audit no-op output should read the saved formula");
 }
 
 void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_skip_ref()

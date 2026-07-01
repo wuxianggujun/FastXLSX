@@ -362,6 +362,9 @@ Its first-flush second no-op output now also fresh-reopens as an empty sparse
 worksheet with no used range and erased A1/B1/A2 absent before reacquisition.
 Its post-reacquire no-op output now also fresh-reopens with the same single C3
 text cell, C3:C3 bounds, and erased A1/B1/A2 absence as the second save.
+The invalid row/column overload recovery path now also fresh-reopens its second
+no-op output, verifying the recovered A1 edit, source-backed B1/A2 cells,
+`A1:B2` bounds, and missing rejected C1 coordinate remain readable.
 The initializer-list batch overload path is also reopened to verify explicit
 blank, source-backed, inserted boolean, erased, and missing-only targets survive
 the saved sparse projection.

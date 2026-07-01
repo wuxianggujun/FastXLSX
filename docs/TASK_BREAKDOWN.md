@@ -55645,6 +55645,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1384 - Reopen row column recovery second no-op output
+
+Type: default public-state regression coverage for row/column overload recovery
+no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the invalid row/column overload recovery path still produces a clean,
+readable workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinates()`
+  after the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, `A1:B2` bounds, recovered `A1`, source-backed
+  `B1` / `A2`, and rejected `C1` absence.
+- Leaves the existing invalid-coordinate read/mutation assertions, first output
+  reopen, catalog/save-state snapshots, dirty diagnostics, and byte-stability
+  assertions unchanged.
+
+Non-goals:
+- No coordinate-validation behavior change, dense row/column reads, missing-cell
+  synthesis, saved-session handoff rewrite, in-place overwrite, rollback,
+  transaction replay, metadata/range repair, calcChain rebuild,
+  sharedStrings/styles migration, relationship repair, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

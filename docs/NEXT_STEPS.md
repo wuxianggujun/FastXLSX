@@ -631,6 +631,10 @@ the shifted formula, new text cell, `fullCalcOnLoad="1"`, and no calcChain.
 Its clean no-op output after invalid-mutation recovery now also fresh-reopens,
 verifying the renamed sheet, shifted styled formula audit/readback, recovered
 C5 text, `fullCalcOnLoad="1"`, and absent calcChain remain readable.
+The saved/reacquired invalid-read recovery path now has the same no-op output
+readability evidence: after rejected read attempts and a valid C5 recovery edit,
+the byte-stable clean output fresh-reopens with the renamed sheet, shifted
+formula audit/readback, recovered text, `fullCalcOnLoad="1"`, and no calcChain.
 The failed-save retry path is pinned for that saved/reacquired state too:
 after a later valid `set_cell()` re-dirties the planned-name session, an exact
 source-overwrite `save_as()` rejection preserves dirty diagnostics,

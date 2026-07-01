@@ -1751,6 +1751,9 @@ readback.
 The fresh-reopen materialized-only formula audit path now has the matching
 clean no-op save coverage after source/materialized audit reads, proving the
 newly opened editor keeps pending state empty and writes byte-identical output.
+The stationary formula row-insert saved-reopen audit path now also no-op saves
+after verifying the translated `Data!A4` / stable `Data!B1` references, keeping
+the old `Data!A3` reference absent and output bytes stable.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

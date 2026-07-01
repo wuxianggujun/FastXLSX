@@ -218,6 +218,9 @@ The rich formula-shape matrix now also covers `delete_rows()`: the moved `C3`
 formula preserves relative/absolute/range/qualified/whole-axis/skip-token
 translation behavior, the clean no-op output is byte-stable, and a later `D3`
 formula save keeps the translated formula intact.
+The same matrix now covers `delete_columns()` with a moved `C2` formula and a
+later `D2` formula save, pinning the column-deletion side of the same translator
+and post-noop reuse behavior.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

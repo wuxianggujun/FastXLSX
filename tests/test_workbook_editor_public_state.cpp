@@ -31272,6 +31272,58 @@ void test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_pres
         "renamed formula snapshot reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula snapshot reads no-op save should keep output entries stable");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    check(reopened_noop.has_worksheet("RenamedData") && !reopened_noop.has_worksheet("Data"),
+        "renamed formula snapshot reads reopened no-op output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
+    check(!reopened_noop.has_pending_changes() && !reopened_noop_sheet.has_pending_changes(),
+        "renamed formula snapshot reads reopened no-op output should start clean");
+    check(reopened_noop.pending_change_count() == 0 &&
+            reopened_noop.pending_materialized_worksheet_names().empty() &&
+            reopened_noop.pending_materialized_cell_count() == 0 &&
+            reopened_noop.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula snapshot reads reopened no-op output should not expose dirty diagnostics");
+    check(reopened_noop_sheet.cell_count() == 7,
+        "renamed formula snapshot reads reopened no-op output should keep shifted sparse count");
+    check_cell_range_equals(reopened_noop_sheet.used_range(), 1, 1, 5, 5,
+        "renamed formula snapshot reads reopened no-op output should expose combined shifted bounds");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_noop_row_four =
+        reopened_noop_sheet.row_cells(4);
+    check(reopened_noop_row_four.size() == 4,
+        "renamed formula snapshot reads reopened no-op row_cells should expose shifted row four");
+    check(reopened_noop_row_four[0].reference.row == 4 &&
+            reopened_noop_row_four[0].reference.column == 1 &&
+            reopened_noop_row_four[0].value.text_value() == "placeholder-a2",
+        "renamed formula snapshot reads reopened no-op row_cells should read shifted A2");
+    check(reopened_noop_row_four[1].reference.row == 4 &&
+            reopened_noop_row_four[1].reference.column == 3 &&
+            reopened_noop_row_four[1].value.text_value() == "row2-gap-b2",
+        "renamed formula snapshot reads reopened no-op row_cells should read shifted B2");
+    check(reopened_noop_row_four[2].reference.row == 4 &&
+            reopened_noop_row_four[2].reference.column == 4 &&
+            reopened_noop_row_four[2].value.text_value() == "row2-gap-c2",
+        "renamed formula snapshot reads reopened no-op row_cells should read shifted C2");
+    check(reopened_noop_row_four[3].reference.row == 4 &&
+            reopened_noop_row_four[3].reference.column == 5 &&
+            reopened_noop_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_row_four[3].value.text_value() == "B3+C3" &&
+            reopened_noop_row_four[3].value.has_style() &&
+            reopened_noop_row_four[3].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula snapshot reads reopened no-op row_cells should read translated styled formula");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_noop_column_five =
+        reopened_noop_sheet.column_cells(5);
+    check(reopened_noop_column_five.size() == 1 &&
+            reopened_noop_column_five[0].reference.row == 4 &&
+            reopened_noop_column_five[0].reference.column == 5 &&
+            reopened_noop_column_five[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_column_five[0].value.text_value() == "B3+C3" &&
+            reopened_noop_column_five[0].value.has_style() &&
+            reopened_noop_column_five[0].value.style_id().value() == styled_formula_style.value(),
+        "renamed formula snapshot reads reopened no-op column_cells should read translated styled formula");
+    check(!reopened_noop_sheet.try_cell("B1").has_value() &&
+            !reopened_noop_sheet.try_cell("B4").has_value() &&
+            !reopened_noop_sheet.try_cell("D2").has_value(),
+        "renamed formula snapshot reads reopened no-op output should keep old coordinates absent");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

@@ -1865,6 +1865,9 @@ lookups and the later valid shared-session shift.
 The invalid-read recovery path now mirrors that no-op reopen check after
 rejected scalar, A1, range, batch, row/column, and valid-missing reads followed
 by the later valid shared-session shift.
+The snapshot-read path now mirrors the no-op reopen check with fresh
+`row_cells()` / `column_cells()` readback of the translated styled formula
+output.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

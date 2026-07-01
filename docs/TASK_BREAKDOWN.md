@@ -56299,6 +56299,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1400 - Reopen renamed styled-formula snapshot-read no-op output
+
+Type: default public-state regression coverage for renamed styled-formula
+snapshot-read no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed styled-formula snapshot-read path still produces a clean,
+readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_preserve_styled_session()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through a fresh `WorkbookEditor` and verifies the
+  planned `RenamedData` sheet name remains the only visible catalog name.
+- Verifies the reopened no-op output starts clean, exposes no dirty diagnostics,
+  keeps sparse count `7`, bounds `A1:E5`, row and column snapshot readback of
+  translated styled formula `E4 = B3+C3`, shifted source-backed cells, and old
+  coordinates `B1`, `B4`, and `D2` absent.
+- Leaves the existing full/range/row/column/batch snapshot-read checks,
+  snapshot lifetime checks, later shared-session column shift, save-state/catalog
+  snapshots, saved-output reopen, and byte-stability assertions unchanged.
+
+Non-goals:
+- No snapshot lifetime changes, read validation changes, diagnostic policy
+  changes, rename semantic changes, row/column shift semantic changes, formula
+  translation changes, style preservation changes, saved-session reacquire
+  policy changes, formula evaluation, cached values, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

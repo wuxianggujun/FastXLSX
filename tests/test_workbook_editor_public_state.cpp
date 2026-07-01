@@ -41712,6 +41712,8 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
             "fastxlsx-workbook-editor-public-worksheet-shift-invalid-row-recovery-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-invalid-row-recovery-noop-output.xlsx");
+        const std::filesystem::path post_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-invalid-row-recovery-post-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -41802,6 +41804,65 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
             "invalid-to-valid row shift noop save should keep output entries stable");
         check_reopened_shift_output(noop_output, "invalid-to-valid row shift noop save",
             inspect_reopened_row_shift_recovery);
+
+        sheet.set_cell("C3", fastxlsx::CellValue::text("post-noop-invalid-row-recovery"));
+        check(sheet.has_pending_changes(),
+            "invalid-to-valid row shift post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 4,
+            "invalid-to-valid row shift post-noop edit should add one sparse cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 3, 3,
+            "invalid-to-valid row shift post-noop edit should expand bounds to C3");
+        const fastxlsx::CellValue post_noop_cell = sheet.get_cell("C3");
+        check(post_noop_cell.kind() == fastxlsx::CellValueKind::Text &&
+                post_noop_cell.text_value() == "post-noop-invalid-row-recovery",
+            "invalid-to-valid row shift post-noop edit should be readable before save");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "invalid-to-valid row shift post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "invalid-to-valid row shift post-noop save should clean the materialized session");
+        check(editor.pending_change_count() == 2,
+            "invalid-to-valid row shift post-noop save should record the second handoff");
+        check(editor.has_pending_changes(),
+            "invalid-to-valid row shift post-noop save should retain staged materialized handoffs");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "invalid-to-valid row shift post-noop save should clear dirty materialized diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "invalid-to-valid row shift post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "invalid-to-valid row shift post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "invalid-to-valid row shift post-noop save should leave the prior no-op output unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, R"(<c r="C3")",
+            "invalid-to-valid row shift post-noop save should write the post-noop C3 cell");
+        check_reopened_shift_output(post_noop_output, "invalid-to-valid row shift post-noop save",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "invalid-to-valid row shift post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                    "invalid-to-valid row shift post-noop save reopened output should expose post-noop bounds");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "invalid-to-valid row shift post-noop save reopened output should keep source B1");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "placeholder-a2",
+                    "invalid-to-valid row shift post-noop save reopened output should keep shifted A2");
+                const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+                check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_c3.text_value() == "post-noop-invalid-row-recovery",
+                    "invalid-to-valid row shift post-noop save reopened output should keep post-noop edit");
+                check(!reopened_sheet.try_cell("A2").has_value(),
+                    "invalid-to-valid row shift post-noop save reopened output should keep old A2 absent");
+            });
     }
 
     {

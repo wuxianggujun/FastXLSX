@@ -1780,7 +1780,9 @@ repair out of scope.
 The renamed full-calculation formula-audit saved-reacquire no-op paths now also
 pair their second clean save-state snapshot with a catalog snapshot after
 invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard
-checks, without expanding formula repair or metadata synchronization.
+checks, and now reopen the final clean no-op outputs for those recovery branches
+to re-verify renamed-sheet readability without expanding formula repair or
+metadata synchronization.
 The early renamed shift-after-rename regressions now also pin aggregate dirty
 materialized memory diagnostics against the active `WorksheetEditor` estimate
 and verify they clear after the materialized flush, without changing guardrail

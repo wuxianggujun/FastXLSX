@@ -4062,6 +4062,14 @@ coverage after clearing a prior edit diagnostic. `insert_rows(..., 0)`,
 stay clean, preserve source-backed `Data`, emit source-identical outputs across
 both saves, and reopen unchanged. This is zero-count shift clean-save hygiene
 only, not structural metadata movement, dimension repair, or relationship sync.
+Pending materialized worksheet-name and aggregate diagnostics now also have
+diagnostics-specific no-op save coverage after a two-sheet materialized flush.
+The first save clears dirty names, aggregate cell count, and memory diagnostics;
+the follow-up clean `save_as()` preserves public save-state/catalog snapshots,
+keeps materialized/replacement diagnostics empty, emits byte-stable package
+entries, and reopens both sheets unchanged. This is diagnostics save hygiene
+only, not commit/close semantics, transaction history, metadata repair, or
+relationship sync.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

@@ -39647,6 +39647,8 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-failed-save-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-failed-save-second-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-failed-save-post-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_names = editor.worksheet_names();
@@ -39798,7 +39800,8 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "shift reacquire failed save second no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
         "shift reacquire failed save second no-op output should match the second output");
 
     check_reopened_shift_output(second_output, "shift reacquire failed save safe retry",
@@ -39818,6 +39821,65 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire failed save reopened output should keep old coordinates absent");
+        });
+
+    reacquired.set_cell("C3", fastxlsx::CellValue::text("post-noop-failed-save"));
+    check(reacquired.has_pending_changes() && sheet.has_pending_changes(),
+        "shift reacquire failed save post-noop edit should dirty both shared handles");
+    check(sheet.cell_count() == 4 && reacquired.cell_count() == 4,
+        "shift reacquire failed save post-noop edit should add one sparse cell on both handles");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 3,
+        "shift reacquire failed save post-noop edit should keep combined bounds");
+    const fastxlsx::CellValue post_noop_cell = sheet.get_cell("C3");
+    check(post_noop_cell.kind() == fastxlsx::CellValueKind::Text &&
+            post_noop_cell.text_value() == "post-noop-failed-save",
+        "shift reacquire failed save post-noop edit should be visible through the older handle");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, reacquired, 2, "shift reacquire failed save post-noop edit");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire failed save post-noop save should clean both shared handles");
+    check(editor.pending_change_count() == 3,
+        "shift reacquire failed save post-noop save should record the third materialized handoff");
+    check(editor.has_pending_changes(),
+        "shift reacquire failed save post-noop save should retain staged materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift reacquire failed save post-noop save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire failed save post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift reacquire failed save post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire failed save post-noop save should leave the prior no-op output unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, R"(<c r="C3")",
+        "shift reacquire failed save post-noop save should write the post-noop C3 cell");
+    check_reopened_shift_output(post_noop_output, "shift reacquire failed save post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "shift reacquire failed save post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire failed save post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire failed save post-noop save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire failed save post-noop save reopened output should keep shifted A2");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "post-noop-failed-save",
+                "shift reacquire failed save post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire failed save post-noop save reopened output should keep old coordinates absent");
         });
 }
 

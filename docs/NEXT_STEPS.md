@@ -146,6 +146,11 @@ The invalid-shift saved-session path follows the same pattern: rejected invalid
 insert/delete row/column shifts leave the shifted session clean, the no-op
 output preserves the invalid shift diagnostic, and a later valid `C3` edit
 clears that diagnostic before saving a fresh-reopenable post-noop output.
+The failed-save retry path now has the same post-noop reuse evidence: a
+rejected source-overwrite save preserves the dirty shifted session and source
+bytes, the safe retry plus clean no-op output leave that saved session reusable,
+and a later `C3` edit re-dirties both shared handles before saving a
+fresh-reopenable post-noop output while earlier outputs remain unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

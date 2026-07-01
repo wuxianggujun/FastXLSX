@@ -55120,6 +55120,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1370 - Widen materialized formula failed-save no-op public state
+
+Type: default public-state regression coverage for materialized-only formula
+failed-save safe-retry no-op state hygiene.
+
+Status: completed.
+
+Goal:
+Prove the existing rejected source-overwrite, safe-retry, and clean no-op save
+path for a materialized-only formula edit preserves the full public state
+surface now expected by newer no-op-save regressions.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_materialized_only_formula_failed_save_noop_preserves_output()`
+  after safe retry and before `save_as(noop_output)` with catalog and
+  save-state snapshots.
+- Verifies the no-op save does not add another materialized handoff, keeps
+  pending materialized diagnostics empty, keeps dirty worksheet summaries empty,
+  leaves replacement diagnostics unqueued, and preserves clear
+  `last_edit_error()`.
+- Verifies catalog views and output package entries remain stable, and the
+  fresh reopen still reports the persisted `Data!A1` / `Data!B1` formula
+  references from saved `C2`.
+
+Non-goals:
+- No source overwrite support, in-place save, rollback, transaction replay,
+  formula evaluation, cached formula result preservation, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -20960,14 +20960,31 @@ void test_public_worksheet_editor_materialized_only_formula_failed_save_noop_pre
         R"(<c r="C2"><f>Data!A1+Data!B1</f></c>)",
         "materialized-only formula failed-save no-op safe retry should write the formula");
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
 
     check(!sheet.has_pending_changes(),
         "materialized-only formula failed-save no-op should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "materialized-only formula failed-save no-op should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "materialized-only formula failed-save no-op should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "materialized-only formula failed-save no-op should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "materialized-only formula failed-save no-op should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "materialized-only formula failed-save no-op should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
+        "materialized-only formula failed-save no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
         "materialized-only formula failed-save no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "materialized-only formula failed-save no-op output should match the safe retry output");

@@ -101,6 +101,11 @@ diagnostics.
 That same regression now also mutates the clean post-no-op editor again, writes
 a third output, keeps earlier outputs unchanged, and verifies a third no-op
 save is byte-equivalent to the third output.
+The shifted saved/reacquired session path now mirrors that post-no-op usability
+coverage for a row-shifted `WorksheetEditor`: after a byte-stable clean no-op
+save, a later `C3` edit re-dirties the shared handles with aligned public
+materialized diagnostics, saves as the next handoff, leaves earlier outputs
+unchanged, and fresh-reopens with both shifted `A3` and new `C3` values.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

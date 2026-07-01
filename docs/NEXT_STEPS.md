@@ -1766,6 +1766,9 @@ preserving only `Data!B1`, and requiring byte-identical output.
 The row-range and column-range saved-reopen audit paths now also no-op save
 after verifying translated saved ranges (`Data!A4:B4` / `Data!4:4` and
 `Data!E1:F1` / `Data!E:F`), with old ranges absent and output bytes stable.
+The mixed delete-row/delete-column `#REF!` saved-reopen audit paths now also
+no-op save after preserving surviving references (`Data!A:A` / `Data!B3` and
+`Data!1:1` / `Data!C2`) while skipping persisted `Data!#REF!` tokens.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

@@ -22172,6 +22172,9 @@ void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_ski
             "fastxlsx-workbook-editor-public-worksheet-delete-row-ref-formula-reopen-audit-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-ref-formula-reopen-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-delete-row-ref-formula-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula =
         "Data!#REF!+Data!A:A+Data!#REF!+Data!B3";
@@ -22199,6 +22202,7 @@ void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_ski
             "delete-row #REF saved reopen audit setup should clear materialized diagnostics");
     }
 
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "delete-row #REF saved reopen audit should expose saved worksheets");
@@ -22291,6 +22295,39 @@ void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_ski
     check_saved_audit(
         materialized_audits, "Data!B3", "B3",
         "delete-row #REF saved reopen materialized audit surviving shifted cell");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 0,
+        "delete-row #REF saved reopen audit no-op should keep pending changes empty");
+    check(!reopened_sheet.has_pending_changes(),
+        "delete-row #REF saved reopen audit no-op should keep the materialized sheet clean");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened, "delete-row #REF saved reopen audit no-op");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "delete-row #REF saved reopen audit no-op");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "delete-row #REF saved reopen audit no-op");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "delete-row #REF saved reopen audit no-op");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "delete-row #REF saved reopen audit no-op should keep output entries stable");
+
+    fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        noop_reopened, "delete-row #REF saved reopen audit no-op output");
+    fastxlsx::WorksheetEditor noop_sheet = noop_reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> noop_formula =
+        noop_sheet.try_cell("C3");
+    check(noop_formula.has_value() &&
+            noop_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula->text_value() == expected_formula,
+        "delete-row #REF saved reopen audit no-op output should read the saved formula");
 }
 
 void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_skip_ref()
@@ -22300,6 +22337,9 @@ void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_
             "fastxlsx-workbook-editor-public-worksheet-delete-column-ref-formula-reopen-audit-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-ref-formula-reopen-audit-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact(
+            "fastxlsx-workbook-editor-public-worksheet-delete-column-ref-formula-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula =
         "Data!#REF!+Data!#REF!+Data!1:1+Data!C2";
@@ -22327,6 +22367,7 @@ void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_
             "delete-column #REF saved reopen audit setup should clear materialized diagnostics");
     }
 
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "delete-column #REF saved reopen audit should expose saved worksheets");
@@ -22419,6 +22460,39 @@ void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_
     check_saved_audit(
         materialized_audits, "Data!C2", "C2",
         "delete-column #REF saved reopen materialized audit surviving shifted cell");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 0,
+        "delete-column #REF saved reopen audit no-op should keep pending changes empty");
+    check(!reopened_sheet.has_pending_changes(),
+        "delete-column #REF saved reopen audit no-op should keep the materialized sheet clean");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened, "delete-column #REF saved reopen audit no-op");
+    check_public_state_reopened_formula_audit_clean_editor(
+        reopened, "delete-column #REF saved reopen audit no-op");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "delete-column #REF saved reopen audit no-op");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "delete-column #REF saved reopen audit no-op");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "delete-column #REF saved reopen audit no-op should keep output entries stable");
+
+    fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    check_public_state_reopened_formula_audit_clean_editor(
+        noop_reopened, "delete-column #REF saved reopen audit no-op output");
+    fastxlsx::WorksheetEditor noop_sheet = noop_reopened.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> noop_formula =
+        noop_sheet.try_cell("C1");
+    check(noop_formula.has_value() &&
+            noop_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula->text_value() == expected_formula,
+        "delete-column #REF saved reopen audit no-op output should read the saved formula");
 }
 
 void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()

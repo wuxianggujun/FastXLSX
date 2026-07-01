@@ -4032,6 +4032,12 @@ clean source-backed `Data` session, retain public diagnostics across both
 saves, keep materialized/replacement diagnostics empty, and reopen unchanged.
 This is row erase validation hygiene only, not row metadata deletion semantics,
 dense materialization, range repair, or rollback.
+`erase_column()` / `erase_columns()` now have the symmetric validation
+copy-original/no-op coverage: column zero and reversed column ranges preserve
+the clean source-backed `Data` session, retain public diagnostics across both
+saves, keep materialized/replacement diagnostics empty, and reopen unchanged.
+This is column erase validation hygiene only, not column metadata deletion
+semantics, dense materialization, range repair, or rollback.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

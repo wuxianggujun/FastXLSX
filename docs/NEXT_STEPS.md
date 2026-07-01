@@ -197,6 +197,10 @@ the earlier first/no-op outputs stay unchanged.
 The column-shift cross-handle path mirrors that post-noop evidence with later
 edits on both `Data` and `Untouched`, preserving the shifted dirty columns and
 leaving earlier first/no-op outputs unchanged.
+The delete-rows cross-handle path now has the same post-noop reuse coverage:
+after `Data` rows are removed and both handles are saved/no-op verified, later
+edits on both sheets save a fresh-reopenable output without mutating earlier
+outputs.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

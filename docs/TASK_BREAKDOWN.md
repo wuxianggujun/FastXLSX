@@ -55682,6 +55682,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1385 - Reopen sparse coordinate batch second no-op output
+
+Type: default public-state regression coverage for coordinate-batch
+`sparse_cells()` no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the coordinate-batch sparse snapshot path still produces a clean,
+readable workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()`
+  after the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, `A1:D4` bounds, post-snapshot `A1`,
+  source-backed `B1`, erased `A2`, explicit blank `B3`, and inserted `D4`.
+- Leaves the existing coordinate-batch ordering, duplicate, missing-coordinate,
+  invalid-coordinate, first output reopen, catalog/save-state snapshots, dirty
+  diagnostics, and byte-stability assertions unchanged.
+
+Non-goals:
+- No dense batch reads, missing-cell synthesis, duplicate coalescing, borrowed
+  snapshot views, streaming sparse iterators, coordinate repair,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

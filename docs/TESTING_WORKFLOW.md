@@ -314,6 +314,26 @@ build trees, then from fallback discovery under `build/`. This prevents stale
 local tool binaries from hiding newly added generated scenarios, but it remains
 local QA convenience and not a CMake preset or CI policy.
 
+For generated existing-file image replacement smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_image_replace `
+  --scenario generated_image_replace_noop_save `
+  --work-dir build\qa\workbook-editor-image-replace
+```
+
+This scenario covers replacing an existing media part by public image path,
+keeping the generated workbook readable through ZIP/XML, drawing relationship
+checks, replacement media-byte comparison, `openpyxl`, optional XlsxWriter
+reference, and optional Excel COM validation. The no-op variant repeats the
+same output and requires the follow-up clean `save_as()` package to be
+byte-identical. It is local QA only and does not add semantic image editing,
+drawing mutation, relationship repair/pruning, metadata synchronization, or
+large-file random editing.
+
 For generated existing-file style passthrough smoke, run:
 
 ```powershell

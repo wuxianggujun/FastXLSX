@@ -3886,6 +3886,10 @@ The generated public E2E lane now also has a no-op save variant that requires
 the follow-up clean `save_as()` package to be byte-identical after the combined
 rename/materialized edit, sheetData replacement, and image replacement output
 has flushed.
+The standalone generated image replacement lane now also has a no-op save
+variant that requires byte-identical output after the media-byte replacement
+has flushed, while still treating drawing relationships and media bytes as QA
+evidence rather than semantic image editing or relationship repair.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 The WorkbookEditor source-success executable is now split the same way:

@@ -867,6 +867,7 @@ function Verify-Case {
             "generated_style_passthrough" { Verify-GeneratedStylePassthrough $workbook }
             "generated_style_passthrough_noop_save" { Verify-GeneratedStylePassthrough $workbook }
             "generated_image_replace" { Verify-GeneratedImageReplace $workbook }
+            "generated_image_replace_noop_save" { Verify-GeneratedImageReplace $workbook }
             "generated_public_e2e" { Verify-GeneratedPublicE2E $workbook }
             "generated_public_e2e_noop_save" { Verify-GeneratedPublicE2E $workbook }
             "generated_non_default_style_rejection" { Verify-GeneratedStyleRejection $workbook }

@@ -92,6 +92,7 @@ GENERATED_SCENARIOS = [
     "generated_style_passthrough",
     "generated_style_passthrough_noop_save",
     "generated_image_replace",
+    "generated_image_replace_noop_save",
     "generated_public_e2e",
     "generated_public_e2e_noop_save",
     "generated_non_default_style_rejection",
@@ -3238,6 +3239,18 @@ def verify_generated_image_replace(path: Path, replacement_image: Path) -> tuple
     return zip_report, openpyxl_report
 
 
+def verify_generated_image_replace_noop_save(
+    path: Path,
+    replacement_image: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    zip_report, openpyxl_report = verify_generated_image_replace(path, replacement_image)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            "generated image replace no-op save: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_fixture_image_replace(
     source_path: Path,
     output_path: Path,
@@ -3816,7 +3829,10 @@ def create_xlsxwriter_reference(
             style = workbook.add_format({"num_format": "0.00"})
             data.write_number("A1", 9.5, style)
             data.write("B1", "explicit default")
-        elif scenario == "generated_image_replace":
+        elif scenario in {
+            "generated_image_replace",
+            "generated_image_replace_noop_save",
+        }:
             require(replacement_image is not None, "xlsxwriter reference: replacement image is required")
             data = workbook.add_worksheet("Data")
             pictures = workbook.add_worksheet("Pictures")
@@ -4141,6 +4157,14 @@ def run_generated_case(
     elif scenario == "generated_image_replace":
         require(replacement_image is not None, "generated image replace: missing replacement image in tool report")
         zip_xml, openpyxl_report = verify_generated_image_replace(output_path, replacement_image)
+    elif scenario == "generated_image_replace_noop_save":
+        require(replacement_image is not None,
+                "generated image replace no-op save: missing replacement image in tool report")
+        zip_xml, openpyxl_report = verify_generated_image_replace_noop_save(
+            output_path,
+            replacement_image,
+            tool_report,
+        )
     elif scenario == "generated_public_e2e":
         require(replacement_image is not None, "generated public e2e: missing replacement image in tool report")
         zip_xml, openpyxl_report = verify_generated_public_e2e(output_path, replacement_image)

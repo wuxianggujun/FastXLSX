@@ -3346,7 +3346,7 @@ Report run_generated_style_passthrough_noop_save(const CliOptions& options)
     return run_generated_style_passthrough_impl(options, true);
 }
 
-Report run_generated_image_replace(const CliOptions& options)
+Report run_generated_image_replace_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -3354,20 +3354,47 @@ Report run_generated_image_replace(const CliOptions& options)
     report.image_part_name =
         options.image_part_name.empty() ? "xl/media/image1.png" : options.image_part_name;
     report.source = write_two_sheet_source_with_image(
-        resolve_generated_source(options, "fastxlsx-workbook-editor-qa-image-source.xlsx"));
+        resolve_generated_source(
+            options,
+            verify_noop_save ? "fastxlsx-workbook-editor-qa-image-noop-source.xlsx"
+                             : "fastxlsx-workbook-editor-qa-image-source.xlsx"));
     report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-image-output.xlsx");
+        options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-image-noop-output.xlsx"
+                         : "fastxlsx-workbook-editor-qa-image-output.xlsx");
     report.replacement_image = resolve_replacement_image_path(options, report.image_part_name);
     report.mutations = {std::string("replace_image:") + report.image_part_name};
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Pictures worksheet and drawing XML should remain readable",
         report.image_part_name + " bytes should match replacement_image",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after generated image replacement should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     editor.replace_image(report.image_part_name, report.replacement_image);
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "image-replace-first-save.xlsx",
+        "image replace no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_image_replace(const CliOptions& options)
+{
+    return run_generated_image_replace_impl(options, false);
+}
+
+Report run_generated_image_replace_noop_save(const CliOptions& options)
+{
+    return run_generated_image_replace_impl(options, true);
 }
 
 Report run_fixture_image_replace(const CliOptions& options)
@@ -3809,6 +3836,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_image_replace") {
         return run_generated_image_replace(options);
+    }
+    if (options.scenario == "generated_image_replace_noop_save") {
+        return run_generated_image_replace_noop_save(options);
     }
     if (options.scenario == "generated_public_e2e") {
         return run_generated_public_e2e(options);

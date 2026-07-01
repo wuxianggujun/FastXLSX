@@ -318,6 +318,7 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_in_memory_insert_formula `
+  --scenario generated_in_memory_insert_formula_noop_save `
   --work-dir build\qa\workbook-editor-in-memory-insert-formula
 ```
 
@@ -325,7 +326,8 @@ This scenario opens a generated existing workbook through `WorkbookEditor`,
 uses `WorksheetEditor::insert_rows()` on a materialized sheet, writes a new
 formula row, verifies the shifted source-backed formula, and validates the
 saved output with ZIP/XML, `openpyxl`, optional XlsxWriter reference, and
-optional Excel COM. It is local QA only and does not expand production
+optional Excel COM. The no-op variant also requires the follow-up clean
+`save_as()` output to be byte-identical. It is local QA only and does not expand production
 semantics beyond the small-file in-memory row-shift path.
 
 For the focused generated in-memory column-deletion/formula smoke, run:
@@ -335,6 +337,7 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_in_memory_delete_column_formula `
+  --scenario generated_in_memory_delete_column_formula_noop_save `
   --work-dir build\qa\workbook-editor-in-memory-delete-column-formula
 ```
 
@@ -342,7 +345,8 @@ This scenario opens a generated existing workbook through `WorkbookEditor`,
 uses `WorksheetEditor::delete_columns()` on a materialized sheet, verifies
 left-shifted source cells plus shifted formula text, and validates the saved
 output with ZIP/XML, `openpyxl`, optional XlsxWriter reference, and optional
-Excel COM. It is local QA only and does not expand production semantics beyond
+Excel COM. The no-op variant also requires the follow-up clean `save_as()`
+output to be byte-identical. It is local QA only and does not expand production semantics beyond
 the small-file in-memory column-delete path.
 
 For the remaining generated in-memory shift/formula smokes, run:
@@ -352,7 +356,9 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_in_memory_insert_column_formula `
+  --scenario generated_in_memory_insert_column_formula_noop_save `
   --scenario generated_in_memory_delete_row_formula `
+  --scenario generated_in_memory_delete_row_formula_noop_save `
   --scenario generated_in_memory_stationary_formula_shift `
   --scenario generated_in_memory_stationary_formula_shift_noop_save `
   --scenario generated_in_memory_stationary_range_formula_shift `
@@ -365,7 +371,7 @@ These scenarios cover `WorksheetEditor::insert_columns()` and
 source-backed cell shifts, formula text translation, stationary formula
 structural rewrites with `$` markers, `#REF!`, cell ranges, whole-row and
 whole-column references, save, reopen checks, and byte-identical follow-up
-no-op saves for the stationary formula rewrite cases.
+no-op saves for the moving and stationary formula rewrite cases.
 They are local QA only and do not expand production semantics beyond the
 current small-file in-memory row/column shift paths.
 

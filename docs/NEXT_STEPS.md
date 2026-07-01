@@ -237,7 +237,14 @@ views, sparse used-range refresh, source-backed styled formula `StyleId`
 preservation, saved XML projection, and saved-file reopen readback for the
 plain/styled insert-shift, delete-shift sparse snapshot state, and row/column
 out-of-bounds `#REF!` formula translations. The same small-file lane now also
-rewrites stationary materialized formula cells when an insert/delete row or
+has generated QA no-op variants for the moving formula row/column shifts:
+`generated_in_memory_insert_formula_noop_save`,
+`generated_in_memory_delete_column_formula_noop_save`,
+`generated_in_memory_insert_column_formula_noop_save`, and
+`generated_in_memory_delete_row_formula_noop_save` all require the follow-up
+clean `save_as()` output to be byte-identical after the shifted formula output
+is flushed. It also rewrites stationary materialized formula cells when an
+insert/delete row or
 column operation affects only their referenced coordinates: formula-only
 changes dirty the session, flush through `save_as()`, preserve untouched
 worksheets, and reopen cleanly without extending into non-materialized

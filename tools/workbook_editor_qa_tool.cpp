@@ -161,6 +161,26 @@ resolve_output_path(const CliOptions& options, std::string_view fallback_name)
     return fastxlsx::test::artifact_path(fallback_name);
 }
 
+void save_as_with_optional_noop(
+    WorkbookEditor& editor,
+    const Report& report,
+    bool verify_noop_save,
+    std::string_view first_save_filename,
+    std::string_view mismatch_message)
+{
+    const std::filesystem::path first_save_output = verify_noop_save
+        ? report.output.parent_path() / std::filesystem::path(std::string(first_save_filename))
+        : report.output;
+    ensure_parent_directory(first_save_output);
+    editor.save_as(first_save_output);
+    if (verify_noop_save) {
+        editor.save_as(report.output);
+        if (!file_bytes_equal(first_save_output, report.output)) {
+            throw std::runtime_error(std::string(mismatch_message));
+        }
+    }
+}
+
 [[nodiscard]] std::string to_lower_ascii(std::string_view text);
 
 [[nodiscard]] bool is_jpeg_image_part_name(std::string_view image_part_name)
@@ -1542,15 +1562,20 @@ Report run_generated_rename_materialized(const CliOptions& options)
     return report;
 }
 
-Report run_generated_in_memory_insert_formula(const CliOptions& options)
+Report run_generated_in_memory_insert_formula_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_in_memory_insert_formula_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-insert-formula-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-insert-formula-output.xlsx");
+        options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-insert-formula-noop-source.xlsx"
+                         : "fastxlsx-workbook-editor-qa-in-memory-insert-formula-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-insert-formula-noop-output.xlsx"
+                         : "fastxlsx-workbook-editor-qa-in-memory-insert-formula-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_rows(2,1)",
@@ -1558,12 +1583,19 @@ Report run_generated_in_memory_insert_formula(const CliOptions& options)
         "worksheet(Data).set_cell(B2,number)",
         "worksheet(Data).set_cell(C2,formula)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Inserted Data!A2:C2 should be written from the materialized sparse store",
         "Original Data!A2:C2 source row should shift to row 3",
         "Original source formula B2*2 should be translated to B3*2",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the inserted formula row should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -1574,23 +1606,48 @@ Report run_generated_in_memory_insert_formula(const CliOptions& options)
     data.set_cell(2, 3, CellValue::formula("B2*2"));
     require_formula_cell(data, "C2", "B2*2");
     require_formula_cell(data, "C3", "B3*2");
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "insert-formula-first-save.xlsx",
+        "insert formula no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_in_memory_delete_column_formula(const CliOptions& options)
+Report run_generated_in_memory_insert_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_formula_impl(options, false);
+}
+
+Report run_generated_in_memory_insert_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_formula_impl(options, true);
+}
+
+Report run_generated_in_memory_delete_column_formula_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_in_memory_delete_column_formula_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-output.xlsx");
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).delete_columns(1,1)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Original Data!A1 should be deleted",
         "Original Data!B1 should shift to Data!A1",
@@ -1598,29 +1655,58 @@ Report run_generated_in_memory_delete_column_formula(const CliOptions& options)
         "Original Data!D1 should shift to Data!C1",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the delete-column formula shift should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
     data.delete_columns(1, 1);
     require_formula_cell(data, "B1", "A1+C1");
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "delete-column-formula-first-save.xlsx",
+        "delete-column formula no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_in_memory_insert_column_formula(const CliOptions& options)
+Report run_generated_in_memory_delete_column_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_delete_column_formula_impl(options, false);
+}
+
+Report run_generated_in_memory_delete_column_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_delete_column_formula_impl(options, true);
+}
+
+Report run_generated_in_memory_insert_column_formula_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_in_memory_insert_column_formula_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-output.xlsx");
+        options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save
+            ? "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_columns(2,1)",
         "worksheet(Data).set_cell(B1,text)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Original Data!A1 should stay in place",
         "Inserted Data!B1 should be written from the materialized sparse store",
@@ -1628,6 +1714,10 @@ Report run_generated_in_memory_insert_column_formula(const CliOptions& options)
         "Original Data!C1 formula should shift to Data!D1 and translate B1*2 to C1*2",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the insert-column formula shift should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
@@ -1635,23 +1725,46 @@ Report run_generated_in_memory_insert_column_formula(const CliOptions& options)
     require_formula_cell(data, "D1", "C1*2");
     data.set_cell(1, 2, CellValue::text("inserted-col"));
     require_formula_cell(data, "D1", "C1*2");
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "insert-column-formula-first-save.xlsx",
+        "insert-column formula no-op save output should be byte-identical");
     return report;
 }
 
-Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
+Report run_generated_in_memory_insert_column_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_column_formula_impl(options, false);
+}
+
+Report run_generated_in_memory_insert_column_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_column_formula_impl(options, true);
+}
+
+Report run_generated_in_memory_delete_row_formula_impl(
+    const CliOptions& options,
+    bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     report.source = write_in_memory_delete_row_formula_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-output.xlsx");
+        options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-noop-source.xlsx"
+                         : "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-source.xlsx"));
+    report.output = resolve_output_path(options,
+        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-noop-output.xlsx"
+                         : "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-output.xlsx");
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).delete_rows(1,1)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "Original Data!A1 should be deleted",
         "Original Data!A2 should shift to Data!A1",
@@ -1659,13 +1772,32 @@ Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
         "Original Data!A3 should shift to Data!A2",
         "Notes sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the delete-row formula shift should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     WorksheetEditor data = editor.worksheet("Data");
     data.delete_rows(1, 1);
     require_formula_cell(data, "B1", "A1+A2");
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "delete-row-formula-first-save.xlsx",
+        "delete-row formula no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_delete_row_formula_impl(options, false);
+}
+
+Report run_generated_in_memory_delete_row_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_delete_row_formula_impl(options, true);
 }
 
 Report run_generated_in_memory_stationary_formula_shift_impl(
@@ -3158,14 +3290,26 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_in_memory_insert_formula") {
         return run_generated_in_memory_insert_formula(options);
     }
+    if (options.scenario == "generated_in_memory_insert_formula_noop_save") {
+        return run_generated_in_memory_insert_formula_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_delete_column_formula") {
         return run_generated_in_memory_delete_column_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_delete_column_formula_noop_save") {
+        return run_generated_in_memory_delete_column_formula_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_insert_column_formula") {
         return run_generated_in_memory_insert_column_formula(options);
     }
+    if (options.scenario == "generated_in_memory_insert_column_formula_noop_save") {
+        return run_generated_in_memory_insert_column_formula_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_delete_row_formula") {
         return run_generated_in_memory_delete_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_delete_row_formula_noop_save") {
+        return run_generated_in_memory_delete_row_formula_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_stationary_formula_shift") {
         return run_generated_in_memory_stationary_formula_shift(options);

@@ -35,9 +35,13 @@ NAMESPACES = {
 GENERATED_SCENARIOS = [
     "generated_rename_materialized",
     "generated_in_memory_insert_formula",
+    "generated_in_memory_insert_formula_noop_save",
     "generated_in_memory_delete_column_formula",
+    "generated_in_memory_delete_column_formula_noop_save",
     "generated_in_memory_insert_column_formula",
+    "generated_in_memory_insert_column_formula_noop_save",
     "generated_in_memory_delete_row_formula",
+    "generated_in_memory_delete_row_formula_noop_save",
     "generated_in_memory_stationary_formula_shift",
     "generated_in_memory_stationary_formula_shift_noop_save",
     "generated_in_memory_stationary_range_formula_shift",
@@ -1116,6 +1120,54 @@ def verify_generated_in_memory_delete_row_formula(path: Path) -> tuple[dict[str,
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_insert_formula_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory insert formula no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_insert_formula(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_delete_column_formula_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory delete column formula no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_delete_column_formula(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_insert_column_formula_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory insert column formula no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_insert_column_formula(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_delete_row_formula_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory delete row formula no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_delete_row_formula(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -3392,7 +3444,10 @@ def create_xlsxwriter_reference(
             edited.write("A1", "materialized-edit")
             edited.write_number("B2", 42)
             untouched.write("A1", "keep-me")
-        elif scenario == "generated_in_memory_insert_formula":
+        elif scenario in {
+            "generated_in_memory_insert_formula",
+            "generated_in_memory_insert_formula_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write_row("A1", ["item", "value", "double"])
@@ -3403,14 +3458,20 @@ def create_xlsxwriter_reference(
             data.write_number("B3", 3)
             data.write_formula("C3", "=B3*2")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_delete_column_formula":
+        elif scenario in {
+            "generated_in_memory_delete_column_formula",
+            "generated_in_memory_delete_column_formula_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write_number("A1", 7)
             data.write_formula("B1", "=A1+C1")
             data.write("C1", "tail")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_insert_column_formula":
+        elif scenario in {
+            "generated_in_memory_insert_column_formula",
+            "generated_in_memory_insert_column_formula_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write("A1", "item")
@@ -3418,7 +3479,10 @@ def create_xlsxwriter_reference(
             data.write_number("C1", 2)
             data.write_formula("D1", "=C1*2")
             notes.write("A1", "preserved")
-        elif scenario == "generated_in_memory_delete_row_formula":
+        elif scenario in {
+            "generated_in_memory_delete_row_formula",
+            "generated_in_memory_delete_row_formula_noop_save",
+        }:
             data = workbook.add_worksheet("Data")
             notes = workbook.add_worksheet("Notes")
             data.write_number("A1", 4)
@@ -3642,12 +3706,32 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_rename_materialized(output_path)
     elif scenario == "generated_in_memory_insert_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula(output_path)
+    elif scenario == "generated_in_memory_insert_formula_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_delete_column_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_column_formula(output_path)
+    elif scenario == "generated_in_memory_delete_column_formula_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_delete_column_formula_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_insert_column_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_column_formula(output_path)
+    elif scenario == "generated_in_memory_insert_column_formula_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_insert_column_formula_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_delete_row_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula(output_path)
+    elif scenario == "generated_in_memory_delete_row_formula_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_delete_row_formula_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_stationary_formula_shift":
         zip_xml, openpyxl_report = verify_generated_in_memory_stationary_formula_shift(output_path)
     elif scenario == "generated_in_memory_stationary_formula_shift_noop_save":

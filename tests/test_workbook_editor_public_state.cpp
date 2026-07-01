@@ -5539,6 +5539,31 @@ void test_public_worksheet_editor_get_cell_missing_and_blank_semantics()
         "get_cell explicit blank second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "get_cell explicit blank second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "get_cell explicit blank second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "get_cell explicit blank second no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
+                "get_cell explicit blank second no-op save reopened output should expose blank bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "get_cell explicit blank second no-op save reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "get_cell explicit blank second no-op save reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "get_cell explicit blank second no-op save reopened output should keep source-backed A2");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Blank,
+                "get_cell explicit blank second no-op save reopened output should read D4 as blank");
+            check(!reopened_sheet.try_cell("E5").has_value(),
+                "get_cell explicit blank second no-op save reopened output should keep unrelated missing cells absent");
+        });
 }
 
 void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()

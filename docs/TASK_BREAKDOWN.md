@@ -55234,6 +55234,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1373 - Reopen explicit blank second no-op output
+
+Type: default public-state regression coverage for explicit blank no-op output
+readability.
+
+Status: completed.
+
+Goal:
+Prove explicit blank materialization remains readable after repeated byte-stable
+no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_get_cell_missing_and_blank_semantics()`
+  after the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, blank bounds, source-backed `A1` / `B1` / `A2`,
+  explicit blank `D4`, and missing `E5`.
+- Leaves the existing missing `get_cell()` non-mutation check, blank XML
+  projection, first output reopen, catalog/save-state snapshots, dirty
+  diagnostics, and byte-stability assertions unchanged.
+
+Non-goals:
+- No missing-cell exception changes, blank serialization changes,
+  commit/close semantics, in-place overwrite, rollback, transaction replay,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

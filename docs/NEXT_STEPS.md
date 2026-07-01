@@ -639,6 +639,11 @@ The saved/reacquired invalid-shift recovery path now mirrors that evidence:
 after rejected row/column shift preflights and a valid C5 recovery edit, the
 byte-stable clean output fresh-reopens with the shifted formula audit/readback,
 recovered text, `fullCalcOnLoad="1"`, and no calcChain.
+The saved/reacquired missing-query recovery path now has matching no-op
+readability evidence as well: after missing and old-source sheet lookups plus a
+valid C5 recovery edit, the byte-stable clean output fresh-reopens with the
+renamed sheet, shifted formula audit/readback, recovered text,
+`fullCalcOnLoad="1"`, and no calcChain.
 The failed-save retry path is pinned for that saved/reacquired state too:
 after a later valid `set_cell()` re-dirties the planned-name session, an exact
 source-overwrite `save_as()` rejection preserves dirty diagnostics,

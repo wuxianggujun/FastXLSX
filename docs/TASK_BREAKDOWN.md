@@ -54486,6 +54486,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1354 - Pin empty whole-store clear/erase no-op save stability
+
+Type: default public-state regression coverage for empty whole-store
+`clear_cell_values()` / `erase_cells()` clean-save stability.
+
+Status: completed.
+
+Goal:
+Prove empty whole-store clear/erase calls that clear prior edit diagnostics on
+an already empty saved materialized session remain clean and no-op save stable.
+
+Coverage:
+- Extends the existing whole-store `erase_cells()` sparse projection test after
+  the empty first-save and two clean no-op saves.
+- Seeds diagnostics with invalid mutations, then verifies empty
+  `clear_cell_values()` and empty `erase_cells()` clear diagnostics without
+  dirtying the clean empty materialized `Data` handle.
+- Saves another no-op output while preserving public catalog/save-state
+  snapshots.
+- Verifies materialized/replacement diagnostics remain empty, output entries
+  stay byte-stable, and reopened `Data` remains empty.
+
+Non-goals:
+- No tombstones, dense worksheet deletion, missing-cell synthesis, session
+  cloning, source reload, metadata/range repair, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

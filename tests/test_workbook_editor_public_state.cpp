@@ -12861,6 +12861,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-noop-output.xlsx");
         const std::filesystem::path second_noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-second-noop-output.xlsx");
+        const std::filesystem::path empty_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-empty-noop-output.xlsx");
         const std::filesystem::path output_after_reacquire =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-output.xlsx");
         const std::filesystem::path noop_output_after_reacquire =
@@ -13025,6 +13027,37 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "empty erase_cells() should not dirty a clean empty materialized worksheet");
         check(sheet.cell_count() == 0,
             "empty erase_cells() should keep the sparse store empty");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_empty_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_empty_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(empty_noop_output);
+        check(!sheet.has_pending_changes(),
+            "empty whole-store clear/erase no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "empty whole-store clear/erase no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "empty whole-store clear/erase no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "empty whole-store clear/erase no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "empty whole-store clear/erase no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_empty_noop,
+            "empty whole-store clear/erase no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_empty_noop,
+            "empty whole-store clear/erase no-op save");
+        const auto empty_noop_entries = fastxlsx::test::read_zip_entries(empty_noop_output);
+        check(empty_noop_entries == noop_entries,
+            "empty whole-store clear/erase no-op output should match the prior no-op output");
+        check_reopened_clean_sheet_output(
+            empty_noop_output, "Data", "empty whole-store clear/erase no-op save",
+            inspect_erase_all_empty_output);
 
         fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
         check(!reacquired.has_pending_changes(),

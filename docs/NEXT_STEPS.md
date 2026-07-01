@@ -4070,6 +4070,13 @@ keeps materialized/replacement diagnostics empty, emits byte-stable package
 entries, and reopens both sheets unchanged. This is diagnostics save hygiene
 only, not commit/close semantics, transaction history, metadata repair, or
 relationship sync.
+Materialized worksheet-name move ownership now has the same follow-up no-op save
+coverage. After move construction and move assignment transfer the dirty `Data`
+session and discard the target's dirty `Untouched` session, the saved output and
+the clean no-op output stay byte-stable, diagnostics stay empty, and both sheets
+reopen with the moved data and untouched source cells intact. This is
+move-ownership save hygiene only, not transaction transfer semantics, rollback,
+or moved-handle guarantees beyond the current public diagnostics contract.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

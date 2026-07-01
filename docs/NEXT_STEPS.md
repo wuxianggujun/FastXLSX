@@ -3956,6 +3956,13 @@ The full-cell `set_row()` / `set_column()` rejection paths now have the same
 default public-state save/no-op coverage, including retained failure diagnostics,
 source-identical recovery output, byte-identical follow-up no-op output, and
 clean materialized/replacement diagnostics.
+Sparse batch initializer-list rejection now has the same default public-state
+save/no-op coverage: rejected `set_cells()` and `set_cell_values()` calls with
+caller-supplied non-default `StyleId` values keep source-backed `Data` cells
+unchanged, preserve the public failure diagnostic across copy-original and
+follow-up no-op saves, and reopen unchanged. This remains rejection-only
+guardrail coverage, not dense range editing, caller-supplied non-default style
+writes, style migration, or relationship repair.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

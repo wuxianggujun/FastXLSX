@@ -8261,6 +8261,23 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
                     reopened_c3.text_value() == "range-erase-reacquired",
                 "range erase reacquired save reopened output should read post-reacquire C3");
         });
+    check_reopened_clean_sheet_output(noop_output, "Data", "range erase reacquired no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "range erase reacquired no-op reopened output should contain one sparse cell");
+            check_cell_range_equals(reopened_sheet.used_range(), 3, 3, 3, 3,
+                "range erase reacquired no-op reopened output should expose C3 bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "range erase reacquired no-op reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "range erase reacquired no-op reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "range erase reacquired no-op reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "range-erase-reacquired",
+                "range erase reacquired no-op reopened output should read post-reacquire C3");
+        });
 }
 
 void test_public_worksheet_editor_erase_cells_memory_budget_release()

@@ -360,6 +360,8 @@ empty first projection and the later single-cell C3 projection after handle
 reacquisition.
 Its first-flush second no-op output now also fresh-reopens as an empty sparse
 worksheet with no used range and erased A1/B1/A2 absent before reacquisition.
+Its post-reacquire no-op output now also fresh-reopens with the same single C3
+text cell, C3:C3 bounds, and erased A1/B1/A2 absence as the second save.
 The initializer-list batch overload path is also reopened to verify explicit
 blank, source-backed, inserted boolean, erased, and missing-only targets survive
 the saved sparse projection.

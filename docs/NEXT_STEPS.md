@@ -1875,6 +1875,12 @@ The delete-column option-mismatch path now mirrors that no-op reopen evidence
 after the matching reacquire and recovery row shift.
 The delete-column invalid-mutation and missing-query paths now have the same
 fresh no-op reopen coverage after their recovery row shifts.
+The delete-column invalid-read and snapshot-read paths now also fresh-reopen
+their final clean no-op outputs after the recovery row shift, pinning the
+translated styled `C3` formula, shifted source-backed cells, row/column
+snapshot readback, and absent old coordinates.
+The delete-column reacquire path now mirrors that final no-op output readback
+after the clean saved-session reacquire and later recovery row shift.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

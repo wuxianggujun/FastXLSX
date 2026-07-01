@@ -137,6 +137,11 @@ clean no-op output leave the row-shifted session reusable, a later `C3` edit
 re-dirties the shared handles with aligned materialized diagnostics, and the
 next output fresh-reopens with shifted `A3` plus the new `C3` while earlier
 outputs remain unchanged.
+The invalid-mutation saved-session path now mirrors that post-noop coverage:
+rejected invalid `set_cell` / `erase_cell` calls leave the shifted session
+clean, the no-op output preserves the invalid mutation diagnostic, a later
+valid `C3` edit clears that diagnostic while re-dirtying the shared handles,
+and the next output fresh-reopens without leaking rejected payloads.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

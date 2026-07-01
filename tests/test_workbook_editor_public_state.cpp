@@ -24018,6 +24018,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_preser
         "renamed full-calc formula audit no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed full-calc formula audit no-op output should match the first materialized output");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        "renamed full-calc formula audit no-op output");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_failed_save_preserve_state()

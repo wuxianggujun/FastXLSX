@@ -55758,6 +55758,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1387 - Reopen renamed formula materialized no-op output
+
+Type: default public-state regression coverage for renamed full-calculation
+formula-audit materialized no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the renamed full-calculation formula-audit materialized-state path still
+produces a clean, readable workbook after a byte-stable no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_full_calculation_renamed_formula_audits_preserve_materialized_state()`
+  after the no-op output byte comparison.
+- Reopens `noop_output` through
+  `check_public_state_reopened_shift_formula_audit_output()` and verifies the
+  renamed sheet, shifted styled `D3` formula, source/materialized formula
+  audits for `Data!A2` / `Data!B2`, `fullCalcOnLoad`, and absent calcChain.
+- Leaves the existing rename/full-calculation/materialized diagnostics, first
+  output reopen, catalog/save-state snapshots, dirty diagnostics, and
+  byte-stability assertions unchanged.
+
+Non-goals:
+- No rename semantic changes, formula translation changes, formula audit policy
+  changes, explicit formula rewrite policy, formula evaluation, cached values,
+  metadata/range repair, calcChain rebuild, sharedStrings/styles migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

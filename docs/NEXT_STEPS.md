@@ -577,6 +577,9 @@ The materialized formula audit side of that renamed boundary is covered too:
 `Data!B2`, preserves the queued rename/full-calc/materialized diagnostics, and
 still leaves default rename as audit-only stale-qualifier evidence until an
 explicit formula rewrite policy is requested.
+Its clean no-op output now also fresh-reopens with the same renamed sheet,
+shifted styled `D3` formula audit/readback, `Data!A2` / `Data!B2` references,
+`fullCalcOnLoad="1"`, and absent calcChain.
 Failed-save retry hygiene now covers that same renamed full-calculation formula
 state: an exact source-overwrite `save_as()` rejection preserves the shifted
 materialized formula audit, the original source-formula audit, materialized

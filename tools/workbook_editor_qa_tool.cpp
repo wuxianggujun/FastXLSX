@@ -3343,7 +3343,7 @@ Report run_fixture_image_replace(const CliOptions& options)
     return report;
 }
 
-Report run_generated_public_e2e(const CliOptions& options)
+Report run_generated_public_e2e_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -3364,6 +3364,9 @@ Report run_generated_public_e2e(const CliOptions& options)
         "replace_sheet_data:ReplaceMe",
         "replace_image:xl/media/image1.png",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
     report.notes = {
         "EditedData!A1 should be materialized-edit",
         "EditedData!B2 should be 42",
@@ -3371,6 +3374,10 @@ Report run_generated_public_e2e(const CliOptions& options)
         "ReplaceMe!B1 should be 7",
         "Pictures media part should match replacement_image",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after the public E2E edit combination should be byte-identical");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     editor.rename_sheet("Data", "EditedData");
@@ -3380,8 +3387,23 @@ Report run_generated_public_e2e(const CliOptions& options)
     editor.replace_sheet_data("ReplaceMe",
         {{CellValue::text("sheetdata-final"), CellValue::number(7.0)}});
     editor.replace_image(report.image_part_name, report.replacement_image);
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "public-e2e-first-save.xlsx",
+        "public E2E no-op save output should be byte-identical");
     return report;
+}
+
+Report run_generated_public_e2e(const CliOptions& options)
+{
+    return run_generated_public_e2e_impl(options, false);
+}
+
+Report run_generated_public_e2e_noop_save(const CliOptions& options)
+{
+    return run_generated_public_e2e_impl(options, true);
 }
 
 Report run_generated_non_default_style_rejection(const CliOptions& options)
@@ -3726,6 +3748,9 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_public_e2e") {
         return run_generated_public_e2e(options);
+    }
+    if (options.scenario == "generated_public_e2e_noop_save") {
+        return run_generated_public_e2e_noop_save(options);
     }
     if (options.scenario == "generated_non_default_style_rejection") {
         return run_generated_non_default_style_rejection(options);

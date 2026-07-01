@@ -296,6 +296,7 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_q
 py tools\run_workbook_editor_qa.py `
   --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
   --scenario generated_public_e2e `
+  --scenario generated_public_e2e_noop_save `
   --work-dir build\qa\workbook-editor-public-e2e
 ```
 
@@ -305,6 +306,8 @@ replacement media-byte comparison, `openpyxl` value readback, and a picture
 count smoke. It is local QA only and is not a FastXLSX runtime dependency or a
 claim of relationship repair, semantic image editing, transaction/undo support,
 formula calculation, or large-file random editing.
+The no-op variant repeats the same combined public edit output and requires the
+follow-up clean `save_as()` package to be byte-identical.
 If `--qa-exe` is omitted, `tools/run_workbook_editor_qa.py` now chooses the
 newest local `fastxlsx_workbook_editor_qa_tool.exe` from the default and minizip
 build trees, then from fallback discovery under `build/`. This prevents stale

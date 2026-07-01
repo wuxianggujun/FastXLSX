@@ -3881,6 +3881,10 @@ for the existing public facade smoke only; it is not a runtime dependency, Excel
 formula calculation, relationship repair/pruning, semantic image editing,
 transaction history, undo/rollback, source mutation, or a large-file random
 editing claim.
+The generated public E2E lane now also has a no-op save variant that requires
+the follow-up clean `save_as()` package to be byte-identical after the combined
+rename/materialized edit, sheetData replacement, and image replacement output
+has flushed.
 C5 direct PackageReader ZIP-entry chunk work remains the large-worksheet
 low-memory line.
 The WorkbookEditor source-success executable is now split the same way:

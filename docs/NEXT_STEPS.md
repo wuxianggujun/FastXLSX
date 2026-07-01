@@ -121,6 +121,11 @@ coverage: the row-shifted clean no-op output stays byte-stable, a later `C3`
 edit re-dirties the optional reacquired session and original handle with aligned
 materialized diagnostics, and the next output fresh-reopens with shifted `A3`
 plus the new `C3`.
+The option-mismatch saved-session path now carries the same post-noop reuse
+evidence as well: rejected mismatched options and a clean no-op save leave the
+row-shifted session reusable, a later matching reacquire can write `C3`, and the
+next output fresh-reopens with shifted `A3` plus the new `C3` while the earlier
+first/no-op outputs stay unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

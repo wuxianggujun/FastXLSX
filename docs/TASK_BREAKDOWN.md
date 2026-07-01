@@ -54301,6 +54301,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1349 - Pin row clear validation failure no-op public-state stability
+
+Type: default public-state regression coverage for `clear_row()` /
+`clear_rows()` validation failure no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend rejection-only save hygiene to row clear operations when row zero is
+rejected or a row range is reversed.
+
+Coverage:
+- Extends the existing `clear_row()` invalid-row and `clear_rows()` reversed
+  range failure branch.
+- Verifies rejected row clear calls update `last_edit_error()`, preserve the
+  clean source-backed materialized session, keep sparse cell count and source
+  cells stable, and leave materialized/replacement diagnostics empty.
+- Saves a copy-original output and a follow-up no-op output while preserving
+  public catalog/save-state snapshots, including the retained validation
+  diagnostic.
+- Verifies outputs are source-entry-identical, the no-op output matches the
+  first output byte-for-byte, and reopened `Data` remains unchanged.
+
+Non-goals:
+- No coordinate clamping, row metadata creation, dense row materialization,
+  range repair, rollback machinery, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

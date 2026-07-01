@@ -4014,6 +4014,12 @@ session, retain public diagnostics across both saves, keep
 materialized/replacement diagnostics empty, and reopen unchanged. This is
 column value-prefix rejection hygiene only, not dense column writes, column
 insertion, budget auto-sizing, or rollback.
+`clear_row()` / `clear_rows()` validation failures now have copy-original/no-op
+coverage as well: row zero and reversed row ranges preserve the clean
+source-backed `Data` session, retain public diagnostics across both saves, keep
+materialized/replacement diagnostics empty, and reopen unchanged. This is row
+clear validation hygiene only, not row metadata creation, dense materialization,
+range repair, or rollback.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

@@ -42036,6 +42036,8 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-noop-output.xlsx");
+        const std::filesystem::path post_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-post-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -42142,6 +42144,68 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid row shift noop save should keep output entries stable");
         check_reopened_shift_output(noop_output, "dirty invalid-to-valid row shift noop save",
             inspect_reopened_dirty_row_shift_recovery);
+
+        sheet.set_cell("C3", fastxlsx::CellValue::text("post-noop-dirty-invalid-row-recovery"));
+        check(sheet.has_pending_changes(),
+            "dirty invalid-to-valid row shift post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 5,
+            "dirty invalid-to-valid row shift post-noop edit should add one sparse cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 5, 3,
+            "dirty invalid-to-valid row shift post-noop edit should expand bounds to C5");
+        const fastxlsx::CellValue post_noop_cell = sheet.get_cell("C3");
+        check(post_noop_cell.kind() == fastxlsx::CellValueKind::Text &&
+                post_noop_cell.text_value() == "post-noop-dirty-invalid-row-recovery",
+            "dirty invalid-to-valid row shift post-noop edit should be readable before save");
+        check(sheet.get_cell("B5").text_value() == "dirty-row-tail",
+            "dirty invalid-to-valid row shift post-noop edit should preserve shifted dirty tail");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "dirty invalid-to-valid row shift post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "dirty invalid-to-valid row shift post-noop save should clean the materialized session");
+        check(editor.pending_change_count() == 2,
+            "dirty invalid-to-valid row shift post-noop save should record the second handoff");
+        check(editor.has_pending_changes(),
+            "dirty invalid-to-valid row shift post-noop save should retain staged materialized handoffs");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "dirty invalid-to-valid row shift post-noop save should clear dirty materialized diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "dirty invalid-to-valid row shift post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "dirty invalid-to-valid row shift post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "dirty invalid-to-valid row shift post-noop save should leave the prior no-op output unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, R"(<c r="C3")",
+            "dirty invalid-to-valid row shift post-noop save should write the post-noop C3 cell");
+        check_reopened_shift_output(post_noop_output, "dirty invalid-to-valid row shift post-noop save",
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 5,
+                    "dirty invalid-to-valid row shift post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 3,
+                    "dirty invalid-to-valid row shift post-noop save reopened output should expose post-noop bounds");
+                const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+                check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3.text_value() == "placeholder-a2",
+                    "dirty invalid-to-valid row shift post-noop save reopened output should keep shifted source A2");
+                const fastxlsx::CellValue reopened_b5 = reopened_sheet.get_cell("B5");
+                check(reopened_b5.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_b5.text_value() == "dirty-row-tail",
+                    "dirty invalid-to-valid row shift post-noop save reopened output should keep shifted dirty tail");
+                const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+                check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_c3.text_value() == "post-noop-dirty-invalid-row-recovery",
+                    "dirty invalid-to-valid row shift post-noop save reopened output should keep post-noop edit");
+                check(!reopened_sheet.try_cell("A2").has_value() &&
+                        !reopened_sheet.try_cell("B4").has_value(),
+                    "dirty invalid-to-valid row shift post-noop save reopened output should keep old coordinates absent");
+            });
     }
 
     {

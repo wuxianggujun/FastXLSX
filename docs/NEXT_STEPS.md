@@ -182,6 +182,10 @@ The clean invalid-to-valid column-shift recovery path mirrors that coverage:
 rejected invalid column shifts stay clean, the valid recovery save/no-op output
 remains reusable, and a later `D2` edit saves a fresh-reopenable post-noop
 output while earlier outputs stay unchanged.
+The dirty invalid-to-valid row-shift recovery path now carries that post-noop
+evidence for already-dirty sessions too: invalid shifts preserve the dirty tail,
+the valid recovery save/no-op output remains reusable, and a later `C3` edit
+saves a fresh-reopenable post-noop output with the shifted dirty tail intact.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

@@ -390,6 +390,8 @@ no used range and erased A1/B1/A2 absent.
 The `row_cells()` / `column_cells()` snapshot path is reopened to verify saved
 row/column ordering, explicit blank cells, source-backed records, later edits,
 and outside-coordinate sparse cells.
+Its second no-op output now also fresh-reopens with the same row/column
+ordering, source cells, explicit blank, later edits, bounds, and outside D4.
 The `contains_cell()` inspection path now also saves and reopens the dirty
 projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.

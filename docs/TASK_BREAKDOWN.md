@@ -55459,6 +55459,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1379 - Reopen row and column snapshot second no-op output
+
+Type: default public-state regression coverage for `row_cells()` /
+`column_cells()` snapshot no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the row/column owning snapshot path still produces a clean, readable
+workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_row_and_column_cells_snapshot()` after
+  the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, dirty bounds, row-major `row_cells(1)` ordering,
+  column-major `column_cells(1)` ordering, edited `A1`, source-backed `B1` /
+  `A2`, explicit blank `C1`, edited `A3`, and outside `D4`.
+- Leaves the existing owning snapshot checks, first output reopen,
+  catalog/save-state snapshots, dirty diagnostics, and byte-stability
+  assertions unchanged.
+
+Non-goals:
+- No dense row/column reads, missing-cell synthesis, borrowed snapshot views,
+  streaming sparse iterators, row/column metadata repair, metadata/range repair,
+  calcChain rebuild, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -1855,6 +1855,9 @@ memory after the later shared shift, and reopened clean diagnostics.
 The failed-save retry path now also reopens its final clean no-op output, so the
 safe retry's byte-stable save has fresh readback evidence for the renamed sheet,
 translated styled formula, shifted source cells, and absent old coordinates.
+The option-mismatch path now mirrors that final no-op reopen check after its
+later shared-session column shift, including clean diagnostics on the reopened
+workbook.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

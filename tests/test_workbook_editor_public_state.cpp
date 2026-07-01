@@ -4998,6 +4998,8 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
         write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-materialized-summary-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -5077,6 +5079,7 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
     }
 
     editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -5092,7 +5095,7 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
         }
     }
 
-    check_reopened_clean_sheet_output(output, "Data", "pending summary Data",
+    const auto inspect_pending_summary_data =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "pending summary Data reopened output should keep sparse count");
@@ -5110,8 +5113,8 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
             check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a2.text_value() == "placeholder-a2",
                 "pending summary Data reopened output should keep source-backed A2");
-        });
-    check_reopened_clean_sheet_output(output, "Untouched", "pending summary Untouched replacement",
+        };
+    const auto inspect_pending_summary_untouched =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 1,
                 "pending summary Untouched reopened output should keep replacement sparse count");
@@ -5123,7 +5126,45 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
                 "pending summary Untouched reopened output should read replacement A1");
             check(!reopened_sheet.try_cell("B1").has_value(),
                 "pending summary Untouched reopened output should drop source-backed B1");
-        });
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "pending summary Data",
+        inspect_pending_summary_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "pending summary Untouched replacement",
+        inspect_pending_summary_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_noop =
+        editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending summary noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending summary noop save should keep dirty materialized cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending summary noop save should keep dirty materialized memory empty");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_noop),
+        "pending summary noop save should preserve retained replacement summary");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "pending summary retained replacement noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "pending summary retained replacement noop save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "pending summary noop output should match first output");
+    check_reopened_clean_sheet_output(noop_output, "Data", "pending summary noop Data",
+        inspect_pending_summary_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "pending summary noop Untouched replacement",
+        inspect_pending_summary_untouched);
 }
 
 void test_public_workbook_editor_pending_materialized_summaries_move_with_owner()

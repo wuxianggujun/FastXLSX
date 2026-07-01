@@ -4084,6 +4084,13 @@ save-state/catalog snapshots, keeps diagnostics empty, emits byte-stable
 package entries, and reopens both sheets unchanged. This is summary diagnostics
 hygiene only, not rollback, moved-handle semantics, metadata repair, or
 relationship sync.
+Mixed materialized/replacement summaries now also have that no-op save pin:
+after dirty `Data` materialized edits are saved beside a queued `Untouched`
+replacement, the materialized summary clears, the replacement summary remains
+stable, the clean no-op save preserves public save-state/catalog snapshots,
+emits byte-stable package entries, and reopens both sheets unchanged. This is
+retained-summary save hygiene only, not commit semantics, replacement cleanup,
+metadata repair, or relationship sync.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

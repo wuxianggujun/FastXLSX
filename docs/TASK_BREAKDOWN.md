@@ -54716,6 +54716,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1360 - Pin mixed materialized/replacement summary no-op save stability
+
+Type: default public-state regression coverage for retained replacement summary
+no-op save stability after materialized summary flush.
+
+Status: completed.
+
+Goal:
+Prove that saving dirty materialized edits beside a queued replacement summary
+clears only the dirty materialized summary, keeps the retained replacement
+summary stable, and remains byte-stable across a follow-up no-op `save_as()`.
+
+Coverage:
+- Extends the pending summary mixed materialized/replacement test with a
+  follow-up clean `save_as()` after the first successful save.
+- Verifies the first save removes the dirty `Data` materialized summary while
+  preserving the queued `Untouched` replacement summary.
+- Captures public catalog/save-state snapshots before the no-op save, verifies
+  the clean no-op preserves them, and keeps dirty materialized diagnostics
+  empty while retaining the replacement summary.
+- Verifies no-op package entries match the first output byte-for-byte and both
+  sheets reopen with the saved materialized `Data` cells and replacement-backed
+  `Untouched` cells intact.
+
+Non-goals:
+- No commit/close semantics, rollback, transaction replay, replacement cleanup,
+  metadata/range repair, relationship repair, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

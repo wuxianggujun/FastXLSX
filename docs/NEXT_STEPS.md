@@ -361,6 +361,9 @@ the saved sparse projection.
 The A1 range clear/erase sparse mutation path is also reopened to pin explicit
 blank projection, erased source cells, missing-only no-ops, and outside-range
 text after save.
+Its second no-op output now also fresh-reopens with the same sparse count,
+bounds, blanked B1/C3 records, erased A1/A2 absence, missing B2, and outside D4
+text.
 The sparse snapshot dirty projection path is also reopened to verify owning
 snapshots do not block later edits and saved output rehydrates the edited,
 source-backed, blank, inserted, and erased sparse cells cleanly.

@@ -55496,6 +55496,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1380 - Reopen A1 range mutation second no-op output
+
+Type: default public-state regression coverage for strict A1 range mutation
+no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the strict A1 range clear/erase sparse mutation path still produces a
+clean, readable workbook after repeated byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_a1_range_mutations_sparse_semantics()`
+  after the second no-op output byte comparison.
+- Reopens `second_noop_output` through `check_reopened_clean_sheet_output()`
+  and verifies sparse count, bounds, blanked `B1` / `C3`, erased `A1` / `A2`,
+  missing `B2`, and outside `D4` text.
+- Leaves the existing strict A1 range clear/erase assertions, missing-only
+  no-op erase, first output reopen, catalog/save-state snapshots, dirty
+  diagnostics, and byte-stability assertions unchanged.
+
+Non-goals:
+- No dense range writes, missing-cell synthesis, tombstones, relaxed A1
+  parsing, commit/close semantics, in-place overwrite, rollback, transaction
+  replay, metadata/range repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

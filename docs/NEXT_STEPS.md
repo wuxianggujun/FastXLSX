@@ -194,6 +194,10 @@ The row-shift cross-handle path now also carries post-noop evidence: after both
 `Data` and `Untouched` are saved and a clean no-op output is proven byte-stable,
 later edits on both materialized handles save a fresh-reopenable output while
 the earlier first/no-op outputs stay unchanged.
+That row-shift cross-handle path now also runs a second clean no-op `save_as()`
+after the post-noop edit: both materialized handles stay clean, no extra handoff
+is recorded, the package bytes remain stable, and both sheets fresh-reopen with
+the post-noop edits intact.
 The column-shift cross-handle path mirrors that post-noop evidence with later
 edits on both `Data` and `Untouched`, preserving the shifted dirty columns and
 leaving earlier first/no-op outputs unchanged.

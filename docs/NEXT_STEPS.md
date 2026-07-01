@@ -619,6 +619,9 @@ after a rejected invalid formula payload, a later valid `set_cell()` clears
 `last_edit_error()`, keeps the renamed full-calc dirty formula audit state,
 adds the recovered text cell, and saves/reopens without leaking the rejected
 formula payload or inventing calcChain.
+Its clean no-op output now also fresh-reopens with the renamed sheet, shifted
+styled formula audit/readback, recovered C5 text, `fullCalcOnLoad="1"`, and
+absent calcChain still readable.
 Saved-session reacquire now covers the same renamed full-calc formula audit
 state: after the first save, matching planned-name reacquire stays clean,
 preserves shifted materialized and original source audits without adding

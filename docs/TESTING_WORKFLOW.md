@@ -311,6 +311,24 @@ build trees, then from fallback discovery under `build/`. This prevents stale
 local tool binaries from hiding newly added generated scenarios, but it remains
 local QA convenience and not a CMake preset or CI policy.
 
+For the generated rename/materialized persistence smoke, run:
+
+```powershell
+cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool
+py tools\run_workbook_editor_qa.py `
+  --qa-exe build\windows-nmake-release\tools\fastxlsx_workbook_editor_qa_tool.exe `
+  --scenario generated_rename_materialized `
+  --scenario generated_rename_materialized_noop_save `
+  --work-dir build\qa\workbook-editor-rename-materialized
+```
+
+This scenario renames `Data` to `EditedData`, writes materialized A1/B2 values
+through `WorksheetEditor`, preserves the untouched sheet, and the no-op variant
+requires the follow-up clean `save_as()` output to be byte-identical. It is
+local QA only and does not add metadata repair, formula qualifier repair,
+sharedStrings/styles migration, calcChain rebuild, or low-memory random
+editing.
+
 For the focused generated in-memory row-insertion/formula smoke, run:
 
 ```powershell

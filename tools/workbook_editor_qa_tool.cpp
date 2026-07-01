@@ -1531,7 +1531,7 @@ Report run_generated_formula_rename_default_audit(const CliOptions& options)
     return report;
 }
 
-Report run_generated_rename_materialized(const CliOptions& options)
+Report run_generated_rename_materialized_impl(const CliOptions& options, bool verify_noop_save)
 {
     Report report;
     report.scenario = options.scenario;
@@ -1547,19 +1547,41 @@ Report run_generated_rename_materialized(const CliOptions& options)
         "worksheet(EditedData).set_cell(A1,text)",
         "worksheet(EditedData).set_cell(B2,number)",
     };
+    if (verify_noop_save) {
+        report.mutations.push_back("save_as(noop-output)");
+    }
 
     WorkbookEditor editor = WorkbookEditor::open(report.source);
     editor.rename_sheet("Data", "EditedData");
     WorksheetEditor edited = editor.worksheet("EditedData");
     edited.set_cell(1, 1, CellValue::text("materialized-edit"));
     edited.set_cell(2, 2, CellValue::number(42.0));
-    editor.save_as(report.output);
+    save_as_with_optional_noop(
+        editor,
+        report,
+        verify_noop_save,
+        "rename-materialized-first-save.xlsx",
+        "rename/materialized no-op save output should be byte-identical");
     report.notes = {
         "EditedData!A1 should be materialized-edit",
         "EditedData!B2 should be 42",
         "Untouched sheet should remain preserved",
     };
+    if (verify_noop_save) {
+        report.notes.push_back(
+            "No-op save after rename/materialized mutation should be byte-identical");
+    }
     return report;
+}
+
+Report run_generated_rename_materialized(const CliOptions& options)
+{
+    return run_generated_rename_materialized_impl(options, false);
+}
+
+Report run_generated_rename_materialized_noop_save(const CliOptions& options)
+{
+    return run_generated_rename_materialized_impl(options, true);
 }
 
 Report run_generated_in_memory_insert_formula_impl(
@@ -3354,6 +3376,9 @@ Report run_scenario(const CliOptions& options)
 {
     if (options.scenario == "generated_rename_materialized") {
         return run_generated_rename_materialized(options);
+    }
+    if (options.scenario == "generated_rename_materialized_noop_save") {
+        return run_generated_rename_materialized_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_insert_formula") {
         return run_generated_in_memory_insert_formula(options);

@@ -34,6 +34,7 @@ NAMESPACES = {
 
 GENERATED_SCENARIOS = [
     "generated_rename_materialized",
+    "generated_rename_materialized_noop_save",
     "generated_in_memory_insert_formula",
     "generated_in_memory_insert_formula_noop_save",
     "generated_in_memory_delete_column_formula",
@@ -895,6 +896,18 @@ def verify_generated_rename_materialized(path: Path) -> tuple[dict[str, Any], di
     finally:
         workbook.close()
 
+    return zip_report, openpyxl_report
+
+
+def verify_generated_rename_materialized_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated rename/materialized no-op save"
+    zip_report, openpyxl_report = verify_generated_rename_materialized(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
     return zip_report, openpyxl_report
 
 
@@ -3477,7 +3490,10 @@ def create_xlsxwriter_reference(
     reference_path.parent.mkdir(parents=True, exist_ok=True)
     workbook = xlsxwriter.Workbook(reference_path)
     try:
-        if scenario == "generated_rename_materialized":
+        if scenario in {
+            "generated_rename_materialized",
+            "generated_rename_materialized_noop_save",
+        }:
             edited = workbook.add_worksheet("EditedData")
             untouched = workbook.add_worksheet("Untouched")
             edited.write("A1", "materialized-edit")
@@ -3750,6 +3766,11 @@ def run_generated_case(
 
     if scenario == "generated_rename_materialized":
         zip_xml, openpyxl_report = verify_generated_rename_materialized(output_path)
+    elif scenario == "generated_rename_materialized_noop_save":
+        zip_xml, openpyxl_report = verify_generated_rename_materialized_noop_save(
+            output_path,
+            tool_report,
+        )
     elif scenario == "generated_in_memory_insert_formula":
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula(output_path)
     elif scenario == "generated_in_memory_insert_formula_noop_save":

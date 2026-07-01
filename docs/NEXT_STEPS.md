@@ -126,6 +126,11 @@ evidence as well: rejected mismatched options and a clean no-op save leave the
 row-shifted session reusable, a later matching reacquire can write `C3`, and the
 next output fresh-reopens with shifted `A3` plus the new `C3` while the earlier
 first/no-op outputs stay unchanged.
+The missing-query saved-session path mirrors that evidence too: rejected
+missing-sheet lookups and the clean no-op output leave the row-shifted session
+reusable, a later matching reacquire writes `C3`, and the next output
+fresh-reopens with shifted `A3` plus the new `C3` while earlier outputs remain
+unchanged.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

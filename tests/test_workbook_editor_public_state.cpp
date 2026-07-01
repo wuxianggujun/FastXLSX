@@ -8646,6 +8646,11 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
     }
 
     {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-row-limit-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-row-limit-failure-noop-output.xlsx");
+
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
         sheet.set_cell("XFD1048576", fastxlsx::CellValue::text("edge-row"));
@@ -8666,6 +8671,104 @@ void test_public_worksheet_editor_append_row_noop_and_guardrails()
             "row-limit failure should preserve the existing edge-row edit");
         check(!sheet.try_cell("A3").has_value(),
             "row-limit failure should not leak rejected appended values");
+        check(editor.last_edit_error().has_value(),
+            "append_row row-limit failure should update last_edit_error");
+        const std::optional<std::string> row_limit_error = editor.last_edit_error();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "append_row row-limit failure", row_limit_error);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        editor.save_as(output);
+        check(editor.last_edit_error() == row_limit_error,
+            "append_row row-limit failure save should retain the diagnostic");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row row-limit failure save");
+        check(editor.has_pending_changes(),
+            "append_row row-limit failure save should retain the saved handoff state");
+        check(editor.pending_change_count() == 1,
+            "append_row row-limit failure save should retain one saved handoff");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row row-limit failure save should not leave dirty summaries");
+        check(!sheet.has_pending_changes(),
+            "append_row row-limit failure save should flush the edge-row edit");
+        check(sheet.cell_count() == dirty_count,
+            "append_row row-limit failure save should keep the materialized read model");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row row-limit failure save should clear dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row row-limit failure save should clear dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row row-limit failure save should clear dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row row-limit failure save should not queue replacement diagnostics");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string& worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+            "append_row row-limit failure save should expand the worksheet dimension");
+        check_contains(
+            worksheet_xml,
+            R"(<c r="XFD1048576" t="inlineStr"><is><t>edge-row</t></is></c>)",
+            "append_row row-limit failure save should persist the existing edge-row edit");
+        check_not_contains(worksheet_xml, "past-edge",
+            "append_row row-limit failure save should omit the rejected append payload");
+
+        const auto inspect_row_limit_failure_output =
+            [dirty_count](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == dirty_count,
+                    "append_row row-limit failure reopen should preserve sparse cell count");
+                check_cell_range_equals(
+                    reopened_sheet.used_range(), 1, 1, 1048576, 16384,
+                    "append_row row-limit failure reopen should preserve max used range");
+                check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1",
+                    "append_row row-limit failure reopen should preserve source A1");
+                check(reopened_sheet.get_cell("B1").number_value() == 1.0,
+                    "append_row row-limit failure reopen should preserve source B1");
+                check(reopened_sheet.get_cell("A2").text_value() == "placeholder-a2",
+                    "append_row row-limit failure reopen should preserve source A2");
+                check(reopened_sheet.get_cell("XFD1048576").text_value() == "edge-row",
+                    "append_row row-limit failure reopen should preserve the edge-row edit");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    "append_row row-limit failure reopen should not expose rejected values");
+            };
+        check_reopened_clean_sheet_output(
+            output, "Data", "append_row row-limit failure save",
+            inspect_row_limit_failure_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row row-limit failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row row-limit failure noop save");
+        check(editor.has_pending_changes(),
+            "append_row row-limit failure noop save should retain the saved handoff state");
+        check(editor.pending_change_count() == 1,
+            "append_row row-limit failure noop save should retain one saved handoff");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row row-limit failure noop save should not leave dirty summaries");
+        check(!sheet.has_pending_changes(),
+            "append_row row-limit failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row row-limit failure noop save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row row-limit failure noop save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row row-limit failure noop save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row row-limit failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "append_row row-limit failure noop output should match the first output");
+        check_reopened_clean_sheet_output(
+            noop_output, "Data", "append_row row-limit failure noop save",
+            inspect_row_limit_failure_output);
     }
 
     {

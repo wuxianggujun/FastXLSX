@@ -54068,6 +54068,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1343 - Pin append-row row-limit failure no-op public-state stability
+
+Type: default public-state regression coverage for append-row row-limit
+validation failure no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend the failure save hygiene shape to the `WorksheetEditor::append_row()`
+path that rejects appending past Excel row 1,048,576 when the materialized
+session is already dirty.
+
+Coverage:
+- Extends the existing append-row row-limit guardrail branch.
+- Verifies appending past row 1,048,576 rejects before mutation, keeps the
+  pre-existing dirty `XFD1048576` sparse record, preserves source-backed `Data`
+  cells and sparse count, and does not leave the rejected appended value
+  readable.
+- Saves the dirty materialized output, verifies the worksheet dimension expands
+  to `A1:XFD1048576`, verifies `edge-row` persists, and verifies `past-edge` is
+  absent from the saved worksheet XML.
+- Reopens the saved output and confirms source cells plus the edge-row edit
+  remain readable while the rejected payload stays absent.
+- Saves a follow-up no-op output while preserving public catalog/save-state
+  snapshots, keeping materialized/replacement diagnostics clear, and requiring
+  the no-op output to match the first output byte-for-byte.
+
+Non-goals:
+- No dense append, row insertion, coordinate clamping, row metadata creation,
+  rollback machinery, metadata/range synchronization, relationship repair,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

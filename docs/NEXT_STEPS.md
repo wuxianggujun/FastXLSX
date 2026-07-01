@@ -3980,6 +3980,12 @@ save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the
 would-be appended row absent, and reopen unchanged. This does not add dense
 append, coordinate clamping, row insertion, or rollback machinery.
+`append_row()` row-limit failure now has the dirty-session counterpart: a
+pre-existing sparse `XFD1048576` edit survives the rejected append past row
+1,048,576, the saved output expands to `A1:XFD1048576` without leaking the
+rejected value, and the follow-up no-op save is byte-identical. This remains
+save hygiene for a validation failure, not row insertion, metadata/range
+synchronization, or rollback machinery.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

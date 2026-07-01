@@ -31673,6 +31673,39 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_fail
         "renamed formula delete-column failed save no-op retry");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed formula delete-column failed save no-op retry should keep output entries stable");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    check(reopened_noop.has_worksheet("RenamedData") && !reopened_noop.has_worksheet("Data"),
+        "renamed formula delete-column failed save reopened no-op output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
+    check(!reopened_noop.has_pending_changes() && !reopened_noop_sheet.has_pending_changes(),
+        "renamed formula delete-column failed save reopened no-op output should start clean");
+    check(reopened_noop.pending_change_count() == 0 &&
+            reopened_noop.pending_materialized_worksheet_names().empty() &&
+            reopened_noop.pending_materialized_cell_count() == 0 &&
+            reopened_noop.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-column failed save reopened no-op output should not expose dirty diagnostics");
+    check(reopened_noop_sheet.cell_count() == 4,
+        "renamed formula delete-column failed save reopened no-op output should keep shifted sparse count");
+    check_cell_range_equals(reopened_noop_sheet.used_range(), 1, 1, 2, 3,
+        "renamed formula delete-column failed save reopened no-op output should expose shifted bounds");
+    const fastxlsx::CellValue reopened_noop_a1 = reopened_noop_sheet.get_cell("A1");
+    check(reopened_noop_a1.kind() == fastxlsx::CellValueKind::Number &&
+            reopened_noop_a1.number_value() == 1.0,
+        "renamed formula delete-column failed save reopened no-op output should read shifted B1");
+    const std::optional<fastxlsx::CellValue> reopened_noop_c2 =
+        reopened_noop_sheet.try_cell("C2");
+    check(reopened_noop_c2.has_value() &&
+            reopened_noop_c2->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_c2->text_value() == "#REF!+A1" &&
+            reopened_noop_c2->has_style() &&
+            reopened_noop_c2->style_id().value() == styled_formula_style.value(),
+        "renamed formula delete-column failed save reopened no-op output should read translated styled formula");
+    check(reopened_noop_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+            reopened_noop_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+        "renamed formula delete-column failed save reopened no-op output should read shifted row cells");
+    check(!reopened_noop_sheet.try_cell("D2").has_value() &&
+            !reopened_noop_sheet.try_cell("A3").has_value(),
+        "renamed formula delete-column failed save reopened no-op output should keep old coordinates absent");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

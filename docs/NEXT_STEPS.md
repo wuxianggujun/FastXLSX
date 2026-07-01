@@ -1868,6 +1868,9 @@ by the later valid shared-session shift.
 The snapshot-read path now mirrors the no-op reopen check with fresh
 `row_cells()` / `column_cells()` readback of the translated styled formula
 output.
+The delete-column failed-save retry path now has matching no-op reopen evidence
+for the translated styled `C2` formula, shifted source cells, and absent
+old/deleted coordinates.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

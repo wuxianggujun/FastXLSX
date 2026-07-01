@@ -142,6 +142,10 @@ rejected invalid `set_cell` / `erase_cell` calls leave the shifted session
 clean, the no-op output preserves the invalid mutation diagnostic, a later
 valid `C3` edit clears that diagnostic while re-dirtying the shared handles,
 and the next output fresh-reopens without leaking rejected payloads.
+The invalid-shift saved-session path follows the same pattern: rejected invalid
+insert/delete row/column shifts leave the shifted session clean, the no-op
+output preserves the invalid shift diagnostic, and a later valid `C3` edit
+clears that diagnostic before saving a fresh-reopenable post-noop output.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

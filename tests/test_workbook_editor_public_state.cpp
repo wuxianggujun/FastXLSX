@@ -8171,6 +8171,20 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "range erase first second no-op save");
     check(fastxlsx::test::read_zip_entries(first_second_noop_output) == first_noop_entries,
         "range erase first second no-op output should match the first no-op output");
+    check_reopened_clean_sheet_output(first_second_noop_output, "Data",
+        "range erase first second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 0,
+                "range erase first second no-op reopened output should stay empty");
+            check(!reopened_sheet.used_range().has_value(),
+                "range erase first second no-op reopened output should expose no sparse bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                "range erase first second no-op reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "range erase first second no-op reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "range erase first second no-op reopened output should keep erased A2 absent");
+        });
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
     check(!reacquired.has_pending_changes(),

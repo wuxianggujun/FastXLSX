@@ -358,6 +358,8 @@ edits and source-backed `A2`.
 The range-erase reacquire path also reopens both saved outputs, pinning the
 empty first projection and the later single-cell C3 projection after handle
 reacquisition.
+Its first-flush second no-op output now also fresh-reopens as an empty sparse
+worksheet with no used range and erased A1/B1/A2 absent before reacquisition.
 The initializer-list batch overload path is also reopened to verify explicit
 blank, source-backed, inserted boolean, erased, and missing-only targets survive
 the saved sparse projection.

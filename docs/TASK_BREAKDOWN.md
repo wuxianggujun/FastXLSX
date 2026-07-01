@@ -55570,6 +55570,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1382 - Reopen range erase first-flush second no-op output
+
+Type: default public-state regression coverage for range erase first-flush
+no-op output readability.
+
+Status: completed.
+
+Goal:
+Prove the range `erase_cells(CellRange)` all-represented-cell first-flush path
+still produces a clean, readable empty workbook projection after repeated
+byte-stable no-op saves.
+
+Coverage:
+- Extends `test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()`
+  after the first-flush second no-op output byte comparison.
+- Reopens `first_second_noop_output` through
+  `check_reopened_clean_sheet_output()` and verifies zero sparse records, no
+  used range, and erased `A1` / `B1` / `A2` absence before the saved-session
+  reacquire branch.
+- Leaves the existing range erase assertions, first output/first no-op output
+  reopens, catalog/save-state snapshots, dirty diagnostics, later reacquire
+  mutation, and byte-stability assertions unchanged.
+
+Non-goals:
+- No dense range semantics, tombstones, missing-cell synthesis, metadata/range
+  repair, source reload, undo/redo, commit/close semantics, in-place overwrite,
+  rollback, transaction replay, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -3996,6 +3996,11 @@ for oversized row payloads and row zero: both rejected calls preserve the clean
 source-backed `Data` session, retain public diagnostics across both saves, keep
 materialized/replacement diagnostics empty, and reopen unchanged. This is
 full-row validation hygiene only, not coordinate clamping or rollback machinery.
+`set_column()` column-zero validation failure now has the same save/no-op
+coverage: the rejected full-column call preserves the clean source-backed
+`Data` session, retains the public diagnostic across both saves, keeps
+materialized/replacement diagnostics empty, and reopens unchanged. This is
+full-column validation hygiene only, not coordinate clamping or rollback.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

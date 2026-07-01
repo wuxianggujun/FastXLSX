@@ -54183,6 +54183,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1346 - Pin set-column validation failure no-op public-state stability
+
+Type: default public-state regression coverage for `set_column()` validation
+failure no-op save stability.
+
+Status: completed.
+
+Goal:
+Extend rejection-only save hygiene to the full-column replacement validation
+failure for invalid column zero.
+
+Coverage:
+- Extends the existing `set_column()` invalid-column guard branch.
+- Verifies the rejected call updates `last_edit_error()`, preserves the clean
+  source-backed materialized session, keeps sparse cell count and source cells
+  stable, and leaves materialized/replacement diagnostics empty.
+- Saves a copy-original output and a follow-up no-op output while preserving
+  public catalog/save-state snapshots, including the retained validation
+  diagnostic.
+- Verifies outputs are source-entry-identical, the no-op output matches the
+  first output byte-for-byte, and reopened `Data` remains unchanged.
+
+Non-goals:
+- No coordinate clamping, dense column replacement, column insertion, column
+  metadata creation, rollback machinery, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

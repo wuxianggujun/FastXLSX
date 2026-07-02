@@ -2095,7 +2095,8 @@ Report run_generated_in_memory_full_calc_delete_row_formula_noop_save(
 
 Report run_generated_in_memory_stationary_formula_shift_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     static constexpr std::string_view kExpectedFormula =
         "SUM($A$4,C$4,Data!$A$4,$E$1,$E1,Data!$E$1,#REF!,#REF!,Data!#REF!,#REF!,Data!#REF!)";
@@ -2103,15 +2104,23 @@ Report run_generated_in_memory_stationary_formula_shift_impl(
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_stationary_formula_shift_source(resolve_generated_source(
-        options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-noop-source.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-source.xlsx"));
-    report.output = resolve_output_path(options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-noop-output.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-output.xlsx");
+    const std::string_view source_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-formula-shift-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-formula-shift-source.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-source.xlsx");
+    const std::string_view output_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-formula-shift-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-formula-shift-output.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-stationary-formula-shift-output.xlsx");
+    report.source = write_in_memory_stationary_formula_shift_source(
+        resolve_generated_source(options, source_name));
+    report.output = resolve_output_path(options, output_name);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_rows(3,1)",
@@ -2119,6 +2128,9 @@ Report run_generated_in_memory_stationary_formula_shift_impl(
         "worksheet(Data).delete_rows(7,1)",
         "worksheet(Data).delete_columns(7,1)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -2128,6 +2140,10 @@ Report run_generated_in_memory_stationary_formula_shift_impl(
         "Deleted row and column references should become #REF!",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the stationary formula rewrite should be byte-identical");
@@ -2140,6 +2156,9 @@ Report run_generated_in_memory_stationary_formula_shift_impl(
     data.delete_rows(7, 1);
     data.delete_columns(7, 1);
     require_formula_cell(data, "C1", kExpectedFormula);
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     const std::filesystem::path first_save_output = verify_noop_save
         ? report.output.parent_path() / "stationary-formula-first-save.xlsx"
         : report.output;
@@ -2165,9 +2184,21 @@ Report run_generated_in_memory_stationary_formula_shift_noop_save(const CliOptio
     return run_generated_in_memory_stationary_formula_shift_impl(options, true);
 }
 
+Report run_generated_in_memory_full_calc_stationary_formula_shift(const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_formula_shift_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_stationary_formula_shift_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_formula_shift_impl(options, true, true);
+}
+
 Report run_generated_in_memory_stationary_range_formula_shift_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     static constexpr std::string_view kExpectedFormula =
         "SUM(A4:B4)+4:4+SUM(E1:F1)+E:F";
@@ -2175,22 +2206,31 @@ Report run_generated_in_memory_stationary_range_formula_shift_impl(
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source =
-        write_in_memory_stationary_range_formula_shift_source(resolve_generated_source(
-            options,
-            verify_noop_save
-                ? "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-noop-source.xlsx"
-                : "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-source.xlsx"));
-    report.output = resolve_output_path(
-        options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-noop-output.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-output.xlsx");
+    const std::string_view source_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-range-formula-shift-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-range-formula-shift-source.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-source.xlsx");
+    const std::string_view output_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-range-formula-shift-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-stationary-range-formula-shift-output.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-stationary-range-formula-shift-output.xlsx");
+    report.source = write_in_memory_stationary_range_formula_shift_source(
+        resolve_generated_source(options, source_name));
+    report.output = resolve_output_path(options, output_name);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_rows(3,1)",
         "worksheet(Data).insert_columns(4,1)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -2199,6 +2239,10 @@ Report run_generated_in_memory_stationary_range_formula_shift_impl(
         "Stationary Data!C1 should rewrite column ranges and whole-column references",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the stationary range formula rewrite should be byte-identical");
@@ -2209,6 +2253,9 @@ Report run_generated_in_memory_stationary_range_formula_shift_impl(
     data.insert_rows(3, 1);
     data.insert_columns(4, 1);
     require_formula_cell(data, "C1", kExpectedFormula);
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     const std::filesystem::path first_save_output = verify_noop_save
         ? report.output.parent_path() / "stationary-range-formula-first-save.xlsx"
         : report.output;
@@ -2232,6 +2279,18 @@ Report run_generated_in_memory_stationary_range_formula_shift(const CliOptions& 
 Report run_generated_in_memory_stationary_range_formula_shift_noop_save(const CliOptions& options)
 {
     return run_generated_in_memory_stationary_range_formula_shift_impl(options, true);
+}
+
+Report run_generated_in_memory_full_calc_stationary_range_formula_shift(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_range_formula_shift_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_stationary_range_formula_shift_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_stationary_range_formula_shift_impl(options, true, true);
 }
 
 Report run_generated_in_memory_clear_erase_impl(const CliOptions& options, bool verify_noop_save)
@@ -3888,11 +3947,23 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_in_memory_stationary_formula_shift_noop_save") {
         return run_generated_in_memory_stationary_formula_shift_noop_save(options);
     }
+    if (options.scenario == "generated_in_memory_full_calc_stationary_formula_shift") {
+        return run_generated_in_memory_full_calc_stationary_formula_shift(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_stationary_formula_shift_noop_save") {
+        return run_generated_in_memory_full_calc_stationary_formula_shift_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_stationary_range_formula_shift") {
         return run_generated_in_memory_stationary_range_formula_shift(options);
     }
     if (options.scenario == "generated_in_memory_stationary_range_formula_shift_noop_save") {
         return run_generated_in_memory_stationary_range_formula_shift_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_stationary_range_formula_shift") {
+        return run_generated_in_memory_full_calc_stationary_range_formula_shift(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_stationary_range_formula_shift_noop_save") {
+        return run_generated_in_memory_full_calc_stationary_range_formula_shift_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_clear_erase") {
         return run_generated_in_memory_clear_erase(options);

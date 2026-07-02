@@ -581,7 +581,10 @@ cell-range, whole-row, and whole-column stationary rewrites such as
 `generated_in_memory_stationary_formula_shift_noop_save` and
 `generated_in_memory_stationary_range_formula_shift_noop_save`, requiring the
 follow-up clean `save_as()` output to be byte-identical after those structural
-formula rewrites. The
+formula rewrites. The same stationary generated QA lane now has full-calculation
+variants for both cell-reference and range/whole-axis rewrites, requiring
+`fullCalcOnLoad="1"`, no invented `xl/calcChain.xml`, `openpyxl` readback, and
+byte-stable no-op companions. The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same

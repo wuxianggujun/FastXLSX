@@ -4393,6 +4393,11 @@ The same source-style snapshot regression now also covers the
 initializer-list reads expose the styled source handle, skip missing
 coordinates, keep unstyled cells unstyled, and preserve the styled blank after
 save/reopen/no-op.
+The reopened/no-op half of the same regression now also covers strict A1 range
+and span-batch snapshot reads: `sparse_cells("A1:B1")` and
+`sparse_cells(span<WorksheetCellReference>)` both read the saved styled blank,
+keep saved `B1` unstyled, and preserve sparse missing-coordinate skip
+semantics.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

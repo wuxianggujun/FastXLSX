@@ -7811,6 +7811,15 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
                         std::string(message_prefix) +
                             " should read the saved styled blank A1");
                 };
+            const auto check_saved_unstyled_b1 =
+                [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+                    std::string_view message_prefix) {
+                    check(snapshot.reference.row == 1 && snapshot.reference.column == 2 &&
+                            snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                            snapshot.value.text_value() == "unstyled-b1" &&
+                            !snapshot.value.has_style(),
+                        std::string(message_prefix) + " should keep saved B1 unstyled");
+                };
             check(reopened_sheet.cell_count() == 3,
                 "snapshot source-style reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
@@ -7839,6 +7848,27 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
                 "snapshot source-style reopened range sparse_cells should keep A1");
             check_saved_blank(range_cells[0],
                 "snapshot source-style reopened range sparse_cells");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> strict_a1_cells =
+                reopened_sheet.sparse_cells("A1:B1");
+            check(strict_a1_cells.size() == 2,
+                "snapshot source-style reopened A1 sparse_cells should keep row-one records");
+            check_saved_blank(strict_a1_cells[0],
+                "snapshot source-style reopened A1 sparse_cells");
+            check_saved_unstyled_b1(strict_a1_cells[1],
+                "snapshot source-style reopened A1 sparse_cells");
+            const std::array<fastxlsx::WorksheetCellReference, 3> requested_refs {
+                fastxlsx::WorksheetCellReference {1, 1},
+                fastxlsx::WorksheetCellReference {1, 2},
+                fastxlsx::WorksheetCellReference {3, 3},
+            };
+            const std::vector<fastxlsx::WorksheetCellSnapshot> requested_cells =
+                reopened_sheet.sparse_cells(requested_refs);
+            check(requested_cells.size() == 2,
+                "snapshot source-style reopened coordinate batch should skip missing cells");
+            check_saved_blank(requested_cells[0],
+                "snapshot source-style reopened coordinate batch");
+            check_saved_unstyled_b1(requested_cells[1],
+                "snapshot source-style reopened coordinate batch");
             const std::vector<fastxlsx::WorksheetCellSnapshot> initializer_cells =
                 reopened_sheet.sparse_cells({
                     {1, 1},
@@ -7848,12 +7878,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
                 "snapshot source-style reopened initializer sparse_cells should keep row-one records");
             check_saved_blank(initializer_cells[0],
                 "snapshot source-style reopened initializer sparse_cells");
-            check(initializer_cells[1].reference.row == 1 &&
-                    initializer_cells[1].reference.column == 2 &&
-                    initializer_cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
-                    initializer_cells[1].value.text_value() == "unstyled-b1" &&
-                    !initializer_cells[1].value.has_style(),
-                "snapshot source-style reopened initializer sparse_cells should keep B1 unstyled");
+            check_saved_unstyled_b1(initializer_cells[1],
+                "snapshot source-style reopened initializer sparse_cells");
         };
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);

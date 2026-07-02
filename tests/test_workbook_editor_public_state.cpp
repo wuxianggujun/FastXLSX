@@ -866,6 +866,28 @@ void check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics
         prefix + " should keep materialized diagnostics empty after full-calc saved reacquire");
 }
 
+void check_public_state_renamed_full_calc_formula_audit(
+    const fastxlsx::WorkbookEditor& editor,
+    std::string_view shifted_formula,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " materialized audit");
+    check(audits.size() == 2,
+        prefix + " should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        prefix + " shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        prefix + " shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, prefix + " source audit");
+}
+
 void check_public_state_renamed_full_calc_noop_formula_audit_readback(
     const fastxlsx::WorkbookEditor& editor,
     const std::filesystem::path& noop_output,
@@ -876,19 +898,8 @@ void check_public_state_renamed_full_calc_noop_formula_audit_readback(
 {
     const std::string prefix = std::string(scenario);
 
-    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
-        check_public_state_formula_audits_preserve_editor_diagnostics(
-            editor, prefix + " no-op materialized audit");
-    check(noop_audits.size() == 2,
-        prefix + " no-op should report both shifted references");
-    check_public_state_renamed_shift_formula_audit(
-        noop_audits, 3, 4, shifted_formula, "Data!A2", "A2",
-        prefix + " no-op shifted A reference");
-    check_public_state_renamed_shift_formula_audit(
-        noop_audits, 3, 4, shifted_formula, "Data!B2", "B2",
-        prefix + " no-op shifted B reference");
-    check_public_state_source_formula_audit_preserves_shift_fixture(
-        editor, prefix + " no-op source audit");
+    check_public_state_renamed_full_calc_formula_audit(
+        editor, shifted_formula, prefix + " no-op");
     check_public_state_reopened_shift_formula_audit_output(
         noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
         "Data!A2", "A2", "Data!B2", "B2",
@@ -915,19 +926,8 @@ void check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readbac
 {
     const std::string prefix = std::string(scenario);
 
-    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
-        check_public_state_formula_audits_preserve_editor_diagnostics(
-            editor, prefix + " no-op materialized audit");
-    check(noop_audits.size() == 2,
-        prefix + " no-op should report both shifted references");
-    check_public_state_renamed_shift_formula_audit(
-        noop_audits, 3, 4, shifted_formula, "Data!A2", "A2",
-        prefix + " no-op shifted A reference");
-    check_public_state_renamed_shift_formula_audit(
-        noop_audits, 3, 4, shifted_formula, "Data!B2", "B2",
-        prefix + " no-op shifted B reference");
-    check_public_state_source_formula_audit_preserves_shift_fixture(
-        editor, prefix + " no-op source audit");
+    check_public_state_renamed_full_calc_formula_audit(
+        editor, shifted_formula, prefix + " no-op");
     check_public_state_reopened_shift_formula_audit_output(
         noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
         "Data!A2", "A2", "Data!B2", "B2",
@@ -29957,19 +29957,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check(!sheet.try_cell("A2").has_value() && !reacquired.try_cell("D2").has_value(),
         "renamed full-calc formula audit saved reacquire should keep old coordinates absent");
 
-    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> saved_audits =
-        check_public_state_formula_audits_preserve_editor_diagnostics(
-            editor, "renamed full-calc formula audit saved reacquire materialized audit");
-    check(saved_audits.size() == 2,
-        "renamed full-calc formula audit saved reacquire should report both shifted references");
-    check_public_state_renamed_shift_formula_audit(
-        saved_audits, 3, 4, shifted_formula, "Data!A2", "A2",
-        "renamed full-calc formula audit saved reacquire shifted A reference");
-    check_public_state_renamed_shift_formula_audit(
-        saved_audits, 3, 4, shifted_formula, "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire shifted B reference");
-    check_public_state_source_formula_audit_preserves_shift_fixture(
-        editor, "renamed full-calc formula audit saved reacquire source audit");
+    check_public_state_renamed_full_calc_formula_audit(
+        editor, shifted_formula, "renamed full-calc formula audit saved reacquire");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("post-save-c5"));
     const std::size_t post_save_memory = reacquired.estimated_memory_usage();

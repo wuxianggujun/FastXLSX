@@ -62791,6 +62791,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1553 - Pin full-calc formula-audit helper contract
+
+Type: public `WorksheetEditor` full-calculation renamed formula-audit helper
+contract regression.
+
+Status: completed.
+
+Goal:
+Keep the full-calculation renamed formula-audit saved-reacquire and no-op
+readback paths on one shared two-reference materialized audit/source-scan
+contract before their existing mutation and fresh-reopen checks continue.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-formula-audits`.
+- Adds a shared full-calculation renamed formula-audit helper for the fixed
+  shifted `D3` formula shape.
+- Reuses the helper from the base saved-reacquire path and the two no-op
+  formula-audit/readback helpers, asserting the shifted materialized audit still
+  reports `Data!A2` and `Data!B2` and source formula-audit scanning remains
+  isolated on the original source XML.
+
+Non-goals:
+- No production logic changes, fullCalcOnLoad behavior changes, formula
+  translation changes, formula-audit behavior changes, source-scan behavior
+  changes, saved-session reacquire behavior changes, no-op save semantic
+  changes, materialization behavior changes, style id preservation changes,
+  rename behavior changes, save behavior changes, replacement APIs, rollback or
+  transactions, sharedStrings/styles migration, relationship repair, calcChain
+  rebuild, broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-formula-audits`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-formula-audits$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

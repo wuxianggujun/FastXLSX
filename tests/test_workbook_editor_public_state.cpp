@@ -20875,6 +20875,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "insert_rows styled source formula post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_rows styled source formula post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "insert_rows styled source formula post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -20938,6 +20940,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "insert_rows styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_rows styled source formula post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "insert_rows styled source formula post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

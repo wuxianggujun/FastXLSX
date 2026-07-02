@@ -815,6 +815,23 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement sheet names");
 }
 
+void check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+        prefix + " should expose only the planned sheet name before materialization");
+    check(editor.pending_change_count() == 1,
+        prefix + " should count only the catalog rename before materialization");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " before materialization should not queue replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should not dirty materialized diagnostics before materialization");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -32900,6 +32917,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula shift");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_rows(2, 2);
     const std::size_t shifted_memory = sheet.estimated_memory_usage();
@@ -33041,6 +33060,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula audit shift");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_rows(2, 2);
 
@@ -33311,6 +33332,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed column formula audit shift");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_columns(2, 1);
 
@@ -33908,6 +33931,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed column formula shift");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_columns(2, 1);
     const std::size_t shifted_memory = sheet.estimated_memory_usage();

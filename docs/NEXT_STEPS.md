@@ -2205,6 +2205,12 @@ The renamed row/column formula-audit preflight tests now snapshot dirty
 materialized memory before audit reads and require materialization guard
 failures, recovery materialization, invalid mutations, and invalid shifts to
 preserve that memory alongside the dirty sparse count.
+The renamed styled-formula row/column shift and formula-audit paths now also
+pin pre-materialization public state: after the catalog rename and before
+`WorksheetEditor` acquisition, only the planned sheet name is visible, only the
+catalog rename is counted, and replacement/materialized diagnostics remain
+empty. This is diagnostics hygiene only, not broader formula repair or
+metadata migration.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

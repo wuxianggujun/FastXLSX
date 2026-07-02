@@ -2224,6 +2224,8 @@ reacquire diagnostics before the later column shift, proving the first saved
 handoff stays clean until the next mutation.
 Delete-row renamed styled-formula recovery paths now share the same saved-session
 reacquire diagnostics contract before their later column shift.
+Delete-column renamed styled-formula recovery paths now share that contract
+before their later row shift as well.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

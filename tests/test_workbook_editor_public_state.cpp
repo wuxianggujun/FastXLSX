@@ -50937,6 +50937,9 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "max_cells missing-erase noop save should not expose dirty materialized memory");
     check(max_editor.pending_worksheet_edits().empty(),
         "max_cells missing-erase noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        max_editor,
+        "max_cells missing-erase noop save should not queue replacement diagnostics");
     check(!max_editor.last_edit_error().has_value(),
         "max_cells missing-erase noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -51047,6 +51050,9 @@ void test_public_worksheet_editor_missing_erase_after_guardrail_failure_stays_cl
         "memory-budget missing-erase noop save should not expose dirty materialized memory");
     check(memory_editor.pending_worksheet_edits().empty(),
         "memory-budget missing-erase noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        memory_editor,
+        "memory-budget missing-erase noop save should not queue replacement diagnostics");
     check(!memory_editor.last_edit_error().has_value(),
         "memory-budget missing-erase noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -51445,6 +51451,9 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "last-error replacement noop save should not expose dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "last-error replacement noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "last-error replacement noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "last-error replacement noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

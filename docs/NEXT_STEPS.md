@@ -306,6 +306,9 @@ empty.
 The `clear_cell_values()` memory-budget release saved-session path now extends
 that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
 no-op saves.
+The remaining no-op diagnostics gap is now closed for missing-erase guardrail
+recovery and materialized last-error replacement recovery outputs: those clean
+no-op saves also keep replacement diagnostics empty.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

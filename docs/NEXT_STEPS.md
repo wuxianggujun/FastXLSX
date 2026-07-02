@@ -224,6 +224,10 @@ The `delete_rows()` styled source formula path now also continues after its
 clean no-op save: a later `E2` edit re-dirties the saved materialized handle,
 preserves the shifted styled `D1` formula, writes a fresh-reopenable post-noop
 output, and then proves a second clean no-op save is byte-stable.
+The `delete_columns()` styled source formula path mirrors that reuse coverage:
+a later `D1` edit re-dirties the saved materialized handle, preserves the
+shifted styled `C2` formula, writes a fresh-reopenable post-noop output, and
+then proves a second clean no-op save is byte-stable.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

@@ -714,6 +714,11 @@ The delete-side column-shift reverse ordering is covered too: a queued
 `WorksheetEditor::delete_columns()` shifts, including a styled formula whose
 deleted-column reference is serialized as `#REF!`, and `save_as()` keeps the
 full-calc metadata without creating `xl/calcChain.xml`.
+The after-shift delete-column ordering is covered as well: dirty
+`WorksheetEditor::delete_columns()` first moves the styled source-backed formula
+to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves
+materialized diagnostics while `save_as()` writes `fullCalcOnLoad="1"` without
+creating `xl/calcChain.xml`.
 Formula audit diagnostics now sit on top of that full-calculation mixing state:
 `formula_reference_audits()` remains read-only after a dirty shifted qualified
 formula and queued `request_full_calculation()`, reporting the shifted

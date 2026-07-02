@@ -296,6 +296,9 @@ The failed-save reacquire guard paths now pin the same replacement diagnostics
 contract after safe post-noop recovery saves for source-overwrite,
 path-equivalent, empty-output, missing-parent, file-parent, and directory-output
 failures.
+The invalid-to-valid row/column shift recovery paths now pin that same
+replacement diagnostics contract after clean and already-dirty post-noop
+recovery saves.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

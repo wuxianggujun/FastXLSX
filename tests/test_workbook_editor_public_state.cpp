@@ -46040,6 +46040,9 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "invalid-to-valid row shift post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "invalid-to-valid row shift post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "invalid-to-valid row shift post-noop save should keep diagnostics clear");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -46200,6 +46203,9 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "invalid-to-valid column shift post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "invalid-to-valid column shift post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "invalid-to-valid column shift post-noop save should keep diagnostics clear");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -46382,6 +46388,9 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "dirty invalid-to-valid row shift post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "dirty invalid-to-valid row shift post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "dirty invalid-to-valid row shift post-noop save should keep diagnostics clear");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -46562,6 +46571,9 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "dirty invalid-to-valid column shift post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "dirty invalid-to-valid column shift post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "dirty invalid-to-valid column shift post-noop save should keep diagnostics clear");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,

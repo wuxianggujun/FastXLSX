@@ -61287,6 +61287,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1517 - Align invalid-to-valid shift post-noop diagnostics
+
+Type: public `WorksheetEditor` invalid-to-valid materialized row/column shift
+post-noop diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove clean and already-dirty invalid-to-valid row/column shift recovery paths
+keep replacement diagnostics empty after their post-noop edit/save step.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-shifts`.
+- Adds post-noop save replacement-diagnostics checks to clean invalid-to-valid
+  row shift, clean invalid-to-valid column shift, dirty invalid-to-valid row
+  shift, and dirty invalid-to-valid column shift recovery regressions.
+- Keeps the existing invalid-operation hygiene, valid recovery output checks,
+  prior output preservation, retained staged handoff checks, dirty materialized
+  summaries, dirty-tail preservation, and fresh readback unchanged.
+
+Non-goals:
+- No production logic changes, validation rule changes, recovery semantic
+  changes, save behavior changes, replacement API changes, rollback or
+  transactions, row/column metadata synchronization, sharedStrings/styles
+  migration, relationship repair, calcChain rebuild, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

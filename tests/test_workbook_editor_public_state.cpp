@@ -7762,6 +7762,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-output.xlsx");
     const std::filesystem::path reopened_post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-noop-output.xlsx");
+    const std::filesystem::path reopened_post_noop_clear_output = artifact(
+        "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-clear-output.xlsx");
 
     fastxlsx::StyleId non_default_style;
     {
@@ -8030,6 +8032,43 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
                     all_cells[2].value.text_value() == "reopened-post-noop-a2" &&
                     !all_cells[2].value.has_style(),
                 "snapshot source-style reopened post-noop sparse_cells should keep edited A2 unstyled");
+        };
+    const auto inspect_reopened_post_noop_clear_output =
+        [check_styled_blank_a1_snapshot, check_post_noop_b1_snapshot](
+            fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "snapshot source-style reopened post-noop clear output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "snapshot source-style reopened post-noop clear output should keep bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+                reopened_sheet.sparse_cells();
+            check(all_cells.size() == 3,
+                "snapshot source-style reopened post-noop clear sparse_cells should keep three records");
+            check_styled_blank_a1_snapshot(all_cells[0],
+                "snapshot source-style reopened post-noop clear sparse_cells");
+            check_post_noop_b1_snapshot(all_cells[1],
+                "snapshot source-style reopened post-noop clear sparse_cells");
+            check(all_cells[2].reference.row == 2 && all_cells[2].reference.column == 1 &&
+                    all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    all_cells[2].value.text_value() == "reopened-post-noop-a2" &&
+                    !all_cells[2].value.has_style(),
+                "snapshot source-style reopened post-noop clear sparse_cells should keep edited A2 unstyled");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                "snapshot source-style reopened post-noop clear row_cells should keep row-one records");
+            check_styled_blank_a1_snapshot(row_one[0],
+                "snapshot source-style reopened post-noop clear row_cells");
+            check_post_noop_b1_snapshot(row_one[1],
+                "snapshot source-style reopened post-noop clear row_cells");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                reopened_sheet.column_cells(1);
+            check(column_one.size() == 2,
+                "snapshot source-style reopened post-noop clear column_cells should keep column-one records");
+            check_styled_blank_a1_snapshot(column_one[0],
+                "snapshot source-style reopened post-noop clear column_cells");
         };
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -8380,6 +8419,61 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
     check_reopened_clean_sheet_output(reopened_post_noop_noop_output, "Styled",
         "snapshot source-style reopened post-noop no-op save",
         inspect_reopened_post_noop_snapshot_output);
+
+    fastxlsx::WorkbookEditor reopened_clear_editor =
+        fastxlsx::WorkbookEditor::open(reopened_post_noop_noop_output);
+    fastxlsx::WorksheetEditor reopened_clear_sheet =
+        reopened_clear_editor.worksheet("Styled");
+    reopened_clear_sheet.clear_cell_value("A1");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_clear_row_one =
+        reopened_clear_sheet.row_cells(1);
+    check(reopened_clear_row_one.size() == 2,
+        "snapshot source-style reopened post-noop clear should keep row-one records");
+    check_styled_blank_a1_snapshot(reopened_clear_row_one[0],
+        "snapshot source-style reopened post-noop clear row_cells");
+    check_post_noop_b1_snapshot(reopened_clear_row_one[1],
+        "snapshot source-style reopened post-noop clear row_cells");
+    check(reopened_clear_sheet.has_pending_changes(),
+        "snapshot source-style reopened post-noop clear should dirty the fresh handle");
+    check(reopened_clear_editor.pending_materialized_cell_count() == 3,
+        "snapshot source-style reopened post-noop clear should keep aggregate materialized count");
+
+    reopened_clear_editor.save_as(reopened_post_noop_clear_output);
+    check(!reopened_clear_sheet.has_pending_changes(),
+        "snapshot source-style reopened post-noop clear save should clean the fresh handle");
+    check(reopened_clear_editor.pending_change_count() == 1,
+        "snapshot source-style reopened post-noop clear save should record one materialized handoff");
+    check(reopened_clear_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_clear_editor.pending_materialized_cell_count() == 0 &&
+            reopened_clear_editor.estimated_pending_materialized_memory_usage() == 0,
+        "snapshot source-style reopened post-noop clear save should keep dirty diagnostics clear");
+    check(reopened_clear_editor.pending_worksheet_edits().empty(),
+        "snapshot source-style reopened post-noop clear save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened_clear_editor,
+        "snapshot source-style reopened post-noop clear save should not queue replacement diagnostics");
+    check(!reopened_clear_editor.last_edit_error().has_value(),
+        "snapshot source-style reopened post-noop clear save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style reopened post-noop clear save should leave the source workbook unchanged");
+    check(fastxlsx::test::read_zip_entries(reopened_post_noop_noop_output) ==
+            reopened_post_noop_noop_entries,
+        "snapshot source-style reopened post-noop clear save should leave the prior no-op output unchanged");
+    const auto reopened_post_noop_clear_entries =
+        fastxlsx::test::read_zip_entries(reopened_post_noop_clear_output);
+    const std::string reopened_post_noop_clear_xml =
+        reopened_post_noop_clear_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reopened_post_noop_clear_xml, styled_blank,
+        "snapshot source-style reopened post-noop clear save should persist styled blank A1");
+    check_contains(reopened_post_noop_clear_xml, "post-noop-b1",
+        "snapshot source-style reopened post-noop clear save should keep unstyled B1");
+    check_contains(reopened_post_noop_clear_xml, "reopened-post-noop-a2",
+        "snapshot source-style reopened post-noop clear save should keep edited A2");
+    check_not_contains(reopened_post_noop_clear_xml, R"(<v>2.5</v>)",
+        "snapshot source-style reopened post-noop clear save should remove the prior A1 value");
+    check_reopened_clean_sheet_output(reopened_post_noop_clear_output, "Styled",
+        "snapshot source-style reopened post-noop clear save",
+        inspect_reopened_post_noop_clear_output);
 }
 
 void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics()

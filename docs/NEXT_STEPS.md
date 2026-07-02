@@ -754,6 +754,11 @@ The after-shift delete-column ordering is covered as well: dirty
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves
 materialized diagnostics while `save_as()` writes `fullCalcOnLoad="1"` without
 creating `xl/calcChain.xml`.
+That same after-shift delete-column/full-calculation path now covers rejected
+exact source overwrite: the failed save preserves dirty diagnostics, the
+translated `C2` formula/style, shifted source columns, queued workbook metadata,
+and source bytes before a safe retry writes `fullCalcOnLoad="1"` with no
+`xl/calcChain.xml`.
 Formula audit diagnostics now sit on top of that full-calculation mixing state:
 `formula_reference_audits()` remains read-only after a dirty shifted qualified
 formula and queued `request_full_calculation()`, reporting the shifted

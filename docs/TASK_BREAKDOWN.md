@@ -59621,6 +59621,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1474 - Fresh reopen before-shift full-calc retry no-op outputs
+
+Type: default public-state fresh-reopen regression for no-op outputs after
+successful before-shift full-calculation failed-save retries.
+
+Status: completed.
+
+Goal:
+Prove the before-shift full-calculation failed-save retry no-op outputs are not
+only byte-identical to their safe retry outputs, but also remain readable through
+a fresh `WorkbookEditor` materialization.
+
+Coverage:
+- Extends the P8.1473 before-shift retry no-op output paths for reverse styled
+  `insert_rows()`, `insert_columns()`, `delete_rows()`, and `delete_columns()`.
+- Fresh-reopens each no-op output and verifies sparse cell counts, used ranges,
+  shifted source cells, removed old coordinates, shifted formula text, and
+  preserved non-default `StyleId` on the moved formula cell.
+- Keeps the existing safe-retry output equality and no-op output equality checks
+  in place.
+
+Non-goals:
+- No production logic changes, source reload semantics changes, commit/close
+  semantics, in-place overwrite mode, formula evaluation, cached value
+  preservation, metadata/range repair, calcChain rebuild, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

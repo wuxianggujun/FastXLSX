@@ -48847,6 +48847,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "delete_rows #REF formula post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "delete_rows #REF formula post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "delete_rows #REF formula post-noop save should keep diagnostics clear");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -48905,6 +48908,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "delete_rows #REF formula post-noop noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "delete_rows #REF formula post-noop noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "delete_rows #REF formula post-noop noop save should keep diagnostics clear");
         check_workbook_editor_public_save_state_preserved(
@@ -49041,6 +49047,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "delete_columns #REF formula post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "delete_columns #REF formula post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "delete_columns #REF formula post-noop save should keep diagnostics clear");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -49099,6 +49108,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 editor.estimated_pending_materialized_memory_usage() == 0 &&
                 editor.pending_worksheet_edits().empty(),
             "delete_columns #REF formula post-noop noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "delete_columns #REF formula post-noop noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "delete_columns #REF formula post-noop noop save should keep diagnostics clear");
         check_workbook_editor_public_save_state_preserved(

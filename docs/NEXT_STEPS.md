@@ -281,6 +281,9 @@ The delete-side `#REF!` formula paths now carry the same repeated no-op save
 coverage after their post-noop edits, preserving the translated `#REF!` formula,
 the later formula edit, shifted source cells, and clean diagnostics across a
 fresh reopen.
+Those delete-side `#REF!` formula post-noop saves now also assert replacement
+diagnostics stay empty at the formula-edit save point and at the following
+clean no-op save.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

@@ -25047,6 +25047,124 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         inspect_full_calc_delete_columns_output);
 }
 
+void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift_failed_save_preserves_state()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-columns-failed-save-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-columns-failed-save-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.request_full_calculation();
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.delete_columns(1, 1);
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    const auto source_entries_before_failed_save =
+        fastxlsx::test::read_zip_entries(source);
+    check(dirty_cell_count == 4,
+        "full-calc before delete_columns failed save setup should keep shifted sparse count");
+
+    const auto check_dirty_delete_columns_session = [&](std::string_view scenario) {
+        const std::string label = std::string(scenario);
+
+        check(!editor.last_edit_error().has_value(),
+            label + " should keep diagnostics clear");
+        check(editor.has_pending_changes(),
+            label + " should keep the public editor dirty");
+        check(editor.pending_change_count() == 1,
+            label + " should keep only the queued workbook metadata edit before materialized handoff");
+        check(sheet.has_pending_changes(),
+            label + " should keep the shifted worksheet dirty");
+        check(sheet.cell_count() == dirty_cell_count,
+            label + " should preserve the shifted sparse count");
+        check(sheet.estimated_memory_usage() == dirty_memory_usage,
+            label + " should preserve the shifted materialized memory estimate");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+            label + " should expose shifted bounds");
+        check(editor.pending_materialized_worksheet_names()
+                  == std::vector<std::string>{"Data"},
+            label + " should report Data dirty");
+        check(editor.pending_materialized_cell_count() == dirty_cell_count,
+            label + " should report the shifted sparse count");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+            label + " should report the shifted sparse memory");
+
+        const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C2");
+        check(shifted_formula.has_value() &&
+                shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula->text_value() == "#REF!+A1" &&
+                shifted_formula->has_style() &&
+                shifted_formula->style_id().value() == styled_formula_style.value(),
+            label + " should keep translated #REF! formula and style id in memory");
+        const fastxlsx::CellValue shifted_number = sheet.get_cell("A1");
+        check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_number.number_value() == 1.0 &&
+                sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                sheet.get_cell("B2").text_value() == "row2-gap-c2",
+            label + " should keep shifted source columns in memory");
+        check(!sheet.try_cell("D2").has_value() &&
+                !sheet.try_cell("A3").has_value(),
+            label + " should keep old and deleted coordinates absent");
+    };
+
+    check_dirty_delete_columns_session(
+        "full-calc before delete_columns failed save dirty state before rejected source overwrite");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "full-calc before delete_columns failed save should reject exact source overwrite");
+    check_dirty_delete_columns_session(
+        "full-calc before delete_columns failed save rejected source overwrite");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        "full-calc before delete_columns failed save should leave source package unchanged");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc before delete_columns failed save safe retry should clean the shifted sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc before delete_columns failed save safe retry should count metadata plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before delete_columns failed save safe retry should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before delete_columns failed save safe retry should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        "full-calc before delete_columns failed save safe retry should leave source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="C2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>#REF!+A1</f></c>)";
+    check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
+        "full-calc before delete_columns failed save safe retry should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc before delete_columns failed save safe retry should not invent calcChain.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "full-calc before delete_columns failed save safe retry should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "full-calc before delete_columns failed save safe retry should write shifted source number");
+    check_contains(worksheet_xml, R"(<c r="A2")",
+        "full-calc before delete_columns failed save safe retry should write shifted source text");
+    check_contains(worksheet_xml, R"(<c r="B2")",
+        "full-calc before delete_columns failed save safe retry should write shifted source column");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc before delete_columns failed save safe retry should write shifted styled #REF! formula");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "full-calc before delete_columns failed save safe retry should omit old formula coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "full-calc before delete_columns failed save safe retry should omit old trailing coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "full-calc before delete_columns failed save safe retry should preserve untouched worksheets");
+}
+
 void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -48822,6 +48940,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_shift();
             test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift();
+            test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift_failed_save_preserves_state();
             test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics();
             test_public_worksheet_editor_full_calculation_source_formula_audits_preserve_source_scan();
             test_public_worksheet_editor_full_calculation_renamed_source_formula_audits_preserve_source_scan();

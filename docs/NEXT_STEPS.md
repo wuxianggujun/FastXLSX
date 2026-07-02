@@ -732,6 +732,12 @@ The delete-side column-shift reverse ordering is covered too: a queued
 `WorksheetEditor::delete_columns()` shifts, including a styled formula whose
 deleted-column reference is serialized as `#REF!`, and `save_as()` keeps the
 full-calc metadata without creating `xl/calcChain.xml`.
+That reverse delete-column styled source formula path now also has rejected
+source overwrite coverage: the failed save preserves the queued
+full-calculation metadata, dirty materialized diagnostics, translated `C2`
+formula/style, shifted in-memory source columns, and source package bytes
+before a safe retry writes the same `fullCalcOnLoad="1"` / no-`calcChain.xml`
+output.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

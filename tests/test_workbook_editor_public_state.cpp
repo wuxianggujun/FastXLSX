@@ -20070,6 +20070,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         "request_full_calculation after insert_rows should preserve dirty sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "request_full_calculation after insert_rows should preserve dirty sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1, "request_full_calculation after insert_rows dirty summary");
 
     editor.save_as(output);
 
@@ -20417,6 +20419,9 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         "full-calc before insert_rows styled formula should report shifted sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "full-calc before insert_rows styled formula should report shifted sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1,
+        "full-calc before insert_rows styled formula pre-save dirty summary");
 
     editor.save_as(output);
 
@@ -21334,6 +21339,9 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         "request_full_calculation after insert_columns styled formula should preserve dirty sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "request_full_calculation after insert_columns styled formula should preserve dirty sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1,
+        "request_full_calculation after insert_columns styled formula dirty summary");
 
     editor.save_as(output);
 
@@ -21690,6 +21698,9 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         "full-calc before insert_columns styled formula should report shifted sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "full-calc before insert_columns styled formula should report shifted sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1,
+        "full-calc before insert_columns styled formula pre-save dirty summary");
 
     editor.save_as(output);
 
@@ -21973,6 +21984,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         "full-calc before insert_columns should report shifted sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "full-calc before insert_columns should report shifted sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1, "full-calc before insert_columns pre-save dirty summary");
 
     editor.save_as(output);
 
@@ -24930,6 +24943,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         "request_full_calculation after delete_rows should preserve dirty sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "request_full_calculation after delete_rows should preserve dirty sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1, "request_full_calculation after delete_rows dirty summary");
 
     editor.save_as(output);
 
@@ -25256,6 +25271,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift(
         "full-calc before delete_rows should report shifted sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "full-calc before delete_rows should report shifted sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1, "full-calc before delete_rows pre-save dirty summary");
 
     editor.save_as(output);
 
@@ -25517,6 +25534,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         "request_full_calculation after delete_columns should preserve dirty sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "request_full_calculation after delete_columns should preserve dirty sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1, "request_full_calculation after delete_columns dirty summary");
 
     editor.save_as(output);
 
@@ -26064,6 +26083,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         "full-calc before delete_columns should report shifted sparse count");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "full-calc before delete_columns should report shifted sparse memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 1, "full-calc before delete_columns pre-save dirty summary");
 
     editor.save_as(output);
 

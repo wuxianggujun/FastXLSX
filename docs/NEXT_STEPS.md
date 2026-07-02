@@ -791,6 +791,11 @@ Direct row/column shift tests now also pin pre-save dirty summary diagnostics:
 verify `pending_worksheet_edits()` reports one dirty `Data` materialized summary
 with no replacement state and memory/count values matching the active
 `WorksheetEditor` before the flush.
+Full-calculation row/column shift tests now pin that same summary contract while
+workbook metadata is already queued: after-shift and before-shift insert/delete
+row/column paths keep the dirty `Data` materialized summary aligned with the
+shifted sparse store while `pending_change_count()` still reflects the queued
+`fullCalcOnLoad` workbook edit.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

@@ -708,6 +708,11 @@ That column-shift reverse ordering now also covers the styled source formula
 path: queued `request_full_calculation()` before materialization survives
 `insert_columns(2, 2)`, preserves the shifted formula style at `F2`, translates
 the formula to `C1+D1`, and saves with no `xl/calcChain.xml`.
+That same reverse styled insert-column path now also covers rejected exact
+source overwrite: the failed save preserves the queued full-calculation
+metadata, dirty materialized diagnostics, translated `F2` formula/style,
+shifted in-memory source cells, and source package bytes; a later safe retry
+writes the shifted output with `fullCalcOnLoad="1"` and no `xl/calcChain.xml`.
 The delete-side row-shift branch now has the same full-calculation guard:
 after dirty `WorksheetEditor::delete_rows()` shifts source-backed cells and a
 styled formula into `#REF!` references, queued `request_full_calculation()`

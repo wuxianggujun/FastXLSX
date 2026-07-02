@@ -345,6 +345,9 @@ snapshot ownership, byte-stable outputs, and fresh readback.
 Renamed formula delete-column no-op and rejected-operation paths now keep
 replacement diagnostics empty while preserving `#REF!` formula translation,
 style ids, byte-stable outputs, and fresh readback.
+Renamed formula delete-row no-op and rejected-operation paths now mirror that
+replacement-diagnostics contract for `#REF!` translation, style ids,
+byte-stable outputs, and fresh readback.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

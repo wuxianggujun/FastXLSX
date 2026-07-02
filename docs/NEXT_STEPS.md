@@ -336,6 +336,9 @@ replacement diagnostics stay empty while preserving expected invalid-operation
 Rejected option-mismatch, missing-query, invalid-read, and invalid-mutation
 shift states now also keep replacement diagnostics empty before their existing
 no-op save and readback checks.
+Renamed full-calc formula-audit saved-reacquire intermediate and no-op states
+now keep replacement diagnostics empty while preserving formula audit snapshots,
+saved edit summaries, and expected invalid-operation diagnostics.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

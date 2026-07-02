@@ -29661,6 +29661,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire should preserve source and planned worksheet names");
@@ -30156,6 +30159,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid mutation should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid mutation should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire invalid mutation should preserve source and planned worksheet names");
@@ -30410,6 +30416,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid mutation noop-save should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save should preserve source and planned worksheet names");
@@ -30463,6 +30472,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save should not queue replacement diagnostics");
     check(editor.last_edit_error() == invalid_error,
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save second save should preserve invalid mutation diagnostic");
     check(editor.source_worksheet_names() == expected_source_names &&
@@ -30600,6 +30612,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid reads should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire invalid reads should preserve source and planned worksheet names");
@@ -31052,6 +31067,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid shifts should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid shifts should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire invalid shifts should preserve source and planned worksheet names");
@@ -31488,6 +31506,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire missing query should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire missing query should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire missing query should preserve source and planned worksheet names");
@@ -31924,6 +31945,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire option mismatch should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire option mismatch should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire option mismatch should preserve source and planned worksheet names");

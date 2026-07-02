@@ -313,6 +313,10 @@ The core materialized saved-session no-op paths now also keep replacement
 diagnostics empty for single-sheet dirty-state reuse, same-handle reuse,
 multi-sheet save/retry, and single-/multi-sheet reopen post-noop lifecycle
 outputs.
+Range-erase reacquire and `clear_cell_values()` renamed memory-budget summary
+no-op sequences now carry the same diagnostics parity: replacement diagnostics
+stay empty across range erase reacquire, option-mismatch, missing-query,
+read-only-query, invalid-read, and second no-op saves.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

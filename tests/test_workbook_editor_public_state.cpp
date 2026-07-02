@@ -9283,6 +9283,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "range erase reacquired no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range erase reacquired no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "range erase reacquired no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -18657,6 +18659,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
         "clear_cell_values() memory-budget renamed summary no-op save should not add a materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget renamed summary no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget renamed summary no-op save should keep diagnostics clear");
     check_renamed_clear_all_clean_materialized_diagnostics(
@@ -18714,6 +18719,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary option no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
         "clear_cell_values() memory-budget renamed summary option no-op save should not add a materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget renamed summary option no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget renamed summary option no-op save should keep diagnostics clear");
     check_renamed_clear_all_clean_materialized_diagnostics(
@@ -18762,6 +18770,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary missing no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
         "clear_cell_values() memory-budget renamed summary missing no-op save should not add a materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget renamed summary missing no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget renamed summary missing no-op save should keep diagnostics clear");
     check_renamed_clear_all_clean_materialized_diagnostics(
@@ -18820,6 +18831,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary read-only no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
         "clear_cell_values() memory-budget renamed summary read-only no-op save should not add a materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget renamed summary read-only no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget renamed summary read-only no-op save should keep diagnostics clear");
     check_renamed_clear_all_clean_materialized_diagnostics(
@@ -18888,6 +18902,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary invalid-read no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
         "clear_cell_values() memory-budget renamed summary invalid-read no-op save should not add a materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget renamed summary invalid-read no-op save should keep diagnostics clear");
     check_renamed_clear_all_clean_materialized_diagnostics(
@@ -18993,6 +19010,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary second no-op save should keep both handles clean");
     check(editor.pending_change_count() == 3,
         "clear_cell_values() memory-budget renamed summary second no-op save should not add a materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget renamed summary second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget renamed summary second no-op save should keep diagnostics clear");
     check_renamed_clear_all_clean_materialized_diagnostics(

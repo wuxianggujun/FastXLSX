@@ -61479,6 +61479,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1522 - Align erase and clear summary no-op replacement diagnostics
+
+Type: public `WorksheetEditor` range erase / clear-all renamed summary no-op
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Apply the replacement-diagnostics parity contract to the remaining range erase
+reacquire and `clear_cell_values()` renamed memory-budget summary no-op outputs
+in the base public-state shard.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state`.
+- Adds replacement-diagnostics checks to the range erase reacquired no-op save.
+- Adds replacement-diagnostics checks to the `clear_cell_values()` renamed
+  memory-budget summary no-op, option-mismatch no-op, missing-query no-op,
+  read-only-query no-op, invalid-read no-op, and second no-op save paths.
+- Keeps existing clean-handle checks, materialized diagnostics, save-state
+  snapshots, catalog snapshots, byte-stable package checks, source-output
+  preservation checks, and fresh readback unchanged.
+
+Non-goals:
+- No production logic changes, clear/erase semantic changes, rename behavior
+  changes, option-matching changes, missing-sheet behavior changes,
+  read-only inspection behavior changes, invalid-read validation changes, save
+  behavior changes, replacement API changes, rollback or transactions,
+  sharedStrings/styles migration, relationship repair, calcChain rebuild,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

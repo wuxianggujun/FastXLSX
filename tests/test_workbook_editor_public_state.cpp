@@ -23062,6 +23062,10 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-post-noop-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -23187,11 +23191,119 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         editor, save_state_before_noop, "delete_rows styled source formula no-op save");
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop, "delete_rows styled source formula no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "delete_rows styled source formula no-op output should match the materialized output");
     check_reopened_shift_output(noop_output,
         "delete_rows styled source formula no-op save",
         inspect_delete_rows_styled_formula_output);
+
+    sheet.set_cell("E2", fastxlsx::CellValue::text("post-noop-delete-rows-styled"));
+    check(sheet.has_pending_changes(),
+        "delete_rows styled source formula post-noop edit should dirty the saved handle");
+    check(sheet.cell_count() == 6,
+        "delete_rows styled source formula post-noop edit should add one sparse cell");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 5,
+        "delete_rows styled source formula post-noop edit should expand bounds to E2");
+    const std::optional<fastxlsx::CellValue> retained_formula = sheet.try_cell("D1");
+    check(retained_formula.has_value() &&
+            retained_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            retained_formula->text_value() == "#REF!+#REF!" &&
+            retained_formula->has_style() &&
+            retained_formula->style_id().value() == styled_formula_style.value(),
+        "delete_rows styled source formula post-noop edit should preserve shifted formula style id");
+    check(editor.pending_change_count() == 1,
+        "delete_rows styled source formula post-noop edit should retain the prior handoff before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 6,
+        "delete_rows styled source formula post-noop edit should report the dirty materialized sheet");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows styled source formula post-noop save should clean the materialized handle");
+    check(editor.pending_change_count() == 2,
+        "delete_rows styled source formula post-noop save should record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "delete_rows styled source formula post-noop save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows styled source formula post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "delete_rows styled source formula post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "delete_rows styled source formula post-noop save should leave the no-op output unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, styled_formula_xml,
+        "delete_rows styled source formula post-noop save should keep the styled formula cell");
+    check_contains(post_noop_xml, R"(<c r="E2")",
+        "delete_rows styled source formula post-noop save should write the post-noop edit");
+    const auto inspect_delete_rows_styled_formula_post_noop_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 6,
+                "delete_rows styled source formula post-noop reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+                "delete_rows styled source formula post-noop reopened output should expose expanded bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d1->text_value() == "#REF!+#REF!" &&
+                    reopened_d1->has_style() &&
+                    reopened_d1->style_id().value() == styled_formula_style.value(),
+                "delete_rows styled source formula post-noop reopened output should keep styled formula");
+            const std::optional<fastxlsx::CellValue> reopened_e2 =
+                reopened_sheet.try_cell("E2");
+            check(reopened_e2.has_value() &&
+                    reopened_e2->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e2->text_value() == "post-noop-delete-rows-styled",
+                "delete_rows styled source formula post-noop reopened output should read post-noop edit");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("A2").text_value() == "extra-c3",
+                "delete_rows styled source formula post-noop reopened output should keep shifted source rows");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "delete_rows styled source formula post-noop reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output,
+        "delete_rows styled source formula post-noop save",
+        inspect_delete_rows_styled_formula_post_noop_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(post_noop_noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows styled source formula post-noop noop save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "delete_rows styled source formula post-noop noop save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "delete_rows styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows styled source formula post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "delete_rows styled source formula post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "delete_rows styled source formula post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "delete_rows styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "delete_rows styled source formula post-noop noop save should leave prior post-noop output unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "delete_rows styled source formula post-noop noop save",
+        inspect_delete_rows_styled_formula_post_noop_output);
 }
 
 void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift()

@@ -906,6 +906,42 @@ void check_public_state_renamed_full_calc_noop_formula_audit_readback(
         prefix + " no-op output should read the C5 text cell");
 }
 
+void check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+    const fastxlsx::WorkbookEditor& editor,
+    const std::filesystem::path& noop_output,
+    std::string_view shifted_formula,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " no-op materialized audit");
+    check(noop_audits.size() == 2,
+        prefix + " no-op should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        prefix + " no-op shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        prefix + " no-op shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, prefix + " no-op source audit");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        prefix + " no-op output");
+
+    fastxlsx::WorkbookEditor reopened_noop =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_noop_sheet =
+        reopened_noop.worksheet("RenamedData");
+    check(!reopened_noop_sheet.try_cell("C5").has_value() &&
+            reopened_noop_sheet.get_cell("A4").text_value() == "extra-c3",
+        prefix + " no-op output should keep only shifted source rows");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -30634,15 +30670,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_not_contains(second_worksheet_xml, R"(r="C5")",
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save second output should not invent recovery cells");
 
-    check_public_state_reopened_shift_formula_audit_output(
-        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire invalid mutation noop-save second output");
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
-    check(!reopened_sheet.try_cell("C5").has_value() &&
-            reopened_sheet.get_cell("A4").text_value() == "extra-c3",
-        "renamed full-calc formula audit saved reacquire invalid mutation noop-save reopened output should keep only shifted source rows");
+    check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+        editor, second_output, shifted_formula, styled_formula_style,
+        "renamed full-calc formula audit saved reacquire invalid mutation noop-save");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_reads_recovery()
@@ -31103,15 +31133,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_not_contains(second_worksheet_xml, R"(r="C5")",
         "renamed full-calc formula audit saved reacquire invalid reads noop-save second output should not invent recovery cells");
 
-    check_public_state_reopened_shift_formula_audit_output(
-        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire invalid reads noop-save second output");
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
-    check(!reopened_sheet.try_cell("C5").has_value() &&
-            reopened_sheet.get_cell("A4").text_value() == "extra-c3",
-        "renamed full-calc formula audit saved reacquire invalid reads noop-save reopened output should keep only shifted source rows");
+    check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+        editor, second_output, shifted_formula, styled_formula_style,
+        "renamed full-calc formula audit saved reacquire invalid reads noop-save");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_shifts_recovery()
@@ -31538,15 +31562,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_not_contains(second_worksheet_xml, R"(r="C5")",
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save second output should not invent recovery cells");
 
-    check_public_state_reopened_shift_formula_audit_output(
-        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire invalid shifts noop-save second output");
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
-    check(!reopened_sheet.try_cell("C5").has_value() &&
-            reopened_sheet.get_cell("A4").text_value() == "extra-c3",
-        "renamed full-calc formula audit saved reacquire invalid shifts noop-save reopened output should keep only shifted source rows");
+    check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+        editor, second_output, shifted_formula, styled_formula_style,
+        "renamed full-calc formula audit saved reacquire invalid shifts noop-save");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_missing_query_recovery()
@@ -31973,15 +31991,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_not_contains(second_worksheet_xml, R"(r="C5")",
         "renamed full-calc formula audit saved reacquire missing query noop-save second output should not invent recovery cells");
 
-    check_public_state_reopened_shift_formula_audit_output(
-        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire missing query noop-save second output");
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
-    check(!reopened_sheet.try_cell("C5").has_value() &&
-            reopened_sheet.get_cell("A4").text_value() == "extra-c3",
-        "renamed full-calc formula audit saved reacquire missing query noop-save reopened output should keep only shifted source rows");
+    check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+        editor, second_output, shifted_formula, styled_formula_style,
+        "renamed full-calc formula audit saved reacquire missing query noop-save");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_option_mismatch_recovery()
@@ -32406,15 +32418,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_not_contains(second_worksheet_xml, R"(r="C5")",
         "renamed full-calc formula audit saved reacquire option mismatch noop-save second output should not invent recovery cells");
 
-    check_public_state_reopened_shift_formula_audit_output(
-        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire option mismatch noop-save second output");
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
-    check(!reopened_sheet.try_cell("C5").has_value() &&
-            reopened_sheet.get_cell("A4").text_value() == "extra-c3",
-        "renamed full-calc formula audit saved reacquire option mismatch noop-save reopened output should keep only shifted source rows");
+    check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+        editor, second_output, shifted_formula, styled_formula_style,
+        "renamed full-calc formula audit saved reacquire option mismatch noop-save");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_same_sheet_guard_recovery()
@@ -32853,15 +32859,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_not_contains(second_worksheet_xml, R"(r="C5")",
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second output should not invent recovery cells");
 
-    check_public_state_reopened_shift_formula_audit_output(
-        second_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire same-sheet guard noop-save second output");
-    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("RenamedData");
-    check(!reopened_sheet.try_cell("C5").has_value() &&
-            reopened_sheet.get_cell("A4").text_value() == "extra-c3",
-        "renamed full-calc formula audit saved reacquire same-sheet guard noop-save reopened output should keep only shifted source rows");
+    check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readback(
+        editor, second_output, shifted_formula, styled_formula_style,
+        "renamed full-calc formula audit saved reacquire same-sheet guard noop-save");
 }
 
 void test_public_worksheet_editor_shift_after_rename_uses_planned_name()

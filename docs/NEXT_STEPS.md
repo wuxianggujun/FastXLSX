@@ -2211,6 +2211,10 @@ pin pre-materialization public state: after the catalog rename and before
 catalog rename is counted, and replacement/materialized diagnostics remain
 empty. This is diagnostics hygiene only, not broader formula repair or
 metadata migration.
+The same pre-materialization diagnostics contract now covers delete-side
+renamed styled-formula and formula-audit paths as well, including basic
+delete-row/delete-column formula shifts and delete-row/delete-column
+formula-audit `#REF!` scenarios.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

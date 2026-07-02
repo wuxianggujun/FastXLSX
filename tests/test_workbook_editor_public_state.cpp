@@ -33604,6 +33604,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
         editor.rename_sheet("Data", "RenamedData");
+        check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+            editor, "renamed delete-row formula audit");
         fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
         sheet.delete_rows(1, 1);
 
@@ -33775,6 +33777,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
         editor.rename_sheet("Data", "RenamedData");
+        check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+            editor, "renamed delete-column formula audit");
         fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
         sheet.delete_columns(1, 1);
 
@@ -35896,6 +35900,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula delete_columns");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.delete_columns(1, 1);
     const std::size_t shifted_memory = sheet.estimated_memory_usage();
@@ -37916,6 +37922,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_rows()
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula delete_rows");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.delete_rows(1, 1);
     const std::size_t shifted_memory = sheet.estimated_memory_usage();

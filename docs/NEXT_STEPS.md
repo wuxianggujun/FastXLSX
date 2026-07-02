@@ -802,6 +802,10 @@ after-shift and before-shift insert/delete row/column paths keep one dirty
 `Data` materialized summary with no replacement state, the shifted sparse count,
 and the active `WorksheetEditor` memory estimate while the queued
 `fullCalcOnLoad` workbook edit remains pending.
+The same retry matrix now also checks successful safe retries clear the dirty
+summary immediately: after the retry `save_as(output)`, `pending_worksheet_edits()`
+is empty alongside zero materialized aggregate diagnostics before the later clean
+no-op save.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

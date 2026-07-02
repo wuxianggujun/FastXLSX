@@ -41114,6 +41114,8 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift handle reuse no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift handle reuse no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift handle reuse no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -41277,6 +41279,8 @@ void test_public_worksheet_editor_shift_reacquire_reuses_saved_session()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift reacquire second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -42164,6 +42168,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift try-reacquire second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift try-reacquire second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift try-reacquire second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -42478,6 +42484,9 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire option mismatch second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire option mismatch second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire option mismatch second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -42802,6 +42811,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing query second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing query second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing query second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -43150,6 +43162,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid reads second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid reads second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid reads second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -43542,6 +43557,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid mutations second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid mutations second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid mutations second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -44110,6 +44128,9 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire failed save second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire failed save second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire failed save second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -44380,6 +44401,9 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire after retry third no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire after retry third no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire after retry third no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

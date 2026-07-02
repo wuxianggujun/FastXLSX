@@ -729,6 +729,11 @@ after dirty `WorksheetEditor::delete_rows()` shifts source-backed cells and a
 styled formula into `#REF!` references, queued `request_full_calculation()`
 preserves dirty diagnostics until `save_as()`, writes `fullCalcOnLoad="1"`,
 and still does not create `xl/calcChain.xml`.
+That same after-shift delete-row/full-calculation path now covers rejected
+exact source overwrite: the failed save preserves dirty diagnostics, the
+translated `D1` formula/style, shifted source rows, queued workbook metadata,
+and source bytes before a safe retry writes `fullCalcOnLoad="1"` with no
+`xl/calcChain.xml`.
 The delete-side row-shift reverse ordering now mirrors that path:
 `request_full_calculation()` can be queued before materializing `Data`, and a
 later dirty `WorksheetEditor::delete_rows()` still writes the styled `D1`

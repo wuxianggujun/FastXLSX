@@ -2219,6 +2219,9 @@ Insert-row renamed styled-formula recovery/reacquire paths now share that
 contract too: reacquire, failed-save, option-mismatch, invalid-mutation,
 missing-query, invalid-read, and snapshot-read paths all prove rename-only
 state stays free of replacement/materialized diagnostics before materialization.
+Those insert-row renamed styled-formula recovery paths also pin saved-session
+reacquire diagnostics before the later column shift, proving the first saved
+handoff stays clean until the next mutation.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

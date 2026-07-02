@@ -832,6 +832,23 @@ void check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
         prefix + " should not dirty materialized diagnostics before materialization");
 }
 
+void check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+        prefix + " should expose only the planned sheet name after saved reacquire");
+    check(editor.pending_change_count() == 2,
+        prefix + " should keep only the rename and saved materialized handoff after reacquire");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " should not expose replacement diagnostics after saved reacquire");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should keep materialized diagnostics empty after saved reacquire");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -34125,6 +34142,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
             reacquired_d4->has_style() &&
             reacquired_d4->style_id().value() == styled_formula_style.value(),
         "renamed formula reacquire should read the saved translated styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula reacquire");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -34598,6 +34617,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_pre
             reacquired_formula->has_style() &&
             reacquired_formula->style_id().value() == styled_formula_style.value(),
         "renamed formula option mismatch matching reacquire should reuse the saved styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula option mismatch");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -34856,6 +34877,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_mutations_p
         "renamed formula invalid mutations should preserve shifted source cells");
     check(!sheet.try_cell("D2").has_value() && !reacquired.try_cell("A2").has_value(),
         "renamed formula invalid mutations should keep old shifted coordinates absent");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula invalid mutations");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -35106,6 +35129,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_missing_query_prese
             reacquired_formula->has_style() &&
             reacquired_formula->style_id().value() == styled_formula_style.value(),
         "renamed formula missing query matching reacquire should reuse saved styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula missing query");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -35380,6 +35405,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_prese
         "renamed formula invalid reads should preserve shifted source cells");
     check(!sheet.try_cell("D2").has_value() && !reacquired.try_cell("A2").has_value(),
         "renamed formula invalid reads should keep old shifted coordinates absent");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula invalid reads");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -35705,6 +35732,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_pres
         "renamed formula snapshot reads should preserve sparse counts");
     check_cell_range_equals(reacquired.used_range(), 1, 1, 5, 4,
         "renamed formula snapshot reads should preserve row-shifted bounds");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula snapshot reads");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();

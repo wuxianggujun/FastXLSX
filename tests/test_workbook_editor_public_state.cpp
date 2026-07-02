@@ -43214,6 +43214,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preser
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid reads post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid reads post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid reads post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -43613,6 +43616,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid mutations post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid mutations post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid mutations post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -43789,6 +43795,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid shifts post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid shifts post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid shifts post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,

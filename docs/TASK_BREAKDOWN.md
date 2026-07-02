@@ -60705,6 +60705,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1502 - Reopen isolated source-style clear no-op for re-edit
+
+Type: public `WorksheetEditor` source-style snapshot fresh-reopen re-edit/save
+regression.
+
+Status: completed.
+
+Goal:
+Prove the styled blank no-op output remains reusable for a value-only re-edit
+that preserves the source style handle.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-source-style`.
+- Opens the P8.1501 clear no-op output through a fresh editor, sets `A1` to
+  `4.75`, and saves.
+- Verifies styled `A1=4.75`, unstyled `B1`, and edited unstyled `A2` in XML and
+  fresh readback.
+- Verifies source and prior no-op output entries stay unchanged and public
+  diagnostics remain clean.
+
+Non-goals:
+- No production logic changes, caller-supplied non-default style writes, style
+  migration/merge, styles.xml repair, rich-format preservation, sharedStrings
+  migration, metadata/range synchronization, relationship repair, calcChain
+  rebuild, broader Patch/materialized composition, or low-memory random
+  editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-source-style`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-source-style$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

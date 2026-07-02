@@ -4429,6 +4429,9 @@ coverage while returning timeout margin to the base public-state shard.
 That isolated shard now also no-op saves the styled blank output, proving the
 clear output remains byte-stable and readable without loading the base
 public-state shard.
+The isolated source-style shard now also reopens that styled-blank no-op
+output, re-edits `A1` to a styled numeric value, and saves/readbacks the result
+while proving source and prior no-op bytes stay unchanged.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

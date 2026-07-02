@@ -339,6 +339,9 @@ no-op save and readback checks.
 Renamed full-calc formula-audit saved-reacquire intermediate and no-op states
 now keep replacement diagnostics empty while preserving formula audit snapshots,
 saved edit summaries, and expected invalid-operation diagnostics.
+Renamed formula insert-row no-op and rejected-operation paths now also keep
+replacement diagnostics empty while preserving translated styled formulas,
+snapshot ownership, byte-stable outputs, and fresh readback.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

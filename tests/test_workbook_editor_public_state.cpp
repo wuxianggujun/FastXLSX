@@ -34190,6 +34190,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula reacquire no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula reacquire no-op save");
@@ -34526,6 +34529,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_pre
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula option mismatch should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula option mismatch should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula option mismatch should preserve source and planned worksheet names");
@@ -34639,6 +34645,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_pre
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula option mismatch no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula option mismatch no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula option mismatch no-op save");
@@ -34788,6 +34797,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_mutations_p
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula invalid mutations should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula invalid mutations should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula invalid mutations should preserve source and planned worksheet names");
@@ -34889,6 +34901,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_mutations_p
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula invalid mutations no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula invalid mutations no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula invalid mutations no-op save");
@@ -35018,6 +35033,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_missing_query_prese
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula missing query should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula missing query should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula missing query should preserve source and planned worksheet names");
@@ -35131,6 +35149,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_missing_query_prese
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula missing query no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula missing query no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula missing query no-op save");
@@ -35292,6 +35313,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_prese
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula invalid reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula invalid reads should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula invalid reads should preserve source and planned worksheet names");
@@ -35397,6 +35421,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_prese
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula invalid reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula invalid reads no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula invalid reads no-op save");
@@ -35623,6 +35650,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_pres
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula snapshot reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula snapshot reads should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula snapshot reads should preserve source and planned worksheet names");
@@ -35712,6 +35742,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_pres
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula snapshot reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula snapshot reads no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula snapshot reads no-op save");

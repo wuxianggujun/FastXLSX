@@ -41342,6 +41342,9 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -41510,6 +41513,9 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_columns reacquire post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "delete_columns reacquire post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_columns reacquire post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -41692,6 +41698,9 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_rows reacquire post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "delete_rows reacquire post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_rows reacquire post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -41878,6 +41887,9 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "insert_columns reacquire post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "insert_columns reacquire post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "insert_columns reacquire post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,

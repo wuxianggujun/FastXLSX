@@ -976,6 +976,44 @@ void check_public_state_renamed_delete_formula_noop_audit_readback(
         prefix + " no-op output");
 }
 
+void check_public_state_renamed_insert_formula_noop_audit_readback(
+    const fastxlsx::WorkbookEditor& editor,
+    const std::filesystem::path& noop_output,
+    std::string_view cell_reference,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view first_qualified_reference_text,
+    std::string_view first_reference_text,
+    std::string_view second_qualified_reference_text,
+    std::string_view second_reference_text,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " no-op materialized audit");
+    check(noop_audits.size() == 2,
+        prefix + " no-op should keep both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, row, column, expected_formula,
+        first_qualified_reference_text, first_reference_text,
+        prefix + " no-op first shifted reference");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, row, column, expected_formula,
+        second_qualified_reference_text, second_reference_text,
+        prefix + " no-op second shifted reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, prefix + " no-op source audit");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, cell_reference, row, column, expected_formula,
+        styled_formula_style, first_qualified_reference_text, first_reference_text,
+        second_qualified_reference_text, second_reference_text,
+        prefix + " no-op output");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -33422,8 +33460,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
         "renamed formula audit shifted row no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed formula audit shifted row no-op output should match the first materialized output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D4", 4, 4, expected_formula, styled_formula_style,
+    check_public_state_renamed_insert_formula_noop_audit_readback(
+        editor, noop_output, "D4", 4, 4, expected_formula, styled_formula_style,
         "Data!A3", "A3", "Data!B3", "B3",
         "renamed formula audit shifted row no-op save");
 }
@@ -33695,8 +33733,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
         "renamed column formula audit shifted no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed column formula audit shifted no-op output should match the first materialized output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "E2", 2, 5, expected_formula, styled_formula_style,
+    check_public_state_renamed_insert_formula_noop_audit_readback(
+        editor, noop_output, "E2", 2, 5, expected_formula, styled_formula_style,
         "Data!B1", "B1", "Data!C1", "C1",
         "renamed column formula audit shifted no-op save");
 }

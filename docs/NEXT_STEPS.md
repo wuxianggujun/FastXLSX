@@ -4432,6 +4432,9 @@ public-state shard.
 The isolated source-style shard now also reopens that styled-blank no-op
 output, re-edits `A1` to a styled numeric value, and saves/readbacks the result
 while proving source and prior no-op bytes stay unchanged.
+That re-edit output now has matching clean no-op coverage: public
+catalog/save-state remain stable, the no-op package is byte-equivalent, and
+fresh readback still sees styled `A1=4.75`.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

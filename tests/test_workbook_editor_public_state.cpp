@@ -7769,6 +7769,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-clear-noop-output.xlsx");
     const std::filesystem::path reopened_post_noop_clear_reedit_output = artifact(
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-clear-reedit-output.xlsx");
+    const std::filesystem::path reopened_post_noop_clear_reedit_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-clear-reedit-noop-output.xlsx");
 
     fastxlsx::StyleId non_default_style;
     {
@@ -8626,6 +8628,50 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style reopened post-noop clear reedit save should not revive the prior A1 value");
     check_reopened_clean_sheet_output(reopened_post_noop_clear_reedit_output, "Styled",
         "snapshot source-style reopened post-noop clear reedit save",
+        inspect_reopened_post_noop_clear_reedit_output);
+
+    const WorkbookEditorPublicCatalogSnapshot reopened_clear_reedit_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened_clear_reedit_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reopened_clear_reedit_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened_clear_reedit_editor);
+    reopened_clear_reedit_editor.save_as(reopened_post_noop_clear_reedit_noop_output);
+    check(!reopened_clear_reedit_sheet.has_pending_changes(),
+        "snapshot source-style reopened post-noop clear reedit no-op save should keep fresh handle clean");
+    check(reopened_clear_reedit_editor.pending_change_count() == 1,
+        "snapshot source-style reopened post-noop clear reedit no-op save should not record another handoff");
+    check(reopened_clear_reedit_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_clear_reedit_editor.pending_materialized_cell_count() == 0 &&
+            reopened_clear_reedit_editor.estimated_pending_materialized_memory_usage() == 0,
+        "snapshot source-style reopened post-noop clear reedit no-op save should keep dirty diagnostics clear");
+    check(reopened_clear_reedit_editor.pending_worksheet_edits().empty(),
+        "snapshot source-style reopened post-noop clear reedit no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened_clear_reedit_editor,
+        "snapshot source-style reopened post-noop clear reedit no-op save should not queue replacement diagnostics");
+    check(!reopened_clear_reedit_editor.last_edit_error().has_value(),
+        "snapshot source-style reopened post-noop clear reedit no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened_clear_reedit_editor,
+        reopened_clear_reedit_save_state_before_noop,
+        "snapshot source-style reopened post-noop clear reedit no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened_clear_reedit_editor,
+        reopened_clear_reedit_catalog_before_noop,
+        "snapshot source-style reopened post-noop clear reedit no-op save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style reopened post-noop clear reedit no-op save should leave the source workbook unchanged");
+    check(fastxlsx::test::read_zip_entries(reopened_post_noop_clear_noop_output) ==
+            reopened_post_noop_clear_noop_entries,
+        "snapshot source-style reopened post-noop clear reedit no-op save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(reopened_post_noop_clear_reedit_output) ==
+            reopened_post_noop_clear_reedit_entries,
+        "snapshot source-style reopened post-noop clear reedit no-op save should leave the re-edit output unchanged");
+    const auto reopened_post_noop_clear_reedit_noop_entries =
+        fastxlsx::test::read_zip_entries(reopened_post_noop_clear_reedit_noop_output);
+    check(reopened_post_noop_clear_reedit_noop_entries == reopened_post_noop_clear_reedit_entries,
+        "snapshot source-style reopened post-noop clear reedit no-op output should match the re-edit output");
+    check_reopened_clean_sheet_output(reopened_post_noop_clear_reedit_noop_output, "Styled",
+        "snapshot source-style reopened post-noop clear reedit no-op save",
         inspect_reopened_post_noop_clear_reedit_output);
 }
 

@@ -790,6 +790,11 @@ and source bytes before a safe retry writes `fullCalcOnLoad="1"` with no
 The after-shift delete-column retry path now matches the same no-op save
 stability contract after safe retry: clean diagnostics, stable public
 save/catalog state, no extra handoff, and byte-identical output.
+The after-shift full-calculation failed-save retry no-op outputs are now
+fresh-reopened as well: styled insert-row, insert-column, delete-row, and
+delete-column paths all read back their shifted sparse state, moved formula
+text/style, and removed old coordinates, with the insert-row path also pinning
+both shifted trailing cells `A5` and `C5`.
 Formula audit diagnostics now sit on top of that full-calculation mixing state:
 `formula_reference_audits()` remains read-only after a dirty shifted qualified
 formula and queued `request_full_calculation()`, reporting the shifted

@@ -20259,6 +20259,35 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
         "full-calc insert_rows failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc insert_rows failed save no-op save should leave safe retry output unchanged");
+    check_reopened_shift_output(
+        noop_output,
+        "full-calc insert_rows failed save no-op save",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "full-calc insert_rows failed save no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+                "full-calc insert_rows failed save no-op reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d4 =
+                reopened_sheet.try_cell("D4");
+            check(reopened_d4.has_value() &&
+                    reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d4->text_value() == "A3+B3" &&
+                    reopened_d4->has_style() &&
+                    reopened_d4->style_id().value() == styled_formula_style.value(),
+                "full-calc insert_rows failed save no-op reopened output should read shifted formula style");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("B1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("B4").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("C4").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A5").text_value() == "extra-c3" &&
+                    reopened_sheet.get_cell("C5").text_value() == "extra-c3",
+                "full-calc insert_rows failed save no-op reopened output should read shifted source and dirty rows");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "full-calc insert_rows failed save no-op reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift()
@@ -21487,6 +21516,34 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         "full-calc insert_columns styled formula failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc insert_columns styled formula failed save no-op save should leave safe retry output unchanged");
+    check_reopened_shift_output(
+        noop_output,
+        "full-calc insert_columns styled formula failed save no-op save",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc insert_columns styled formula failed save no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "full-calc insert_columns styled formula failed save no-op reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_f2->text_value() == "C1+D1" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "full-calc insert_columns styled formula failed save no-op reopened output should read shifted formula style");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("D1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A3").text_value() == "extra-c3",
+                "full-calc insert_columns styled formula failed save no-op reopened output should read shifted source cells");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "full-calc insert_columns styled formula failed save no-op reopened output should keep inserted coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_shift()
@@ -25013,6 +25070,31 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         "full-calc delete_rows failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc delete_rows failed save no-op save should leave safe retry output unchanged");
+    check_reopened_shift_output(
+        noop_output,
+        "full-calc delete_rows failed save no-op save",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "full-calc delete_rows failed save no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "full-calc delete_rows failed save no-op reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d1->text_value() == "#REF!+#REF!" &&
+                    reopened_d1->has_style() &&
+                    reopened_d1->style_id().value() == styled_formula_style.value(),
+                "full-calc delete_rows failed save no-op reopened output should read shifted #REF formula style");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("C1").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A2").text_value() == "extra-c3",
+                "full-calc delete_rows failed save no-op reopened output should read shifted source rows");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "full-calc delete_rows failed save no-op reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift()
@@ -25516,6 +25598,33 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         "full-calc delete_columns failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc delete_columns failed save no-op save should leave safe retry output unchanged");
+    check_reopened_shift_output(
+        noop_output,
+        "full-calc delete_columns failed save no-op save",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "full-calc delete_columns failed save no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "full-calc delete_columns failed save no-op reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "full-calc delete_columns failed save no-op reopened output should read shifted source number");
+            const std::optional<fastxlsx::CellValue> reopened_c2 =
+                reopened_sheet.try_cell("C2");
+            check(reopened_c2.has_value() &&
+                    reopened_c2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c2->text_value() == "#REF!+A1" &&
+                    reopened_c2->has_style() &&
+                    reopened_c2->style_id().value() == styled_formula_style.value(),
+                "full-calc delete_columns failed save no-op reopened output should read shifted #REF formula style");
+            check(reopened_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+                "full-calc delete_columns failed save no-op reopened output should read shifted source columns");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "full-calc delete_columns failed save no-op reopened output should keep old coordinates absent");
+        });
 }
 
 void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()

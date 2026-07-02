@@ -60622,6 +60622,89 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1500 - Split source-style snapshot public-state shard
+
+Type: public `WorksheetEditor` source-style snapshot test-organization shard
+split.
+
+Status: completed.
+
+Goal:
+Preserve the source-style snapshot readback chain while returning timeout margin
+to the base `public-state` shard.
+
+Coverage:
+- Registers `fastxlsx.workbook_editor.public-state-source-style` in
+  `tests/CMakeLists.txt` using the existing public-state test binary.
+- Adds `public-state-source-style` to the public-state test runner shard
+  selector.
+- Moves `test_public_worksheet_editor_snapshots_preserve_source_style_handles()`
+  out of the base `public-state` shard and into the new shard.
+- Keeps aggregate `fastxlsx.workbook_editor` regex coverage unchanged.
+
+Non-goals:
+- No production logic changes, public API changes, save behavior changes,
+  source-style semantics changes, style migration/merge, styles.xml repair,
+  sharedStrings migration, metadata/range repair, relationship repair,
+  calcChain rebuild, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-source-style`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state(-source-style)?$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
+### P8.1501 - Pin no-op save after isolated source-style clear
+
+Type: public `WorksheetEditor` source-style snapshot fresh-reopen clear no-op
+save regression.
+
+Status: completed.
+
+Goal:
+Prove the styled blank output produced by the fresh-reopen clear path remains
+byte-stable across a clean no-op `save_as()` inside the isolated source-style
+shard.
+
+Coverage:
+- Extends the source-style snapshot regression in
+  `fastxlsx.workbook_editor.public-state-source-style`.
+- Snapshots the fresh clear editor public catalog/save-state after the P8.1498
+  clear save.
+- Writes a clean no-op output and verifies dirty diagnostics remain clear,
+  pending handoff count does not advance, and public catalog/save-state stay
+  stable.
+- Verifies the no-op output package entries match the styled blank output, the
+  source workbook remains unchanged, and fresh readback still sees styled blank
+  `A1`, unstyled `B1`, and edited unstyled `A2`.
+
+Non-goals:
+- No production logic changes, in-place overwrite, commit/close behavior,
+  rollback, transaction replay, snapshot API changes, caller-supplied
+  non-default style writes, style migration/merge, styles.xml repair,
+  rich-format preservation, sharedStrings migration, metadata/range repair,
+  relationship repair, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-source-style`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-source-style$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

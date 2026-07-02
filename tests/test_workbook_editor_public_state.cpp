@@ -37,7 +37,8 @@ int g_failures = 0;
 bool is_workbook_editor_shard(std::string_view shard)
 {
     return shard == "all" || shard == "public-state" || shard == "public-state-shifts" ||
-           shard == "public-state-formula-audits" || shard == "public-state-reacquire";
+           shard == "public-state-source-style" || shard == "public-state-formula-audits" ||
+           shard == "public-state-reacquire";
 }
 
 std::string_view workbook_editor_shard_from_args(int argc, char* argv[])
@@ -7764,6 +7765,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-noop-output.xlsx");
     const std::filesystem::path reopened_post_noop_clear_output = artifact(
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-clear-output.xlsx");
+    const std::filesystem::path reopened_post_noop_clear_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-clear-noop-output.xlsx");
 
     fastxlsx::StyleId non_default_style;
     {
@@ -8473,6 +8476,47 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style reopened post-noop clear save should remove the prior A1 value");
     check_reopened_clean_sheet_output(reopened_post_noop_clear_output, "Styled",
         "snapshot source-style reopened post-noop clear save",
+        inspect_reopened_post_noop_clear_output);
+
+    const WorkbookEditorPublicCatalogSnapshot reopened_clear_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened_clear_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reopened_clear_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened_clear_editor);
+    reopened_clear_editor.save_as(reopened_post_noop_clear_noop_output);
+    check(!reopened_clear_sheet.has_pending_changes(),
+        "snapshot source-style reopened post-noop clear no-op save should keep fresh handle clean");
+    check(reopened_clear_editor.pending_change_count() == 1,
+        "snapshot source-style reopened post-noop clear no-op save should not record another handoff");
+    check(reopened_clear_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_clear_editor.pending_materialized_cell_count() == 0 &&
+            reopened_clear_editor.estimated_pending_materialized_memory_usage() == 0,
+        "snapshot source-style reopened post-noop clear no-op save should keep dirty diagnostics clear");
+    check(reopened_clear_editor.pending_worksheet_edits().empty(),
+        "snapshot source-style reopened post-noop clear no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened_clear_editor,
+        "snapshot source-style reopened post-noop clear no-op save should not queue replacement diagnostics");
+    check(!reopened_clear_editor.last_edit_error().has_value(),
+        "snapshot source-style reopened post-noop clear no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened_clear_editor,
+        reopened_clear_save_state_before_noop,
+        "snapshot source-style reopened post-noop clear no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened_clear_editor,
+        reopened_clear_catalog_before_noop,
+        "snapshot source-style reopened post-noop clear no-op save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style reopened post-noop clear no-op save should leave the source workbook unchanged");
+    check(fastxlsx::test::read_zip_entries(reopened_post_noop_clear_output) ==
+            reopened_post_noop_clear_entries,
+        "snapshot source-style reopened post-noop clear no-op save should leave the clear output unchanged");
+    const auto reopened_post_noop_clear_noop_entries =
+        fastxlsx::test::read_zip_entries(reopened_post_noop_clear_noop_output);
+    check(reopened_post_noop_clear_noop_entries == reopened_post_noop_clear_entries,
+        "snapshot source-style reopened post-noop clear no-op output should match the clear output");
+    check_reopened_clean_sheet_output(reopened_post_noop_clear_noop_output, "Styled",
+        "snapshot source-style reopened post-noop clear no-op save",
         inspect_reopened_post_noop_clear_output);
 }
 
@@ -50867,7 +50911,6 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_used_range_tracks_sparse_bounds();
             test_public_worksheet_editor_contains_cell_tracks_represented_state();
             test_public_worksheet_editor_row_and_column_cells_snapshot();
-            test_public_worksheet_editor_snapshots_preserve_source_style_handles();
             test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics();
             test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_diagnostic();
             test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
@@ -50896,6 +50939,10 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "public-state-source-style")) {
+            test_public_worksheet_editor_snapshots_preserve_source_style_handles();
         }
 
         if (should_run_workbook_editor_shard(shard, "public-state-shifts")) {

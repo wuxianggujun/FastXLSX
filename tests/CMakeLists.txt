@@ -1002,6 +1002,9 @@ add_fastxlsx_workbook_editor_shard(
     public-state fastxlsx_workbook_editor_public_state_tests 60
 )
 add_fastxlsx_workbook_editor_shard(
+    public-state-source-style fastxlsx_workbook_editor_public_state_tests 60
+)
+add_fastxlsx_workbook_editor_shard(
     public-state-shifts fastxlsx_workbook_editor_public_state_tests 60
 )
 add_fastxlsx_workbook_editor_shard(

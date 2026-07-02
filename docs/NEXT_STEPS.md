@@ -4423,6 +4423,12 @@ the source plus earlier no-op output remain unchanged.
 That second-generation no-op output is now reopened again, clears the styled
 `A1`, and saves a styled blank output to prove the source style handle still
 survives value clearing after repeated reopen/no-op cycles.
+The same source-style snapshot chain now runs under a dedicated
+`fastxlsx.workbook_editor.public-state-source-style` CTest shard, preserving the
+coverage while returning timeout margin to the base public-state shard.
+That isolated shard now also no-op saves the styled blank output, proving the
+clear output remains byte-stable and readable without loading the base
+public-state shard.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

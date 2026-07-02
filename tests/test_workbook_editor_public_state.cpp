@@ -40065,6 +40065,9 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save after retry clean reacquire should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift failed save after retry clean reacquire should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed shift failed save after retry clean reacquire should preserve catalog names");
@@ -43676,6 +43679,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid mutations noop save should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid mutations noop save should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_mutations,
         "shift reacquire invalid mutations noop save");
     check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
@@ -43702,6 +43708,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid mutations noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid mutations noop save should keep replacement diagnostics clear");
     check(editor.last_edit_error() == invalid_error,
         "shift reacquire invalid mutations noop save should preserve invalid mutation diagnostic");
     check_workbook_editor_public_save_state_preserved(
@@ -43858,6 +43867,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid shifts noop save should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid shifts noop save should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_shifts,
         "shift reacquire invalid shifts noop save");
     check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
@@ -43884,6 +43896,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid shifts noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid shifts noop save should keep replacement diagnostics clear");
     check(editor.last_edit_error() == invalid_shift_error,
         "shift reacquire invalid shifts noop save should preserve invalid shift diagnostic");
     check_workbook_editor_public_save_state_preserved(
@@ -44316,6 +44331,9 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire after retry clean reacquire should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire after retry clean reacquire should not queue replacement diagnostics");
     check(editor.pending_change_count() == 2,
         "shift reacquire after retry clean reacquire should not add handoffs");
     check(after_retry.get_cell("A3").text_value() == "placeholder-a2" &&

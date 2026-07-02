@@ -61685,6 +61685,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1527 - Align shift retry and invalid-operation diagnostics
+
+Type: public `WorksheetEditor` shift retry clean-reacquire and
+invalid-operation no-op diagnostics regression.
+
+Status: completed.
+
+Goal:
+Apply the replacement-diagnostics parity contract to retry clean-reacquire and
+invalid-operation no-op paths in the shift public-state shard.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-shifts`.
+- Adds replacement-diagnostics checks to renamed retry clean-reacquire,
+  ordinary retry clean-reacquire, invalid-mutation no-op, and invalid-shift
+  no-op paths.
+- Keeps existing dirty materialized diagnostics, invalid-operation
+  `last_edit_error()` preservation, catalog/save-state snapshots,
+  byte-stable package checks, and fresh readback unchanged.
+
+Non-goals:
+- No production logic changes, row/column shift semantic changes, formula
+  translation changes, style id preservation changes, rename behavior changes,
+  handle sharing changes, failed-save guard behavior changes,
+  invalid-operation validation changes, error lifetime behavior changes, save
+  behavior changes, replacement API changes, rollback or transactions,
+  metadata range synchronization, sharedStrings/styles migration, relationship
+  repair, calcChain rebuild, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

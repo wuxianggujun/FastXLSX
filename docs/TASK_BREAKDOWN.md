@@ -62973,6 +62973,46 @@ Verification:
 - `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_insert_formula --scenario generated_in_memory_full_calc_insert_formula_noop_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-insert-formula --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
   passes.
 
+### P8.1555 - Add generated full-calc remaining shift QA
+
+Type: opt-in workbook-editor generated QA coverage for remaining public
+`WorksheetEditor` moving-formula shifts plus workbook full-calculation metadata.
+
+Status: completed.
+
+Goal:
+Extend P8.1554 from row insertion to the remaining generated moving-formula
+shift directions so delete-column, insert-column, and delete-row paths also
+prove full-calculation metadata and no-op output stability.
+
+Coverage:
+- Adds `generated_in_memory_full_calc_delete_column_formula`,
+  `generated_in_memory_full_calc_insert_column_formula`,
+  `generated_in_memory_full_calc_delete_row_formula`, and no-op-save companions
+  to `tools/workbook_editor_qa_tool.cpp` and `tools/run_workbook_editor_qa.py`.
+- Reuses the existing generated moving-formula source workbooks and public
+  `WorksheetEditor::delete_columns(1, 1)`, `insert_columns(2, 1)`, and
+  `delete_rows(1, 1)` mutation shapes.
+- Verifies translated shifted formulas, deleted/stale coordinate absence,
+  untouched sheet preservation, workbook `fullCalcOnLoad="1"`, absence of
+  `xl/calcChain.xml`, `openpyxl` readback, and byte-identical no-op outputs.
+- Wires the optional Excel COM sidecar to reuse the existing moving-formula
+  readback checks for the new full-calculation scenarios.
+
+Non-goals:
+- No production logic changes, formula evaluation, cached value preservation,
+  formula-translation semantic changes, calcChain rebuild/generation,
+  metadata/range repair, sharedStrings/styles migration, relationship repair,
+  default CTest/CI expansion, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_delete_column_formula --scenario generated_in_memory_full_calc_delete_column_formula_noop_save --scenario generated_in_memory_full_calc_insert_column_formula --scenario generated_in_memory_full_calc_insert_column_formula_noop_save --scenario generated_in_memory_full_calc_delete_row_formula --scenario generated_in_memory_full_calc_delete_row_formula_noop_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-remaining-shifts --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

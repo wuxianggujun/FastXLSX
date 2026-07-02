@@ -1828,24 +1828,36 @@ Report run_generated_in_memory_full_calc_insert_formula_noop_save(const CliOptio
 
 Report run_generated_in_memory_delete_column_formula_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_delete_column_formula_source(resolve_generated_source(
-        options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-noop-source.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-source.xlsx"));
-    report.output = resolve_output_path(options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-noop-output.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-output.xlsx");
+    const std::string_view source_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-column-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-column-formula-source.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-source.xlsx");
+    const std::string_view output_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-column-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-column-formula-output.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-delete-column-formula-output.xlsx");
+    report.source = write_in_memory_delete_column_formula_source(
+        resolve_generated_source(options, source_name));
+    report.output = resolve_output_path(options, output_name);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).delete_columns(1,1)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -1856,6 +1868,10 @@ Report run_generated_in_memory_delete_column_formula_impl(
         "Original Data!D1 should shift to Data!C1",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the delete-column formula shift should be byte-identical");
@@ -1865,6 +1881,9 @@ Report run_generated_in_memory_delete_column_formula_impl(
     WorksheetEditor data = editor.worksheet("Data");
     data.delete_columns(1, 1);
     require_formula_cell(data, "B1", "A1+C1");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     save_as_with_optional_noop(
         editor,
         report,
@@ -1884,27 +1903,50 @@ Report run_generated_in_memory_delete_column_formula_noop_save(const CliOptions&
     return run_generated_in_memory_delete_column_formula_impl(options, true);
 }
 
+Report run_generated_in_memory_full_calc_delete_column_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_delete_column_formula_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_delete_column_formula_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_delete_column_formula_impl(options, true, true);
+}
+
 Report run_generated_in_memory_insert_column_formula_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_insert_column_formula_source(resolve_generated_source(
-        options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-noop-source.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-source.xlsx"));
-    report.output = resolve_output_path(options,
-        verify_noop_save
-            ? "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-noop-output.xlsx"
-            : "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-output.xlsx");
+    const std::string_view source_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-column-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-column-formula-source.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-source.xlsx");
+    const std::string_view output_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-column-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-column-formula-output.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-insert-column-formula-output.xlsx");
+    report.source = write_in_memory_insert_column_formula_source(
+        resolve_generated_source(options, source_name));
+    report.output = resolve_output_path(options, output_name);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_columns(2,1)",
         "worksheet(Data).set_cell(B1,text)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -1915,6 +1957,10 @@ Report run_generated_in_memory_insert_column_formula_impl(
         "Original Data!C1 formula should shift to Data!D1 and translate B1*2 to C1*2",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the insert-column formula shift should be byte-identical");
@@ -1926,6 +1972,9 @@ Report run_generated_in_memory_insert_column_formula_impl(
     require_formula_cell(data, "D1", "C1*2");
     data.set_cell(1, 2, CellValue::text("inserted-col"));
     require_formula_cell(data, "D1", "C1*2");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     save_as_with_optional_noop(
         editor,
         report,
@@ -1945,24 +1994,49 @@ Report run_generated_in_memory_insert_column_formula_noop_save(const CliOptions&
     return run_generated_in_memory_insert_column_formula_impl(options, true);
 }
 
+Report run_generated_in_memory_full_calc_insert_column_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_column_formula_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_insert_column_formula_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_insert_column_formula_impl(options, true, true);
+}
+
 Report run_generated_in_memory_delete_row_formula_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_delete_row_formula_source(resolve_generated_source(
-        options,
-        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-noop-source.xlsx"
-                         : "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-source.xlsx"));
-    report.output = resolve_output_path(options,
-        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-noop-output.xlsx"
-                         : "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-output.xlsx");
+    const std::string_view source_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-row-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-row-formula-source.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-source.xlsx");
+    const std::string_view output_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-row-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-delete-row-formula-output.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-delete-row-formula-output.xlsx");
+    report.source = write_in_memory_delete_row_formula_source(
+        resolve_generated_source(options, source_name));
+    report.output = resolve_output_path(options, output_name);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).delete_rows(1,1)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -1973,6 +2047,10 @@ Report run_generated_in_memory_delete_row_formula_impl(
         "Original Data!A3 should shift to Data!A2",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the delete-row formula shift should be byte-identical");
@@ -1982,6 +2060,9 @@ Report run_generated_in_memory_delete_row_formula_impl(
     WorksheetEditor data = editor.worksheet("Data");
     data.delete_rows(1, 1);
     require_formula_cell(data, "B1", "A1+A2");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     save_as_with_optional_noop(
         editor,
         report,
@@ -1999,6 +2080,17 @@ Report run_generated_in_memory_delete_row_formula(const CliOptions& options)
 Report run_generated_in_memory_delete_row_formula_noop_save(const CliOptions& options)
 {
     return run_generated_in_memory_delete_row_formula_impl(options, true);
+}
+
+Report run_generated_in_memory_full_calc_delete_row_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_delete_row_formula_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_delete_row_formula_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_delete_row_formula_impl(options, true, true);
 }
 
 Report run_generated_in_memory_stationary_formula_shift_impl(
@@ -3760,17 +3852,35 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_in_memory_delete_column_formula_noop_save") {
         return run_generated_in_memory_delete_column_formula_noop_save(options);
     }
+    if (options.scenario == "generated_in_memory_full_calc_delete_column_formula") {
+        return run_generated_in_memory_full_calc_delete_column_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_delete_column_formula_noop_save") {
+        return run_generated_in_memory_full_calc_delete_column_formula_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_insert_column_formula") {
         return run_generated_in_memory_insert_column_formula(options);
     }
     if (options.scenario == "generated_in_memory_insert_column_formula_noop_save") {
         return run_generated_in_memory_insert_column_formula_noop_save(options);
     }
+    if (options.scenario == "generated_in_memory_full_calc_insert_column_formula") {
+        return run_generated_in_memory_full_calc_insert_column_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_insert_column_formula_noop_save") {
+        return run_generated_in_memory_full_calc_insert_column_formula_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_delete_row_formula") {
         return run_generated_in_memory_delete_row_formula(options);
     }
     if (options.scenario == "generated_in_memory_delete_row_formula_noop_save") {
         return run_generated_in_memory_delete_row_formula_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_delete_row_formula") {
+        return run_generated_in_memory_full_calc_delete_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_delete_row_formula_noop_save") {
+        return run_generated_in_memory_full_calc_delete_row_formula_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_stationary_formula_shift") {
         return run_generated_in_memory_stationary_formula_shift(options);

@@ -44,6 +44,10 @@ That row-insert generated QA path now also has full-calculation variants:
 queue `request_full_calculation()`, require workbook `fullCalcOnLoad="1"`, keep
 `xl/calcChain.xml` absent, and still validate the shifted formula row plus
 untouched sheet readback.
+The remaining moving-formula directions now have matching full-calculation
+generated QA variants too: delete-column, insert-column, and delete-row all
+queue `request_full_calculation()`, verify translated formulas and untouched
+sheet readback, and include byte-stable no-op save companions.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

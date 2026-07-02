@@ -39758,6 +39758,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "renamed shift reacquire no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift reacquire no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -40094,6 +40096,9 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift failed save after retry no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift failed save after retry no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift failed save after retry no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -40367,6 +40372,9 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift option mismatch no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift option mismatch no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift option mismatch no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -40553,6 +40561,9 @@ void test_public_worksheet_editor_shift_after_rename_missing_query_preserves_pla
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift missing query no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift missing query no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift missing query no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -40762,6 +40773,9 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift invalid reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift invalid reads no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift invalid reads no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -40984,6 +40998,9 @@ void test_public_worksheet_editor_shift_after_rename_invalid_mutations_preserve_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift invalid mutations no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift invalid mutations no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed shift invalid mutations no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

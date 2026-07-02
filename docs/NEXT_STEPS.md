@@ -324,6 +324,9 @@ guard recovery outputs.
 Rename-after-shift failed-save no-op retry paths now also keep replacement
 diagnostics empty for row insert, delete-column, and delete-row styled formula
 sessions while preserving shifted formulas, style ids, and source package bytes.
+Rename-after-shift planned-session no-op paths now extend that diagnostics
+contract to reacquire, failed-save retry, option-mismatch, missing-query,
+invalid-read, and invalid-mutation sessions.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

@@ -795,6 +795,9 @@ fresh-reopened as well: styled insert-row, insert-column, delete-row, and
 delete-column paths all read back their shifted sparse state, moved formula
 text/style, and removed old coordinates, with the insert-row path also pinning
 both shifted trailing cells `A5` and `C5`.
+Those same after-shift no-op readbacks now also materialize `Untouched` through
+a fresh editor, verifying the companion sheet remains clean and source-backed
+with `keep-me` / `99.0` after `Data`-only edits.
 Formula audit diagnostics now sit on top of that full-calculation mixing state:
 `formula_reference_audits()` remains read-only after a dirty shifted qualified
 formula and queued `request_full_calculation()`, reporting the shifted

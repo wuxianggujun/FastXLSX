@@ -19642,6 +19642,30 @@ void check_reopened_shift_output(
         prefix + " reopened readback should keep last_edit_error empty");
 }
 
+void check_reopened_untouched_keep_me_output(
+    const std::filesystem::path& output,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output,
+        "Untouched",
+        scenario,
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "reopened Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "reopened Untouched output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "reopened Untouched output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "reopened Untouched output should keep source-backed B1");
+        });
+}
+
 void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -20288,6 +20312,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
                     !reopened_sheet.try_cell("C3").has_value(),
                 "full-calc insert_rows failed save no-op reopened output should keep old coordinates absent");
         });
+    check_reopened_untouched_keep_me_output(
+        noop_output, "full-calc insert_rows failed save no-op Untouched");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift()
@@ -21544,6 +21570,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
                     !reopened_sheet.try_cell("C2").has_value(),
                 "full-calc insert_columns styled formula failed save no-op reopened output should keep inserted coordinates absent");
         });
+    check_reopened_untouched_keep_me_output(
+        noop_output, "full-calc insert_columns styled formula failed save no-op Untouched");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_shift()
@@ -25095,6 +25123,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
                     !reopened_sheet.try_cell("A3").has_value(),
                 "full-calc delete_rows failed save no-op reopened output should keep old coordinates absent");
         });
+    check_reopened_untouched_keep_me_output(
+        noop_output, "full-calc delete_rows failed save no-op Untouched");
 }
 
 void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift()
@@ -25625,6 +25655,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
                     !reopened_sheet.try_cell("A3").has_value(),
                 "full-calc delete_columns failed save no-op reopened output should keep old coordinates absent");
         });
+    check_reopened_untouched_keep_me_output(
+        noop_output, "full-calc delete_columns failed save no-op Untouched");
 }
 
 void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()

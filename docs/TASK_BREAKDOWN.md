@@ -59701,6 +59701,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1476 - Reopen untouched sheet after after-shift retry no-op outputs
+
+Type: default public-state cross-sheet readback regression for no-op outputs
+after successful after-shift full-calculation failed-save retries.
+
+Status: completed.
+
+Goal:
+Prove the after-shift full-calculation failed-save retry no-op outputs remain
+readable not only for the edited `Data` sheet, but also for the untouched
+companion sheet preserved by the package save.
+
+Coverage:
+- Adds a shared public-state test helper that fresh-reopens `Untouched` and
+  verifies a clean materialized sheet with source-backed `A1="keep-me"` and
+  `B1=99.0`.
+- Extends the after-shift styled `insert_rows()`, `insert_columns()`,
+  `delete_rows()`, and `delete_columns()` full-calculation failed-save retry
+  no-op output paths.
+- Keeps the existing `Data` shifted sparse readback and byte-equality checks in
+  place.
+
+Non-goals:
+- No production logic changes, broad multi-sheet transaction semantics, sheet
+  dependency synchronization, source reload semantics changes, commit/close
+  semantics, in-place overwrite mode, metadata/range repair, relationship
+  repair, sharedStrings/styles migration, calcChain rebuild, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

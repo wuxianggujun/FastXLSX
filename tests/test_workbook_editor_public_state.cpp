@@ -22439,6 +22439,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "insert_columns styled source formula post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_columns styled source formula post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "insert_columns styled source formula post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -22499,6 +22501,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "insert_columns styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_columns styled source formula post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "insert_columns styled source formula post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -26196,7 +26200,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
     check(editor.pending_change_count() == 1,
         "delete_rows styled source formula post-noop edit should retain the prior handoff before save");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
-            editor.pending_materialized_cell_count() == 6,
+            editor.pending_materialized_cell_count() == 6 &&
+            editor.estimated_pending_materialized_memory_usage() == sheet.estimated_memory_usage(),
         "delete_rows styled source formula post-noop edit should report the dirty materialized sheet");
 
     editor.save_as(post_noop_output);
@@ -26209,6 +26214,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_rows styled source formula post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_rows styled source formula post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_rows styled source formula post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -26268,6 +26275,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_rows styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_rows styled source formula post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_rows styled source formula post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -27339,7 +27348,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
     check(editor.pending_change_count() == 1,
         "delete_columns styled source formula post-noop edit should retain the prior handoff before save");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
-            editor.pending_materialized_cell_count() == 5,
+            editor.pending_materialized_cell_count() == 5 &&
+            editor.estimated_pending_materialized_memory_usage() == sheet.estimated_memory_usage(),
         "delete_columns styled source formula post-noop edit should report the dirty materialized sheet");
 
     editor.save_as(post_noop_output);
@@ -27352,6 +27362,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_columns styled source formula post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_columns styled source formula post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_columns styled source formula post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -27414,6 +27426,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_columns styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_columns styled source formula post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_columns styled source formula post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

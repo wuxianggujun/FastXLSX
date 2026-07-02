@@ -60940,6 +60940,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1508 - Align remaining styled shift post-noop diagnostics
+
+Type: public `WorksheetEditor` styled source-formula row/column shift
+post-noop diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove the remaining styled source-formula shift post-noop save chains keep
+replacement diagnostics empty and dirty materialized memory aligned where those
+saved sessions are dirtied again.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-shifts`.
+- Adds post-noop save and final clean no-op replacement-diagnostics checks to
+  styled `insert_columns()`, `delete_rows()`, and `delete_columns()` source
+  formula shift regressions.
+- Extends delete-side styled source-formula post-noop edits so aggregate dirty
+  materialized memory matches the active `WorksheetEditor` before save.
+
+Non-goals:
+- No production logic changes, save behavior changes, replacement API changes,
+  row/column metadata synchronization, dense row/column operations, formula
+  evaluation, broad formula repair beyond existing shifted formula text,
+  metadata/range repair, sharedStrings/styles migration, relationship repair,
+  calcChain rebuild, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

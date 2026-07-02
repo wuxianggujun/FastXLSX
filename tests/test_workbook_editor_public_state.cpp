@@ -33513,6 +33513,8 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed column formula audit shift post-save reacquire should keep materialized diagnostics clean");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed column formula audit shift");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
         check_public_state_formula_audits_preserve_editor_diagnostics(
             editor, "renamed column formula audit shift post-save reacquire formula audit");
@@ -33996,6 +33998,19 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed column formula shift save_as should clear dirty materialized diagnostics");
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed column formula shift post-save reacquire should reuse a clean saved session");
+    const std::optional<fastxlsx::CellValue> reacquired_e2 =
+        reacquired.try_cell("E2");
+    check(reacquired_e2.has_value() &&
+            reacquired_e2->kind() == fastxlsx::CellValueKind::Formula &&
+            reacquired_e2->text_value() == "B1+C1" &&
+            reacquired_e2->has_style() &&
+            reacquired_e2->style_id().value() == styled_formula_style.value(),
+        "renamed column formula shift post-save reacquire should read translated styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed column formula shift");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");

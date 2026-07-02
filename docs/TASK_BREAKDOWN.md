@@ -62198,6 +62198,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1539 - Pin insert-column renamed formula saved-reacquire diagnostics
+
+Type: public `WorksheetEditor` insert-column renamed styled-formula post-save
+reacquire diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove insert-column renamed styled-formula paths keep public diagnostics clean
+after the first save and matching planned-sheet reacquire, before the next
+saved-session read or formula-audit scan.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-formula-audits`.
+- Adds saved-reacquire diagnostics checks to the direct renamed column
+  styled-formula shift and the renamed column formula-audit shift.
+- Asserts only the planned sheet name is visible, only the rename plus saved
+  materialized handoff are counted, replacement diagnostics are empty, and
+  materialized diagnostics remain empty before the next read or audit.
+- Leaves existing first-save output, matching reacquire behavior, insert-column
+  formula translation, style id preservation, formula-audit output, byte-stable
+  no-op saves, and fresh readback unchanged.
+
+Non-goals:
+- No production logic changes, materialization behavior changes, formula
+  translation changes, style id preservation changes, insert-column semantic
+  changes, formula-audit behavior changes, rename behavior changes, save
+  behavior changes, replacement APIs, rollback or transactions,
+  sharedStrings/styles migration, relationship repair, calcChain rebuild,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-formula-audits`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-formula-audits$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

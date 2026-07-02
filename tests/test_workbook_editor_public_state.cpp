@@ -32669,18 +32669,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire same-sheet guard no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire same-sheet guard no-op output should match the recovery output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire same-sheet guard no-op output");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    const std::optional<fastxlsx::CellValue> reopened_noop_recovered_cell =
-        reopened_noop_sheet.try_cell("C5");
-    check(reopened_noop_recovered_cell.has_value() &&
-            reopened_noop_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
-            reopened_noop_recovered_cell->text_value() == "same-sheet-guard-recovery-c5",
-        "renamed full-calc formula audit saved reacquire same-sheet guard no-op output should read recovered text");
+    check_public_state_renamed_full_calc_noop_formula_audit_readback(
+        editor, noop_output, shifted_formula, styled_formula_style,
+        "same-sheet-guard-recovery-c5",
+        "renamed full-calc formula audit saved reacquire same-sheet guard recovery");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_same_sheet_guard_noop_save()

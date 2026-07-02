@@ -356,6 +356,9 @@ formula plus the retried `C5` text cell.
 The adjacent invalid-operation recovery/no-op branches now share that same
 no-op formula-audit/readback helper for invalid mutation, invalid read, invalid
 shift, missing-query, and option-mismatch recovery saves.
+The same-sheet guard recovery branch now uses that helper too, so its post-guard
+valid `C5` recovery save and subsequent clean no-op save recheck shifted
+materialized formula audits, source-audit stability, and fresh no-op readback.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

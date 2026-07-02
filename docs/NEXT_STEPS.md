@@ -783,6 +783,9 @@ contract after `Data`-only shifts.
 The before-shift failed-save/no-op paths now also reopen the original source
 package after the retry sequence, matching the after-shift source preservation
 evidence for the original `D2` styled formula and untouched companion sheet.
+The row/column shift and full-calculation shift readback matrix now runs under a
+separate `fastxlsx.workbook_editor.public-state-shifts` CTest shard, preserving
+coverage while giving the base public-state shard more 60-second timeout margin.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

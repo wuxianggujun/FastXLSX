@@ -36,7 +36,7 @@ int g_failures = 0;
 
 bool is_workbook_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "public-state";
+    return shard == "all" || shard == "public-state" || shard == "public-state-shifts";
 }
 
 std::string_view workbook_editor_shard_from_args(int argc, char* argv[])
@@ -50065,6 +50065,9 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_rows_noop_invalid_and_range();
             test_public_worksheet_editor_erase_column_removes_sparse_column();
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "public-state-shifts")) {
             test_public_worksheet_editor_insert_rows_shifts_sparse_records();
             test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift();
             test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_save_state();
@@ -50112,6 +50115,9 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift_failed_save_preserves_state();
             test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics();
             test_public_worksheet_editor_full_calculation_source_formula_audits_preserve_source_scan();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "public-state")) {
             test_public_worksheet_editor_full_calculation_renamed_source_formula_audits_preserve_source_scan();
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_preserve_materialized_state();
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_failed_save_preserve_state();

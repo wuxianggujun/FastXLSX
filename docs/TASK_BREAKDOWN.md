@@ -59864,6 +59864,49 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1480 - Split public-state shift CTest shard
+
+Type: default test-shard maintenance for the public `WorksheetEditor`
+row/column shift and full-calculation shift readback matrix.
+
+Status: completed.
+
+Goal:
+Preserve the existing row/column shift and full-calculation shift coverage while
+giving the base public-state CTest shard more timeout margin under the 60-second
+test boundary.
+
+Coverage:
+- Adds `public-state-shifts` as an accepted shard for
+  `fastxlsx_workbook_editor_public_state_tests`.
+- Registers `fastxlsx.workbook_editor.public-state-shifts` in CTest with the
+  same 60-second timeout.
+- Moves the row/column shift, formula translation, and full-calculation shift
+  readback matrix from the base `public-state` shard into the new shard.
+- Keeps `--shard=all` and `ctest -R "fastxlsx\\.workbook_editor"` covering the
+  full matrix.
+
+Non-goals:
+- No production logic changes, API changes, new edit behavior, save/commit
+  semantics, source overwrite support, rollback transactions, metadata/range
+  repair, relationship repair, sharedStrings/styles migration, calcChain
+  rebuild, broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

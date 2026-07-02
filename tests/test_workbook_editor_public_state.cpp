@@ -34089,6 +34089,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula reacquire");
     fastxlsx::WorksheetEditor sheet = editor.worksheet("RenamedData");
     sheet.insert_rows(2, 2);
 
@@ -34303,6 +34305,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserv
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula failed save");
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
         editor.worksheet_catalog();
@@ -34519,6 +34523,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_option_mismatch_pre
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula option mismatch");
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
@@ -34769,6 +34775,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_mutations_p
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula invalid mutations");
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
@@ -35025,6 +35033,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_missing_query_prese
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula missing query");
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
@@ -35273,6 +35283,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_invalid_reads_prese
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula invalid reads");
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
@@ -35545,6 +35557,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_snapshot_reads_pres
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
+    check_workbook_editor_renamed_formula_pre_materialization_diagnostics(
+        editor, "renamed formula snapshot reads");
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
     const std::vector<std::string> expected_planned_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =

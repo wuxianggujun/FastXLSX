@@ -2215,6 +2215,10 @@ The same pre-materialization diagnostics contract now covers delete-side
 renamed styled-formula and formula-audit paths as well, including basic
 delete-row/delete-column formula shifts and delete-row/delete-column
 formula-audit `#REF!` scenarios.
+Insert-row renamed styled-formula recovery/reacquire paths now share that
+contract too: reacquire, failed-save, option-mismatch, invalid-mutation,
+missing-query, invalid-read, and snapshot-read paths all prove rename-only
+state stays free of replacement/materialized diagnostics before materialization.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

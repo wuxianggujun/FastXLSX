@@ -4402,6 +4402,10 @@ The same source-style snapshot path now also performs a second clean no-op
 `save_as()` after the first byte-stable no-op output, snapshots public
 catalog/save-state before that save, requires identical package entries, and
 fresh-reopens the second no-op workbook through the same styled snapshot checks.
+After that second clean no-op, the same saved materialized handle is now edited
+again: value-only A1/B1 changes preserve the styled `A1` handle, keep `B1`
+unstyled, leave earlier outputs unchanged, and fresh-reopen the post-noop output
+through all covered snapshot overloads.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

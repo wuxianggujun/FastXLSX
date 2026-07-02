@@ -62750,6 +62750,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1552 - Pin delete-side saved-reacquire audit contract
+
+Type: public `WorksheetEditor` renamed delete-side formula-audit saved-session
+reacquire diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove renamed delete-row/delete-column formula-audit paths keep the same
+`#REF!` filtering and source-isolated surviving-reference audit contract after
+the first successful save and matching clean session reacquire.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-formula-audits`.
+- Adds a shared delete-side saved-reacquire formula-audit helper for the
+  renamed row-delete and column-delete formula-audit paths.
+- Asserts the clean reacquired saved session keeps materialized diagnostics
+  empty, skips the translated `Data!#REF!` token, reports only the surviving
+  shifted qualified reference, and preserves source formula-audit scanning over
+  the original source XML.
+
+Non-goals:
+- No production logic changes, delete semantics changes, `#REF!` translation
+  changes, formula-audit behavior changes, source-scan behavior changes,
+  saved-session reacquire behavior changes, materialization behavior changes,
+  style id preservation changes, rename behavior changes, save behavior
+  changes, replacement APIs, rollback or transactions, sharedStrings/styles
+  migration, relationship repair, calcChain rebuild, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-formula-audits`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-formula-audits$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

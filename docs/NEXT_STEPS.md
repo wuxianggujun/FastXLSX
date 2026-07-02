@@ -375,6 +375,10 @@ Insert-side renamed formula-audit post-save reacquire checks now use the same
 saved-session helper shape: clean reacquired sessions keep materialized
 diagnostics empty, preserve both shifted qualified references, and keep source
 formula-audit scans isolated on the original source XML.
+Delete-side renamed formula-audit post-save reacquire checks now use the same
+saved-session helper shape for the `#REF!` paths: clean reacquired sessions keep
+materialized diagnostics empty, skip the translated `Data!#REF!` token, preserve
+only the surviving qualified reference, and keep source scans isolated.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

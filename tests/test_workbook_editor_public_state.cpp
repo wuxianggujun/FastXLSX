@@ -976,6 +976,39 @@ void check_public_state_renamed_delete_formula_noop_audit_readback(
         prefix + " no-op output");
 }
 
+void check_public_state_renamed_delete_formula_saved_reacquire_audit(
+    const fastxlsx::WorkbookEditor& editor,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    std::string_view qualified_reference_text,
+    std::string_view reference_text,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " reacquire");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " reacquire should keep diagnostics clean");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, prefix);
+    check(reacquired_audits.size() == 1,
+        prefix + " reacquire should keep only the surviving reference");
+    check(find_public_state_formula_audit(
+              reacquired_audits, row, column, "Data!#REF!") == nullptr,
+        prefix + " reacquire should still skip Data!#REF!");
+    check_public_state_renamed_shift_formula_audit(
+        reacquired_audits, row, column, expected_formula,
+        qualified_reference_text, reference_text,
+        prefix + " reacquire surviving reference");
+    check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+        editor, prefix + " post-save reacquire source scan");
+}
+
 void check_public_state_renamed_insert_formula_noop_audit_readback(
     const fastxlsx::WorkbookEditor& editor,
     const std::filesystem::path& noop_output,
@@ -33845,25 +33878,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
         check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
             "renamed delete-row formula audit reacquire should reuse a clean saved session");
-        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
-            check_public_state_formula_audits_preserve_editor_diagnostics(
-                editor, "renamed delete-row formula audit reacquire");
-        check(editor.pending_materialized_worksheet_names().empty() &&
-                editor.pending_materialized_cell_count() == 0 &&
-                editor.estimated_pending_materialized_memory_usage() == 0,
-            "renamed delete-row formula audit reacquire should keep diagnostics clean");
-        check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
-            editor, "renamed delete-row formula audit");
-        check(reacquired_audits.size() == 1,
-            "renamed delete-row formula audit reacquire should keep only the surviving reference");
-        check(find_public_state_formula_audit(
-                  reacquired_audits, 1, 4, "Data!#REF!") == nullptr,
-            "renamed delete-row formula audit reacquire should still skip Data!#REF!");
-        check_public_state_renamed_shift_formula_audit(
-            reacquired_audits, 1, 4, expected_formula, "Data!B1", "B1",
-            "renamed delete-row formula audit reacquire surviving B reference");
-        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
-            editor, "renamed delete-row formula audit post-save reacquire source scan");
+        check_public_state_renamed_delete_formula_saved_reacquire_audit(
+            editor, 1, 4, expected_formula, "Data!B1", "B1",
+            "renamed delete-row formula audit");
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -34020,25 +34037,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
         fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
         check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
             "renamed delete-column formula audit reacquire should reuse a clean saved session");
-        const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> reacquired_audits =
-            check_public_state_formula_audits_preserve_editor_diagnostics(
-                editor, "renamed delete-column formula audit reacquire");
-        check(editor.pending_materialized_worksheet_names().empty() &&
-                editor.pending_materialized_cell_count() == 0 &&
-                editor.estimated_pending_materialized_memory_usage() == 0,
-            "renamed delete-column formula audit reacquire should keep diagnostics clean");
-        check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
-            editor, "renamed delete-column formula audit");
-        check(reacquired_audits.size() == 1,
-            "renamed delete-column formula audit reacquire should keep only the surviving reference");
-        check(find_public_state_formula_audit(
-                  reacquired_audits, 2, 3, "Data!#REF!") == nullptr,
-            "renamed delete-column formula audit reacquire should still skip Data!#REF!");
-        check_public_state_renamed_shift_formula_audit(
-            reacquired_audits, 2, 3, expected_formula, "Data!A2", "A2",
-            "renamed delete-column formula audit reacquire surviving A reference");
-        check_public_state_delete_formula_source_audit_preserves_shift_fixture(
-            editor, "renamed delete-column formula audit post-save reacquire source scan");
+        check_public_state_renamed_delete_formula_saved_reacquire_audit(
+            editor, 2, 3, expected_formula, "Data!A2", "A2",
+            "renamed delete-column formula audit");
 
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");

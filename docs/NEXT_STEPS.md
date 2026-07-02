@@ -777,6 +777,9 @@ empty, avoid extra handoffs, and emit byte-identical no-op outputs.
 Those before-shift no-op outputs are now fresh-reopened as well, proving the
 byte-stable packages remain readable with the shifted sparse counts/ranges,
 source cells, removed old coordinates, and moved formula text/style intact.
+Those before-shift readbacks now also open `Untouched` through a fresh editor,
+pinning the same source-backed `keep-me` / `99.0` companion-sheet preservation
+contract after `Data`-only shifts.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

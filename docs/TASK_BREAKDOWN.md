@@ -59741,6 +59741,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1477 - Reopen untouched sheet after before-shift retry no-op outputs
+
+Type: default public-state cross-sheet readback regression for no-op outputs
+after successful before-shift full-calculation failed-save retries.
+
+Status: completed.
+
+Goal:
+Mirror P8.1476 for the before-shift ordering by proving the reverse
+full-calculation failed-save retry no-op outputs keep the untouched companion
+sheet readable through fresh `WorkbookEditor` materialization.
+
+Coverage:
+- Reuses the shared `Untouched` readback helper added for P8.1476.
+- Extends the before-shift styled `insert_rows()`, `insert_columns()`,
+  `delete_rows()`, and `delete_columns()` full-calculation failed-save retry
+  no-op output paths.
+- Verifies the companion sheet remains clean and source-backed with
+  `A1="keep-me"` and `B1=99.0` after `Data`-only shifts.
+- Keeps the existing `Data` shifted sparse readback and byte-equality checks in
+  place.
+
+Non-goals:
+- No production logic changes, broad multi-sheet transaction semantics, sheet
+  dependency synchronization, source reload semantics changes, commit/close
+  semantics, in-place overwrite mode, metadata/range repair, relationship
+  repair, sharedStrings/styles migration, calcChain rebuild, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -7756,6 +7756,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "fastxlsx-workbook-editor-public-snapshot-source-style-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output = artifact(
         "fastxlsx-workbook-editor-public-snapshot-source-style-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-snapshot-source-style-post-noop-noop-output.xlsx");
 
     fastxlsx::StyleId non_default_style;
     {
@@ -8185,6 +8187,38 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style post-noop save should replace the prior styled blank");
     check_reopened_clean_sheet_output(post_noop_output, "Styled",
         "snapshot source-style post-noop save", inspect_post_noop_snapshot_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(post_noop_noop_output);
+    check(!sheet.has_pending_changes(),
+        "snapshot source-style post-noop no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "snapshot source-style post-noop no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "snapshot source-style post-noop no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "snapshot source-style post-noop no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "snapshot source-style post-noop no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "snapshot source-style post-noop no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "snapshot source-style post-noop no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "snapshot source-style post-noop no-op save");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "snapshot source-style post-noop no-op save should leave the post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(post_noop_noop_output) == post_noop_entries,
+        "snapshot source-style post-noop no-op output should match the post-noop output");
+    check_reopened_clean_sheet_output(post_noop_noop_output, "Styled",
+        "snapshot source-style post-noop no-op save", inspect_post_noop_snapshot_output);
 }
 
 void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics()

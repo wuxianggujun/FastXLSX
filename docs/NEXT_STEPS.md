@@ -4406,6 +4406,10 @@ After that second clean no-op, the same saved materialized handle is now edited
 again: value-only A1/B1 changes preserve the styled `A1` handle, keep `B1`
 unstyled, leave earlier outputs unchanged, and fresh-reopen the post-noop output
 through all covered snapshot overloads.
+The post-noop value-edit path now also performs a clean no-op `save_as()` after
+the edited output, proves the no-op package entries remain byte-stable,
+preserves public catalog/save-state, and fresh-reopens the no-op output through
+the same snapshot overload checks.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

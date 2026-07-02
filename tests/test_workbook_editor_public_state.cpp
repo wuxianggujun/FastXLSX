@@ -20117,6 +20117,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
             styled_formula_style);
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-failed-save-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-failed-save-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -20230,6 +20232,33 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
         "full-calc insert_rows failed save safe retry should omit old dirty coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "full-calc insert_rows failed save safe retry should preserve untouched worksheets");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc insert_rows failed save no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc insert_rows failed save no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc insert_rows failed save no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc insert_rows failed save no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc insert_rows failed save no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc insert_rows failed save no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc insert_rows failed save no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc insert_rows failed save no-op output should match safe retry output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc insert_rows failed save no-op save should leave safe retry output unchanged");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift()

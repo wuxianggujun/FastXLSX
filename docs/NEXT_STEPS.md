@@ -705,6 +705,10 @@ exact source overwrite: the failed save preserves dirty diagnostics, the
 translated `D4` formula/style, shifted source and dirty trailing rows, queued
 workbook metadata, and source bytes before a safe retry writes
 `fullCalcOnLoad="1"` with no `xl/calcChain.xml`.
+The same retry path now immediately proves clean no-op save stability after the
+safe retry: the no-op output is byte-identical, public save/catalog state is
+preserved, no extra materialized handoff is recorded, and diagnostics stay
+clean.
 The row-shift reverse ordering is covered as well: a queued
 `request_full_calculation()` before materializing `Data` still allows a later
 styled `insert_rows()` shift, writes the translated `D4` formula with

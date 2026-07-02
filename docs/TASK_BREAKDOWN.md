@@ -59573,6 +59573,54 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1473 - No-op saves after before-shift full-calc failed retries
+
+Type: default public-state no-op save regression after successful safe retries
+from before-shift full-calculation failed-save paths.
+
+Status: completed.
+
+Goal:
+Complete the no-op save stability matrix for before-shift full-calculation
+failed-save retry sessions by covering the reverse styled insert-row,
+insert-column, delete-row, and delete-column paths after their safe retry saves.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_failed_save_preserves_state()`.
+- Extends
+  `test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_failed_save_preserves_state()`.
+- Extends
+  `test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift_failed_save_preserves_state()`.
+- Extends
+  `test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift_failed_save_preserves_state()`.
+- Each path captures public catalog and save-state snapshots after the safe
+  retry save, then runs a follow-up no-op `save_as(noop_output)`.
+- Verifies the materialized handle stays clean, `pending_change_count()` does
+  not append another handoff, dirty materialized diagnostics and
+  `pending_worksheet_edits()` remain empty, replacement diagnostics remain
+  empty, `last_edit_error()` stays clear, public save/catalog state is
+  preserved, the no-op output package bytes match the safe retry output, and
+  the safe retry output file remains unchanged.
+
+Non-goals:
+- No production logic changes, commit/close semantics, in-place overwrite mode,
+  rollback transactions, transaction replay, save behavior changes, formula
+  evaluation, cached value preservation, metadata/range repair, calcChain
+  rebuild, sharedStrings/styles migration, relationship repair, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

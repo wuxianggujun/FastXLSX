@@ -769,6 +769,11 @@ full-calculation metadata, dirty materialized diagnostics, translated `C2`
 formula/style, shifted in-memory source columns, and source package bytes
 before a safe retry writes the same `fullCalcOnLoad="1"` / no-`calcChain.xml`
 output.
+The before-shift full-calculation failed-save retry paths now also share the
+clean no-op save stability proof after their safe retries: reverse styled
+`insert_rows()`, `insert_columns()`, `delete_rows()`, and `delete_columns()`
+keep public save/catalog state stable, leave dirty and replacement diagnostics
+empty, avoid extra handoffs, and emit byte-identical no-op outputs.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

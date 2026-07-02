@@ -4382,6 +4382,12 @@ non-default style migration or existing-workbook style registry support.
 `CellValue` payloads can carry materialized source `StyleId` handles when a
 sparse record has one, but snapshots still do not expose workbook style table
 details, worksheet metadata, or any style migration/merge surface.
+Default public-state coverage now pins that snapshot contract directly:
+`sparse_cells()`, bounded range snapshots, strict A1 range snapshots,
+coordinate-batch snapshots, `row_cells()`, and `column_cells()` all expose the
+source-backed style handle on a styled `A1` value, keep unstyled records
+unstyled, then preserve the same style handle on an explicit blank after
+clear/save/reopen/no-op.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

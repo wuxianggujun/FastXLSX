@@ -60233,6 +60233,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1489 - Pin WorksheetCellSnapshot source-style handles
+
+Type: public `WorksheetEditor` snapshot style-handle regression.
+
+Status: completed.
+
+Goal:
+Prove the public `WorksheetCellSnapshot` value contract described in P8.1488 is
+covered by default tests: snapshot `CellValue` payloads expose existing
+materialized source `StyleId` handles when present.
+
+Coverage:
+- Adds a styled source workbook regression to the base `public-state` shard.
+- Verifies `sparse_cells()`, `sparse_cells(CellRange)`,
+  `sparse_cells("A1:B1")`, `sparse_cells(span<WorksheetCellReference>)`,
+  `row_cells()`, and `column_cells()` all expose the non-default source style
+  handle on the styled `A1` value.
+- Verifies unstyled source cells remain unstyled in the same snapshot APIs.
+- Clears `A1` to an explicit blank, then saves, reopens, and performs a clean
+  no-op save to prove the styled blank remains visible through snapshot APIs.
+
+Non-goals:
+- No production logic changes, snapshot API changes, caller-supplied
+  non-default style writes, style migration/merge, styles.xml repair,
+  rich-format preservation, sharedStrings migration, metadata/range repair,
+  relationship repair, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -61726,6 +61726,47 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1528 - Align shift rejected-operation intermediate diagnostics
+
+Type: public `WorksheetEditor` shift rejected-operation intermediate-state
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Apply the replacement-diagnostics parity contract to shift rejected-operation
+intermediate states before their existing no-op save/readback checks.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-shifts`.
+- Adds replacement-diagnostics checks to option-mismatch, missing-query,
+  invalid-read, and invalid-mutation states in renamed planned-name and
+  ordinary reacquire shift sessions.
+- Keeps existing dirty materialized diagnostics, worksheet edit summaries,
+  catalog checks, no-op save checks, byte-stable package checks, and fresh
+  readback unchanged.
+
+Non-goals:
+- No production logic changes, row/column shift semantic changes, formula
+  translation changes, style id preservation changes, rename behavior changes,
+  handle sharing changes, option-matching changes, missing-sheet behavior
+  changes, invalid-operation validation changes, error lifetime behavior
+  changes, save behavior changes, replacement API changes, rollback or
+  transactions, metadata range synchronization, sharedStrings/styles migration,
+  relationship repair, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

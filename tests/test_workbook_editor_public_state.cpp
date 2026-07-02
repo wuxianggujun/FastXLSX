@@ -40261,6 +40261,9 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift option mismatch should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift option mismatch should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed shift option mismatch should preserve source and planned worksheet names");
@@ -40469,6 +40472,9 @@ void test_public_worksheet_editor_shift_after_rename_missing_query_preserves_pla
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift missing query should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift missing query should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed shift missing query should preserve source and planned worksheet names");
@@ -40683,6 +40689,9 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift invalid reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift invalid reads should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed shift invalid reads should preserve source and planned worksheet names");
@@ -40904,6 +40913,9 @@ void test_public_worksheet_editor_shift_after_rename_invalid_mutations_preserve_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift invalid mutations should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift invalid mutations should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed shift invalid mutations should preserve source and planned worksheet names");
@@ -42409,6 +42421,9 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire option mismatch should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire option mismatch should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_option_mismatch,
         "shift reacquire option mismatch");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
@@ -42570,6 +42585,9 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire option mismatch noop save should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire option mismatch noop save should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_option_mismatch,
         "shift reacquire option mismatch noop save");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
@@ -42730,6 +42748,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire missing query should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing query should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_missing_query,
         "shift reacquire missing query");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
@@ -42894,6 +42915,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preser
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire missing query noop save should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing query noop save should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_missing_query,
         "shift reacquire missing query noop save");
     check(sheet.get_cell("A3").text_value() == "placeholder-a2",
@@ -43083,6 +43107,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid reads should not queue replacement diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid reads should keep worksheet edit summaries empty");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
@@ -43276,6 +43303,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preser
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid reads noop save should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid reads noop save should not queue replacement diagnostics");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_reads,
         "shift reacquire invalid reads noop save");
     check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
@@ -43474,6 +43504,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire invalid mutations should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid mutations should not queue replacement diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid mutations should keep worksheet edit summaries empty");
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_mutations,

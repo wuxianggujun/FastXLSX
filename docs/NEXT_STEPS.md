@@ -809,6 +809,14 @@ no-op save.
 It also pins replacement diagnostics at that same safe-retry point: replacement
 cell counts, replacement memory estimates, and replacement worksheet names remain
 empty before the later clean no-op save.
+At the same point, `has_pending_changes()` remains true to document the retained
+staged workbook metadata plus materialized handoff even though active
+materialized and replacement diagnostics are clean.
+The remaining public-state formula-audit and saved-session reacquire matrices
+now run under separate `fastxlsx.workbook_editor.public-state-formula-audits`
+and `fastxlsx.workbook_editor.public-state-reacquire` CTest shards, preserving
+coverage while keeping the base public-state shard within the 60-second timeout
+budget.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

@@ -36,7 +36,8 @@ int g_failures = 0;
 
 bool is_workbook_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "public-state" || shard == "public-state-shifts";
+    return shard == "all" || shard == "public-state" || shard == "public-state-shifts" ||
+           shard == "public-state-formula-audits" || shard == "public-state-reacquire";
 }
 
 std::string_view workbook_editor_shard_from_args(int argc, char* argv[])
@@ -20260,6 +20261,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
 
     check(!sheet.has_pending_changes(),
         "full-calc insert_rows failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc insert_rows failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc insert_rows failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -20555,6 +20558,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
 
     check(!sheet.has_pending_changes(),
         "full-calc before insert_rows styled formula failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc before insert_rows styled formula failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc before insert_rows styled formula failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -21549,6 +21554,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
 
     check(!sheet.has_pending_changes(),
         "full-calc insert_columns styled formula failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc insert_columns styled formula failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc insert_columns styled formula failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -21848,6 +21855,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
 
     check(!sheet.has_pending_changes(),
         "full-calc before insert_columns styled formula failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc before insert_columns styled formula failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc before insert_columns styled formula failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -25144,6 +25153,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
 
     check(!sheet.has_pending_changes(),
         "full-calc delete_rows failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc delete_rows failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc delete_rows failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -25430,6 +25441,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift_
 
     check(!sheet.has_pending_changes(),
         "full-calc before delete_rows failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc before delete_rows failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc before delete_rows failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -25700,6 +25713,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
 
     check(!sheet.has_pending_changes(),
         "full-calc delete_columns failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc delete_columns failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc delete_columns failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -26307,6 +26322,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
 
     check(!sheet.has_pending_changes(),
         "full-calc before delete_columns failed save safe retry should clean the shifted sheet");
+    check(editor.has_pending_changes(),
+        "full-calc before delete_columns failed save safe retry should retain staged public changes");
     check(editor.pending_change_count() == 2,
         "full-calc before delete_columns failed save safe retry should count metadata plus materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty() &&
@@ -50198,7 +50215,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_full_calculation_source_formula_audits_preserve_source_scan();
         }
 
-        if (should_run_workbook_editor_shard(shard, "public-state")) {
+        if (should_run_workbook_editor_shard(shard, "public-state-formula-audits")) {
             test_public_worksheet_editor_full_calculation_renamed_source_formula_audits_preserve_source_scan();
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_preserve_materialized_state();
             test_public_worksheet_editor_full_calculation_renamed_formula_audits_failed_save_preserve_state();
@@ -50251,6 +50268,9 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid_reads_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_snapshot_reads_preserve_styled_session();
             test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacquire_reuses_styled_session();
+        }
+
+        if (should_run_workbook_editor_shard(shard, "public-state-reacquire")) {
             test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_session();
             test_public_worksheet_editor_shift_after_rename_failed_save_preserves_planned_session();
             test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_planned_session();

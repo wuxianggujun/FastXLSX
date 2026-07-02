@@ -60104,6 +60104,97 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1486 - Pin full-calc failed-save safe-retry pending state
+
+Type: default public-state shift diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove full-calculation row/column shift failed-save retry paths retain public
+pending-change state immediately after the successful safe retry save while
+active dirty diagnostics are clean.
+
+Coverage:
+- Extends the after-shift and before-shift full-calculation insert/delete
+  row/column failed-save tests in the `public-state-shifts` shard.
+- After `save_as(output)` succeeds on the safe retry, each path now verifies
+  `has_pending_changes()` remains true before checking `pending_change_count()`
+  for the queued workbook full-calculation metadata plus materialized handoff.
+- Keeps that staged public pending state distinct from the already-clean active
+  materialized handle, zero aggregate dirty materialized diagnostics, empty
+  dirty summaries, and empty replacement diagnostics.
+
+Non-goals:
+- No production logic changes, save behavior changes, commit/close semantics,
+  overwrite-policy changes, retry behavior changes, staged handoff retention
+  changes, full-calculation semantic changes, row/column shift semantic changes,
+  formula translation changes, metadata/range repair, relationship repair,
+  sharedStrings/styles migration, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
+### P8.1487 - Split remaining public-state CTest shard
+
+Type: default test-shard maintenance for public `WorksheetEditor` public-state
+formula-audit and saved-session reacquire matrices.
+
+Status: completed.
+
+Goal:
+Preserve the current public-state coverage while keeping each CTest shard under
+the existing 60-second timeout budget after the base `public-state` shard
+outgrew that boundary.
+
+Coverage:
+- Adds `public-state-formula-audits` and `public-state-reacquire` as accepted
+  shards for `fastxlsx_workbook_editor_public_state_tests`.
+- Registers both shards in CTest with the same 60-second timeout as the other
+  workbook-editor shards.
+- Moves the renamed-sheet formula-audit, shift-after-rename formula-audit, and
+  styled formula session matrix into `public-state-formula-audits`.
+- Moves the saved-session reacquire, failed-save retry, guardrail, memory-budget,
+  and last-edit-diagnostic recovery matrix into `public-state-reacquire`.
+- Keeps `--shard=all` and `ctest -R "fastxlsx\\.workbook_editor"` covering the
+  full public-state matrix.
+
+Non-goals:
+- No production logic changes, API changes, new edit behavior, timeout
+  relaxation, skipped coverage, save behavior changes, retry behavior changes,
+  row/column shift semantic changes, formula translation changes,
+  metadata/range repair, relationship repair, sharedStrings/styles migration,
+  calcChain rebuild, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-formula-audits`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-formula-audits$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

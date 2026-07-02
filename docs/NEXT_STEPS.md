@@ -292,6 +292,10 @@ pin the same post-noop replacement diagnostics contract after their shared
 handle edit/save step.
 The invalid read, invalid mutation, and invalid shift reacquire paths now also
 pin that post-noop recovery saves do not queue replacement diagnostics.
+The failed-save reacquire guard paths now pin the same replacement diagnostics
+contract after safe post-noop recovery saves for source-overwrite,
+path-equivalent, empty-output, missing-parent, file-parent, and directory-output
+failures.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

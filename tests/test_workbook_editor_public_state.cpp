@@ -44039,6 +44039,9 @@ void test_public_worksheet_editor_shift_reacquire_failed_save_preserves_dirty_se
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift reacquire failed save post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire failed save post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire failed save post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -44677,6 +44680,9 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire path-equivalent failed save post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire path-equivalent failed save post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire path-equivalent failed save post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
@@ -44965,6 +44971,9 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire empty-output failed save post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire empty-output failed save post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire empty-output failed save post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
@@ -45258,6 +45267,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire missing-parent failed save post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing-parent failed save post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing-parent failed save post-noop save should keep diagnostics clear");
     check(!std::filesystem::exists(missing_parent_output),
@@ -45555,6 +45567,9 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire file-parent failed save post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire file-parent failed save post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire file-parent failed save post-noop save should keep diagnostics clear");
     check(std::filesystem::is_regular_file(file_parent) &&
@@ -45854,6 +45869,9 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire directory-output failed save post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire directory-output failed save post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire directory-output failed save post-noop save should keep diagnostics clear");
     check(std::filesystem::is_directory(directory_output),

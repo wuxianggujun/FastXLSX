@@ -61248,6 +61248,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1516 - Align shift reacquire failed-save post-noop diagnostics
+
+Type: public `WorksheetEditor` materialized shift reacquire failed-save
+post-noop diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove failed-save reacquire recovery paths keep replacement diagnostics empty
+after their safe post-noop shared-handle edit/save step.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-reacquire`.
+- Adds post-noop save replacement-diagnostics checks to exact source-overwrite,
+  path-equivalent source-overwrite, empty-output, missing-parent, file-parent,
+  and directory-output failed-save reacquire regressions.
+- Keeps the existing source/prior output preservation checks, shared-handle
+  cleanliness checks, retained staged handoff checks, fresh readback,
+  failed-save hygiene, and dirty materialized diagnostic checks unchanged.
+
+Non-goals:
+- No production logic changes, filesystem guard changes, overwrite policy
+  changes, path normalization changes, handle-sharing changes, save behavior
+  changes, replacement API changes, rollback or transactions, worksheet
+  metadata/range synchronization, sharedStrings/styles migration, relationship
+  repair, calcChain rebuild, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

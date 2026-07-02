@@ -7773,6 +7773,7 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         }
         writer.close();
     }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     const auto check_styled_a1_snapshot =
         [non_default_style](
@@ -7975,6 +7976,35 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
                 "snapshot source-style post-noop reopened initializer sparse_cells");
             check_post_noop_b1_snapshot(initializer_cells[1],
                 "snapshot source-style post-noop reopened initializer sparse_cells");
+        };
+    const auto inspect_original_source_snapshot_output =
+        [check_styled_a1_snapshot, check_unstyled_b1_snapshot](
+            fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "snapshot source-style source reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "snapshot source-style source reopened output should keep bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+                reopened_sheet.sparse_cells();
+            check(all_cells.size() == 3,
+                "snapshot source-style source reopened sparse_cells should keep three records");
+            check_styled_a1_snapshot(all_cells[0],
+                "snapshot source-style source reopened sparse_cells");
+            check_unstyled_b1_snapshot(all_cells[1],
+                "snapshot source-style source reopened sparse_cells");
+            check(all_cells[2].reference.row == 2 && all_cells[2].reference.column == 1 &&
+                    all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    all_cells[2].value.text_value() == "unstyled-a2" &&
+                    !all_cells[2].value.has_style(),
+                "snapshot source-style source reopened sparse_cells should keep A2 unstyled");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                "snapshot source-style source reopened row_cells should keep row-one records");
+            check_styled_a1_snapshot(row_one[0],
+                "snapshot source-style source reopened row_cells");
+            check_unstyled_b1_snapshot(row_one[1],
+                "snapshot source-style source reopened row_cells");
         };
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -8219,6 +8249,11 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style post-noop no-op output should match the post-noop output");
     check_reopened_clean_sheet_output(post_noop_noop_output, "Styled",
         "snapshot source-style post-noop no-op save", inspect_post_noop_snapshot_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style post-noop no-op save should leave the source workbook unchanged");
+    check_reopened_clean_sheet_output(source, "Styled",
+        "snapshot source-style source after post-noop no-op save",
+        inspect_original_source_snapshot_output);
 }
 
 void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_diagnostics()

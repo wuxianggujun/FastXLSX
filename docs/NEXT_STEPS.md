@@ -4410,6 +4410,10 @@ The post-noop value-edit path now also performs a clean no-op `save_as()` after
 the edited output, proves the no-op package entries remain byte-stable,
 preserves public catalog/save-state, and fresh-reopens the no-op output through
 the same snapshot overload checks.
+The same source-style snapshot flow now also rechecks the original source
+workbook after the repeated saves: source package entries remain unchanged and a
+fresh reopen still sees original styled `A1=1.0`, unstyled `B1`, and unstyled
+`A2`.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

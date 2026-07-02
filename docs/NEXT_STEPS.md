@@ -2231,6 +2231,8 @@ saved-session reacquire diagnostics before their next read or audit.
 Delete-side renamed formula-audit `#REF!` paths now pin the same saved-session
 reacquire diagnostics while preserving the existing surviving-reference audit
 behavior.
+Insert-row direct renamed styled-formula and formula-audit paths now mirror that
+saved-session diagnostics contract before their next read or audit.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

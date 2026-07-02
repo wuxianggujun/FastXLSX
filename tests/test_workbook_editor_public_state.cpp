@@ -32971,6 +32971,19 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula shift save_as should clear dirty materialized diagnostics");
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
+    check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
+        "renamed formula shift post-save reacquire should reuse a clean saved session");
+    const std::optional<fastxlsx::CellValue> reacquired_d4 =
+        reacquired.try_cell("D4");
+    check(reacquired_d4.has_value() &&
+            reacquired_d4->kind() == fastxlsx::CellValueKind::Formula &&
+            reacquired_d4->text_value() == "A3+B3" &&
+            reacquired_d4->has_style() &&
+            reacquired_d4->style_id().value() == styled_formula_style.value(),
+        "renamed formula shift post-save reacquire should read translated styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula shift");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
@@ -33242,6 +33255,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula audit shift post-save reacquire should keep materialized diagnostics clean");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula audit shift");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
         check_public_state_formula_audits_preserve_editor_diagnostics(
             editor, "renamed formula audit shift post-save reacquire formula audit");

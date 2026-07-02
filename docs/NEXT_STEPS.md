@@ -363,6 +363,10 @@ Pure no-op saved-reacquire branches now have the sibling no-`C5` helper for
 invalid mutation, invalid read, invalid shift, missing-query, option-mismatch,
 and same-sheet guard outputs, keeping audit/readback parity without inventing
 recovery cells.
+Delete-side renamed formula-audit no-op outputs now have the same shared
+contract shape: the no-op materialized audit still skips `Data!#REF!`, keeps
+only the surviving qualified reference, preserves source-scan isolation, and
+fresh-reopens the styled `#REF!` formula output.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

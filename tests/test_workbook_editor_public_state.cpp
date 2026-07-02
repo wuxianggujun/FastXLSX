@@ -942,6 +942,40 @@ void check_public_state_renamed_full_calc_noop_formula_audit_source_rows_readbac
         prefix + " no-op output should keep only shifted source rows");
 }
 
+void check_public_state_renamed_delete_formula_noop_audit_readback(
+    const fastxlsx::WorkbookEditor& editor,
+    const std::filesystem::path& noop_output,
+    std::string_view cell_reference,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view qualified_reference_text,
+    std::string_view reference_text,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " no-op materialized audit");
+    check(noop_audits.size() == 1,
+        prefix + " no-op should keep only the surviving reference");
+    check(find_public_state_formula_audit(
+              noop_audits, row, column, "Data!#REF!") == nullptr,
+        prefix + " no-op should still skip Data!#REF!");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, row, column, expected_formula,
+        qualified_reference_text, reference_text,
+        prefix + " no-op surviving reference");
+    check_public_state_delete_formula_source_audit_preserves_shift_fixture(
+        editor, prefix + " no-op source audit");
+    check_public_state_reopened_delete_formula_audit_output(
+        noop_output, cell_reference, row, column, expected_formula,
+        styled_formula_style, qualified_reference_text, reference_text,
+        prefix + " no-op output");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -33838,8 +33872,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             "renamed delete-row formula audit no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "renamed delete-row formula audit no-op output should match the first materialized output");
-        check_public_state_reopened_delete_formula_audit_output(
-            noop_output, "D1", 1, 4, expected_formula, styled_formula_style,
+        check_public_state_renamed_delete_formula_noop_audit_readback(
+            editor, noop_output, "D1", 1, 4, expected_formula, styled_formula_style,
             "Data!B1", "B1",
             "renamed delete-row formula audit no-op save surviving B reference");
     }
@@ -34013,8 +34047,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
             "renamed delete-column formula audit no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "renamed delete-column formula audit no-op output should match the first materialized output");
-        check_public_state_reopened_delete_formula_audit_output(
-            noop_output, "C2", 2, 3, expected_formula, styled_formula_style,
+        check_public_state_renamed_delete_formula_noop_audit_readback(
+            editor, noop_output, "C2", 2, 3, expected_formula, styled_formula_style,
             "Data!A2", "A2",
             "renamed delete-column formula audit no-op save surviving A reference");
     }

@@ -722,6 +722,11 @@ The delete-side row-shift reverse ordering now mirrors that path:
 `request_full_calculation()` can be queued before materializing `Data`, and a
 later dirty `WorksheetEditor::delete_rows()` still writes the styled `D1`
 formula as `#REF!+#REF!` with `fullCalcOnLoad="1"` and no `xl/calcChain.xml`.
+That reverse delete-row styled source formula path now also has rejected source
+overwrite coverage: the failed save preserves the queued full-calculation
+metadata, dirty materialized diagnostics, translated `D1` formula/style,
+shifted in-memory source rows, and source package bytes before a safe retry
+writes the same `fullCalcOnLoad="1"` / no-`calcChain.xml` output.
 The delete-side column-shift reverse ordering is covered too: a queued
 `request_full_calculation()` before materialization survives later dirty
 `WorksheetEditor::delete_columns()` shifts, including a styled formula whose

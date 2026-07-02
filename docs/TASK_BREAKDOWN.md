@@ -61364,6 +61364,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1519 - Align clear-all memory-release no-op diagnostics
+
+Type: public `WorksheetEditor::clear_cell_values()` memory-budget release
+saved-session no-op diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove `clear_cell_values()` memory-budget release no-op saves keep replacement
+diagnostics empty after option-mismatch, missing-query, and invalid-read checks.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state`.
+- Adds replacement-diagnostics checks to the option-mismatch, missing-query, and
+  invalid-read no-op save paths in the `clear_cell_values()` memory-budget
+  release regression.
+- Keeps existing saved explicit blank checks, preserved `D4` value checks,
+  clean-handle checks, materialized diagnostics, save-state snapshots,
+  byte-stable package checks, and fresh readback unchanged.
+
+Non-goals:
+- No production logic changes, clear/erase semantic changes, option-matching
+  changes, missing-sheet behavior changes, invalid-read validation changes,
+  save behavior changes, replacement API changes, rollback or transactions,
+  sharedStrings/styles migration, relationship repair, calcChain rebuild,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

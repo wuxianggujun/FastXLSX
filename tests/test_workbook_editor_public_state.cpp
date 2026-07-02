@@ -17561,6 +17561,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release option mismatch noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
         "clear_cell_values() memory-budget release option mismatch noop save should not add a handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget release option mismatch noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget release option mismatch noop save should keep diagnostics clear");
     check(editor.pending_materialized_worksheet_names().empty(),
@@ -17623,6 +17626,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release missing query noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
         "clear_cell_values() memory-budget release missing query noop save should not add a handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget release missing query noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget release missing query noop save should keep diagnostics clear");
     check(editor.pending_materialized_worksheet_names().empty(),
@@ -17709,6 +17715,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid reads noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
         "clear_cell_values() memory-budget release invalid reads noop save should not add a handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "clear_cell_values() memory-budget release invalid reads noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "clear_cell_values() memory-budget release invalid reads noop save should keep diagnostics clear");
     check(editor.pending_materialized_worksheet_names().empty(),

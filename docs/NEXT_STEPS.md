@@ -303,6 +303,9 @@ The saved-session shift reacquire no-op paths now carry the same contract before
 those later post-noop edits: basic, try-reacquire, guard/query, invalid-read,
 safe-retry, and failed-save guard no-op saves all keep replacement diagnostics
 empty.
+The `clear_cell_values()` memory-budget release saved-session path now extends
+that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
+no-op saves.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

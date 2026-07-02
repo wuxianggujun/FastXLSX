@@ -299,6 +299,10 @@ failures.
 The invalid-to-valid row/column shift recovery paths now pin that same
 replacement diagnostics contract after clean and already-dirty post-noop
 recovery saves.
+The saved-session shift reacquire no-op paths now carry the same contract before
+those later post-noop edits: basic, try-reacquire, guard/query, invalid-read,
+safe-retry, and failed-save guard no-op saves all keep replacement diagnostics
+empty.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

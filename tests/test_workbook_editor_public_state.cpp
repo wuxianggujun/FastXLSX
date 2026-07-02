@@ -41285,6 +41285,9 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire noop save should keep dirty materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -41447,6 +41450,9 @@ void test_public_worksheet_editor_delete_columns_reacquire_noop_save_preserves_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_columns reacquire noop save should keep dirty materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "delete_columns reacquire noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_columns reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -41631,6 +41637,9 @@ void test_public_worksheet_editor_delete_rows_reacquire_noop_save_preserves_save
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "delete_rows reacquire noop save should keep dirty materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "delete_rows reacquire noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "delete_rows reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -41817,6 +41826,9 @@ void test_public_worksheet_editor_insert_columns_reacquire_noop_save_preserves_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "insert_columns reacquire noop save should keep dirty materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "insert_columns reacquire noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "insert_columns reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -42143,6 +42155,9 @@ void test_public_worksheet_editor_shift_try_reacquire_noop_save_preserves_saved_
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift try-reacquire noop save should keep dirty materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift try-reacquire noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift try-reacquire noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -42461,6 +42476,9 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire option mismatch noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire option mismatch noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire option mismatch noop save should keep diagnostics clear after save");
     check_workbook_editor_public_save_state_preserved(
@@ -42779,6 +42797,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preser
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire missing query noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing query noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing query noop save should keep diagnostics clear after save");
     check_workbook_editor_public_save_state_preserved(
@@ -43160,6 +43181,9 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_noop_save_preser
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire invalid reads noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid reads noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid reads noop save should keep diagnostics clear after save");
     check_workbook_editor_public_save_state_preserved(
@@ -44396,6 +44420,9 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire after retry noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire after retry noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire after retry noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -44620,6 +44647,9 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire path-equivalent failed save noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire path-equivalent failed save noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire path-equivalent failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -44911,6 +44941,9 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire empty-output failed save noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire empty-output failed save noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire empty-output failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -45207,6 +45240,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire missing-parent failed save noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing-parent failed save noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing-parent failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -45507,6 +45543,9 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire file-parent failed save noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire file-parent failed save noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire file-parent failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -45807,6 +45846,9 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire directory-output failed save noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire directory-output failed save noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire directory-output failed save noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

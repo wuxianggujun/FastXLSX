@@ -699,6 +699,11 @@ The row-shift reverse ordering is covered as well: a queued
 styled `insert_rows()` shift, writes the translated `D4` formula with
 `fullCalcOnLoad="1"`, keeps clean materialization diagnostics empty, and
 does not create `xl/calcChain.xml`.
+That reverse insert-row styled source formula path now also has rejected source
+overwrite coverage: the failed save preserves the queued full-calculation
+metadata, dirty materialized diagnostics, translated `D4` formula/style,
+shifted in-memory source rows, and source package bytes before a safe retry
+writes the same `fullCalcOnLoad="1"` / no-`calcChain.xml` output.
 The reverse ordering is now covered for column shifts: a queued
 `request_full_calculation()` before `worksheet()` still allows a later dirty
 `WorksheetEditor::insert_columns()` sparse shift, and `save_as()` writes the

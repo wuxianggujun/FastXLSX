@@ -59228,6 +59228,57 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1466 - Full-calc before insert-rows styled source formula failed-save retry
+
+Type: default public-state failed-save retry regression for workbook
+full-calculation metadata queued before a row-insertion styled source formula
+shift.
+
+Status: completed.
+
+Goal:
+Prove rejected exact source overwrite does not corrupt queued
+`request_full_calculation()` metadata or the dirty materialized
+`insert_rows()` styled source formula session, and that a later safe retry
+still saves the expected shifted workbook output.
+
+Coverage:
+- Adds
+  `test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_failed_save_preserves_state()`.
+- Uses `write_two_sheet_source_with_styled_shift_formula()` so the
+  source-backed styled formula shifts from `Data!D2` to `Data!D4`, translates
+  from `A1+B1` to `A3+B3`, and preserves the non-default `StyleId`.
+- Queues `request_full_calculation()` before materialization, then runs
+  `insert_rows(2, 2)` and verifies dirty materialized names/counts/memory,
+  shifted `A1:D5` bounds, shifted in-memory source rows, absent inserted/old
+  coordinates, and the translated styled formula before the save attempt.
+- Rejects `save_as(source)`, then verifies the dirty worksheet session, queued
+  workbook metadata edit, public materialized diagnostics, in-memory formula
+  text/style, shifted source rows, and source package bytes remain unchanged.
+- Saves a fresh output on safe retry and verifies `fullCalcOnLoad="1"`, absence
+  of `xl/calcChain.xml`, shifted source rows, omitted inserted/old coordinates,
+  untouched sheet preservation, and unchanged source package bytes.
+
+Non-goals:
+- No production logic changes, in-place overwrite mode, rollback transactions,
+  save behavior changes, style preservation semantic changes, style
+  migration/merge, formula translation changes, formula evaluation, cached
+  value preservation, insert semantics changes, full-calculation metadata
+  changes, metadata/range repair, calcChain rebuild, sharedStrings migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

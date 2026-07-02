@@ -37,6 +37,8 @@ GENERATED_SCENARIOS = [
     "generated_rename_materialized_noop_save",
     "generated_in_memory_insert_formula",
     "generated_in_memory_insert_formula_noop_save",
+    "generated_in_memory_full_calc_insert_formula",
+    "generated_in_memory_full_calc_insert_formula_noop_save",
     "generated_in_memory_delete_column_formula",
     "generated_in_memory_delete_column_formula_noop_save",
     "generated_in_memory_insert_column_formula",
@@ -1158,6 +1160,37 @@ def verify_generated_in_memory_insert_formula_noop_save(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     label = "generated in-memory insert formula no-op save"
     zip_report, openpyxl_report = verify_generated_in_memory_insert_formula(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_insert_formula(
+    path: Path,
+    tool_report: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc insert formula"
+    zip_report, openpyxl_report = verify_generated_in_memory_insert_formula(path)
+    if tool_report is not None:
+        require("request_full_calculation()" in tool_report.get("mutations", []),
+                f"{label}: tool did not report the full-calculation request")
+    workbook_xml = read_zip_text(path, "xl/workbook.xml")
+    require("<calcPr" in workbook_xml and 'fullCalcOnLoad="1"' in workbook_xml,
+            f"{label}: missing workbook fullCalcOnLoad metadata")
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_insert_formula_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc insert formula no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_full_calc_insert_formula(
+        path,
+        tool_report,
+    )
     require("save_as(noop-output)" in tool_report.get("mutations", []),
             f"{label}: tool did not report the no-op save stage")
     zip_report["noop_save"] = "byte-identical"
@@ -3927,6 +3960,16 @@ def run_generated_case(
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula(output_path)
     elif scenario == "generated_in_memory_insert_formula_noop_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_insert_formula_noop_save(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_full_calc_insert_formula":
+        zip_xml, openpyxl_report = verify_generated_in_memory_full_calc_insert_formula(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_full_calc_insert_formula_noop_save":
+        zip_xml, openpyxl_report = verify_generated_in_memory_full_calc_insert_formula_noop_save(
             output_path,
             tool_report,
         )

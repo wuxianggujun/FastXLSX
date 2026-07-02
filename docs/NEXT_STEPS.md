@@ -39,6 +39,11 @@ drives a tiny existing workbook through `WorksheetEditor::insert_rows()`, writes
 a new materialized formula row, verifies the shifted source-backed formula,
 saves, and reopens the output through ZIP/XML, `openpyxl`, optional XlsxWriter,
 and optional Excel COM checks.
+That row-insert generated QA path now also has full-calculation variants:
+`generated_in_memory_full_calc_insert_formula` and its no-op save companion
+queue `request_full_calculation()`, require workbook `fullCalcOnLoad="1"`, keep
+`xl/calcChain.xml` absent, and still validate the shifted formula row plus
+untouched sheet readback.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

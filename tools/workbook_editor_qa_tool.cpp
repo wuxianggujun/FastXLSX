@@ -1734,18 +1734,29 @@ Report run_generated_rename_materialized_noop_save(const CliOptions& options)
 
 Report run_generated_in_memory_insert_formula_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_insert_formula_source(resolve_generated_source(
-        options,
-        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-insert-formula-noop-source.xlsx"
-                         : "fastxlsx-workbook-editor-qa-in-memory-insert-formula-source.xlsx"));
-    report.output = resolve_output_path(options,
-        verify_noop_save ? "fastxlsx-workbook-editor-qa-in-memory-insert-formula-noop-output.xlsx"
-                         : "fastxlsx-workbook-editor-qa-in-memory-insert-formula-output.xlsx");
+    const std::string_view source_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-formula-source.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-insert-formula-noop-source.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-insert-formula-source.xlsx");
+    const std::string_view output_name = request_full_calculation
+        ? (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-full-calc-insert-formula-output.xlsx")
+        : (verify_noop_save
+              ? "fastxlsx-workbook-editor-qa-in-memory-insert-formula-noop-output.xlsx"
+              : "fastxlsx-workbook-editor-qa-in-memory-insert-formula-output.xlsx");
+    report.source = write_in_memory_insert_formula_source(
+        resolve_generated_source(options, source_name));
+    report.output = resolve_output_path(options, output_name);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).insert_rows(2,1)",
@@ -1753,6 +1764,9 @@ Report run_generated_in_memory_insert_formula_impl(
         "worksheet(Data).set_cell(B2,number)",
         "worksheet(Data).set_cell(C2,formula)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -1762,6 +1776,10 @@ Report run_generated_in_memory_insert_formula_impl(
         "Original source formula B2*2 should be translated to B3*2",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the inserted formula row should be byte-identical");
@@ -1776,6 +1794,9 @@ Report run_generated_in_memory_insert_formula_impl(
     data.set_cell(2, 3, CellValue::formula("B2*2"));
     require_formula_cell(data, "C2", "B2*2");
     require_formula_cell(data, "C3", "B3*2");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     save_as_with_optional_noop(
         editor,
         report,
@@ -1793,6 +1814,16 @@ Report run_generated_in_memory_insert_formula(const CliOptions& options)
 Report run_generated_in_memory_insert_formula_noop_save(const CliOptions& options)
 {
     return run_generated_in_memory_insert_formula_impl(options, true);
+}
+
+Report run_generated_in_memory_full_calc_insert_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_formula_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_insert_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_insert_formula_impl(options, true, true);
 }
 
 Report run_generated_in_memory_delete_column_formula_impl(
@@ -3716,6 +3747,12 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_insert_formula_noop_save") {
         return run_generated_in_memory_insert_formula_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_insert_formula") {
+        return run_generated_in_memory_full_calc_insert_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_insert_formula_noop_save") {
+        return run_generated_in_memory_full_calc_insert_formula_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_delete_column_formula") {
         return run_generated_in_memory_delete_column_formula(options);

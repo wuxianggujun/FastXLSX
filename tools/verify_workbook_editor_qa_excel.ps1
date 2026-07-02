@@ -814,6 +814,8 @@ function Verify-Case {
             "generated_rename_materialized_noop_save" { Verify-GeneratedRenameMaterialized $workbook }
             "generated_in_memory_insert_formula" { Verify-GeneratedInMemoryInsertFormula $workbook }
             "generated_in_memory_insert_formula_noop_save" { Verify-GeneratedInMemoryInsertFormula $workbook }
+            "generated_in_memory_full_calc_insert_formula" { Verify-GeneratedInMemoryInsertFormula $workbook }
+            "generated_in_memory_full_calc_insert_formula_noop_save" { Verify-GeneratedInMemoryInsertFormula $workbook }
             "generated_in_memory_delete_column_formula" { Verify-GeneratedInMemoryDeleteColumnFormula $workbook }
             "generated_in_memory_delete_column_formula_noop_save" { Verify-GeneratedInMemoryDeleteColumnFormula $workbook }
             "generated_in_memory_insert_column_formula" { Verify-GeneratedInMemoryInsertColumnFormula $workbook }

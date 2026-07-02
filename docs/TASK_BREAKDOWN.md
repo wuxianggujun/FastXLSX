@@ -62936,6 +62936,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1554 - Add generated full-calc insert-formula QA
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+row insertion plus workbook full-calculation metadata.
+
+Status: completed.
+
+Goal:
+Prove the generated in-memory row-insert formula QA path also works when the
+caller queues `WorkbookEditor::request_full_calculation()` before saving, and
+that the follow-up no-op save remains byte-stable.
+
+Coverage:
+- Adds `generated_in_memory_full_calc_insert_formula` and
+  `generated_in_memory_full_calc_insert_formula_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp` and `tools/run_workbook_editor_qa.py`.
+- Reuses the existing generated insert-row formula source workbook and public
+  `WorksheetEditor::insert_rows(2, 1)` mutation shape.
+- Verifies shifted source-backed formulas, materialized inserted formula cells,
+  untouched sheet preservation, workbook `fullCalcOnLoad="1"`, absence of
+  `xl/calcChain.xml`, `openpyxl` readback, and byte-identical no-op output.
+- Wires the optional Excel COM sidecar to reuse the existing insert-formula
+  readback checks for both full-calculation scenarios.
+
+Non-goals:
+- No production logic changes, formula evaluation, cached value preservation,
+  calcChain rebuild/generation, metadata/range repair, sharedStrings/styles
+  migration, relationship repair, default CTest/CI expansion, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_insert_formula --scenario generated_in_memory_full_calc_insert_formula_noop_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-insert-formula --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

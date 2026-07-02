@@ -780,6 +780,9 @@ source cells, removed old coordinates, and moved formula text/style intact.
 Those before-shift readbacks now also open `Untouched` through a fresh editor,
 pinning the same source-backed `keep-me` / `99.0` companion-sheet preservation
 contract after `Data`-only shifts.
+The before-shift failed-save/no-op paths now also reopen the original source
+package after the retry sequence, matching the after-shift source preservation
+evidence for the original `D2` styled formula and untouched companion sheet.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

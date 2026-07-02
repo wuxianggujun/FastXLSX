@@ -20637,6 +20637,10 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
     check_reopened_untouched_keep_me_output(
         noop_output,
         "full-calc before insert_rows styled formula failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc before insert_rows styled formula failed save source after no-op");
 }
 
 void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
@@ -21906,6 +21910,10 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
     check_reopened_untouched_keep_me_output(
         noop_output,
         "full-calc before insert_columns styled formula failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc before insert_columns styled formula failed save source after no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
@@ -25452,6 +25460,10 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift_
         });
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc before delete_rows failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc before delete_rows failed save source after no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_shift()
@@ -26311,6 +26323,10 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         });
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc before delete_columns failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc before delete_columns failed save source after no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve_diagnostics()

@@ -321,6 +321,9 @@ The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet
 guard recovery outputs.
+Rename-after-shift failed-save no-op retry paths now also keep replacement
+diagnostics empty for row insert, delete-column, and delete-row styled formula
+sessions while preserving shifted formulas, style ids, and source package bytes.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

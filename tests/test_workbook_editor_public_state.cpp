@@ -34378,6 +34378,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserv
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula failed save no-op retry should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula failed save no-op retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed formula failed save no-op retry should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -36084,6 +36087,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_fail
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column failed save no-op retry should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column failed save no-op retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed formula delete-column failed save no-op retry should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -38070,6 +38076,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-row failed save no-op retry should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-row failed save no-op retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed formula delete-row failed save no-op retry should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

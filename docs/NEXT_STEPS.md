@@ -808,6 +808,10 @@ The remaining styled source-formula post-noop paths now have the same
 diagnostics parity for `insert_columns()`, `delete_rows()`, and
 `delete_columns()`, including delete-side aggregate materialized memory checks
 while those post-noop edits are dirty.
+The cross-handle row/column shift post-noop paths now carry that replacement
+diagnostics contract too: row insert, column insert, row delete, and column
+delete regressions keep replacement diagnostics empty after the multi-handle
+post-noop save and after the final clean no-op save.
 Full-calculation row/column shift tests now pin that same summary contract while
 workbook metadata is already queued: after-shift and before-shift insert/delete
 row/column paths keep the dirty `Data` materialized summary aligned with the

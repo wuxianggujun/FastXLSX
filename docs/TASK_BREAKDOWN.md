@@ -60979,6 +60979,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1509 - Align cross-handle shift post-noop diagnostics
+
+Type: public `WorksheetEditor` cross-handle row/column shift post-noop
+diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove the cross-handle row/column shift post-noop save chains keep replacement
+diagnostics empty while two materialized worksheet handles are saved together
+after a clean no-op output.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-reacquire`.
+- Adds post-noop save and final clean no-op replacement-diagnostics checks to
+  the row insert, column insert, row delete, and column delete cross-handle
+  regressions.
+- Keeps the existing `Data` and `Untouched` fresh-reopen checks, dirty
+  materialized diagnostic checks, handoff counts, and byte-stable output
+  comparisons unchanged.
+
+Non-goals:
+- No production logic changes, save behavior changes, replacement API changes,
+  cross-handle transaction model, row/column metadata synchronization, dense
+  row/column operations, formula evaluation, broad formula repair,
+  metadata/range repair, sharedStrings/styles migration, relationship repair,
+  calcChain rebuild, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

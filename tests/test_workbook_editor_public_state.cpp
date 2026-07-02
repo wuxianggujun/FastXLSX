@@ -46784,6 +46784,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle shift post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle shift post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle shift post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -46866,6 +46868,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle shift post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle shift post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle shift post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -47121,6 +47125,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle column shift post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle column shift post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle column shift post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -47203,6 +47209,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle column shift post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle column shift post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle column shift post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -47453,6 +47461,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle delete_rows post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_rows post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle delete_rows post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -47536,6 +47546,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle delete_rows post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_rows post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle delete_rows post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -47788,6 +47800,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle delete_columns post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_columns post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle delete_columns post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
@@ -47871,6 +47885,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "cross-handle delete_columns post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_columns post-noop noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "cross-handle delete_columns post-noop noop save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

@@ -60499,6 +60499,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1496 - Reopen post-noop source-style snapshot output
+
+Type: public `WorksheetEditor` source-style snapshot fresh-reopen edit/save
+regression.
+
+Status: completed.
+
+Goal:
+Prove the post-noop no-op output remains reusable through a fresh
+`WorkbookEditor` after repeated saves.
+
+Coverage:
+- Extends the styled source workbook regression in the base `public-state`
+  shard.
+- Opens the post-noop no-op output through a fresh editor, edits `A2`, and saves
+  another output.
+- Verifies the new output preserves styled `A1=2.5`, unstyled `B1`, and edited
+  unstyled `A2`, while source and prior no-op output entries stay unchanged.
+- Fresh-reopens the new output and checks sparse count, bounds, and snapshot
+  shape.
+
+Non-goals:
+- No production logic changes, in-place overwrite, commit/close behavior,
+  rollback, transaction replay, snapshot API changes, caller-supplied
+  non-default style writes, style migration/merge, styles.xml repair,
+  rich-format preservation, sharedStrings migration, metadata/range repair,
+  relationship repair, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

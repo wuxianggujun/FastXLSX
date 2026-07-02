@@ -7839,6 +7839,21 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
                 "snapshot source-style reopened range sparse_cells should keep A1");
             check_saved_blank(range_cells[0],
                 "snapshot source-style reopened range sparse_cells");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> initializer_cells =
+                reopened_sheet.sparse_cells({
+                    {1, 1},
+                    {1, 2},
+                });
+            check(initializer_cells.size() == 2,
+                "snapshot source-style reopened initializer sparse_cells should keep row-one records");
+            check_saved_blank(initializer_cells[0],
+                "snapshot source-style reopened initializer sparse_cells");
+            check(initializer_cells[1].reference.row == 1 &&
+                    initializer_cells[1].reference.column == 2 &&
+                    initializer_cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    initializer_cells[1].value.text_value() == "unstyled-b1" &&
+                    !initializer_cells[1].value.has_style(),
+                "snapshot source-style reopened initializer sparse_cells should keep B1 unstyled");
         };
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -7884,6 +7899,19 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style coordinate batch");
     check_unstyled_b1_snapshot(requested_snapshots[1],
         "snapshot source-style coordinate batch");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> initializer_snapshots =
+        sheet.sparse_cells({
+            {1, 1},
+            {1, 2},
+            {3, 3},
+        });
+    check(initializer_snapshots.size() == 2,
+        "snapshot source-style initializer batch should skip missing cells");
+    check_styled_a1_snapshot(initializer_snapshots[0],
+        "snapshot source-style initializer batch");
+    check_unstyled_b1_snapshot(initializer_snapshots[1],
+        "snapshot source-style initializer batch");
 
     const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
     check(row_one.size() == 2,

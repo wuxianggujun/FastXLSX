@@ -60272,6 +60272,42 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1490 - Pin initializer-list snapshot source-style handles
+
+Type: public `WorksheetEditor` snapshot convenience-overload regression.
+
+Status: completed.
+
+Goal:
+Extend the P8.1489 source-style snapshot contract to
+`sparse_cells(initializer_list<WorksheetCellReference>)`.
+
+Coverage:
+- Extends the styled source workbook regression in the base `public-state`
+  shard.
+- Verifies initializer-list sparse snapshot reads expose the styled `A1`
+  source `StyleId`, keep unstyled `B1` unstyled, and skip missing coordinates.
+- Verifies the same initializer-list overload reads the saved styled blank
+  after clear/save/reopen/no-op.
+
+Non-goals:
+- No production logic changes, snapshot API changes, caller-supplied
+  non-default style writes, style migration/merge, styles.xml repair,
+  rich-format preservation, sharedStrings migration, metadata/range repair,
+  relationship repair, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

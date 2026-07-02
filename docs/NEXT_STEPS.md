@@ -4388,6 +4388,11 @@ coordinate-batch snapshots, `row_cells()`, and `column_cells()` all expose the
 source-backed style handle on a styled `A1` value, keep unstyled records
 unstyled, then preserve the same style handle on an explicit blank after
 clear/save/reopen/no-op.
+The same source-style snapshot regression now also covers the
+`sparse_cells(initializer_list<WorksheetCellReference>)` convenience overload:
+initializer-list reads expose the styled source handle, skip missing
+coordinates, keep unstyled cells unstyled, and preserve the styled blank after
+save/reopen/no-op.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

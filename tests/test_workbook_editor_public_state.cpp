@@ -7760,6 +7760,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "fastxlsx-workbook-editor-public-snapshot-source-style-post-noop-noop-output.xlsx");
     const std::filesystem::path reopened_post_noop_output = artifact(
         "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-output.xlsx");
+    const std::filesystem::path reopened_post_noop_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-snapshot-source-style-reopened-post-noop-noop-output.xlsx");
 
     fastxlsx::StyleId non_default_style;
     {
@@ -8335,6 +8337,48 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style reopened post-noop save should persist edited A2");
     check_reopened_clean_sheet_output(reopened_post_noop_output, "Styled",
         "snapshot source-style reopened post-noop save",
+        inspect_reopened_post_noop_snapshot_output);
+
+    const WorkbookEditorPublicCatalogSnapshot reopened_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reopened_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened_editor);
+    reopened_editor.save_as(reopened_post_noop_noop_output);
+    check(!reopened_sheet.has_pending_changes(),
+        "snapshot source-style reopened post-noop no-op save should keep reopened handle clean");
+    check(reopened_editor.pending_change_count() == 1,
+        "snapshot source-style reopened post-noop no-op save should not record another handoff");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        "snapshot source-style reopened post-noop no-op save should keep dirty diagnostics clear");
+    check(reopened_editor.pending_worksheet_edits().empty(),
+        "snapshot source-style reopened post-noop no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened_editor,
+        "snapshot source-style reopened post-noop no-op save should not queue replacement diagnostics");
+    check(!reopened_editor.last_edit_error().has_value(),
+        "snapshot source-style reopened post-noop no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened_editor,
+        reopened_save_state_before_noop,
+        "snapshot source-style reopened post-noop no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened_editor,
+        reopened_catalog_before_noop,
+        "snapshot source-style reopened post-noop no-op save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style reopened post-noop no-op save should leave the source workbook unchanged");
+    check(fastxlsx::test::read_zip_entries(post_noop_noop_output) == post_noop_noop_entries,
+        "snapshot source-style reopened post-noop no-op save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(reopened_post_noop_output) == reopened_post_noop_entries,
+        "snapshot source-style reopened post-noop no-op save should leave the edited output unchanged");
+    const auto reopened_post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(reopened_post_noop_noop_output);
+    check(reopened_post_noop_noop_entries == reopened_post_noop_entries,
+        "snapshot source-style reopened post-noop no-op output should match the edited output");
+    check_reopened_clean_sheet_output(reopened_post_noop_noop_output, "Styled",
+        "snapshot source-style reopened post-noop no-op save",
         inspect_reopened_post_noop_snapshot_output);
 }
 

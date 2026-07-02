@@ -4417,6 +4417,9 @@ fresh reopen still sees original styled `A1=1.0`, unstyled `B1`, and unstyled
 That post-noop no-op output is now also opened through a fresh editor, edited at
 `A2`, saved again, and fresh-reopened to prove the repeated-save output remains
 reusable while the source workbook and prior no-op output stay unchanged.
+That fresh-reopened edit output now has the same clean no-op save coverage:
+public catalog/save-state stay stable, the no-op output is byte-equivalent, and
+the source plus earlier no-op output remain unchanged.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

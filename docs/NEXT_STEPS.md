@@ -2222,6 +2222,8 @@ state stays free of replacement/materialized diagnostics before materialization.
 Those insert-row renamed styled-formula recovery paths also pin saved-session
 reacquire diagnostics before the later column shift, proving the first saved
 handoff stays clean until the next mutation.
+Delete-row renamed styled-formula recovery paths now share the same saved-session
+reacquire diagnostics contract before their later column shift.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

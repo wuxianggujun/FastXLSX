@@ -38387,6 +38387,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_option_
             reacquired_formula->has_style() &&
             reacquired_formula->style_id().value() == styled_formula_style.value(),
         "renamed formula delete-row option mismatch matching reacquire should reuse the saved styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula delete-row option mismatch");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -38632,6 +38634,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
     check(!sheet.try_cell("D2").has_value() &&
             !reacquired.try_cell("A3").has_value(),
         "renamed formula delete-row invalid mutations should keep old shifted coordinates absent");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula delete-row invalid mutations");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -38874,6 +38878,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_missing
             reacquired_formula->has_style() &&
             reacquired_formula->style_id().value() == styled_formula_style.value(),
         "renamed formula delete-row missing query matching reacquire should reuse the saved styled formula");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula delete-row missing query");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -39135,6 +39141,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_invalid
     check(!sheet.try_cell("D2").has_value() &&
             !reacquired.try_cell("A3").has_value(),
         "renamed formula delete-row invalid reads should keep old shifted coordinates absent");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula delete-row invalid reads");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -39448,6 +39456,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_snapsho
         "renamed formula delete-row snapshot reads should preserve sparse counts");
     check_cell_range_equals(reacquired.used_range(), 1, 1, 2, 4,
         "renamed formula delete-row snapshot reads should preserve delete-row bounds");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula delete-row snapshot reads");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -39678,6 +39688,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_reacqui
     check_workbook_editor_no_replacement_diagnostics(
         editor,
         "renamed formula delete-row reacquire should not queue replacement diagnostics");
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, "renamed formula delete-row reacquire");
 
     reacquired.insert_columns(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();

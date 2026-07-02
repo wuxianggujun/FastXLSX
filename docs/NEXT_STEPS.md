@@ -349,6 +349,10 @@ the same pinned clean saved-reacquire diagnostics contract.
 The failed-save retry branch now enters its later dirty mutation from the same
 clean full-calc saved-reacquire diagnostics snapshot before testing rejected
 source-overwrite output handling.
+That failed-save retry branch now also pins the later no-op output side: after
+the safe retry, the no-op save keeps shifted formula-audit references and source
+audit state stable, and the no-op package fresh-reopens with the shifted styled
+formula plus the retried `C5` text cell.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

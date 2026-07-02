@@ -30143,6 +30143,31 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == second_entries,
         "renamed full-calc formula audit saved reacquire failed save no-op output should match the safe retry output");
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, "renamed full-calc formula audit saved reacquire failed save no-op materialized audit");
+    check(noop_audits.size() == 2,
+        "renamed full-calc formula audit saved reacquire failed save no-op should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        "renamed full-calc formula audit saved reacquire failed save no-op shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire failed save no-op shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, "renamed full-calc formula audit saved reacquire failed save no-op source audit");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        "renamed full-calc formula audit saved reacquire failed save no-op output");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
+    const std::optional<fastxlsx::CellValue> reopened_noop_dirty_cell =
+        reopened_noop_sheet.try_cell("C5");
+    check(reopened_noop_dirty_cell.has_value() &&
+            reopened_noop_dirty_cell->kind() == fastxlsx::CellValueKind::Text &&
+            reopened_noop_dirty_cell->text_value() == "failed-save-c5",
+        "renamed full-calc formula audit saved reacquire failed save no-op output should read the dirty text cell");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_mutation_recovery()

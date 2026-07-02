@@ -29817,6 +29817,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -30065,6 +30068,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire failed save no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire failed save no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire failed save no-op save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_save,
@@ -30301,6 +30307,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid mutation no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid mutation no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid mutation no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -30748,6 +30757,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid reads no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid reads no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid reads no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -31197,6 +31209,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid shifts no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire invalid shifts no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire invalid shifts no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -31630,6 +31645,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire missing query no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire missing query no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire missing query no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -32063,6 +32081,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire option mismatch no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire option mismatch no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -32507,6 +32528,9 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire same-sheet guard no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed full-calc formula audit saved reacquire same-sheet guard no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire same-sheet guard no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

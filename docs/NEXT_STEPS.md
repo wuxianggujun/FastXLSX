@@ -704,6 +704,10 @@ The reverse ordering is now covered for column shifts: a queued
 `WorksheetEditor::insert_columns()` sparse shift, and `save_as()` writes the
 workbook calc metadata plus shifted numeric/formula/text cells while omitting
 old coordinates and `xl/calcChain.xml`.
+That column-shift reverse ordering now also covers the styled source formula
+path: queued `request_full_calculation()` before materialization survives
+`insert_columns(2, 2)`, preserves the shifted formula style at `F2`, translates
+the formula to `C1+D1`, and saves with no `xl/calcChain.xml`.
 The delete-side row-shift branch now has the same full-calculation guard:
 after dirty `WorksheetEditor::delete_rows()` shifts source-backed cells and a
 styled formula into `#REF!` references, queued `request_full_calculation()`

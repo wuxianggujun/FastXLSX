@@ -1014,6 +1014,42 @@ void check_public_state_renamed_insert_formula_noop_audit_readback(
         prefix + " no-op output");
 }
 
+void check_public_state_renamed_insert_formula_saved_reacquire_audit(
+    const fastxlsx::WorkbookEditor& editor,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view expected_formula,
+    std::string_view first_qualified_reference_text,
+    std::string_view first_reference_text,
+    std::string_view second_qualified_reference_text,
+    std::string_view second_reference_text,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+        editor, prefix);
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " post-save reacquire formula audit");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " post-save reacquire formula audit should keep diagnostics clean");
+    check(post_save_audits.size() == 2,
+        prefix + " post-save reacquire should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        post_save_audits, row, column, expected_formula,
+        first_qualified_reference_text, first_reference_text,
+        prefix + " post-save reacquire first shifted reference");
+    check_public_state_renamed_shift_formula_audit(
+        post_save_audits, row, column, expected_formula,
+        second_qualified_reference_text, second_reference_text,
+        prefix + " post-save reacquire second shifted reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, prefix + " post-save reacquire source scan");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -33389,25 +33425,9 @@ void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula audit shift post-save reacquire should keep materialized diagnostics clean");
-    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
-        editor, "renamed formula audit shift");
-    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
-        check_public_state_formula_audits_preserve_editor_diagnostics(
-            editor, "renamed formula audit shift post-save reacquire formula audit");
-    check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0 &&
-            editor.estimated_pending_materialized_memory_usage() == 0,
-        "renamed formula audit shift post-save reacquire formula audit should keep diagnostics clean");
-    check(post_save_audits.size() == 2,
-        "renamed formula audit shift post-save reacquire should report both shifted references");
-    check_public_state_renamed_shift_formula_audit(
-        post_save_audits, 4, 4, expected_formula, "Data!A3", "A3",
-        "renamed formula audit shift post-save reacquire A reference");
-    check_public_state_renamed_shift_formula_audit(
-        post_save_audits, 4, 4, expected_formula, "Data!B3", "B3",
-        "renamed formula audit shift post-save reacquire B reference");
-    check_public_state_source_formula_audit_preserves_shift_fixture(
-        editor, "renamed formula audit shift post-save reacquire source scan");
+    check_public_state_renamed_insert_formula_saved_reacquire_audit(
+        editor, 4, 4, expected_formula, "Data!A3", "A3", "Data!B3", "B3",
+        "renamed formula audit shift");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
@@ -33662,25 +33682,9 @@ void test_public_worksheet_editor_shift_after_rename_column_formula_audits_use_s
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed column formula audit shift post-save reacquire should keep materialized diagnostics clean");
-    check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
-        editor, "renamed column formula audit shift");
-    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> post_save_audits =
-        check_public_state_formula_audits_preserve_editor_diagnostics(
-            editor, "renamed column formula audit shift post-save reacquire formula audit");
-    check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0 &&
-            editor.estimated_pending_materialized_memory_usage() == 0,
-        "renamed column formula audit shift post-save reacquire formula audit should keep diagnostics clean");
-    check(post_save_audits.size() == 2,
-        "renamed column formula audit shift post-save reacquire should report both shifted references");
-    check_public_state_renamed_shift_formula_audit(
-        post_save_audits, 2, 5, expected_formula, "Data!B1", "B1",
-        "renamed column formula audit shift post-save reacquire B reference");
-    check_public_state_renamed_shift_formula_audit(
-        post_save_audits, 2, 5, expected_formula, "Data!C1", "C1",
-        "renamed column formula audit shift post-save reacquire C reference");
-    check_public_state_source_formula_audit_preserves_shift_fixture(
-        editor, "renamed column formula audit shift post-save reacquire source scan");
+    check_public_state_renamed_insert_formula_saved_reacquire_audit(
+        editor, 2, 5, expected_formula, "Data!B1", "B1", "Data!C1", "C1",
+        "renamed column formula audit shift");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");

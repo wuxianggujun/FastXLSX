@@ -287,6 +287,9 @@ clean no-op save.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.
+The try-reacquire, option-mismatch, and missing-query reacquire guard paths now
+pin the same post-noop replacement diagnostics contract after their shared
+handle edit/save step.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

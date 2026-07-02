@@ -42200,6 +42200,9 @@ void test_public_worksheet_editor_shift_try_reacquire_noop_save_preserves_saved_
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift try-reacquire post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift try-reacquire post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift try-reacquire post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -42515,6 +42518,9 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire option mismatch post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire option mismatch post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire option mismatch post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
@@ -42830,6 +42836,9 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preser
             editor.estimated_pending_materialized_memory_usage() == 0 &&
             editor.pending_worksheet_edits().empty(),
         "shift reacquire missing query post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing query post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire missing query post-noop save should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,

@@ -61171,6 +61171,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1514 - Align shift reacquire guard post-noop diagnostics
+
+Type: public `WorksheetEditor` materialized shift reacquire guard/query
+post-noop diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove try-reacquire, option-mismatch, and missing-query reacquire paths keep
+replacement diagnostics empty after their post-noop shared-handle edit/save
+step.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-reacquire`.
+- Adds post-noop save replacement-diagnostics checks to the `try_worksheet()`
+  reacquire, option-mismatch guard, and missing-sheet query regressions.
+- Keeps the existing guard failure hygiene, shared-handle cleanliness checks,
+  retained staged handoff checks, prior output preservation, fresh readback, and
+  dirty materialized diagnostic checks unchanged.
+
+Non-goals:
+- No production logic changes, option-matching changes, missing-sheet behavior
+  changes, handle-sharing changes, save behavior changes, replacement API
+  changes, transactions, worksheet metadata/range synchronization,
+  sharedStrings/styles migration, relationship repair, calcChain rebuild,
+  broader Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

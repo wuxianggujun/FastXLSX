@@ -60195,6 +60195,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1488 - Align WorksheetCellSnapshot style documentation
+
+Type: public `WorksheetEditor` API contract documentation alignment.
+
+Status: completed.
+
+Goal:
+Make `WorksheetCellSnapshot` documentation match the current in-memory editor
+contract: snapshots copy `CellValue` payloads, and those payloads can carry an
+existing materialized source `StyleId` handle.
+
+Coverage:
+- Updates the public header comment for `WorksheetCellSnapshot`.
+- Clarifies that source `StyleId` handles preserved by value-only updates,
+  explicit clears, and row/column shifts remain visible through snapshot
+  `CellValue` payloads.
+- Keeps the boundary explicit: snapshots do not expose workbook style table
+  records, rich formatting metadata, worksheet metadata, relationships, style
+  migration, or style merge semantics.
+
+Non-goals:
+- No production logic changes, snapshot API changes, new tests, style
+  migration/merge, styles.xml repair, rich formatting preservation,
+  sharedStrings migration, metadata/range repair, relationship repair,
+  calcChain rebuild, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

@@ -4378,6 +4378,10 @@ Caller-supplied explicit default `StyleId{0}` on
 `sparse_cells()` snapshots do not expose a default style, and dirty save-as
 projection omits `s="0"`. This remains default-style normalization only, not
 non-default style migration or existing-workbook style registry support.
+`WorksheetCellSnapshot` wording now matches that current contract: snapshot
+`CellValue` payloads can carry materialized source `StyleId` handles when a
+sparse record has one, but snapshots still do not expose workbook style table
+details, worksheet metadata, or any style migration/merge surface.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

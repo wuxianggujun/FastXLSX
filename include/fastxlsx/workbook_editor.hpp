@@ -195,9 +195,11 @@ struct WorksheetCellReference {
 ///
 /// API mode: In-memory / existing-workbook small-file inspection. The value is
 /// copied out of the materialized sparse store. Explicit blank cells are
-/// represented by CellValue::blank(). This snapshot does not expose styles,
-/// formulas beyond their CellValue payload, relationships, or worksheet
-/// metadata.
+/// represented by CellValue::blank(). CellValue carries any materialized
+/// source StyleId handle already attached to the sparse record, including
+/// styles preserved by value-only updates, clears, and row/column shifts. This
+/// snapshot does not expose workbook style table details, relationships, or
+/// worksheet metadata beyond the CellValue payload.
 struct WorksheetCellSnapshot {
     WorksheetCellReference reference;
     CellValue value;

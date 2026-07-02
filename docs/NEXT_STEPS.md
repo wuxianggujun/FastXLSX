@@ -240,6 +240,12 @@ That insert-column styled source formula path is now also pinned when
 dirty materialized diagnostics stay aligned, `save_as()` writes the shifted
 styled `F2` formula with `fullCalcOnLoad="1"`, and no `xl/calcChain.xml` is
 invented.
+That same after-shift styled insert-column/full-calculation path now covers
+rejected exact source overwrite too: after `insert_columns(2, 2)` and then
+`request_full_calculation()`, the failed save preserves dirty diagnostics,
+the translated `F2` formula/style, shifted source cells, queued workbook
+metadata, and source bytes; a safe retry writes `fullCalcOnLoad="1"` with no
+`xl/calcChain.xml`.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

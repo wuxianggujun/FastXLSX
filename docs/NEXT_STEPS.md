@@ -700,6 +700,11 @@ too: after a dirty `WorksheetEditor::insert_rows()` sparse shift, queued
 `request_full_calculation()` preserves materialized names/counts/memory until
 `save_as()`, and the saved package carries `fullCalcOnLoad="1"` alongside the
 shifted styled formula without creating `xl/calcChain.xml`.
+That same after-shift insert-row/full-calculation path now covers rejected
+exact source overwrite: the failed save preserves dirty diagnostics, the
+translated `D4` formula/style, shifted source and dirty trailing rows, queued
+workbook metadata, and source bytes before a safe retry writes
+`fullCalcOnLoad="1"` with no `xl/calcChain.xml`.
 The row-shift reverse ordering is covered as well: a queued
 `request_full_calculation()` before materializing `Data` still allows a later
 styled `insert_rows()` shift, writes the translated `D4` formula with

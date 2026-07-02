@@ -20108,6 +20108,130 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         inspect_full_calc_insert_rows_output);
 }
 
+void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_save_state()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-failed-save-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-failed-save-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("extra-c3"));
+    sheet.insert_rows(2, 2);
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(dirty_cell_count == 8,
+        "full-calc insert_rows failed save setup should keep shifted sparse count");
+
+    editor.request_full_calculation();
+
+    const auto source_entries_before_failed_save =
+        fastxlsx::test::read_zip_entries(source);
+    const auto check_dirty_insert_rows_session = [&](std::string_view scenario) {
+        const std::string label = std::string(scenario);
+
+        check(!editor.last_edit_error().has_value(),
+            label + " should keep diagnostics clear");
+        check(editor.has_pending_changes(),
+            label + " should keep the public editor dirty");
+        check(editor.pending_change_count() == 1,
+            label + " should keep only the queued workbook metadata edit before materialized handoff");
+        check(sheet.has_pending_changes(),
+            label + " should keep the shifted worksheet dirty");
+        check(sheet.cell_count() == dirty_cell_count,
+            label + " should preserve the shifted sparse count");
+        check(sheet.estimated_memory_usage() == dirty_memory_usage,
+            label + " should preserve the shifted materialized memory estimate");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 5, 4,
+            label + " should expose shifted bounds");
+        check(editor.pending_materialized_worksheet_names()
+                  == std::vector<std::string>{"Data"},
+            label + " should report Data dirty");
+        check(editor.pending_materialized_cell_count() == dirty_cell_count,
+            label + " should report the shifted sparse count");
+        check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+            label + " should report the shifted sparse memory");
+
+        const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
+        check(shifted_formula.has_value() &&
+                shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula->text_value() == "A3+B3" &&
+                shifted_formula->has_style() &&
+                shifted_formula->style_id().value() == styled_formula_style.value(),
+            label + " should keep translated formula and style id in memory");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                sheet.get_cell("B1").number_value() == 1.0 &&
+                sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+                sheet.get_cell("B4").text_value() == "row2-gap-b2" &&
+                sheet.get_cell("C4").text_value() == "row2-gap-c2" &&
+                sheet.get_cell("A5").text_value() == "extra-c3" &&
+                sheet.get_cell("C5").text_value() == "extra-c3",
+            label + " should keep shifted source and dirty rows in memory");
+        check(!sheet.try_cell("D2").has_value() &&
+                !sheet.try_cell("A3").has_value() &&
+                !sheet.try_cell("C3").has_value(),
+            label + " should keep old and inserted coordinates absent");
+    };
+
+    check_dirty_insert_rows_session(
+        "full-calc insert_rows failed save dirty state before rejected source overwrite");
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "full-calc insert_rows failed save should reject exact source overwrite");
+    check_dirty_insert_rows_session(
+        "full-calc insert_rows failed save rejected source overwrite");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        "full-calc insert_rows failed save should leave source package unchanged");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc insert_rows failed save safe retry should clean the shifted sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc insert_rows failed save safe retry should count metadata plus materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc insert_rows failed save safe retry should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc insert_rows failed save safe retry should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        "full-calc insert_rows failed save safe retry should leave source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A3+B3</f></c>)";
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "full-calc insert_rows failed save safe retry should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc insert_rows failed save safe retry should not invent calcChain.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D5"/>)",
+        "full-calc insert_rows failed save safe retry should project shifted bounds");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc insert_rows failed save safe retry should write shifted styled formula");
+    check_contains(worksheet_xml, R"(<c r="A5" t="inlineStr"><is><t>extra-c3</t></is></c>)",
+        "full-calc insert_rows failed save safe retry should write shifted source trailing cell");
+    check_contains(worksheet_xml, R"(<c r="C5" t="inlineStr"><is><t>extra-c3</t></is></c>)",
+        "full-calc insert_rows failed save safe retry should write shifted dirty trailing cell");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "full-calc insert_rows failed save safe retry should omit old formula coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "full-calc insert_rows failed save safe retry should omit old source coordinate");
+    check_not_contains(worksheet_xml, R"(r="C3")",
+        "full-calc insert_rows failed save safe retry should omit old dirty coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "full-calc insert_rows failed save safe retry should preserve untouched worksheets");
+}
+
 void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -49381,6 +49505,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
             test_public_worksheet_editor_insert_rows_shifts_sparse_records();
             test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift();
+            test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_save_state();
             test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift();
             test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_failed_save_preserves_state();
             test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot();

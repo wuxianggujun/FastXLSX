@@ -235,6 +235,11 @@ output, and then proves a second clean no-op save is byte-stable.
 The `insert_columns()` styled source formula path mirrors that coverage with a
 source-backed styled formula shifted to `F2`, a later `G2` edit, a
 fresh-reopenable post-noop output, and a byte-stable second clean no-op save.
+That insert-column styled source formula path is now also pinned when
+`request_full_calculation()` is queued after the dirty materialized shift:
+dirty materialized diagnostics stay aligned, `save_as()` writes the shifted
+styled `F2` formula with `fullCalcOnLoad="1"`, and no `xl/calcChain.xml` is
+invented.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

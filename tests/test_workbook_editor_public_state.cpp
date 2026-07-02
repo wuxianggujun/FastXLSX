@@ -20740,6 +20740,168 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         inspect_insert_columns_styled_post_noop_output);
 }
 
+void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styled_formula_shift()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-columns-styled-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-columns-styled-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-columns-styled-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_columns(2, 2);
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(dirty_cell_count == 7,
+        "full-calc insert_columns styled formula setup should keep shifted sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 6,
+        "full-calc insert_columns styled formula setup should expose shifted bounds");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("F2");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "C1+D1" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "full-calc insert_columns styled formula setup should translate formula and preserve style id");
+    check(editor.pending_change_count() == 0,
+        "full-calc insert_columns styled formula setup should not queue a Patch handoff before save_as");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "full-calc insert_columns styled formula setup should report Data dirty");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "full-calc insert_columns styled formula setup should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "full-calc insert_columns styled formula setup should report shifted sparse memory");
+
+    editor.request_full_calculation();
+
+    check(!editor.last_edit_error().has_value(),
+        "request_full_calculation after insert_columns styled formula should clear diagnostics");
+    check(editor.pending_change_count() == 1,
+        "request_full_calculation after insert_columns styled formula should add one metadata edit");
+    check(sheet.has_pending_changes(),
+        "request_full_calculation after insert_columns styled formula should keep the shifted sheet dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "request_full_calculation after insert_columns styled formula should preserve dirty names");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "request_full_calculation after insert_columns styled formula should preserve dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "request_full_calculation after insert_columns styled formula should preserve dirty sparse memory");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc insert_columns styled formula save_as should clean the shifted materialized sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc insert_columns styled formula save_as should count metadata edit plus materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "full-calc insert_columns styled formula save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "full-calc insert_columns styled formula save_as should clear dirty materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc insert_columns styled formula save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="F2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>C1+D1</f></c>)";
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "full-calc insert_columns styled formula save_as should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc insert_columns styled formula save_as should not invent calcChain.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:F3"/>)",
+        "full-calc insert_columns styled formula save_as should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="D1"><v>1</v></c>)",
+        "full-calc insert_columns styled formula save_as should write shifted source-backed number");
+    check_contains(worksheet_xml, R"(<c r="D2")",
+        "full-calc insert_columns styled formula save_as should write shifted B2");
+    check_contains(worksheet_xml, R"(<c r="E2")",
+        "full-calc insert_columns styled formula save_as should write shifted C2");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc insert_columns styled formula save_as should write shifted styled formula");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "full-calc insert_columns styled formula save_as should omit inserted B1");
+    check_not_contains(worksheet_xml, R"(r="B2")",
+        "full-calc insert_columns styled formula save_as should omit inserted B2");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "full-calc insert_columns styled formula save_as should omit inserted C2");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "full-calc insert_columns styled formula should preserve untouched worksheets");
+
+    const auto inspect_full_calc_insert_columns_styled_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc insert_columns styled formula reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "full-calc insert_columns styled formula reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_d1->number_value() == 1.0,
+                "full-calc insert_columns styled formula reopened output should read shifted number");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_f2->text_value() == "C1+D1" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "full-calc insert_columns styled formula reopened output should read styled formula");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("A3").text_value() == "extra-c3" &&
+                    reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2",
+                "full-calc insert_columns styled formula reopened output should read shifted source cells");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "full-calc insert_columns styled formula reopened output should keep inserted coordinates absent");
+        };
+    check_reopened_shift_output(output, "full-calc insert_columns styled formula",
+        inspect_full_calc_insert_columns_styled_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc insert_columns styled formula no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc insert_columns styled formula no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc insert_columns styled formula no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc insert_columns styled formula no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc insert_columns styled formula no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "full-calc insert_columns styled formula no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "full-calc insert_columns styled formula no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-calc insert_columns styled formula no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output,
+        "full-calc insert_columns styled formula no-op save",
+        inspect_full_calc_insert_columns_styled_output);
+}
+
 void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
 {
     const std::filesystem::path source =
@@ -47997,6 +48159,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_preserves_shifted_source_formula_style();
+            test_public_worksheet_editor_full_calculation_preserves_insert_columns_styled_formula_shift();
             test_public_worksheet_editor_full_calculation_before_insert_columns_shift();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shifts_rewrite_stationary_formula_references();

@@ -866,6 +866,46 @@ void check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics
         prefix + " should keep materialized diagnostics empty after full-calc saved reacquire");
 }
 
+void check_public_state_renamed_full_calc_noop_formula_audit_readback(
+    const fastxlsx::WorkbookEditor& editor,
+    const std::filesystem::path& noop_output,
+    std::string_view shifted_formula,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view expected_c5_text,
+    std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
+        check_public_state_formula_audits_preserve_editor_diagnostics(
+            editor, prefix + " no-op materialized audit");
+    check(noop_audits.size() == 2,
+        prefix + " no-op should report both shifted references");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!A2", "A2",
+        prefix + " no-op shifted A reference");
+    check_public_state_renamed_shift_formula_audit(
+        noop_audits, 3, 4, shifted_formula, "Data!B2", "B2",
+        prefix + " no-op shifted B reference");
+    check_public_state_source_formula_audit_preserves_shift_fixture(
+        editor, prefix + " no-op source audit");
+    check_public_state_reopened_shift_formula_audit_output(
+        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
+        "Data!A2", "A2", "Data!B2", "B2",
+        prefix + " no-op output");
+
+    fastxlsx::WorkbookEditor reopened_noop =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_noop_sheet =
+        reopened_noop.worksheet("RenamedData");
+    const std::optional<fastxlsx::CellValue> reopened_noop_c5 =
+        reopened_noop_sheet.try_cell("C5");
+    check(reopened_noop_c5.has_value() &&
+            reopened_noop_c5->kind() == fastxlsx::CellValueKind::Text &&
+            reopened_noop_c5->text_value() == expected_c5_text,
+        prefix + " no-op output should read the C5 text cell");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -30408,18 +30448,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire invalid mutation no-op output should match the recovery output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire invalid mutation no-op output");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    const std::optional<fastxlsx::CellValue> reopened_noop_recovered_cell =
-        reopened_noop_sheet.try_cell("C5");
-    check(reopened_noop_recovered_cell.has_value() &&
-            reopened_noop_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
-            reopened_noop_recovered_cell->text_value() == "invalid-recovery-c5",
-        "renamed full-calc formula audit saved reacquire invalid mutation no-op output should read recovered text");
+    check_public_state_renamed_full_calc_noop_formula_audit_readback(
+        editor, noop_output, shifted_formula, styled_formula_style,
+        "invalid-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid mutation");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_mutation_noop_save()
@@ -30873,18 +30905,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire invalid reads no-op output should match the recovery output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire invalid reads no-op output");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    const std::optional<fastxlsx::CellValue> reopened_noop_recovered_cell =
-        reopened_noop_sheet.try_cell("C5");
-    check(reopened_noop_recovered_cell.has_value() &&
-            reopened_noop_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
-            reopened_noop_recovered_cell->text_value() == "invalid-read-recovery-c5",
-        "renamed full-calc formula audit saved reacquire invalid reads no-op output should read recovered text");
+    check_public_state_renamed_full_calc_noop_formula_audit_readback(
+        editor, noop_output, shifted_formula, styled_formula_style,
+        "invalid-read-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid reads");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_reads_noop_save()
@@ -31332,18 +31356,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid shifts no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire invalid shifts no-op output should match the recovery output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire invalid shifts no-op output");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    const std::optional<fastxlsx::CellValue> reopened_noop_recovered_cell =
-        reopened_noop_sheet.try_cell("C5");
-    check(reopened_noop_recovered_cell.has_value() &&
-            reopened_noop_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
-            reopened_noop_recovered_cell->text_value() == "invalid-shift-recovery-c5",
-        "renamed full-calc formula audit saved reacquire invalid shifts no-op output should read recovered text");
+    check_public_state_renamed_full_calc_noop_formula_audit_readback(
+        editor, noop_output, shifted_formula, styled_formula_style,
+        "invalid-shift-recovery-c5",
+        "renamed full-calc formula audit saved reacquire invalid shifts");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_invalid_shifts_noop_save()
@@ -31775,18 +31791,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire missing query no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire missing query no-op output should match the recovery output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire missing query no-op output");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    const std::optional<fastxlsx::CellValue> reopened_noop_recovered_cell =
-        reopened_noop_sheet.try_cell("C5");
-    check(reopened_noop_recovered_cell.has_value() &&
-            reopened_noop_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
-            reopened_noop_recovered_cell->text_value() == "missing-query-recovery-c5",
-        "renamed full-calc formula audit saved reacquire missing query no-op output should read recovered text");
+    check_public_state_renamed_full_calc_noop_formula_audit_readback(
+        editor, noop_output, shifted_formula, styled_formula_style,
+        "missing-query-recovery-c5",
+        "renamed full-calc formula audit saved reacquire missing query");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_missing_query_noop_save()
@@ -32218,18 +32226,10 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire option mismatch no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire option mismatch no-op output should match the recovery output");
-    check_public_state_reopened_shift_formula_audit_output(
-        noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
-        "Data!A2", "A2", "Data!B2", "B2",
-        "renamed full-calc formula audit saved reacquire option mismatch no-op output");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    const std::optional<fastxlsx::CellValue> reopened_noop_recovered_cell =
-        reopened_noop_sheet.try_cell("C5");
-    check(reopened_noop_recovered_cell.has_value() &&
-            reopened_noop_recovered_cell->kind() == fastxlsx::CellValueKind::Text &&
-            reopened_noop_recovered_cell->text_value() == "option-mismatch-recovery-c5",
-        "renamed full-calc formula audit saved reacquire option mismatch no-op output should read recovered text");
+    check_public_state_renamed_full_calc_noop_formula_audit_readback(
+        editor, noop_output, shifted_formula, styled_formula_style,
+        "option-mismatch-recovery-c5",
+        "renamed full-calc formula audit saved reacquire option mismatch");
 }
 
 void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_reacquire_option_mismatch_noop_save()

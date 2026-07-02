@@ -353,6 +353,9 @@ That failed-save retry branch now also pins the later no-op output side: after
 the safe retry, the no-op save keeps shifted formula-audit references and source
 audit state stable, and the no-op package fresh-reopens with the shifted styled
 formula plus the retried `C5` text cell.
+The adjacent invalid-operation recovery/no-op branches now share that same
+no-op formula-audit/readback helper for invalid mutation, invalid read, invalid
+shift, missing-query, and option-mismatch recovery saves.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

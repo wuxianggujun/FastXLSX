@@ -733,6 +733,9 @@ source overwrite: the failed save preserves the queued full-calculation
 metadata, dirty materialized diagnostics, translated `F2` formula/style,
 shifted in-memory source cells, and source package bytes; a later safe retry
 writes the shifted output with `fullCalcOnLoad="1"` and no `xl/calcChain.xml`.
+The after-shift insert-column failed-save retry now also has the same clean
+no-op save proof after the safe retry: no new handoff is recorded, diagnostics
+stay clean, and the no-op output is byte-identical to the retry output.
 The delete-side row-shift branch now has the same full-calculation guard:
 after dirty `WorksheetEditor::delete_rows()` shifts source-backed cells and a
 styled formula into `#REF!` references, queued `request_full_calculation()`
@@ -743,6 +746,9 @@ exact source overwrite: the failed save preserves dirty diagnostics, the
 translated `D1` formula/style, shifted source rows, queued workbook metadata,
 and source bytes before a safe retry writes `fullCalcOnLoad="1"` with no
 `xl/calcChain.xml`.
+The after-shift delete-row retry path now also proves clean no-op save
+stability after the safe retry, preserving public save/catalog state and
+byte-identical output without adding another materialized handoff.
 The delete-side row-shift reverse ordering now mirrors that path:
 `request_full_calculation()` can be queued before materializing `Data`, and a
 later dirty `WorksheetEditor::delete_rows()` still writes the styled `D1`
@@ -773,6 +779,9 @@ exact source overwrite: the failed save preserves dirty diagnostics, the
 translated `C2` formula/style, shifted source columns, queued workbook metadata,
 and source bytes before a safe retry writes `fullCalcOnLoad="1"` with no
 `xl/calcChain.xml`.
+The after-shift delete-column retry path now matches the same no-op save
+stability contract after safe retry: clean diagnostics, stable public
+save/catalog state, no extra handoff, and byte-identical output.
 Formula audit diagnostics now sit on top of that full-calculation mixing state:
 `formula_reference_audits()` remains read-only after a dirty shifted qualified
 formula and queued `request_full_calculation()`, reporting the shifted

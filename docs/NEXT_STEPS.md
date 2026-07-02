@@ -346,6 +346,9 @@ later reads, audits, or guard failures.
 That helper now spans the adjacent invalid mutation/read/shift, missing-query,
 and option-mismatch setup families too, so each rejected operation starts from
 the same pinned clean saved-reacquire diagnostics contract.
+The failed-save retry branch now enters its later dirty mutation from the same
+clean full-calc saved-reacquire diagnostics snapshot before testing rejected
+source-overwrite output handling.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

@@ -29959,6 +29959,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire failed save reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire failed save should keep old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire failed save");
 
     reacquired.set_cell(5, 3, fastxlsx::CellValue::text("failed-save-c5"));
     const std::size_t failed_save_memory = reacquired.estimated_memory_usage();

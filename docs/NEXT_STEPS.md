@@ -216,6 +216,10 @@ both sheets with the deleted-row post-noop edits intact.
 The delete-columns cross-handle path mirrors that reuse coverage while avoiding
 old deleted coordinates: later `D1` edits on both sheets save cleanly and the
 old `D2` coordinates remain absent.
+That delete-columns cross-handle path now also runs a second clean no-op
+`save_as()` after the post-noop edit, keeping both handles clean, retaining the
+same handoff count, preserving byte-stable package entries, and fresh-reopening
+both sheets with the deleted-column post-noop edits intact.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

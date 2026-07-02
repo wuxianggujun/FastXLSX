@@ -3220,6 +3220,9 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "dirty state second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "dirty state second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "dirty state second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -3335,6 +3338,9 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "same-handle second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "same-handle second no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "same-handle second no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -3906,6 +3912,9 @@ void test_public_workbook_editor_multi_sheet_materialized_noop_save_stability()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "multi-sheet materialized no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "multi-sheet materialized no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -4062,6 +4071,9 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "multi-sheet materialized retry no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized retry no-op save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "multi-sheet materialized retry no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -4314,6 +4326,9 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen no-op save should keep materialized diagnostics empty");
     check(reopened.pending_worksheet_edits().empty(),
         "multi-sheet retry reopen no-op save should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "multi-sheet retry reopen no-op save should not queue replacement diagnostics");
     check(!reopened.last_edit_error().has_value(),
         "multi-sheet retry reopen no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -4530,6 +4545,9 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
             reopened.pending_materialized_cell_count() == 0 &&
             reopened.estimated_pending_materialized_memory_usage() == 0,
         "multi-sheet retry reopen third no-op save should keep diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "multi-sheet retry reopen third no-op save should not queue replacement diagnostics");
     check(!reopened.last_edit_error().has_value(),
         "multi-sheet retry reopen third no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -4795,6 +4813,9 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen no-op save should keep materialized diagnostics empty");
     check(reopened.pending_worksheet_edits().empty(),
         "single-sheet reopen no-op save should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "single-sheet reopen no-op save should not queue replacement diagnostics");
     check(!reopened.last_edit_error().has_value(),
         "single-sheet reopen no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(
@@ -4975,6 +4996,9 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
             reopened.pending_materialized_cell_count() == 0 &&
             reopened.estimated_pending_materialized_memory_usage() == 0,
         "single-sheet reopen third no-op save should keep diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "single-sheet reopen third no-op save should not queue replacement diagnostics");
     check(!reopened.last_edit_error().has_value(),
         "single-sheet reopen third no-op save should keep diagnostics clear");
     check_workbook_editor_public_save_state_preserved(

@@ -309,6 +309,10 @@ no-op saves.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.
+The core materialized saved-session no-op paths now also keep replacement
+diagnostics empty for single-sheet dirty-state reuse, same-handle reuse,
+multi-sheet save/retry, and single-/multi-sheet reopen post-noop lifecycle
+outputs.
 It also covers `generated_in_memory_multi_sheet_save`, which dirties two
 materialized worksheets in the same editor session and verifies one `save_as()`
 flushes both while preserving an untouched sheet.

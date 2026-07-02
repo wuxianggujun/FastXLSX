@@ -61440,6 +61440,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1521 - Align core materialized no-op replacement diagnostics
+
+Type: public `WorksheetEditor` materialized save/no-op lifecycle diagnostics
+regression.
+
+Status: completed.
+
+Goal:
+Apply the replacement-diagnostics parity contract to the core materialized
+saved-session no-op outputs in the base public-state shard.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state`.
+- Adds replacement-diagnostics checks to single-sheet dirty-state reuse,
+  same-handle reuse, multi-sheet materialized no-op/retry, multi-sheet
+  retry-reopen no-op/third-no-op, and single-sheet reopen no-op/third-no-op
+  save paths.
+- Keeps existing clean-handle checks, materialized diagnostics, save-state
+  snapshots, catalog snapshots, byte-stable package checks, source-output
+  preservation checks, and fresh readback unchanged.
+
+Non-goals:
+- No production logic changes, save behavior changes, handle lifetime semantic
+  changes, failed-save retry behavior changes, fresh-reopen behavior changes,
+  replacement API changes, rollback or transactions, sharedStrings/styles
+  migration, relationship repair, calcChain rebuild, broader
+  Patch/materialized composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

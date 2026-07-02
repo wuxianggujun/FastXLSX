@@ -20223,6 +20223,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
         check(shifted_formula.has_value() &&
@@ -20514,6 +20516,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
         check(shifted_formula.has_value() &&
@@ -21500,6 +21504,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("F2");
         check(shifted_formula.has_value() &&
@@ -21794,6 +21800,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("F2");
         check(shifted_formula.has_value() &&
@@ -25084,6 +25092,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D1");
         check(shifted_formula.has_value() &&
@@ -25364,6 +25374,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift_
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D1");
         check(shifted_formula.has_value() &&
@@ -25627,6 +25639,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C2");
         check(shifted_formula.has_value() &&
@@ -26228,6 +26242,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
             label + " should report the shifted sparse count");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             label + " should report the shifted sparse memory");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, label + " dirty materialized summary");
 
         const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("C2");
         check(shifted_formula.has_value() &&

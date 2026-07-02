@@ -694,6 +694,11 @@ too: after a dirty `WorksheetEditor::insert_rows()` sparse shift, queued
 `request_full_calculation()` preserves materialized names/counts/memory until
 `save_as()`, and the saved package carries `fullCalcOnLoad="1"` alongside the
 shifted styled formula without creating `xl/calcChain.xml`.
+The row-shift reverse ordering is covered as well: a queued
+`request_full_calculation()` before materializing `Data` still allows a later
+styled `insert_rows()` shift, writes the translated `D4` formula with
+`fullCalcOnLoad="1"`, keeps clean materialization diagnostics empty, and
+does not create `xl/calcChain.xml`.
 The reverse ordering is now covered for column shifts: a queued
 `request_full_calculation()` before `worksheet()` still allows a later dirty
 `WorksheetEditor::insert_columns()` sparse shift, and `save_as()` writes the

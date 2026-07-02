@@ -20108,6 +20108,108 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         inspect_full_calc_insert_rows_output);
 }
 
+void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+
+    editor.request_full_calculation();
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_rows styled formula setup should clear diagnostics");
+    check(editor.pending_change_count() == 1,
+        "full-calc before insert_rows styled formula setup should queue one workbook metadata edit");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "full-calc before insert_rows styled formula setup should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "full-calc before insert_rows styled formula setup should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before insert_rows styled formula setup should not expose dirty materialized memory");
+
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    check(!sheet.has_pending_changes(),
+        "worksheet() after full-calc before insert_rows styled formula should materialize cleanly");
+    check(editor.pending_change_count() == 1,
+        "clean materialization after full-calc before insert_rows styled formula should keep metadata edit count");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialization after full-calc before insert_rows styled formula should keep dirty diagnostics clear");
+
+    sheet.insert_rows(2, 2);
+
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory_usage = sheet.estimated_memory_usage();
+    check(dirty_cell_count == 7,
+        "full-calc before insert_rows styled formula should keep shifted sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 5, 4,
+        "full-calc before insert_rows styled formula should expose shifted bounds");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("D4");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "A3+B3" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "full-calc before insert_rows styled formula should translate formula and preserve style id");
+    check(editor.pending_change_count() == 1,
+        "full-calc before insert_rows styled formula should not flush materialized state before save_as");
+    check(sheet.has_pending_changes(),
+        "full-calc before insert_rows styled formula should leave the shifted sheet dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "full-calc before insert_rows styled formula should report Data dirty");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "full-calc before insert_rows styled formula should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "full-calc before insert_rows styled formula should report shifted sparse memory");
+
+    editor.save_as(output);
+
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_rows styled formula save_as should clean the shifted materialized sheet");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_rows styled formula save_as should count metadata edit plus materialized flush");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "full-calc before insert_rows styled formula save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "full-calc before insert_rows styled formula save_as should clear dirty materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before insert_rows styled formula save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string workbook_xml = output_entries.at("xl/workbook.xml");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D4" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>A3+B3</f></c>)";
+    check_contains(workbook_xml, R"(fullCalcOnLoad="1")",
+        "full-calc before insert_rows styled formula save_as should persist workbook fullCalcOnLoad metadata");
+    check(output_entries.find("xl/calcChain.xml") == output_entries.end(),
+        "full-calc before insert_rows styled formula save_as should not invent calcChain.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D5"/>)",
+        "full-calc before insert_rows styled formula save_as should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="A1")",
+        "full-calc before insert_rows styled formula save_as should keep source row one");
+    check_contains(worksheet_xml, R"(<c r="A4")",
+        "full-calc before insert_rows styled formula save_as should write shifted source row two");
+    check_contains(worksheet_xml, R"(<c r="A5")",
+        "full-calc before insert_rows styled formula save_as should write shifted source row three");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "full-calc before insert_rows styled formula save_as should write shifted styled formula");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "full-calc before insert_rows styled formula save_as should omit old formula coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "full-calc before insert_rows styled formula save_as should omit old trailing coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "full-calc before insert_rows styled formula should preserve untouched worksheets");
+}
+
 void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -48155,6 +48257,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_erase_columns_noop_invalid_and_range();
             test_public_worksheet_editor_insert_rows_shifts_sparse_records();
             test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift();
+            test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift();
             test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot();
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();

@@ -60863,6 +60863,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1506 - Extend basic delete_columns shift through post-noop save
+
+Type: public `WorksheetEditor` sparse column-delete post-noop edit/save
+regression.
+
+Status: completed.
+
+Goal:
+Prove the basic `delete_columns()` sparse-shift path remains reusable after its
+first clean no-op save.
+
+Coverage:
+- Extends `fastxlsx.workbook_editor.public-state-shifts`.
+- After `delete_columns(1, 1)`, first save, and clean no-op save, edits `D2`
+  and saves a post-noop output.
+- Verifies shifted source `A1`, translated formula `B1`, shifted dirty `C2`,
+  and new `D2` through package XML and fresh readback.
+- Verifies the original shifted output and first no-op output remain unchanged,
+  then requires a final clean no-op output to be byte-equivalent to the
+  post-noop output.
+
+Non-goals:
+- No production logic changes, column metadata synchronization, dense column
+  operations, formula evaluation, broad formula repair beyond existing shifted
+  formula text, metadata/range repair, sharedStrings/styles migration,
+  relationship repair, calcChain rebuild, broader Patch/materialized
+  composition, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

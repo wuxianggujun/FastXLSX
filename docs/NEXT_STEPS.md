@@ -798,6 +798,9 @@ byte-identical.
 It now does the same for the basic `insert_columns()` sparse-shift path, writing
 `F3` after the first no-op save and requiring the expanded `A1:F3` output plus
 the following clean no-op output to remain stable on fresh readback.
+The basic `delete_columns()` path now has the matching coverage, writing `D2`
+after the first no-op save and requiring the expanded `A1:D2` output plus the
+following clean no-op output to remain stable on fresh readback.
 Full-calculation row/column shift tests now pin that same summary contract while
 workbook metadata is already queued: after-shift and before-shift insert/delete
 row/column paths keep the dirty `Data` materialized summary aligned with the

@@ -255,6 +255,9 @@ Those insert-side rich formula paths now also run a second clean no-op
 `save_as()` after the post-noop edit: the saved-session diagnostics stay clean,
 no extra handoff is recorded, the output remains byte-stable, and a fresh reopen
 still reads the translated formula plus the later formula edit.
+Those insert-side rich formula post-noop saves now also assert replacement
+diagnostics stay empty at the formula-edit save point and at the following
+clean no-op save.
 The `delete_rows()` `#REF!` formula path now has matching post-noop reuse
 coverage: a later `D3` formula save preserves the translated `C3` `#REF!`
 formula and leaves earlier first/no-op outputs unchanged.

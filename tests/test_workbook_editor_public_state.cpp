@@ -19653,6 +19653,10 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-insert-rows-post-noop-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -19840,10 +19844,123 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         editor, save_state_before_noop, "insert_rows no-op save");
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop, "insert_rows no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "insert_rows no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "insert_rows no-op save",
         inspect_insert_rows_output);
+
+    sheet.set_cell("E5", fastxlsx::CellValue::text("post-noop-insert-rows-styled"));
+    check(sheet.has_pending_changes(),
+        "insert_rows styled source formula post-noop edit should dirty the saved handle");
+    check(sheet.cell_count() == 9,
+        "insert_rows styled source formula post-noop edit should add one sparse cell");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 5, 5,
+        "insert_rows styled source formula post-noop edit should expand bounds to E5");
+    const std::optional<fastxlsx::CellValue> retained_formula = sheet.try_cell("D4");
+    check(retained_formula.has_value() &&
+            retained_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            retained_formula->text_value() == "A3+B3" &&
+            retained_formula->has_style() &&
+            retained_formula->style_id().value() == styled_formula_style.value(),
+        "insert_rows styled source formula post-noop edit should preserve shifted formula style id");
+    check(editor.pending_change_count() == 1,
+        "insert_rows styled source formula post-noop edit should retain the prior handoff before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 9 &&
+            editor.estimated_pending_materialized_memory_usage() == sheet.estimated_memory_usage(),
+        "insert_rows styled source formula post-noop edit should report the dirty materialized sheet");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_rows styled source formula post-noop save should clean the materialized handle");
+    check(editor.pending_change_count() == 2,
+        "insert_rows styled source formula post-noop save should record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_rows styled source formula post-noop save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_rows styled source formula post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "insert_rows styled source formula post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "insert_rows styled source formula post-noop save should leave the no-op output unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, styled_formula_xml,
+        "insert_rows styled source formula post-noop save should keep the styled formula cell");
+    check_contains(post_noop_xml, R"(<c r="E5")",
+        "insert_rows styled source formula post-noop save should write the post-noop edit");
+    const auto inspect_insert_rows_post_noop_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 9,
+                "insert_rows styled source formula post-noop reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 5,
+                "insert_rows styled source formula post-noop reopened output should expose expanded bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d4 =
+                reopened_sheet.try_cell("D4");
+            check(reopened_d4.has_value() &&
+                    reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d4->text_value() == "A3+B3" &&
+                    reopened_d4->has_style() &&
+                    reopened_d4->style_id().value() == styled_formula_style.value(),
+                "insert_rows styled source formula post-noop reopened output should keep styled formula");
+            const std::optional<fastxlsx::CellValue> reopened_e5 =
+                reopened_sheet.try_cell("E5");
+            check(reopened_e5.has_value() &&
+                    reopened_e5->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e5->text_value() == "post-noop-insert-rows-styled",
+                "insert_rows styled source formula post-noop reopened output should read post-noop edit");
+            const std::optional<fastxlsx::CellValue> reopened_a5 =
+                reopened_sheet.try_cell("A5");
+            const std::optional<fastxlsx::CellValue> reopened_c5 =
+                reopened_sheet.try_cell("C5");
+            check(reopened_a5.has_value() && reopened_a5->text_value() == "extra-c3" &&
+                    reopened_c5.has_value() && reopened_c5->text_value() == "extra-c3",
+                "insert_rows styled source formula post-noop reopened output should keep shifted trailing cells");
+            check(!reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("C3").has_value(),
+                "insert_rows styled source formula post-noop reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output,
+        "insert_rows styled source formula post-noop save",
+        inspect_insert_rows_post_noop_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(post_noop_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_rows styled source formula post-noop noop save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "insert_rows styled source formula post-noop noop save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_rows styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "insert_rows styled source formula post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "insert_rows styled source formula post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "insert_rows styled source formula post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "insert_rows styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "insert_rows styled source formula post-noop noop save should leave prior post-noop output unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "insert_rows styled source formula post-noop noop save",
+        inspect_insert_rows_post_noop_output);
 }
 
 void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
@@ -20341,6 +20458,286 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         "insert_columns no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "insert_columns no-op save",
         inspect_insert_columns_output);
+}
+
+void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formula_style()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-noop-output.xlsx");
+    const std::filesystem::path post_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-post-noop-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_columns(2, 2);
+
+    check(sheet.cell_count() == 7,
+        "insert_columns styled source formula should preserve shifted sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 6,
+        "insert_columns styled source formula should expose shifted bounds");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("A3").text_value() == "extra-c3",
+        "insert_columns styled source formula should preserve cells left of the insertion point");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("D1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "insert_columns styled source formula should shift B1 to D1");
+    check(sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("E2").text_value() == "row2-gap-c2",
+        "insert_columns styled source formula should shift row-two filler cells");
+    const std::optional<fastxlsx::CellValue> shifted_formula = sheet.try_cell("F2");
+    check(shifted_formula.has_value() &&
+            shifted_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula->text_value() == "C1+D1" &&
+            shifted_formula->has_style() &&
+            shifted_formula->style_id().value() == styled_formula_style.value(),
+        "insert_columns styled source formula should translate moved formula and preserve style id");
+    check(!sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("C2").has_value(),
+        "insert_columns styled source formula should leave inserted sparse columns empty");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_two = sheet.row_cells(2);
+    check(shifted_row_two.size() == 4,
+        "insert_columns styled source formula row_cells should expose shifted row two");
+    check(shifted_row_two[0].reference.row == 2 &&
+            shifted_row_two[0].reference.column == 1 &&
+            shifted_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_two[0].value.text_value() == "placeholder-a2",
+        "insert_columns styled source formula row_cells should keep the source-backed cell first");
+    check(shifted_row_two[3].reference.row == 2 &&
+            shifted_row_two[3].reference.column == 6 &&
+            shifted_row_two[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_row_two[3].value.text_value() == "C1+D1" &&
+            shifted_row_two[3].value.has_style() &&
+            shifted_row_two[3].value.style_id().value() == styled_formula_style.value(),
+        "insert_columns styled source formula row_cells should keep shifted formula style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_six =
+        sheet.column_cells(6);
+    check(shifted_column_six.size() == 1,
+        "insert_columns styled source formula column_cells should expose shifted formula column");
+    check(shifted_column_six[0].reference.row == 2 &&
+            shifted_column_six[0].reference.column == 6 &&
+            shifted_column_six[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_column_six[0].value.text_value() == "C1+D1" &&
+            shifted_column_six[0].value.has_style() &&
+            shifted_column_six[0].value.style_id().value() == styled_formula_style.value(),
+        "insert_columns styled source formula column_cells should keep shifted formula style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 7 &&
+            editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "insert_columns styled source formula should report shifted dirty materialized state");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns styled source formula should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="F2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"("><f>C1+D1</f></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:F3"/>)",
+        "insert_columns styled source formula save_as should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="D1"><v>1</v></c>)",
+        "insert_columns styled source formula save_as should write shifted B1");
+    check_contains(worksheet_xml, R"(<c r="D2")",
+        "insert_columns styled source formula save_as should write shifted B2");
+    check_contains(worksheet_xml, R"(<c r="E2")",
+        "insert_columns styled source formula save_as should write shifted C2");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "insert_columns styled source formula save_as should write shifted formula with style id");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "insert_columns styled source formula save_as should omit inserted B1");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "insert_columns styled source formula save_as should omit inserted C2");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "insert_columns styled source formula should preserve untouched worksheets");
+
+    const auto inspect_insert_columns_styled_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "insert_columns styled source formula reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "insert_columns styled source formula reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_d1->number_value() == 1.0,
+                "insert_columns styled source formula reopened output should read shifted B1");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_f2->text_value() == "C1+D1" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "insert_columns styled source formula reopened output should read styled formula");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A3").text_value() == "extra-c3",
+                "insert_columns styled source formula reopened output should read shifted source cells");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "insert_columns styled source formula reopened output should keep inserted coordinates absent");
+        };
+    check_reopened_shift_output(output, "insert_columns styled source formula",
+        inspect_insert_columns_styled_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns styled source formula no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "insert_columns styled source formula no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns styled source formula no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_columns styled source formula no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns styled source formula no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "insert_columns styled source formula no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "insert_columns styled source formula no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "insert_columns styled source formula no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output,
+        "insert_columns styled source formula no-op save",
+        inspect_insert_columns_styled_output);
+
+    sheet.set_cell("G2", fastxlsx::CellValue::text("post-noop-insert-columns-styled"));
+    check(sheet.has_pending_changes(),
+        "insert_columns styled source formula post-noop edit should dirty the saved handle");
+    check(sheet.cell_count() == 8,
+        "insert_columns styled source formula post-noop edit should add one sparse cell");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 7,
+        "insert_columns styled source formula post-noop edit should expand bounds to G2");
+    const std::optional<fastxlsx::CellValue> retained_formula = sheet.try_cell("F2");
+    check(retained_formula.has_value() &&
+            retained_formula->kind() == fastxlsx::CellValueKind::Formula &&
+            retained_formula->text_value() == "C1+D1" &&
+            retained_formula->has_style() &&
+            retained_formula->style_id().value() == styled_formula_style.value(),
+        "insert_columns styled source formula post-noop edit should preserve shifted formula style id");
+    check(editor.pending_change_count() == 1,
+        "insert_columns styled source formula post-noop edit should retain the prior handoff before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == 8 &&
+            editor.estimated_pending_materialized_memory_usage() == sheet.estimated_memory_usage(),
+        "insert_columns styled source formula post-noop edit should report the dirty materialized sheet");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns styled source formula post-noop save should clean the materialized handle");
+    check(editor.pending_change_count() == 2,
+        "insert_columns styled source formula post-noop save should record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns styled source formula post-noop save should clear dirty diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns styled source formula post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "insert_columns styled source formula post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "insert_columns styled source formula post-noop save should leave the no-op output unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, styled_formula_xml,
+        "insert_columns styled source formula post-noop save should keep the styled formula cell");
+    check_contains(post_noop_xml, R"(<c r="G2")",
+        "insert_columns styled source formula post-noop save should write the post-noop edit");
+    const auto inspect_insert_columns_styled_post_noop_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "insert_columns styled source formula post-noop reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 7,
+                "insert_columns styled source formula post-noop reopened output should expose expanded bounds");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_f2->text_value() == "C1+D1" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "insert_columns styled source formula post-noop reopened output should keep styled formula");
+            const std::optional<fastxlsx::CellValue> reopened_g2 =
+                reopened_sheet.try_cell("G2");
+            check(reopened_g2.has_value() &&
+                    reopened_g2->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_g2->text_value() == "post-noop-insert-columns-styled",
+                "insert_columns styled source formula post-noop reopened output should read post-noop edit");
+            check(reopened_sheet.get_cell("D1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2",
+                "insert_columns styled source formula post-noop reopened output should keep shifted source cells");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "insert_columns styled source formula post-noop reopened output should keep inserted coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output,
+        "insert_columns styled source formula post-noop save",
+        inspect_insert_columns_styled_post_noop_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(post_noop_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns styled source formula post-noop noop save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "insert_columns styled source formula post-noop noop save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns styled source formula post-noop noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns styled source formula post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "insert_columns styled source formula post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "insert_columns styled source formula post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "insert_columns styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "insert_columns styled source formula post-noop noop save should leave prior post-noop output unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "insert_columns styled source formula post-noop noop save",
+        inspect_insert_columns_styled_post_noop_output);
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
@@ -47599,6 +47996,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot();
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
+            test_public_worksheet_editor_insert_columns_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_full_calculation_before_insert_columns_shift();
             test_public_worksheet_editor_delete_columns_shifts_sparse_records();
             test_public_worksheet_editor_shifts_rewrite_stationary_formula_references();

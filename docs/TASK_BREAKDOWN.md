@@ -58751,6 +58751,99 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
   passes.
 
+### P8.1456 - Post-noop edit after insert-rows styled source formula shift
+
+Type: default public-state regression coverage for saved-session usability
+after a row-insertion styled source formula shift.
+
+Status: completed.
+
+Goal:
+Prove the `insert_rows()` styled source formula path remains reusable after the
+first materialized save and clean no-op save, preserving the shifted styled
+source formula while allowing a later materialized edit and a second clean
+no-op `save_as()`.
+
+Coverage:
+- Extends `test_public_worksheet_editor_insert_rows_shifts_sparse_records()`
+  after the existing clean no-op save.
+- Adds post-noop and post-noop-noop output artifacts for the row-insertion
+  styled source formula path.
+- Writes a later `Data!E5` text cell, verifies the shifted `Data!D4` formula
+  still has its non-default `StyleId` and translated `A3+B3` text, verifies
+  dirty materialized diagnostics and retained handoff count before save, and
+  then saves a fresh-reopenable post-noop output.
+- Verifies the post-noop save advances the retained handoff count, leaves the
+  first and no-op outputs unchanged, and the second clean no-op save is
+  byte-stable while preserving the styled formula and later edit after fresh
+  reopen.
+
+Non-goals:
+- No production logic changes, style preservation semantic changes, style
+  migration/merge, formula translation changes, formula evaluation, cached
+  value preservation, insert semantics changes, save behavior changes, staged
+  handoff retention changes, commit/close semantics, rollback, transaction
+  replay, metadata/range repair, calcChain rebuild, sharedStrings migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
+### P8.1457 - Post-noop edit after insert-columns styled source formula shift
+
+Type: default public-state regression coverage for saved-session usability
+after a column-insertion styled source formula shift.
+
+Status: completed.
+
+Goal:
+Prove the `insert_columns()` styled source formula path remains reusable after
+the first materialized save and clean no-op save, preserving the shifted styled
+source formula while allowing a later materialized edit and a second clean
+no-op `save_as()`.
+
+Coverage:
+- Adds
+  `test_public_worksheet_editor_insert_columns_preserves_shifted_source_formula_style()`.
+- Uses `write_two_sheet_source_with_styled_shift_formula()` so a source-backed
+  styled formula shifts from `Data!D2` to `Data!F2`, translates from `A1+B1`
+  to `C1+D1`, and preserves the non-default `StyleId`.
+- Adds post-noop and post-noop-noop output artifacts for the column-insertion
+  styled source formula path.
+- Writes a later `Data!G2` text cell, verifies the shifted `Data!F2` styled
+  formula remains intact, verifies dirty materialized diagnostics and retained
+  handoff count before save, and then saves a fresh-reopenable post-noop
+  output.
+- Verifies the post-noop save advances the retained handoff count, leaves the
+  first and no-op outputs unchanged, and the second clean no-op save is
+  byte-stable while preserving the styled formula and later edit after fresh
+  reopen.
+
+Non-goals:
+- No production logic changes, style preservation semantic changes, style
+  migration/merge, formula translation changes, formula evaluation, cached
+  value preservation, insert semantics changes, save behavior changes, staged
+  handoff retention changes, commit/close semantics, rollback, transaction
+  replay, metadata/range repair, calcChain rebuild, sharedStrings migration,
+  relationship repair, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

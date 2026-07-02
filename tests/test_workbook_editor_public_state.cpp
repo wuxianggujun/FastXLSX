@@ -33699,6 +33699,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
                 editor.pending_materialized_cell_count() == 0 &&
                 editor.estimated_pending_materialized_memory_usage() == 0,
             "renamed delete-row formula audit reacquire should keep diagnostics clean");
+        check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+            editor, "renamed delete-row formula audit");
         check(reacquired_audits.size() == 1,
             "renamed delete-row formula audit reacquire should keep only the surviving reference");
         check(find_public_state_formula_audit(
@@ -33872,6 +33874,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_formula_audits_skip_
                 editor.pending_materialized_cell_count() == 0 &&
                 editor.estimated_pending_materialized_memory_usage() == 0,
             "renamed delete-column formula audit reacquire should keep diagnostics clean");
+        check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
+            editor, "renamed delete-column formula audit");
         check(reacquired_audits.size() == 1,
             "renamed delete-column formula audit reacquire should keep only the surviving reference");
         check(find_public_state_formula_audit(

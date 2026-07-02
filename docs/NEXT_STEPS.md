@@ -2228,6 +2228,9 @@ Delete-column renamed styled-formula recovery paths now share that contract
 before their later row shift as well.
 Insert-column renamed styled-formula and formula-audit paths now also pin
 saved-session reacquire diagnostics before their next read or audit.
+Delete-side renamed formula-audit `#REF!` paths now pin the same saved-session
+reacquire diagnostics while preserving the existing surviving-reference audit
+behavior.
 Saved-session formula-audit reacquire paths now pin post-save mutation memory in
 both aggregate materialized diagnostics and edit summaries, including the
 failed-save retry route.

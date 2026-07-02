@@ -19666,6 +19666,42 @@ void check_reopened_untouched_keep_me_output(
         });
 }
 
+void check_reopened_styled_shift_source_output(
+    const std::filesystem::path& source,
+    fastxlsx::StyleId formula_style,
+    std::string_view scenario)
+{
+    check_reopened_shift_output(
+        source,
+        scenario,
+        [formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "reopened styled shift source should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "reopened styled shift source should keep source bounds");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("B1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("B2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("C2").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A3").text_value() == "extra-c3",
+                "reopened styled shift source should keep source-backed cells");
+            const std::optional<fastxlsx::CellValue> reopened_d2 =
+                reopened_sheet.try_cell("D2");
+            check(reopened_d2.has_value() &&
+                    reopened_d2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d2->text_value() == "A1+B1" &&
+                    reopened_d2->has_style() &&
+                    reopened_d2->style_id().value() == formula_style.value(),
+                "reopened styled shift source should keep original formula style");
+            check(!reopened_sheet.try_cell("D4").has_value() &&
+                    !reopened_sheet.try_cell("F2").has_value() &&
+                    !reopened_sheet.try_cell("C5").has_value(),
+                "reopened styled shift source should not contain shifted coordinates");
+        });
+    check_reopened_untouched_keep_me_output(source, scenario);
+}
+
 void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -20314,6 +20350,10 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
         });
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc insert_rows failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc insert_rows failed save source after no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_shift()
@@ -21575,6 +21615,10 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         });
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc insert_columns styled formula failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc insert_columns styled formula failed save source after no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_shift()
@@ -25131,6 +25175,10 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         });
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc delete_rows failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc delete_rows failed save source after no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift()
@@ -25665,6 +25713,10 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         });
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc delete_columns failed save no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc delete_columns failed save source after no-op");
 }
 
 void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()

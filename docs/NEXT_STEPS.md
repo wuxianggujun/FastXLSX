@@ -801,6 +801,10 @@ both shifted trailing cells `A5` and `C5`.
 Those same after-shift no-op readbacks now also materialize `Untouched` through
 a fresh editor, verifying the companion sheet remains clean and source-backed
 with `keep-me` / `99.0` after `Data`-only edits.
+The after-shift failed-save/no-op paths now also reopen the original source
+package after the retry sequence, proving rejected source-overwrite attempts and
+later safe/no-op saves leave the source workbook readable with its original
+`D2` styled formula and untouched companion sheet.
 Formula audit diagnostics now sit on top of that full-calculation mixing state:
 `formula_reference_audits()` remains read-only after a dirty shifted qualified
 formula and queued `request_full_calculation()`, reporting the shifted

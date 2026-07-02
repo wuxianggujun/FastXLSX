@@ -36282,6 +36282,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column option mismatch should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column option mismatch should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula delete-column option mismatch should preserve source and planned worksheet names");
@@ -36410,6 +36413,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column option mismatch no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column option mismatch no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula delete-column option mismatch no-op save");
@@ -36551,6 +36557,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid mutations should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column invalid mutations should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula delete-column invalid mutations should preserve source and planned worksheet names");
@@ -36671,6 +36680,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid mutations no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column invalid mutations no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula delete-column invalid mutations no-op save");
@@ -36794,6 +36806,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column missing query should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column missing query should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula delete-column missing query should preserve source and planned worksheet names");
@@ -36922,6 +36937,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column missing query no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column missing query no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula delete-column missing query no-op save");
@@ -37075,6 +37093,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column invalid reads should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula delete-column invalid reads should preserve source and planned worksheet names");
@@ -37195,6 +37216,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column invalid reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column invalid reads no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula delete-column invalid reads no-op save");
@@ -37409,6 +37433,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column snapshot reads should not dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column snapshot reads should not queue replacement diagnostics");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed formula delete-column snapshot reads should preserve source and planned worksheet names");
@@ -37498,6 +37525,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column snapshot reads no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column snapshot reads no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula delete-column snapshot reads no-op save");
@@ -37677,6 +37707,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column reacquire should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column reacquire should not queue replacement diagnostics");
 
     reacquired.insert_rows(2, 1);
     const std::size_t shifted_memory = reacquired.estimated_memory_usage();
@@ -37773,6 +37806,9 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column reacquire no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column reacquire no-op save should not queue replacement diagnostics");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "renamed formula delete-column reacquire no-op save");

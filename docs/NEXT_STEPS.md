@@ -709,6 +709,10 @@ after dirty `WorksheetEditor::delete_rows()` shifts source-backed cells and a
 styled formula into `#REF!` references, queued `request_full_calculation()`
 preserves dirty diagnostics until `save_as()`, writes `fullCalcOnLoad="1"`,
 and still does not create `xl/calcChain.xml`.
+The delete-side row-shift reverse ordering now mirrors that path:
+`request_full_calculation()` can be queued before materializing `Data`, and a
+later dirty `WorksheetEditor::delete_rows()` still writes the styled `D1`
+formula as `#REF!+#REF!` with `fullCalcOnLoad="1"` and no `xl/calcChain.xml`.
 The delete-side column-shift reverse ordering is covered too: a queued
 `request_full_calculation()` before materialization survives later dirty
 `WorksheetEditor::delete_columns()` shifts, including a styled formula whose

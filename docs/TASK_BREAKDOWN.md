@@ -59907,6 +59907,44 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
   passes.
 
+### P8.1481 - Pin direct shift pre-save dirty summaries
+
+Type: default public-state shift diagnostics regression.
+
+Status: completed.
+
+Goal:
+Prove the direct sparse row/column shift paths expose complete dirty
+materialized worksheet summaries before the first materialized save flush.
+
+Coverage:
+- Extends `insert_rows()`, `delete_rows()`, `insert_columns()`, and
+  `delete_columns()` direct public-state shift tests.
+- Reuses the single-`Data` dirty materialized summary helper to verify
+  `pending_worksheet_edits()` has one dirty `Data` summary, no replacement
+  state, the current shifted sparse cell count, and
+  `estimated_materialized_memory_usage` matching the active `WorksheetEditor`.
+- Keeps the existing shifted cell, formula translation, save/reopen, and no-op
+  save checks unchanged.
+
+Non-goals:
+- No production logic changes, row/column shift semantic changes, formula
+  translation changes, save behavior changes, memory-accounting changes,
+  metadata/range repair, relationship repair, sharedStrings/styles migration,
+  calcChain rebuild, broader Patch/materialized composition, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-shifts`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-shifts$" --output-on-failure`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor" --output-on-failure`
+  passes.
+
 ### P8.1205 - Pin formula-shift pre-save aggregate memory
 
 Type: public `WorksheetEditor` formula row/column shift aggregate materialized

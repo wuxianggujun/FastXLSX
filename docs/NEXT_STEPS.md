@@ -786,6 +786,11 @@ evidence for the original `D2` styled formula and untouched companion sheet.
 The row/column shift and full-calculation shift readback matrix now runs under a
 separate `fastxlsx.workbook_editor.public-state-shifts` CTest shard, preserving
 coverage while giving the base public-state shard more 60-second timeout margin.
+Direct row/column shift tests now also pin pre-save dirty summary diagnostics:
+`insert_rows()`, `delete_rows()`, `insert_columns()`, and `delete_columns()`
+verify `pending_worksheet_edits()` reports one dirty `Data` materialized summary
+with no replacement state and memory/count values matching the active
+`WorksheetEditor` before the flush.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

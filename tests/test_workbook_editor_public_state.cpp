@@ -19792,6 +19792,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
             shifted_column_four[0].value.style_id().value() == styled_formula_style.value(),
         "insert_rows column_cells should keep the translated formula cell and style id");
     const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "insert_rows pre-save shift summary");
     check(sheet.has_pending_changes(),
         "insert_rows should dirty the materialized worksheet when records shift");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
@@ -20748,6 +20750,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
             shifted_column_three[0].value.text_value() == "A1+B3",
         "delete_rows column_cells should keep the translated formula cell");
     const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_rows pre-save shift summary");
     check(sheet.has_pending_changes(),
         "delete_rows should dirty the materialized worksheet when records shift");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
@@ -20901,6 +20905,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
             shifted_column_five[1].value.text_value() == "extra-c3",
         "insert_columns column_cells should keep the shifted dirty cell second");
     const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "insert_columns pre-save shift summary");
     check(sheet.has_pending_changes(),
         "insert_columns should dirty the materialized worksheet when records shift");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
@@ -22118,6 +22124,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
             shifted_column_two[0].value.text_value() == "A2+C1",
         "delete_columns column_cells should keep the translated formula cell");
     const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_columns pre-save shift summary");
     check(sheet.has_pending_changes(),
         "delete_columns should dirty the materialized worksheet when records shift");
     check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},

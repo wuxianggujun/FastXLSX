@@ -30186,6 +30186,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire invalid mutation should keep old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire invalid mutation");
 
     check(threw_fastxlsx_error([&] {
         sheet.set_cell(0, 1,
@@ -30439,6 +30441,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire invalid mutation noop-save should keep old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire invalid mutation noop-save");
 
     check(threw_fastxlsx_error([&] {
         sheet.set_cell(0, 1,
@@ -30627,6 +30631,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid reads reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire invalid reads should keep old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire invalid reads");
 
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "renamed full-calc formula audit saved reacquire invalid reads should reject row-zero try_cell");
@@ -30900,6 +30906,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid reads noop-save reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire invalid reads noop-save should keep old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire invalid reads noop-save");
 
     check(threw_fastxlsx_error([&] { (void)sheet.try_cell(0, 1); }),
         "renamed full-calc formula audit saved reacquire invalid reads noop-save should reject row-zero try_cell");
@@ -31100,6 +31108,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid shifts reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire invalid shifts should keep old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire invalid shifts");
 
     check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
         "renamed full-calc formula audit saved reacquire invalid shifts should reject row-zero insert_rows");
@@ -31355,6 +31365,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire invalid shifts noop-save");
 
     check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
         "renamed full-calc formula audit saved reacquire invalid shifts noop-save should reject row-zero insert_rows");
@@ -31542,6 +31554,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire missing query try_worksheet should return empty for missing sheet");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire missing query should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire missing query");
     check(threw_fastxlsx_error([&] {
         (void)editor.worksheet("Missing");
     }), "renamed full-calc formula audit saved reacquire missing query worksheet should reject missing sheet");
@@ -31797,6 +31811,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire missing query noop-save try_worksheet should return empty for missing sheet");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire missing query noop-save should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire missing query noop-save");
     check(threw_fastxlsx_error([&] {
         (void)editor.worksheet("Missing");
     }), "renamed full-calc formula audit saved reacquire missing query noop-save worksheet should reject missing sheet");
@@ -31987,6 +32003,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     }), "renamed full-calc formula audit saved reacquire option mismatch worksheet should reject different options");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire option mismatch");
 
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch should keep last_edit_error clear");
@@ -32242,6 +32260,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     }), "renamed full-calc formula audit saved reacquire option mismatch noop-save worksheet should reject different options");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch noop-save should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire option mismatch noop-save");
 
     check(!editor.last_edit_error().has_value(),
         "renamed full-calc formula audit saved reacquire option mismatch noop-save should keep last_edit_error clear");

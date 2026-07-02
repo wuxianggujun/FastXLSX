@@ -20268,6 +20268,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
         "full-calc insert_rows failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc insert_rows failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc insert_rows failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc insert_rows failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -20561,6 +20563,9 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         "full-calc before insert_rows styled formula failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc before insert_rows styled formula failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_rows styled formula failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc before insert_rows styled formula failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -21552,6 +21557,9 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         "full-calc insert_columns styled formula failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc insert_columns styled formula failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc insert_columns styled formula failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc insert_columns styled formula failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -21848,6 +21856,9 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         "full-calc before insert_columns styled formula failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc before insert_columns styled formula failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_columns styled formula failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc before insert_columns styled formula failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -25141,6 +25152,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         "full-calc delete_rows failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc delete_rows failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc delete_rows failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc delete_rows failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -25425,6 +25438,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift_
         "full-calc before delete_rows failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc before delete_rows failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc before delete_rows failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc before delete_rows failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -25693,6 +25708,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         "full-calc delete_columns failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc delete_columns failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc delete_columns failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc delete_columns failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
@@ -26298,6 +26315,9 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         "full-calc before delete_columns failed save safe retry should clear dirty diagnostics");
     check(editor.pending_worksheet_edits().empty(),
         "full-calc before delete_columns failed save safe retry should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before delete_columns failed save safe retry should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "full-calc before delete_columns failed save safe retry should keep diagnostics clear");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,

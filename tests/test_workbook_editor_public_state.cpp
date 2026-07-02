@@ -849,6 +849,23 @@ void check_workbook_editor_renamed_formula_saved_reacquire_diagnostics(
         prefix + " should keep materialized diagnostics empty after saved reacquire");
 }
 
+void check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(editor.has_worksheet("RenamedData") && !editor.has_worksheet("Data"),
+        prefix + " should expose only the planned sheet name after full-calc saved reacquire");
+    check(editor.pending_change_count() == 3,
+        prefix + " should keep only the rename, full-calc metadata, and saved materialized handoff after reacquire");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " should not expose replacement diagnostics after full-calc saved reacquire");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should keep materialized diagnostics empty after full-calc saved reacquire");
+}
+
 void check_public_state_single_data_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
@@ -29698,6 +29715,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     check_workbook_editor_no_replacement_diagnostics(
         editor,
         "renamed full-calc formula audit saved reacquire should not queue replacement diagnostics");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire");
     check(editor.source_worksheet_names() == expected_source_names &&
             editor.worksheet_names() == expected_planned_names,
         "renamed full-calc formula audit saved reacquire should preserve source and planned worksheet names");
@@ -32396,6 +32415,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire same-sheet guard reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire same-sheet guard should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire same-sheet guard");
 
     const std::optional<std::string> guard_error =
         check_public_same_sheet_rename_then_replacement_guard_sequence(
@@ -32661,6 +32682,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save reacquire should start clean");
     check(!editor.try_worksheet("Data").has_value(),
         "renamed full-calc formula audit saved reacquire same-sheet guard noop-save should keep the old source name unavailable");
+    check_workbook_editor_renamed_formula_full_calc_saved_reacquire_diagnostics(
+        editor, "renamed full-calc formula audit saved reacquire same-sheet guard noop-save");
 
     const std::optional<std::string> guard_error =
         check_public_same_sheet_rename_then_replacement_guard_sequence(

@@ -339,6 +339,10 @@ no-op save and readback checks.
 Renamed full-calc formula-audit saved-reacquire intermediate and no-op states
 now keep replacement diagnostics empty while preserving formula audit snapshots,
 saved edit summaries, and expected invalid-operation diagnostics.
+The full-calc saved-reacquire diagnostics now also have a dedicated helper for
+the rename + fullCalc metadata + saved materialized handoff count, covering the
+base saved-reacquire path and the same-sheet guard recovery/no-op setup before
+later reads, audits, or guard failures.
 Renamed formula insert-row no-op and rejected-operation paths now also keep
 replacement diagnostics empty while preserving translated styled formulas,
 snapshot ownership, byte-stable outputs, and fresh readback.

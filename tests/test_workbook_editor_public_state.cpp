@@ -22025,6 +22025,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
     const std::filesystem::path post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-insert-rows-post-noop-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -22114,6 +22116,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_rows save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D4" s=")")
@@ -22216,6 +22220,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "insert_rows no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_rows no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "insert_rows no-op save",
         inspect_insert_rows_output);
 
@@ -22244,6 +22250,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         editor, catalog_before_second_noop, "insert_rows second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "insert_rows second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_rows second no-op save should leave the source package unchanged");
     check_reopened_shift_output(second_noop_output, "insert_rows second no-op save",
         inspect_insert_rows_output);
 
@@ -22288,6 +22296,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         "insert_rows styled source formula post-noop save should leave the no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_rows styled source formula post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, styled_formula_xml,
         "insert_rows styled source formula post-noop save should keep the styled formula cell");
@@ -22357,6 +22367,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "insert_rows styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_rows styled source formula post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "insert_rows styled source formula post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,
@@ -23470,6 +23482,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
     const std::filesystem::path post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-delete-rows-post-noop-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -23533,6 +23547,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
         "delete_rows save_as should project the shifted sparse dimension");
@@ -23606,6 +23622,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "delete_rows no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "delete_rows no-op save",
         inspect_delete_rows_output);
 
@@ -23634,6 +23652,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         editor, catalog_before_second_noop, "delete_rows second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "delete_rows second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows second no-op save should leave the source package unchanged");
     check_reopened_shift_output(second_noop_output, "delete_rows second no-op save",
         inspect_delete_rows_output);
 
@@ -23676,6 +23696,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         "delete_rows post-noop save should leave the no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, R"(<dimension ref="A1:D3"/>)",
         "delete_rows post-noop save should project the expanded sparse dimension");
@@ -23762,6 +23784,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "delete_rows post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "delete_rows post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,
@@ -23783,6 +23807,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-insert-columns-post-noop-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -23854,6 +23880,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:E3"/>)",
         "insert_columns save_as should project the shifted sparse dimension");
@@ -23932,6 +23960,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "insert_columns no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "insert_columns no-op save",
         inspect_insert_columns_output);
 
@@ -23960,6 +23990,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         editor, catalog_before_second_noop, "insert_columns second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "insert_columns second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns second no-op save should leave the source package unchanged");
     check_reopened_shift_output(second_noop_output, "insert_columns second no-op save",
         inspect_insert_columns_output);
 
@@ -24002,6 +24034,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         "insert_columns post-noop save should leave the no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, R"(<dimension ref="A1:F3"/>)",
         "insert_columns post-noop save should project the expanded sparse dimension");
@@ -24095,6 +24129,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "insert_columns post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "insert_columns post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,
@@ -25719,6 +25755,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
     const std::filesystem::path post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-delete-columns-post-noop-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -25780,6 +25818,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
         "delete_columns save_as should project the shifted sparse dimension");
@@ -25852,6 +25892,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "delete_columns no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "delete_columns no-op save",
         inspect_delete_columns_output);
 
@@ -25880,6 +25922,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         editor, catalog_before_second_noop, "delete_columns second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "delete_columns second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns second no-op save should leave the source package unchanged");
     check_reopened_shift_output(second_noop_output, "delete_columns second no-op save",
         inspect_delete_columns_output);
 
@@ -25922,6 +25966,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         "delete_columns post-noop save should leave the no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, R"(<dimension ref="A1:D2"/>)",
         "delete_columns post-noop save should project the expanded sparse dimension");
@@ -26009,6 +26055,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "delete_columns post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "delete_columns post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,

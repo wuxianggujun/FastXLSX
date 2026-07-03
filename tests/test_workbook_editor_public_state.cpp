@@ -9701,6 +9701,7 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
 {
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-cells-memory-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     {
         const std::filesystem::path output =
@@ -9759,6 +9760,8 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells range memory-budget release save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "range-cells-mb-release",
             "memory-budget insertion after range erase_cells should persist through save_as");
@@ -9821,6 +9824,8 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "erase_cells range memory-budget release noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells range memory-budget release noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "erase_cells range memory-budget release noop save",
             inspect_erase_range_memory_release_output);
@@ -9889,6 +9894,8 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells batch memory-budget release save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "batch-cells-mb-release",
             "memory-budget insertion after batch erase_cells should persist through save_as");
@@ -9951,6 +9958,8 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "erase_cells batch memory-budget release noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells batch memory-budget release noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "erase_cells batch memory-budget release noop save",
             inspect_erase_batch_memory_release_output);

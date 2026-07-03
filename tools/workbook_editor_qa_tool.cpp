@@ -2544,20 +2544,29 @@ Report run_generated_in_memory_full_calc_overwrite_formula_text_noop_save(
 
 Report run_generated_in_memory_retry_noop_save_impl(
     const CliOptions& options,
-    bool use_path_equivalent_source)
+    bool use_path_equivalent_source,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    const char* source_filename =
-        "fastxlsx-workbook-editor-qa-in-memory-retry-noop-source.xlsx";
-    const char* output_filename =
-        "fastxlsx-workbook-editor-qa-in-memory-retry-noop-output.xlsx";
+    std::string source_filename =
+        request_full_calculation
+            ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-retry-noop-source.xlsx";
+    std::string output_filename =
+        request_full_calculation
+            ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-retry-noop-output.xlsx";
     if (use_path_equivalent_source) {
         source_filename =
-            "fastxlsx-workbook-editor-qa-in-memory-retry-path-equivalent-noop-source.xlsx";
+            request_full_calculation
+                ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-path-equivalent-noop-source.xlsx"
+                : "fastxlsx-workbook-editor-qa-in-memory-retry-path-equivalent-noop-source.xlsx";
         output_filename =
-            "fastxlsx-workbook-editor-qa-in-memory-retry-path-equivalent-noop-output.xlsx";
+            request_full_calculation
+                ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-path-equivalent-noop-output.xlsx"
+                : "fastxlsx-workbook-editor-qa-in-memory-retry-path-equivalent-noop-output.xlsx";
     }
     report.source = write_in_memory_overwrite_formula_text_source(
         resolve_generated_source(options, source_filename));
@@ -2575,6 +2584,9 @@ Report run_generated_in_memory_retry_noop_save_impl(
         "worksheet(Data).set_cell(B1,number)",
         "worksheet(Data).set_cell(C1,formula)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (use_path_equivalent_source) {
         report.mutations.push_back("save_as(path-equivalent-source) rejected");
     } else {
@@ -2589,6 +2601,10 @@ Report run_generated_in_memory_retry_noop_save_impl(
         "A no-op save after the safe retry should be byte-identical",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should survive the rejected save and safe retry");
+    }
     if (use_path_equivalent_source) {
         report.notes.push_back(
             "Path-equivalent source-overwrite save_as should share the same retry behavior");
@@ -2601,6 +2617,9 @@ Report run_generated_in_memory_retry_noop_save_impl(
     data.set_cell("B1", CellValue::number(5.0));
     data.set_cell("C1", CellValue::formula("B1+10"));
     require_formula_cell(data, "C1", "B1+10");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
 
     try {
         editor.save_as(rejected_output);
@@ -2627,6 +2646,17 @@ Report run_generated_in_memory_retry_noop_save(const CliOptions& options)
 Report run_generated_in_memory_retry_path_equivalent_noop_save(const CliOptions& options)
 {
     return run_generated_in_memory_retry_noop_save_impl(options, true);
+}
+
+Report run_generated_in_memory_full_calc_retry_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_retry_noop_save_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_retry_path_equivalent_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_retry_noop_save_impl(options, true, true);
 }
 
 Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
@@ -4075,6 +4105,12 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_retry_path_equivalent_noop_save") {
         return run_generated_in_memory_retry_path_equivalent_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_retry_noop_save") {
+        return run_generated_in_memory_full_calc_retry_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_retry_path_equivalent_noop_save") {
+        return run_generated_in_memory_full_calc_retry_path_equivalent_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_retry_reopen_modify_noop_save") {
         return run_generated_in_memory_retry_reopen_modify_noop_save(options);

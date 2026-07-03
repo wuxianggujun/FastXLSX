@@ -63092,6 +63092,47 @@ Verification:
 - `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_append_row_formula --scenario generated_in_memory_full_calc_append_row_formula_noop_save --scenario generated_in_memory_full_calc_overwrite_formula_text --scenario generated_in_memory_full_calc_overwrite_formula_text_noop_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-formula-writes --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
   passes.
 
+### P8.1558 - Add generated full-calc retry no-op formula QA
+
+Type: opt-in workbook-editor generated QA coverage for public `WorksheetEditor`
+formula overwrite failed-save retry/no-op paths plus workbook full-calculation
+metadata.
+
+Status: completed.
+
+Goal:
+Extend the generated full-calculation QA lane from successful formula writes to
+the existing failed-save retry/no-op formula overwrite paths.
+
+Coverage:
+- Adds `generated_in_memory_full_calc_retry_noop_save` and
+  `generated_in_memory_full_calc_retry_path_equivalent_noop_save` to
+  `tools/workbook_editor_qa_tool.cpp` and `tools/run_workbook_editor_qa.py`.
+- Reuses the existing generated source-backed formula overwrite workbook,
+  rejected exact-source save, rejected path-equivalent source save, safe retry,
+  and clean no-op save mutation shapes.
+- Verifies the source workbook retains old formula/text payloads after the
+  rejected save, the safe retry output contains the overwritten formula cells,
+  workbook `fullCalcOnLoad="1"`, absence of `xl/calcChain.xml`, `openpyxl`
+  readback, and byte-identical no-op outputs.
+- Wires the optional Excel COM sidecar to reuse the existing overwrite formula
+  readback checks for the new full-calculation retry scenarios.
+
+Non-goals:
+- No production logic changes, overwrite mode, rollback, transaction replay,
+  save behavior changes, formula evaluation, cached value preservation,
+  formula-write semantic changes, calcChain rebuild/generation,
+  metadata/range repair, sharedStrings/styles migration, relationship repair,
+  default CTest/CI expansion, broader Patch/materialized composition, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_retry_noop_save --scenario generated_in_memory_full_calc_retry_path_equivalent_noop_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-retry-noop --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

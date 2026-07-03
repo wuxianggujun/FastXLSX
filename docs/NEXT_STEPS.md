@@ -331,6 +331,12 @@ lookups keep the saved planned session clean, and after the later matching
 reacquire plus column shift, the first and second no-op outputs preserve source
 and prior package bytes while fresh readback still exposes the combined
 row/column-shifted `RenamedData` state cleanly.
+The non-formula shift-after-rename invalid-read path now follows the same
+pattern: rejected scalar, A1, range, row-snapshot, and column-snapshot reads do
+not dirty either planned-name handle, and after the later matching reacquire
+plus column shift, repeated no-op saves preserve source and prior package bytes
+while fresh readback still exposes the combined row/column-shifted
+`RenamedData` state cleanly.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

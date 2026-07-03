@@ -43621,6 +43621,8 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-read-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-read-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-invalid-read-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -43739,6 +43741,7 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed shift invalid reads second save should clear dirty diagnostics again");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
@@ -43797,10 +43800,49 @@ void test_public_worksheet_editor_shift_after_rename_invalid_reads_preserve_plan
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "renamed shift invalid reads no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
         "renamed shift invalid reads no-op output should match the second output");
     check_reopened_renamed_shift_noop_output(
         noop_output, "renamed shift invalid reads no-op output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift invalid reads second no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed shift invalid reads second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift invalid reads second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift invalid reads second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift invalid reads second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "renamed shift invalid reads second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "renamed shift invalid reads second no-op save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed shift invalid reads second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "renamed shift invalid reads second no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "renamed shift invalid reads second no-op save should leave the second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "renamed shift invalid reads second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "renamed shift invalid reads second no-op output should match the first no-op output");
+    check_reopened_renamed_shift_noop_output(
+        second_noop_output,
+        "renamed shift invalid reads second no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

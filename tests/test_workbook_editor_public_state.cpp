@@ -4162,6 +4162,8 @@ void test_public_workbook_editor_multi_sheet_materialized_noop_save_stability()
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-multi-noop-output-copy.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
     fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
@@ -4206,6 +4208,8 @@ void test_public_workbook_editor_multi_sheet_materialized_noop_save_stability()
         "multi-sheet materialized reacquire should read saved Untouched!B1");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "multi-sheet materialized save should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "multi-noop-data",
         "multi-sheet materialized output should contain saved Data edit");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "multi-noop-untouched",
@@ -4240,6 +4244,8 @@ void test_public_workbook_editor_multi_sheet_materialized_noop_save_stability()
         "multi-sheet materialized no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "multi-sheet materialized no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "multi-sheet materialized no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet materialized Data",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -4363,6 +4369,8 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
         "multi-sheet materialized retry reacquire should read saved Untouched!B1");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized retry save should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "multi-retry-data",
         "multi-sheet materialized retry output should contain saved Data edit");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "multi-retry-untouched",
@@ -4399,6 +4407,8 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
         "multi-sheet materialized retry no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "multi-sheet materialized retry no-op output should match the safe retry output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized retry no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet materialized retry Data",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -4510,6 +4520,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
     check(editor.has_pending_changes(),
         "multi-sheet retry reopen safe save should retain first-stage staged handoffs");
     const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen safe save should leave the source package unchanged");
     check_contains(retry_entries.at("xl/worksheets/sheet1.xml"), "multi-retry-reopen-data",
         "multi-sheet retry reopen output should contain first-stage Data edit");
     check_contains(retry_entries.at("xl/worksheets/sheet2.xml"), "multi-retry-reopen-untouched",
@@ -4600,6 +4612,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen second-stage save should leave no dirty summaries");
     check(!reopened.last_edit_error().has_value(),
         "multi-sheet retry reopen second-stage save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen second-stage save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
         "multi-sheet retry reopen second-stage save should leave retry output unchanged");
 
@@ -4654,6 +4668,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "multi-sheet retry reopen no-op output should match second-stage output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen no-op save should leave the source package unchanged");
 
     fastxlsx::WorksheetEditor noop_data_reacquired = reopened.worksheet("Data");
     fastxlsx::WorksheetEditor noop_untouched_reacquired = reopened.worksheet("Untouched");
@@ -4781,6 +4797,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen third save should leave no dirty summaries");
     check(!reopened.last_edit_error().has_value(),
         "multi-sheet retry reopen third save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen third save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
         "multi-sheet retry reopen third save should leave retry output unchanged");
     check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
@@ -4873,6 +4891,8 @@ void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_no
         "multi-sheet retry reopen third no-op save");
     check(fastxlsx::test::read_zip_entries(third_noop_output) == third_entries,
         "multi-sheet retry reopen third no-op output should match third output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen third no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(third_noop_output, "Data",
         "multi-sheet retry reopen third no-op Data",
@@ -5082,6 +5102,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen second-stage save should leave no dirty summaries");
     check(!reopened.last_edit_error().has_value(),
         "single-sheet reopen second-stage save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen second-stage save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
         "single-sheet reopen second-stage save should leave first output unchanged");
 
@@ -5142,6 +5164,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == second_entries,
         "single-sheet reopen no-op output should match second-stage output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(noop_output, "Data",
         "single-sheet reopen no-op Data",
@@ -5244,6 +5268,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen third save should leave no dirty summaries");
     check(!reopened.last_edit_error().has_value(),
         "single-sheet reopen third save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen third save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
         "single-sheet reopen third save should leave second output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -5324,6 +5350,8 @@ void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_sa
         "single-sheet reopen third no-op save");
     check(fastxlsx::test::read_zip_entries(third_noop_output) == third_entries,
         "single-sheet reopen third no-op output should match third output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen third no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(third_noop_output, "Data",
         "single-sheet reopen third no-op Data",

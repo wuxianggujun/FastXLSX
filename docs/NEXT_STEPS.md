@@ -2191,6 +2191,12 @@ The styled source-backed row/column value-prefix paths now also repeat a second
 clean no-op `save_as()` after the first no-op output, requiring byte-identical
 entries and fresh reopen readback of the preserved source `StyleId` plus the
 untouched row/column tail.
+The styled source-backed row/column clear paths now mirror that repeated
+no-op-save contract for `clear_row()`, `clear_rows()`, `clear_column()`, and
+`clear_columns()`: after the styled blank output and first no-op save, each path
+writes a second clean no-op output, requires byte-identical entries, and
+fresh-reopens the workbook to verify preserved source `StyleId` handles,
+unstyled blanks, and untouched row/column tails.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

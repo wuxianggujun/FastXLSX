@@ -15735,6 +15735,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-style-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-style-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-rows-style-second-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -15841,10 +15843,42 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
         check_workbook_editor_public_catalog_preserved(
             editor, catalog_before_noop,
             "styled clear_rows no-op save");
-        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
             "styled clear_rows no-op output should match the materialized output");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_rows no-op save",
+            inspect_styled_clear_rows_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_rows second no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_rows second no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_rows second no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_rows second no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_rows second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_rows second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "styled clear_rows second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "styled clear_rows second no-op save");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+            "styled clear_rows second no-op output should match the first no-op output");
+        check_reopened_clean_sheet_output(
+            second_noop_output, "Styled", "styled clear_rows second no-op save",
             inspect_styled_clear_rows_output);
     }
 
@@ -15855,6 +15889,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-style-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-row-style-second-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -15934,10 +15970,42 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
         check_workbook_editor_public_catalog_preserved(
             editor, catalog_before_noop,
             "styled clear_row no-op save");
-        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
             "styled clear_row no-op output should match the materialized output");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_row no-op save",
+            inspect_styled_clear_row_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_row second no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_row second no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_row second no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_row second no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_row second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_row second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "styled clear_row second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "styled clear_row second no-op save");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+            "styled clear_row second no-op output should match the first no-op output");
+        check_reopened_clean_sheet_output(
+            second_noop_output, "Styled", "styled clear_row second no-op save",
             inspect_styled_clear_row_output);
     }
 
@@ -16266,6 +16334,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-style-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-style-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-column-style-second-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -16360,10 +16430,42 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         check_workbook_editor_public_catalog_preserved(
             editor, catalog_before_noop,
             "styled clear_column no-op save");
-        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
             "styled clear_column no-op output should match the materialized output");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_column no-op save",
+            inspect_styled_clear_column_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_column second no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_column second no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_column second no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_column second no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_column second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_column second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "styled clear_column second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "styled clear_column second no-op save");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+            "styled clear_column second no-op output should match the first no-op output");
+        check_reopened_clean_sheet_output(
+            second_noop_output, "Styled", "styled clear_column second no-op save",
             inspect_styled_clear_column_output);
     }
 
@@ -16469,6 +16571,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-style-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-clear-columns-style-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-clear-columns-style-second-noop-output.xlsx");
         fastxlsx::StyleId non_default_style;
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_source);
@@ -16563,10 +16667,42 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         check_workbook_editor_public_catalog_preserved(
             editor, catalog_before_noop,
             "styled clear_columns no-op save");
-        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
             "styled clear_columns no-op output should match the materialized output");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_columns no-op save",
+            inspect_styled_clear_columns_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "styled clear_columns second no-op save should keep the materialized sheet clean");
+        check(editor.pending_change_count() == 1,
+            "styled clear_columns second no-op save should not record another materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "styled clear_columns second no-op save should keep dirty diagnostics clear");
+        check(editor.pending_worksheet_edits().empty(),
+            "styled clear_columns second no-op save should not leave dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "styled clear_columns second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "styled clear_columns second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "styled clear_columns second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "styled clear_columns second no-op save");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+            "styled clear_columns second no-op output should match the first no-op output");
+        check_reopened_clean_sheet_output(
+            second_noop_output, "Styled", "styled clear_columns second no-op save",
             inspect_styled_clear_columns_output);
     }
 

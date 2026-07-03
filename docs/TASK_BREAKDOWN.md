@@ -64188,6 +64188,46 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1584 - Pin styled clear second no-op saves
+
+Type: public `WorksheetEditor` styled clear no-op save/readback regression.
+
+Status: completed.
+
+Goal:
+Verify that styled source-backed row/column value-clear operations remain
+stable across a second clean no-op save after the initial styled-blank
+materialized save and first no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_clear_row_preserves_sparse_records()`.
+- The styled `clear_rows()` and `clear_row()` branches now write second no-op
+  outputs, verify catalog/save-state stability, no dirty materialized
+  diagnostics, no replacement diagnostics, byte-identical package entries, and
+  fresh reopen readback of preserved source `StyleId` handles plus unstyled
+  blank/tail cells.
+- Extends
+  `test_public_worksheet_editor_clear_columns_noop_invalid_and_range()`.
+- The styled `clear_column()` and `clear_columns()` branches mirror the same
+  checks for preserved styled blanks, unstyled blanks, and non-target
+  row/column cells.
+- Reuses the existing style-preserving clear and save/no-op lifecycle; no
+  production code changes.
+
+Non-goals:
+- No style migration/merge, styles.xml repair, caller-supplied non-default
+  style writes, tombstones, dense clears, row/column metadata synchronization,
+  sharedStrings migration, metadata/range repair, calcChain rebuild/generation,
+  relationship repair, broader Patch/materialized composition, default CTest/CI
+  expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

@@ -56148,6 +56148,7 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         artifact("fastxlsx-workbook-editor-public-worksheet-last-error-replace-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-last-error-replace-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
     const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -56236,6 +56237,8 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "replaced failure diagnostics should preserve sparse memory estimate");
     check(!sheet.try_cell("D4").has_value(),
         "replaced failure diagnostics should keep the rejected D4 cell absent");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "replaced failure diagnostics should leave the source package unchanged");
 
     sheet.set_cell("A1", fastxlsx::CellValue::text("fixed"));
     check(!editor.last_edit_error().has_value(),
@@ -56251,6 +56254,8 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         "successful overwrite after diagnostic replacement should expose recovered memory");
 
     editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "last-error replacement recovery save_as should leave the source package unchanged");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "fixed",
@@ -56294,6 +56299,8 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "last-error replacement noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "last-error replacement noop save should leave the source package unchanged");
     check_reopened_last_error_recovery_output(noop_output, options);
 }
 
@@ -56305,6 +56312,7 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
         artifact("fastxlsx-workbook-editor-public-mixed-last-error-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-mixed-last-error-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -56390,6 +56398,8 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
         "mixed failed edits should not leave dirty materialized cells");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "mixed failed edits should not leave dirty materialized memory");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mixed failed edits should leave the source package unchanged");
 
     editor.replace_sheet_data("Untouched",
         {{fastxlsx::CellValue::text("mixed-diagnostic-recovered")}});
@@ -56409,6 +56419,8 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
         "clean materialized Data session should not expose dirty memory after other-sheet recovery");
 
     editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mixed diagnostic recovery save_as should leave the source package unchanged");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
@@ -56453,6 +56465,8 @@ void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "mixed diagnostic recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mixed diagnostic recovery noop save should leave the source package unchanged");
     check_reopened_mixed_last_error_recovery_output(noop_output);
 }
 

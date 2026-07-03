@@ -1080,6 +1080,10 @@ The reverse-order insert-row/full-calculation failed-save retry path now also
 checks fresh-reopened no-op output snapshots: row four exposes shifted source
 cells and the styled translated `D4` formula in row-major order, while column
 four exposes the same `A3+B3` formula/style.
+The matching reverse-order delete-row/full-calculation failed-save retry path
+now checks the no-op output snapshots as well: row one exposes shifted source
+cells and the styled `D1` `#REF!+#REF!` formula, while column four exposes that
+same formula/style after fresh reopen.
 The after-shift delete-column retry path now matches the same no-op save
 stability contract after safe retry: clean diagnostics, stable public
 save/catalog state, no extra handoff, and byte-identical output.

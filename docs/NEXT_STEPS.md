@@ -292,6 +292,11 @@ styled row/column insert tests keep source overwrite rejection non-mutating,
 verify unchanged safe retry and first no-op packages, and fresh-reopen the
 second no-op workbook plus the untouched sheet while confirming source bytes
 remain unchanged.
+The reverse-order full-calculation delete-shift failed-save retry paths now
+match that same second no-op coverage: styled row/column delete retries keep
+source overwrite rejection non-mutating, preserve the safe retry and first
+no-op packages, and fresh-reopen the second no-op workbook plus the untouched
+sheet while confirming source bytes remain unchanged.
 The after-shift `delete_columns()` full-calculation failed-save retry path now
 uses the same reopened snapshot checks after exact source overwrite rejection:
 the clean no-op retry output exposes row-two sparse order and column-three as

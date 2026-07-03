@@ -28284,6 +28284,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-failed-save-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -28399,40 +28401,12 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "full-calc delete_rows failed save safe retry should preserve untouched worksheets");
 
-    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
-        workbook_editor_public_catalog_snapshot(editor);
-    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
-        workbook_editor_public_save_state_snapshot(editor);
-    editor.save_as(noop_output);
-    check(!sheet.has_pending_changes(),
-        "full-calc delete_rows failed save no-op save should keep the materialized handle clean");
-    check(editor.pending_change_count() == 2,
-        "full-calc delete_rows failed save no-op save should not record another handoff");
-    check(editor.pending_materialized_worksheet_names().empty() &&
-            editor.pending_materialized_cell_count() == 0 &&
-            editor.estimated_pending_materialized_memory_usage() == 0 &&
-            editor.pending_worksheet_edits().empty(),
-        "full-calc delete_rows failed save no-op save should keep dirty diagnostics clear");
-    check_workbook_editor_no_replacement_diagnostics(
-        editor, "full-calc delete_rows failed save no-op save should not queue replacement diagnostics");
-    check(!editor.last_edit_error().has_value(),
-        "full-calc delete_rows failed save no-op save should keep diagnostics clear");
-    check_workbook_editor_public_save_state_preserved(
-        editor, save_state_before_noop, "full-calc delete_rows failed save no-op save");
-    check_workbook_editor_public_catalog_preserved(
-        editor, catalog_before_noop, "full-calc delete_rows failed save no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
-        "full-calc delete_rows failed save no-op output should match safe retry output");
-    check(fastxlsx::test::read_zip_entries(output) == output_entries,
-        "full-calc delete_rows failed save no-op save should leave safe retry output unchanged");
-    check_reopened_shift_output(
-        noop_output,
-        "full-calc delete_rows failed save no-op save",
+    const auto inspect_full_calc_delete_rows_failed_save_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
-                "full-calc delete_rows failed save no-op reopened output should keep sparse count");
+                "full-calc delete_rows failed save reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
-                "full-calc delete_rows failed save no-op reopened output should expose shifted bounds");
+                "full-calc delete_rows failed save reopened output should expose shifted bounds");
             const std::optional<fastxlsx::CellValue> reopened_d1 =
                 reopened_sheet.try_cell("D1");
             check(reopened_d1.has_value() &&
@@ -28440,12 +28414,12 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
                     reopened_d1->text_value() == "#REF!+#REF!" &&
                     reopened_d1->has_style() &&
                     reopened_d1->style_id().value() == styled_formula_style.value(),
-                "full-calc delete_rows failed save no-op reopened output should read shifted #REF formula style");
+                "full-calc delete_rows failed save reopened output should read shifted #REF formula style");
             check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
                     reopened_sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
                     reopened_sheet.get_cell("C1").text_value() == "row2-gap-c2" &&
                     reopened_sheet.get_cell("A2").text_value() == "extra-c3",
-                "full-calc delete_rows failed save no-op reopened output should read shifted source rows");
+                "full-calc delete_rows failed save reopened output should read shifted source rows");
             const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
                 reopened_sheet.row_cells(1);
             check(reopened_row_one.size() == 4 &&
@@ -28468,7 +28442,7 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
                     reopened_row_one[3].value.has_style() &&
                     reopened_row_one[3].value.style_id().value() ==
                         styled_formula_style.value(),
-                "full-calc delete_rows failed save no-op reopened row_cells should expose shifted sparse order");
+                "full-calc delete_rows failed save reopened row_cells should expose shifted sparse order");
             const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
                 reopened_sheet.column_cells(4);
             check(reopened_column_four.size() == 1 &&
@@ -28479,17 +28453,93 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
                     reopened_column_four[0].value.has_style() &&
                     reopened_column_four[0].value.style_id().value() ==
                         styled_formula_style.value(),
-                "full-calc delete_rows failed save no-op reopened column_cells should expose shifted styled formula");
+                "full-calc delete_rows failed save reopened column_cells should expose shifted styled formula");
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value(),
-                "full-calc delete_rows failed save no-op reopened output should keep old coordinates absent");
-        });
+                "full-calc delete_rows failed save reopened output should keep old coordinates absent");
+        };
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc delete_rows failed save no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc delete_rows failed save no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc delete_rows failed save no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc delete_rows failed save no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc delete_rows failed save no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "full-calc delete_rows failed save no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "full-calc delete_rows failed save no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "full-calc delete_rows failed save no-op output should match safe retry output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc delete_rows failed save no-op save should leave safe retry output unchanged");
+    check_reopened_shift_output(
+        noop_output,
+        "full-calc delete_rows failed save no-op save",
+        inspect_full_calc_delete_rows_failed_save_output);
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc delete_rows failed save no-op Untouched");
     check_reopened_styled_shift_source_output(
         source,
         styled_formula_style,
         "full-calc delete_rows failed save source after no-op");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc delete_rows failed save second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc delete_rows failed save second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc delete_rows failed save second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc delete_rows failed save second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc delete_rows failed save second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "full-calc delete_rows failed save second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "full-calc delete_rows failed save second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc delete_rows failed save second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc delete_rows failed save second no-op save should leave safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc delete_rows failed save second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(
+        second_noop_output,
+        "full-calc delete_rows failed save second no-op save",
+        inspect_full_calc_delete_rows_failed_save_output);
+    check_reopened_untouched_keep_me_output(
+        second_noop_output, "full-calc delete_rows failed save second no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc delete_rows failed save source after second no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift()
@@ -29262,6 +29312,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-columns-failed-save-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-columns-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-delete-columns-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -29378,6 +29430,62 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "full-calc delete_columns failed save safe retry should preserve untouched worksheets");
 
+    const auto inspect_full_calc_delete_columns_failed_save_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "full-calc delete_columns failed save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "full-calc delete_columns failed save reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "full-calc delete_columns failed save reopened output should read shifted source number");
+            const std::optional<fastxlsx::CellValue> reopened_c2 =
+                reopened_sheet.try_cell("C2");
+            check(reopened_c2.has_value() &&
+                    reopened_c2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c2->text_value() == "#REF!+A1" &&
+                    reopened_c2->has_style() &&
+                    reopened_c2->style_id().value() == styled_formula_style.value(),
+                "full-calc delete_columns failed save reopened output should read shifted #REF formula style");
+            check(reopened_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+                "full-calc delete_columns failed save reopened output should read shifted source columns");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                reopened_sheet.row_cells(2);
+            check(reopened_row_two.size() == 3 &&
+                    reopened_row_two[0].reference.row == 2 &&
+                    reopened_row_two[0].reference.column == 1 &&
+                    reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[0].value.text_value() == "row2-gap-b2" &&
+                    reopened_row_two[1].reference.row == 2 &&
+                    reopened_row_two[1].reference.column == 2 &&
+                    reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[1].value.text_value() == "row2-gap-c2" &&
+                    reopened_row_two[2].reference.row == 2 &&
+                    reopened_row_two[2].reference.column == 3 &&
+                    reopened_row_two[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_row_two[2].value.text_value() == "#REF!+A1" &&
+                    reopened_row_two[2].value.has_style() &&
+                    reopened_row_two[2].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc delete_columns failed save reopened row_cells should expose shifted sparse order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+                reopened_sheet.column_cells(3);
+            check(reopened_column_three.size() == 1 &&
+                    reopened_column_three[0].reference.row == 2 &&
+                    reopened_column_three[0].reference.column == 3 &&
+                    reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_three[0].value.text_value() == "#REF!+A1" &&
+                    reopened_column_three[0].value.has_style() &&
+                    reopened_column_three[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc delete_columns failed save reopened column_cells should expose shifted styled formula");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "full-calc delete_columns failed save reopened output should keep old coordinates absent");
+        };
+
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
@@ -29400,73 +29508,65 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         editor, save_state_before_noop, "full-calc delete_columns failed save no-op save");
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop, "full-calc delete_columns failed save no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "full-calc delete_columns failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc delete_columns failed save no-op save should leave safe retry output unchanged");
     check_reopened_shift_output(
         noop_output,
         "full-calc delete_columns failed save no-op save",
-        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
-            check(reopened_sheet.cell_count() == 4,
-                "full-calc delete_columns failed save no-op reopened output should keep sparse count");
-            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
-                "full-calc delete_columns failed save no-op reopened output should expose shifted bounds");
-            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
-            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
-                    reopened_a1.number_value() == 1.0,
-                "full-calc delete_columns failed save no-op reopened output should read shifted source number");
-            const std::optional<fastxlsx::CellValue> reopened_c2 =
-                reopened_sheet.try_cell("C2");
-            check(reopened_c2.has_value() &&
-                    reopened_c2->kind() == fastxlsx::CellValueKind::Formula &&
-                    reopened_c2->text_value() == "#REF!+A1" &&
-                    reopened_c2->has_style() &&
-                    reopened_c2->style_id().value() == styled_formula_style.value(),
-                "full-calc delete_columns failed save no-op reopened output should read shifted #REF formula style");
-            check(reopened_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
-                    reopened_sheet.get_cell("B2").text_value() == "row2-gap-c2",
-                "full-calc delete_columns failed save no-op reopened output should read shifted source columns");
-            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
-                reopened_sheet.row_cells(2);
-            check(reopened_row_two.size() == 3 &&
-                    reopened_row_two[0].reference.row == 2 &&
-                    reopened_row_two[0].reference.column == 1 &&
-                    reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
-                    reopened_row_two[0].value.text_value() == "row2-gap-b2" &&
-                    reopened_row_two[1].reference.row == 2 &&
-                    reopened_row_two[1].reference.column == 2 &&
-                    reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
-                    reopened_row_two[1].value.text_value() == "row2-gap-c2" &&
-                    reopened_row_two[2].reference.row == 2 &&
-                    reopened_row_two[2].reference.column == 3 &&
-                    reopened_row_two[2].value.kind() == fastxlsx::CellValueKind::Formula &&
-                    reopened_row_two[2].value.text_value() == "#REF!+A1" &&
-                    reopened_row_two[2].value.has_style() &&
-                    reopened_row_two[2].value.style_id().value() ==
-                        styled_formula_style.value(),
-                "full-calc delete_columns failed save no-op reopened row_cells should expose shifted sparse order");
-            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
-                reopened_sheet.column_cells(3);
-            check(reopened_column_three.size() == 1 &&
-                    reopened_column_three[0].reference.row == 2 &&
-                    reopened_column_three[0].reference.column == 3 &&
-                    reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-                    reopened_column_three[0].value.text_value() == "#REF!+A1" &&
-                    reopened_column_three[0].value.has_style() &&
-                    reopened_column_three[0].value.style_id().value() ==
-                        styled_formula_style.value(),
-                "full-calc delete_columns failed save no-op reopened column_cells should expose shifted styled formula");
-            check(!reopened_sheet.try_cell("D2").has_value() &&
-                    !reopened_sheet.try_cell("A3").has_value(),
-                "full-calc delete_columns failed save no-op reopened output should keep old coordinates absent");
-        });
+        inspect_full_calc_delete_columns_failed_save_output);
     check_reopened_untouched_keep_me_output(
         noop_output, "full-calc delete_columns failed save no-op Untouched");
     check_reopened_styled_shift_source_output(
         source,
         styled_formula_style,
         "full-calc delete_columns failed save source after no-op");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc delete_columns failed save second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc delete_columns failed save second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc delete_columns failed save second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc delete_columns failed save second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc delete_columns failed save second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "full-calc delete_columns failed save second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "full-calc delete_columns failed save second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc delete_columns failed save second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc delete_columns failed save second no-op save should leave safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc delete_columns failed save second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(
+        second_noop_output,
+        "full-calc delete_columns failed save second no-op save",
+        inspect_full_calc_delete_columns_failed_save_output);
+    check_reopened_untouched_keep_me_output(
+        second_noop_output, "full-calc delete_columns failed save second no-op Untouched");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc delete_columns failed save source after second no-op");
 }
 
 void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()

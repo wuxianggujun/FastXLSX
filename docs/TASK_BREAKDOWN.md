@@ -65437,6 +65437,47 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
 
+### P8.1615 - Pin missing-query reacquire repeat no-op saves
+
+Type: public `WorksheetEditor` missing-query saved-session no-op/readback and
+post-noop preservation regression.
+
+Status: completed.
+
+Goal:
+Verify that rejected missing-sheet queries preserve source and prior outputs
+across a second clean no-op save after the row-shifted first save, and that the
+later matching reacquire plus post-noop materialized edit does not rewrite
+either no-op output.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_reacquire_missing_query_noop_save_preserves_saved_session()`.
+- Adds a second no-op output after missing-sheet `try_worksheet()` /
+  `worksheet()` access is rejected and the first clean no-op output is written.
+- Requires stable public catalog/save state, empty dirty materialized
+  diagnostics, no replacement diagnostics, and unchanged pending handoff count.
+- Requires the second no-op package to match the first no-op package while the
+  source package, first shifted output, and first no-op output remain unchanged.
+- Fresh-reopens the second no-op output to verify shifted `A3`, preserved `B1`,
+  bounds, and absent old/later coordinates.
+- Extends the later matching reacquire and post-noop `C3` save to verify the
+  repeat no-op output also remains unchanged.
+- Leaves production code unchanged.
+
+Non-goals:
+- No missing-sheet lookup policy changes, handle sharing/lifetime behavior
+  changes, saved-session lookup changes, save behavior changes, overwrite mode,
+  rollback, transaction replay, shift semantic changes, formula evaluation,
+  calcChain rebuild, sharedStrings/styles migration, metadata/range repair,
+  relationship repair, broader Patch/materialized composition, default CTest/CI
+  expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

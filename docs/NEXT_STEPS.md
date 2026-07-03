@@ -163,6 +163,10 @@ missing-sheet lookups and the clean no-op output leave the row-shifted session
 reusable, a later matching reacquire writes `C3`, and the next output
 fresh-reopens with shifted `A3` plus the new `C3` while earlier outputs remain
 unchanged.
+It now also repeats the clean no-op save after the rejected missing-sheet
+lookups: public state stays stable, the second no-op package is byte-identical
+to the first, fresh-reopens with shifted `A3`, and remains unchanged after the
+later matching `C3` save.
 The invalid-read saved-session path now has matching post-noop evidence:
 rejected invalid scalar/A1/range/batch/row/column and valid-missing reads plus a
 clean no-op output leave the row-shifted session reusable, a later `C3` edit

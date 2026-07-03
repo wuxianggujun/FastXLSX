@@ -103,6 +103,8 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save",
     "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
     "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
+    "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+    "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
@@ -155,6 +157,10 @@ GENERATED_CASE_DIRECTORY_ALIASES = {
         "fc-ms-post-noop-reopen-noop-reopen-noop",
     "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save":
         "fc-ms-pe-post-noop-reopen-noop-reopen-noop",
+    "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save":
+        "fc-ms-post-noop-reopen-noop-reopen-noop-reopen",
+    "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save":
+        "fc-ms-pe-post-noop-reopen-noop-reopen-noop-reopen",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
         "ms-pe-post-noop-third",
 }
@@ -3020,6 +3026,96 @@ def verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reope
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = (
+        "generated in-memory multi-sheet retry reopen modify post-noop "
+        "fresh-reopen modify no-op fresh-reopen modify no-op fresh-reopen modify save"
+    )
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save(
+            path,
+            tool_report,
+        )
+    )
+    mutations = tool_report.get("mutations", [])
+    require("tenth:open(final-noop-reopen-noop-output)" in mutations,
+            f"{label}: tool did not report the final no-op no-op fresh reopen stage")
+    require("tenth:worksheet(Data).set_cell(H1,text)" in mutations,
+            f"{label}: tool did not report the final no-op no-op Data edit")
+    require("tenth:worksheet(Summary).set_cell(G1,formula)" in mutations,
+            f"{label}: tool did not report the final no-op no-op Summary edit")
+    require("tenth:save_as(final-noop-reopen-noop-reopen-output)" in mutations,
+            f"{label}: tool did not report the final no-op no-op reopen save stage")
+
+    sheet_entries = zip_report["sheet_entries"]
+    data_xml = read_zip_text(path, sheet_entries["Data"])
+    require('r="H1"' in data_xml and "retry-reopened-final-noop-noop-data" in data_xml,
+            f"{label}: missing final no-op no-op Data!H1 text")
+    summary_formulas = worksheet_formula_cells(path, "Summary")
+    require(summary_formulas.get("G1") == "Data!B1+50",
+            f"{label}: Summary!G1 formula mismatch {summary_formulas!r}")
+
+    openpyxl = load_openpyxl()
+    workbook = openpyxl.load_workbook(path, read_only=False, data_only=False)
+    try:
+        data = workbook["Data"]
+        summary = workbook["Summary"]
+        require(data["H1"].value == "retry-reopened-final-noop-noop-data",
+                f"{label}: Data!H1 mismatch")
+        require(summary["G1"].value == "=Data!B1+50",
+                f"{label}: Summary!G1 mismatch {summary['G1'].value!r}")
+        openpyxl_report["Data!H1"] = data["H1"].value
+        openpyxl_report["Summary!G1"] = summary["G1"].value
+    finally:
+        workbook.close()
+
+    zip_report["summary_formulas"] = summary_formulas
+    zip_report["final_noop_reopen_noop_reopen_modify_save"] = "checked"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = (
+        "generated in-memory full-calc multi-sheet retry reopen modify "
+        "post-noop fresh-reopen modify no-op fresh-reopen modify no-op fresh-reopen modify save"
+    )
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
+            path,
+            tool_report,
+        )
+    )
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = (
+        "generated in-memory full-calc multi-sheet path-equivalent retry "
+        "reopen modify post-noop fresh-reopen modify no-op fresh-reopen modify no-op fresh-reopen modify save"
+    )
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
+            path,
+            tool_report,
+        )
+    )
+    require("first:save_as(path-equivalent-source) rejected" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the path-equivalent rejected save stage")
+    zip_report["path_equivalent_retry"] = "checked"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_source_formula_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -4573,6 +4669,8 @@ def create_xlsxwriter_reference(
             "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save",
             "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
             "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
+            "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+            "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
             "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
             "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
@@ -4603,6 +4701,8 @@ def create_xlsxwriter_reference(
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
@@ -4620,6 +4720,8 @@ def create_xlsxwriter_reference(
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
             }:
@@ -4634,6 +4736,8 @@ def create_xlsxwriter_reference(
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
             }:
                 data.write("F1", "retry-reopened-final-data")
                 summary.write_formula("E1", "=Data!B1+30")
@@ -4642,9 +4746,17 @@ def create_xlsxwriter_reference(
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
             }:
                 data.write("G1", "retry-reopened-final-noop-data")
                 summary.write_formula("F1", "=Data!B1+40")
+            if scenario in {
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save",
+            }:
+                data.write("H1", "retry-reopened-final-noop-noop-data")
+                summary.write_formula("G1", "=Data!B1+50")
             notes.write("A1", "preserved")
         elif scenario in {
             "generated_shared_formula_materialization",
@@ -5118,6 +5230,20 @@ def run_generated_case(
     elif scenario == "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save":
         zip_xml, openpyxl_report = (
             verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_save(
                 output_path,
                 tool_report,
             )

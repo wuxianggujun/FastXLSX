@@ -36363,6 +36363,7 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -36423,6 +36424,8 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
         "shift after rename save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift after rename save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(workbook_xml, R"(name="RenamedData")",
@@ -36470,6 +36473,8 @@ void test_public_worksheet_editor_shift_after_rename_uses_planned_name()
             check(!noop_sheet.try_cell("A2").has_value(),
                 "shift after rename no-op save reopened output should keep old source coordinate absent");
         });
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift after rename no-op save should leave the source package unchanged");
 }
 
 void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
@@ -36483,6 +36488,7 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -36539,6 +36545,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
         editor, "renamed formula shift");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula shift save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -36609,6 +36617,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_formula_style()
                     !noop_sheet.try_cell("A2").has_value(),
                 "renamed formula shift no-op save reopened output should keep old coordinates absent");
         });
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula shift no-op save should leave the source package unchanged");
 }
 
 void test_public_worksheet_editor_shift_after_rename_formula_audits_use_shifted_formula()
@@ -37458,6 +37468,7 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-column-formula-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -37521,6 +37532,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
         editor, "renamed column formula shift");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed column formula shift save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -37610,6 +37623,8 @@ void test_public_worksheet_editor_shift_after_rename_preserves_column_formula_st
                     !noop_sheet.try_cell("B2").has_value(),
                 "renamed column formula shift no-op save reopened output should keep inserted blank column absent");
         });
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed column formula shift no-op save should leave the source package unchanged");
 }
 
 void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_styled_session()
@@ -37625,6 +37640,7 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-reacquire-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-reacquire-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -37707,6 +37723,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         "renamed formula reacquire second save should clear dirty materialized diagnostics");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula reacquire first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -37725,6 +37743,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         "renamed formula reacquire first output should not include the later column shift");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula reacquire second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -37774,6 +37794,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_reacquire_reuses_st
         "renamed formula reacquire no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula reacquire no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula reacquire no-op save should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
     check(reopened_noop.has_worksheet("RenamedData") && !reopened_noop.has_worksheet("Data"),
         "renamed formula reacquire reopened no-op output should expose only the planned catalog name");

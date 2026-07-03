@@ -5396,6 +5396,9 @@ void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-aggregate-move-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
     source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-aggregate-dirty"));
@@ -5439,6 +5442,10 @@ void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner
         "save_as after aggregate move assignment should count the assigned materialized handoff");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "aggregate move-assigned save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "aggregate move-assigned save_as should leave the discarded target source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-aggregate-dirty",
         "aggregate move-assigned editor should save assigned dirty materialized payload");
     check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"),
@@ -5514,6 +5521,10 @@ void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "aggregate move-assigned no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "aggregate move-assigned no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "aggregate move-assigned no-op save should leave the discarded target source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data",
         "materialized aggregate move no-op Data",
         inspect_materialized_aggregate_move_data);
@@ -5530,6 +5541,8 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
         artifact("fastxlsx-workbook-editor-public-materialized-summary-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-summary-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -5595,6 +5608,8 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "failed save_as should preserve dirty materialized summaries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary failed save_as should leave the source package unchanged");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -5610,6 +5625,8 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary save_as should leave the source package unchanged");
     {
         const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
             editor.pending_worksheet_edits();
@@ -5690,6 +5707,8 @@ void test_public_workbook_editor_pending_summaries_include_materialized_dirty_st
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "pending summary noop output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary noop save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "pending summary noop Data",
         inspect_pending_summary_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
@@ -5707,6 +5726,9 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         artifact("fastxlsx-workbook-editor-public-materialized-summary-move-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-summary-move-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
@@ -5760,6 +5782,10 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         "save_as after summary move assignment should count the materialized Patch handoff");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "summary move-assigned save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "summary move-assigned save_as should leave the discarded target source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-summary-dirty",
         "summary move-assigned editor should save assigned dirty materialized payload");
     check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-summary-dirty",
@@ -5833,6 +5859,10 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "summary move-assigned no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "summary move-assigned no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "summary move-assigned no-op save should leave the discarded target source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data",
         "materialized summary move no-op Data",
         inspect_materialized_summary_move_data);
@@ -6504,6 +6534,8 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-row-column-invalid-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -6555,6 +6587,8 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     editor.save_as(output);
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column recovery save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "row-column-recovered",
         "valid row/column mutation after invalid coordinates should still persist");
@@ -6611,6 +6645,8 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "row/column recovery no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column recovery no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -6637,6 +6673,8 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
         "row/column recovery second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "row/column recovery second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column recovery second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         second_noop_output, "Data", "row column recovery second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -6820,6 +6858,8 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-sparse-cells-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -6859,6 +6899,8 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "sparse_cells snapshot save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
         "sparse_cells should not interfere with dirty-session save_as");
@@ -6917,6 +6959,8 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "sparse_cells snapshot no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "sparse_cells snapshot no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -6943,6 +6987,8 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
         "sparse_cells snapshot second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "sparse_cells snapshot second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "sparse_cells snapshot second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "sparse_cells snapshot second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -6980,6 +7026,8 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         artifact("fastxlsx-workbook-editor-public-sparse-range-noop-output.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-sparse-range-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -7034,6 +7082,8 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range sparse_cells save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
         "range sparse_cells should not interfere with dirty-session save_as");
@@ -7096,6 +7146,8 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "range sparse_cells no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range sparse_cells no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -7122,6 +7174,8 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "range sparse_cells second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "range sparse_cells second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range sparse_cells second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "range sparse_cells second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

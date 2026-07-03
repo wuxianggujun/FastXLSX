@@ -3377,6 +3377,8 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-dirty-second-noop.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -3433,6 +3435,8 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "save_as path preflight failure should run before dirty-session flush");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state failed save_as should leave the source package unchanged");
     check(sheet.has_pending_changes(),
         "save_as path preflight failure should preserve dirty WorksheetEditor state");
     check(editor.pending_change_count() == 0,
@@ -3444,6 +3448,8 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     check(editor.pending_change_count() == 1,
         "successful save_as should count one materialized Patch handoff");
 
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state first save_as should leave the source package unchanged");
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
     check_not_contains(first_xml, "placeholder-a2",
@@ -3472,6 +3478,8 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
     editor.save_as(second_output);
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state second save_as should leave the source package unchanged");
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "dirty-again",
         "post-save dirty WorksheetEditor mutation should persist on a later save_as");
 
@@ -3501,6 +3509,8 @@ void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
         "dirty state second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "dirty state second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state second no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(second_output, "Data", "dirty state second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -3536,12 +3546,16 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-second-noop.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
     sheet.set_cell(1, 1, fastxlsx::CellValue::text("same-handle-first-save"));
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "failed save_as path guard should not invalidate a borrowed WorksheetEditor handle");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle failed save_as should leave the source package unchanged");
     check(sheet.has_pending_changes(),
         "failed save_as should keep the same WorksheetEditor handle dirty and valid");
     check(editor.pending_change_count() == 0,
@@ -3550,6 +3564,8 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),
         "successful save_as should keep the same WorksheetEditor handle valid and clean");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle first save_as should leave the source package unchanged");
     const fastxlsx::CellValue saved_value = sheet.get_cell(1, 1);
     check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
             saved_value.text_value() == "same-handle-first-save",
@@ -3561,6 +3577,8 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
     editor.save_as(second_output);
     check(editor.pending_change_count() == 2,
         "second save_as should record a second materialized Patch handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle second save_as should leave the source package unchanged");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "same-handle-first-save",
@@ -3619,6 +3637,8 @@ void test_public_worksheet_editor_handle_remains_valid_after_save_as()
         "same-handle second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "same-handle second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle second no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(second_output, "Data", "same-handle second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

@@ -6130,6 +6130,8 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-a1-range-mutation-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -6173,6 +6175,8 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 range mutation save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<c r="B1"/>)",
         "A1 range clear should persist the B1 explicit blank");
@@ -6238,6 +6242,8 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "A1 range mutation no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 range mutation no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -6264,6 +6270,8 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
         "A1 range mutation second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "A1 range mutation second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 range mutation second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "A1 range mutation second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

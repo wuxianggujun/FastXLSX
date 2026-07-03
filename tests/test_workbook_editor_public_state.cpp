@@ -22992,6 +22992,40 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
                     reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
                     reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2",
                 "full-calc insert_columns styled formula reopened output should read shifted source cells");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                reopened_sheet.row_cells(2);
+            check(reopened_row_two.size() == 4 &&
+                    reopened_row_two[0].reference.row == 2 &&
+                    reopened_row_two[0].reference.column == 1 &&
+                    reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+                    reopened_row_two[1].reference.row == 2 &&
+                    reopened_row_two[1].reference.column == 4 &&
+                    reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[1].value.text_value() == "row2-gap-b2" &&
+                    reopened_row_two[2].reference.row == 2 &&
+                    reopened_row_two[2].reference.column == 5 &&
+                    reopened_row_two[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[2].value.text_value() == "row2-gap-c2" &&
+                    reopened_row_two[3].reference.row == 2 &&
+                    reopened_row_two[3].reference.column == 6 &&
+                    reopened_row_two[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_row_two[3].value.text_value() == "C1+D1" &&
+                    reopened_row_two[3].value.has_style() &&
+                    reopened_row_two[3].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc insert_columns styled formula reopened row_cells should expose shifted sparse order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_six =
+                reopened_sheet.column_cells(6);
+            check(reopened_column_six.size() == 1 &&
+                    reopened_column_six[0].reference.row == 2 &&
+                    reopened_column_six[0].reference.column == 6 &&
+                    reopened_column_six[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_six[0].value.text_value() == "C1+D1" &&
+                    reopened_column_six[0].value.has_style() &&
+                    reopened_column_six[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc insert_columns styled formula reopened column_cells should expose shifted styled formula");
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("B2").has_value() &&
                     !reopened_sheet.try_cell("C2").has_value(),

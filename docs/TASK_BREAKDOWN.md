@@ -63736,6 +63736,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
   passes.
 
+### P8.1573 - Pin full-calc insert-column shift snapshots
+
+Type: public `WorksheetEditor` full-calculation column-insert snapshot
+readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the existing `request_full_calculation()` plus `insert_columns()`
+styled materialized shift path exposes stable reopened `row_cells()` and
+`column_cells()` snapshots after both the first save and the clean no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_full_calculation_preserves_insert_columns_styled_formula_shift()`.
+- The reopened output helper now checks row-two snapshot ordering for the
+  shifted source-backed `A2`, `D2`, `E2`, and styled `F2` formula records.
+- The same helper checks column-six snapshot readback for the shifted styled
+  `F2` formula translated to `C1+D1`.
+- Reuses the existing first-save and no-op-save output lifecycle, so both saved
+  workbooks go through the same snapshot assertions.
+
+Non-goals:
+- No production `WorkbookEditor` / `WorksheetEditor` behavior changes.
+- No full-calculation metadata changes, formula translator changes, formula
+  evaluation, cached value preservation, metadata/range repair, calcChain
+  rebuild/generation, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

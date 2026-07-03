@@ -28552,6 +28552,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
     const std::filesystem::path post_noop_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-post-noop-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -28607,6 +28609,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows styled source formula save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D1" s=")")
@@ -28679,6 +28683,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "delete_rows styled source formula no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows styled source formula no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "delete_rows styled source formula no-op save",
         inspect_delete_rows_styled_formula_output);
@@ -28712,6 +28718,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "delete_rows styled source formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows styled source formula second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "delete_rows styled source formula second no-op save should leave the first no-op output unchanged");
     check_reopened_shift_output(second_noop_output,
@@ -28761,6 +28769,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         "delete_rows styled source formula post-noop save should leave the second no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows styled source formula post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, styled_formula_xml,
         "delete_rows styled source formula post-noop save should keep the styled formula cell");
@@ -28826,6 +28836,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "delete_rows styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows styled source formula post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "delete_rows styled source formula post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,
@@ -28846,6 +28858,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-noop-output.xlsx");
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-delete-rows-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -28895,6 +28909,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         "full-calc delete_rows save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc delete_rows save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D1" s=")")
@@ -29006,6 +29022,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc delete_rows no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc delete_rows no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "full-calc delete_rows no-op save",
         inspect_full_calc_delete_rows_output);
     check_reopened_untouched_keep_me_output(
@@ -29040,6 +29058,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shi
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc delete_rows second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc delete_rows second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc delete_rows second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -29334,6 +29354,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift(
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-rows-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.request_full_calculation();
@@ -29400,6 +29422,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift(
         "full-calc before delete_rows save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before delete_rows save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D1" s=")")
@@ -29513,6 +29537,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift(
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc before delete_rows no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before delete_rows no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "full-calc before delete_rows no-op save",
         inspect_full_calc_before_delete_rows_output);
@@ -29548,6 +29574,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift(
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc before delete_rows second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before delete_rows second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before delete_rows second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -29871,6 +29899,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-delete-columns-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -29921,6 +29951,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         "full-calc delete_columns save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc delete_columns save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="C2" s=")")
@@ -30033,6 +30065,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc delete_columns no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc delete_columns no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "full-calc delete_columns no-op save",
         inspect_full_calc_delete_columns_output);
@@ -30068,6 +30102,8 @@ void test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc delete_columns second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc delete_columns second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc delete_columns second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -30365,6 +30401,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
     const std::filesystem::path post_noop_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-post-noop-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -30423,6 +30461,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns styled source formula save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="C2" s=")")
@@ -30498,6 +30538,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "delete_columns styled source formula no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns styled source formula no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "delete_columns styled source formula no-op save",
         inspect_delete_columns_styled_formula_output);
@@ -30531,6 +30573,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "delete_columns styled source formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns styled source formula second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "delete_columns styled source formula second no-op save should leave the first no-op output unchanged");
     check_reopened_shift_output(second_noop_output,
@@ -30580,6 +30624,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         "delete_columns styled source formula post-noop save should leave the second no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns styled source formula post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, styled_formula_xml,
         "delete_columns styled source formula post-noop save should keep the styled formula cell");
@@ -30648,6 +30694,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "delete_columns styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns styled source formula post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "delete_columns styled source formula post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,
@@ -30668,6 +30716,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-columns-noop-output.xlsx");
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-delete-columns-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -30735,6 +30785,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         "full-calc before delete_columns save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before delete_columns save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="C2" s=")")
@@ -30841,6 +30893,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc before delete_columns no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before delete_columns no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "full-calc before delete_columns no-op save",
         inspect_full_calc_delete_columns_output);
 
@@ -30875,6 +30929,8 @@ void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shi
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc before delete_columns second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before delete_columns second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before delete_columns second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,

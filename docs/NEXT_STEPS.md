@@ -285,6 +285,12 @@ from the shifted output and both no-op outputs. `delete_rows()` and
 `delete_columns()` both prove the second clean no-op save leaves the shifted
 output plus first no-op package unchanged while preserving the existing
 translated `#REF!` formula readback.
+The after-shift full-calculation insert-side failed-save retry paths now carry
+the same second clean no-op contract: after exact source overwrite is rejected,
+styled `insert_rows()` and `insert_columns()` safe retries keep source bytes
+unchanged, write shifted formulas with `fullCalcOnLoad`, then preserve the safe
+retry and first no-op packages across another no-op save with fresh Data,
+`Untouched`, and source readback.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

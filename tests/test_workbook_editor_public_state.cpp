@@ -12634,6 +12634,39 @@ void check_reopened_clean_sheet_output(
         prefix + " reopened readback should keep last_edit_error empty");
 }
 
+void check_reopened_delete_column_formula_noop_output(
+    const std::filesystem::path& output,
+    fastxlsx::StyleId styled_formula_style,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output, "RenamedData", scenario,
+        [styled_formula_style](fastxlsx::WorksheetEditor& noop_sheet) {
+            check(noop_sheet.cell_count() == 4,
+                "renamed formula delete-column no-op output should keep shifted sparse count");
+            check_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 3,
+                "renamed formula delete-column no-op output should expose shifted bounds");
+            const fastxlsx::CellValue noop_a1 = noop_sheet.get_cell("A1");
+            check(noop_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    noop_a1.number_value() == 1.0,
+                "renamed formula delete-column no-op output should read shifted B1");
+            const std::optional<fastxlsx::CellValue> noop_c2 =
+                noop_sheet.try_cell("C2");
+            check(noop_c2.has_value() &&
+                    noop_c2->kind() == fastxlsx::CellValueKind::Formula &&
+                    noop_c2->text_value() == "#REF!+A1" &&
+                    noop_c2->has_style() &&
+                    noop_c2->style_id().value() == styled_formula_style.value(),
+                "renamed formula delete-column no-op output should read translated styled formula");
+            check(noop_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                    noop_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+                "renamed formula delete-column no-op output should read shifted row cells");
+            check(!noop_sheet.try_cell("D2").has_value() &&
+                    !noop_sheet.try_cell("A3").has_value(),
+                "renamed formula delete-column no-op output should keep old coordinates absent");
+        });
+}
+
 void check_reopened_delete_row_formula_noop_output(
     const std::filesystem::path& output,
     fastxlsx::StyleId styled_formula_style,
@@ -38639,6 +38672,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_fail
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-failed-save-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
@@ -38794,41 +38829,48 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_fail
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "renamed formula delete-column failed save no-op retry");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "renamed formula delete-column failed save no-op retry should keep output entries stable");
-    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
-    check(reopened_noop.has_worksheet("RenamedData") && !reopened_noop.has_worksheet("Data"),
-        "renamed formula delete-column failed save reopened no-op output should expose only the planned catalog name");
-    fastxlsx::WorksheetEditor reopened_noop_sheet = reopened_noop.worksheet("RenamedData");
-    check(!reopened_noop.has_pending_changes() && !reopened_noop_sheet.has_pending_changes(),
-        "renamed formula delete-column failed save reopened no-op output should start clean");
-    check(reopened_noop.pending_change_count() == 0 &&
-            reopened_noop.pending_materialized_worksheet_names().empty() &&
-            reopened_noop.pending_materialized_cell_count() == 0 &&
-            reopened_noop.estimated_pending_materialized_memory_usage() == 0,
-        "renamed formula delete-column failed save reopened no-op output should not expose dirty diagnostics");
-    check(reopened_noop_sheet.cell_count() == 4,
-        "renamed formula delete-column failed save reopened no-op output should keep shifted sparse count");
-    check_cell_range_equals(reopened_noop_sheet.used_range(), 1, 1, 2, 3,
-        "renamed formula delete-column failed save reopened no-op output should expose shifted bounds");
-    const fastxlsx::CellValue reopened_noop_a1 = reopened_noop_sheet.get_cell("A1");
-    check(reopened_noop_a1.kind() == fastxlsx::CellValueKind::Number &&
-            reopened_noop_a1.number_value() == 1.0,
-        "renamed formula delete-column failed save reopened no-op output should read shifted B1");
-    const std::optional<fastxlsx::CellValue> reopened_noop_c2 =
-        reopened_noop_sheet.try_cell("C2");
-    check(reopened_noop_c2.has_value() &&
-            reopened_noop_c2->kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_noop_c2->text_value() == "#REF!+A1" &&
-            reopened_noop_c2->has_style() &&
-            reopened_noop_c2->style_id().value() == styled_formula_style.value(),
-        "renamed formula delete-column failed save reopened no-op output should read translated styled formula");
-    check(reopened_noop_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
-            reopened_noop_sheet.get_cell("B2").text_value() == "row2-gap-c2",
-        "renamed formula delete-column failed save reopened no-op output should read shifted row cells");
-    check(!reopened_noop_sheet.try_cell("D2").has_value() &&
-            !reopened_noop_sheet.try_cell("A3").has_value(),
-        "renamed formula delete-column failed save reopened no-op output should keep old coordinates absent");
+    check_reopened_delete_column_formula_noop_output(
+        noop_output, styled_formula_style,
+        "renamed formula delete-column failed save no-op output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-column failed save second no-op retry should keep the styled handle clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-column failed save second no-op retry should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-column failed save second no-op retry should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-column failed save second no-op retry should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-column failed save second no-op retry should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "renamed formula delete-column failed save second no-op retry");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "renamed formula delete-column failed save second no-op retry");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column failed save second no-op retry should keep source entries unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "renamed formula delete-column failed save second no-op retry should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "renamed formula delete-column failed save second no-op retry should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "renamed formula delete-column failed save second no-op retry should keep output entries stable");
+    check_reopened_delete_column_formula_noop_output(
+        second_noop_output, styled_formula_style,
+        "renamed formula delete-column failed save second no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),
@@ -40676,6 +40718,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-failed-save-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-row-formula-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
@@ -40833,11 +40877,48 @@ void test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "renamed formula delete-row failed save no-op retry");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "renamed formula delete-row failed save no-op retry should keep output entries stable");
     check_reopened_delete_row_formula_noop_output(
         noop_output, styled_formula_style,
         "renamed formula delete-row failed save no-op output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula delete-row failed save second no-op retry should keep the styled handle clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula delete-row failed save second no-op retry should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula delete-row failed save second no-op retry should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula delete-row failed save second no-op retry should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula delete-row failed save second no-op retry should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "renamed formula delete-row failed save second no-op retry");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "renamed formula delete-row failed save second no-op retry");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-row failed save second no-op retry should keep source entries unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "renamed formula delete-row failed save second no-op retry should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "renamed formula delete-row failed save second no-op retry should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "renamed formula delete-row failed save second no-op retry should keep output entries stable");
+    check_reopened_delete_row_formula_noop_output(
+        second_noop_output, styled_formula_style,
+        "renamed formula delete-row failed save second no-op output");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

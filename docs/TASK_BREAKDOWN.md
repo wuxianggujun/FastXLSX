@@ -64893,6 +64893,47 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1602 - Pin shift-after-rename delete retry second no-op saves
+
+Type: public `WorksheetEditor` shift-after-rename delete-side styled formula
+failed-save retry no-op/readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the shift-after-rename delete-column and delete-row styled formula
+failed-save retry paths preserve source and prior outputs across a second clean
+no-op save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_delete_columns_formula_failed_save_preserves_styled_session()`.
+- Extends `test_public_worksheet_editor_shift_after_rename_delete_rows_formula_failed_save_preserves_styled_session()`.
+- Adds a second no-op output after the safe retry and first no-op save for both
+  delete-side paths.
+- Requires stable public catalog/save state, empty dirty materialized diagnostics,
+  no replacement diagnostics, and unchanged pending handoff count.
+- Requires the second no-op package to match the first no-op package while the
+  safe retry output and original source package remain unchanged.
+- Fresh-reopens the second no-op outputs to verify the planned `RenamedData`
+  catalog, delete-shifted source cells, translated styled `#REF!` formulas,
+  bounds, and absent old coordinates.
+- Adds a delete-column no-op readback helper matching the existing delete-row
+  helper; no production code changes.
+
+Non-goals:
+- No save rejection behavior changes, overwrite mode, rollback, transaction
+  replay, rename semantic changes, formula qualifier repair, formula evaluation,
+  formula translation changes, style preservation changes, calcChain rebuild,
+  sharedStrings/styles migration, metadata/range repair, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

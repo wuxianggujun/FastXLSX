@@ -306,6 +306,12 @@ The shift-after-rename styled formula failed-save retry path now carries the
 same second no-op evidence: the safe retry output, first no-op output, and
 source package remain unchanged, and the second no-op output fresh-reopens with
 the translated styled formula plus shifted source cells under `RenamedData`.
+The shift-after-rename delete-side styled formula failed-save retry paths now
+carry the same second no-op evidence too: both `delete_columns()` and
+`delete_rows()` preserve the rejected source package, safe retry output, and
+first no-op output before fresh-reopening the second no-op output with the
+delete-shifted source cells and translated styled `#REF!` formulas under
+`RenamedData`.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

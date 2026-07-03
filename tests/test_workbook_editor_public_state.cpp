@@ -10556,6 +10556,8 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
         "append_row should contribute appended sparse records to aggregate diagnostics");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "append_row should contribute appended sparse records to aggregate memory diagnostics");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "append_row dirty summary");
     check(!editor.last_edit_error().has_value(),
         "successful append_row should keep diagnostics clear");
 
@@ -11370,6 +11372,8 @@ void test_public_worksheet_editor_set_row_replaces_sparse_row()
         "set_row should contribute the replaced sparse records to aggregate diagnostics");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "set_row should contribute the replaced sparse records to aggregate memory diagnostics");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "set_row dirty summary");
     check(!editor.last_edit_error().has_value(),
         "successful set_row should keep diagnostics clear");
 
@@ -12280,6 +12284,8 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
         "set_column should contribute the replaced sparse records to aggregate diagnostics");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "set_column should contribute the replaced sparse records to aggregate memory diagnostics");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "set_column dirty summary");
     check(!editor.last_edit_error().has_value(),
         "successful set_column should keep diagnostics clear");
 

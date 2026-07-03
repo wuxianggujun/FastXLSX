@@ -27339,6 +27339,7 @@ void test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_r
             "fastxlsx-workbook-editor-public-worksheet-stationary-formula-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!A4+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -27362,6 +27363,8 @@ void test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_r
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula saved reopen audit should expose saved worksheets");
@@ -27464,6 +27467,8 @@ void test_public_worksheet_editor_stationary_formula_saved_reopen_audits_saved_r
         "stationary formula saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "stationary formula saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -27490,6 +27495,7 @@ void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_
             "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!#REF!+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -27513,6 +27519,8 @@ void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula delete saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula delete saved reopen audit should expose saved worksheets");
@@ -27608,6 +27616,8 @@ void test_public_worksheet_editor_stationary_formula_delete_saved_reopen_audits_
         "stationary formula delete saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "stationary formula delete saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula delete saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -27634,6 +27644,7 @@ void test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_
             "fastxlsx-workbook-editor-public-worksheet-stationary-formula-column-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!E1+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -27657,6 +27668,8 @@ void test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula column saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula column saved reopen audit should expose saved worksheets");
@@ -27759,6 +27772,8 @@ void test_public_worksheet_editor_stationary_formula_column_saved_reopen_audits_
         "stationary formula column saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "stationary formula column saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula column saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -27785,6 +27800,7 @@ void test_public_worksheet_editor_stationary_formula_delete_column_saved_reopen_
             "fastxlsx-workbook-editor-public-worksheet-stationary-formula-delete-column-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!#REF!+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -27808,6 +27824,8 @@ void test_public_worksheet_editor_stationary_formula_delete_column_saved_reopen_
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula delete-column saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula delete-column saved reopen audit should expose saved worksheets");
@@ -27903,6 +27921,8 @@ void test_public_worksheet_editor_stationary_formula_delete_column_saved_reopen_
         "stationary formula delete-column saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "stationary formula delete-column saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula delete-column saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -27929,6 +27949,7 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
             "fastxlsx-workbook-editor-public-worksheet-stationary-formula-range-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "SUM(Data!A4:B4)+Data!4:4";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -27952,6 +27973,8 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula range saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula range saved reopen audit should expose saved worksheets");
@@ -28058,6 +28081,8 @@ void test_public_worksheet_editor_stationary_formula_range_saved_reopen_audits_s
         "stationary formula range saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "stationary formula range saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula range saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -28084,6 +28109,7 @@ void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_a
             "fastxlsx-workbook-editor-public-worksheet-stationary-formula-column-range-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "SUM(Data!E1:F1)+Data!E:F";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -28107,6 +28133,8 @@ void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_a
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula column range saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "stationary formula column range saved reopen audit should expose saved worksheets");
@@ -28213,6 +28241,8 @@ void test_public_worksheet_editor_stationary_formula_column_range_saved_reopen_a
         "stationary formula column range saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "stationary formula column range saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "stationary formula column range saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -28239,6 +28269,7 @@ void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_ski
 
     constexpr std::string_view expected_formula =
         "Data!#REF!+Data!A:A+Data!#REF!+Data!B3";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -28264,6 +28295,8 @@ void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_ski
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete-row #REF saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "delete-row #REF saved reopen audit should expose saved worksheets");
@@ -28378,6 +28411,8 @@ void test_public_worksheet_editor_delete_row_ref_formula_saved_reopen_audits_ski
         "delete-row #REF saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "delete-row #REF saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete-row #REF saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -28404,6 +28439,7 @@ void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_
 
     constexpr std::string_view expected_formula =
         "Data!#REF!+Data!#REF!+Data!1:1+Data!C2";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -28429,6 +28465,8 @@ void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete-column #REF saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "delete-column #REF saved reopen audit should expose saved worksheets");
@@ -28543,6 +28581,8 @@ void test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_
         "delete-column #REF saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "delete-column #REF saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete-column #REF saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(

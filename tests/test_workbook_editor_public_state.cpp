@@ -23114,6 +23114,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
@@ -23273,6 +23275,40 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         "insert_columns styled source formula no-op save",
         inspect_insert_columns_styled_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns styled source formula second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "insert_columns styled source formula second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "insert_columns styled source formula second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_columns styled source formula second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns styled source formula second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "insert_columns styled source formula second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "insert_columns styled source formula second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "insert_columns styled source formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "insert_columns styled source formula second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "insert_columns styled source formula second no-op save",
+        inspect_insert_columns_styled_output);
+
     sheet.set_cell("G2", fastxlsx::CellValue::text("post-noop-insert-columns-styled"));
     check(sheet.has_pending_changes(),
         "insert_columns styled source formula post-noop edit should dirty the saved handle");
@@ -23312,6 +23348,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         "insert_columns styled source formula post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "insert_columns styled source formula post-noop save should leave the no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "insert_columns styled source formula post-noop save should leave the second no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -27044,6 +27082,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-styled-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
@@ -27180,6 +27220,41 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         "delete_rows styled source formula no-op save",
         inspect_delete_rows_styled_formula_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows styled source formula second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_rows styled source formula second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_rows styled source formula second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_rows styled source formula second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_rows styled source formula second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows styled source formula second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "delete_rows styled source formula second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "delete_rows styled source formula second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "delete_rows styled source formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "delete_rows styled source formula second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "delete_rows styled source formula second no-op save",
+        inspect_delete_rows_styled_formula_output);
+
     sheet.set_cell("E2", fastxlsx::CellValue::text("post-noop-delete-rows-styled"));
     check(sheet.has_pending_changes(),
         "delete_rows styled source formula post-noop edit should dirty the saved handle");
@@ -27219,6 +27294,8 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_s
         "delete_rows styled source formula post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "delete_rows styled source formula post-noop save should leave the no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "delete_rows styled source formula post-noop save should leave the second no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -28319,6 +28396,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-styled-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
@@ -28461,6 +28540,41 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         "delete_columns styled source formula no-op save",
         inspect_delete_columns_styled_formula_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_columns styled source formula second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_columns styled source formula second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_columns styled source formula second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_columns styled source formula second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_columns styled source formula second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_columns styled source formula second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "delete_columns styled source formula second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "delete_columns styled source formula second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "delete_columns styled source formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "delete_columns styled source formula second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "delete_columns styled source formula second no-op save",
+        inspect_delete_columns_styled_formula_output);
+
     sheet.set_cell("D1", fastxlsx::CellValue::text("post-noop-delete-columns-styled"));
     check(sheet.has_pending_changes(),
         "delete_columns styled source formula post-noop edit should dirty the saved handle");
@@ -28500,6 +28614,8 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
         "delete_columns styled source formula post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "delete_columns styled source formula post-noop save should leave the no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "delete_columns styled source formula post-noop save should leave the second no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");

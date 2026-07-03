@@ -64313,6 +64313,50 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1587 - Pin styled shift second no-op saves
+
+Type: public `WorksheetEditor` styled source-backed shift no-op save/readback
+regression.
+
+Status: completed.
+
+Goal:
+Verify that styled source-backed shift success paths remain stable across a
+second clean no-op save after the initial shifted materialized save and first
+no-op save, before the existing post-noop edit checks run.
+
+Coverage:
+- Extends `test_public_worksheet_editor_insert_columns_preserves_shifted_source_formula_style()`.
+- The styled `insert_columns()` path now writes a second no-op output after the
+  first clean no-op save, verifies public catalog/save-state stability, no dirty
+  materialized diagnostics, no replacement diagnostics, byte-identical package
+  entries, and fresh reopen readback through the existing styled shifted-column
+  inspector.
+- Extends `test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style()`.
+- The styled `delete_rows()` path mirrors the same checks for shifted rows and
+  the translated styled `#REF!+#REF!` formula.
+- Extends `test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style()`.
+- The styled `delete_columns()` path mirrors the same checks for shifted
+  columns and the translated styled `#REF!+A1` formula.
+- The later post-noop edit saves now also assert the second no-op package is
+  not mutated.
+- Reuses existing styled shift inspectors and post-noop edit coverage; no
+  production code changes.
+
+Non-goals:
+- No shift semantic changes, formula translation changes, source style
+  preservation changes, style migration/merge, styles.xml repair, row/column
+  metadata synchronization, sharedStrings migration, metadata/range repair,
+  calcChain rebuild/generation, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

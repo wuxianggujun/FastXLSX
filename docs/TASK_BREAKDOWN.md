@@ -63658,6 +63658,45 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
   passes.
 
+### P8.1571 - Pin full-calc insert-row shift snapshots
+
+Type: public `WorksheetEditor` full-calculation row-shift snapshot readback
+regression.
+
+Status: completed.
+
+Goal:
+Verify that the existing `request_full_calculation()` plus `insert_rows()`
+materialized shift path exposes stable reopened `row_cells()` and
+`column_cells()` snapshots after both the first save and the clean no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()`.
+- The reopened output helper now checks row-five snapshot ordering for the
+  shifted source-backed `A5` and dirty `C5` trailing cells.
+- The same helper checks column-four snapshot readback for the shifted styled
+  `D4` formula with translated `A3+B3` text and the preserved source style id.
+- Reuses the existing first-save and no-op-save output lifecycle, so both saved
+  workbooks go through the same snapshot assertions.
+
+Non-goals:
+- No production `WorkbookEditor` / `WorksheetEditor` behavior changes.
+- No full-calculation metadata changes, formula translator changes, formula
+  evaluation, cached value preservation, metadata/range repair, calcChain
+  rebuild/generation, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

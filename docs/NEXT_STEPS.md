@@ -255,6 +255,10 @@ rejected exact source overwrite too: after `insert_columns(2, 2)` and then
 the translated `F2` formula/style, shifted source cells, queued workbook
 metadata, and source bytes; a safe retry writes `fullCalcOnLoad="1"` with no
 `xl/calcChain.xml`.
+The full-calculation `insert_rows()` materialized shift path now also pins
+reopened `row_cells()` / `column_cells()` snapshots: both the first shifted
+output and its clean no-op output expose row-five source/dirty trailing cells
+in sparse order and column-four as the styled translated formula.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

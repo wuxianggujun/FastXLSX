@@ -1092,6 +1092,10 @@ The after-shift delete-row/full-calculation failed-save retry path now mirrors
 that snapshot coverage: row one exposes shifted source cells and the styled
 `D1` `#REF!+#REF!` formula, while column four exposes that same formula/style
 after fresh reopen.
+The full-calculation-before delete-column failed-save retry path now also has
+matching no-op fresh-reopen snapshot coverage: row two exposes shifted source
+cells and the styled `C2` `#REF!+A1` formula, while column three exposes that
+same formula/style.
 The after-shift delete-column retry path now matches the same no-op save
 stability contract after safe retry: clean diagnostics, stable public
 save/catalog state, no extra handoff, and byte-identical output.

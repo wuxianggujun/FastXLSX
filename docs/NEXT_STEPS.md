@@ -2530,6 +2530,10 @@ save coverage: after the safe retry and first clean no-op output, a second
 no-op `save_as()` keeps all shared handles clean, preserves public catalog/save
 state, reopens with shifted `A3` / `C1`, and remains unchanged after the later
 post-noop `C3` save.
+The empty-output failed-save branch now mirrors that repeat no-op boundary: the
+safe retry remains reusable after rejecting an empty output path, the first and
+second clean no-op packages stay byte-identical, and the later post-noop `C3`
+save leaves both no-op outputs plus the retry output unchanged.
 The renamed full-calculation formula-audit saved-reacquire no-op paths now also
 pair their second clean save-state snapshot with a catalog snapshot after
 invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard

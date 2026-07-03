@@ -47320,6 +47320,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-noop-first-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-noop-repeat-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-post-noop-output.xlsx");
 
@@ -47412,6 +47414,7 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
     check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
         "shift reacquire invalid mutations noop save should keep old row coordinates absent");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
@@ -47460,6 +47463,62 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
                 "shift reacquire invalid mutations noop save reopened output should omit later and old coordinates");
         });
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire invalid mutations repeat noop save should keep both handles clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire invalid mutations repeat noop save should still not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire invalid mutations repeat noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire invalid mutations repeat noop save should keep replacement diagnostics clear");
+    check(editor.last_edit_error() == invalid_error,
+        "shift reacquire invalid mutations repeat noop save should preserve invalid mutation diagnostic");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "shift reacquire invalid mutations repeat noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "shift reacquire invalid mutations repeat noop save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire invalid mutations repeat noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift reacquire invalid mutations repeat noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire invalid mutations repeat noop save should leave the first no-op output unchanged");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "shift reacquire invalid mutations repeat noop output should match the first no-op output");
+    const std::string second_noop_xml = second_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(second_noop_xml, "invalid-shift-noop-",
+        "shift reacquire invalid mutations repeat noop output should not leak rejected payloads");
+    check_reopened_shift_output(second_noop_output, "shift reacquire invalid mutations repeat noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire invalid mutations repeat noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "shift reacquire invalid mutations repeat noop save reopened output should expose first-shift bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "shift reacquire invalid mutations repeat noop save reopened output should keep B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire invalid mutations repeat noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire invalid mutations repeat noop save reopened output should omit later and old coordinates");
+        });
+
     reacquired.set_cell("C3", fastxlsx::CellValue::text("post-noop-invalid-mutations"));
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid mutations post-noop edit should clear the preserved diagnostic");
@@ -47493,10 +47552,14 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_pr
         "shift reacquire invalid mutations post-noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "shift reacquire invalid mutations post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire invalid mutations post-noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
         "shift reacquire invalid mutations post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift reacquire invalid mutations post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "shift reacquire invalid mutations post-noop save should leave the repeat no-op output unchanged");
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_not_contains(post_noop_xml, "invalid-shift-noop-",

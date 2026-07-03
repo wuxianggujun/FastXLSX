@@ -65520,6 +65520,48 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
 
+### P8.1617 - Pin invalid-mutation reacquire repeat no-op saves
+
+Type: public `WorksheetEditor` invalid-mutation saved-session no-op/readback and
+post-noop preservation regression.
+
+Status: completed.
+
+Goal:
+Verify that rejected invalid mutations preserve source and prior outputs across
+a second clean no-op save after the row-shifted first save, and that the later
+post-noop materialized edit does not rewrite either no-op output.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_reacquire_invalid_mutations_noop_save_preserves_saved_session()`.
+- Adds a second no-op output after invalid `set_cell()` / `erase_cell()` calls
+  are rejected and the first clean no-op output is written.
+- Requires stable public catalog/save state, empty dirty materialized
+  diagnostics, no replacement diagnostics, preserved invalid-mutation
+  diagnostic state, and unchanged pending handoff count.
+- Requires the second no-op package to match the first no-op package while the
+  source package, first shifted output, and first no-op output remain unchanged.
+- Verifies both no-op packages omit rejected invalid-mutation payload text.
+- Fresh-reopens the second no-op output to verify shifted `A3`, preserved `B1`,
+  bounds, and absent old/later coordinates.
+- Extends the later post-noop `C3` save to verify the source and repeat no-op
+  output also remain unchanged.
+- Leaves production code unchanged.
+
+Non-goals:
+- No mutation validation changes, diagnostic lifetime policy changes, handle
+  sharing/lifetime behavior changes, saved-session lookup changes, save behavior
+  changes, overwrite mode, rollback, transaction replay, shift semantic changes,
+  formula evaluation, calcChain rebuild, sharedStrings/styles migration,
+  metadata/range repair, relationship repair, broader Patch/materialized
+  composition, default CTest/CI expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

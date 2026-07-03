@@ -297,6 +297,11 @@ styled `delete_rows()` and `delete_columns()` safe retries keep source bytes
 unchanged, write shifted `#REF!` formulas with `fullCalcOnLoad`, then preserve
 the safe retry and first no-op packages across another no-op save with fresh
 Data, `Untouched`, and source readback.
+The renamed full-calculation formula-audit failed-save retry path now also
+uses that second clean no-op contract: after rejected source overwrite and a
+safe retry, it preserves source bytes, the shifted output, and the first
+no-op package across another no-op save, then fresh-reopens the second no-op
+output with the same styled qualified formula references.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

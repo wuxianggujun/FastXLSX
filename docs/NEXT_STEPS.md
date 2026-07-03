@@ -267,6 +267,11 @@ The full-calculation `insert_columns()` materialized shift path now has the
 same snapshot readback for styled source formulas: both the shifted output and
 its clean no-op output expose row-two sparse ordering after the inserted gap
 and column-six as the styled translated `C1+D1` formula.
+The reverse-order full-calculation `delete_columns()` materialized shift path
+now has matching column-side snapshot coverage too: both the shifted output
+and its clean no-op output expose row-two source/formula ordering after
+deleting column A, and column-three as the styled translated `#REF!+A1`
+formula.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

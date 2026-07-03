@@ -63775,6 +63775,46 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
   passes.
 
+### P8.1574 - Pin full-calc-before delete-column shift snapshots
+
+Type: public `WorksheetEditor` full-calculation column-delete snapshot
+readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the existing reverse-order `request_full_calculation()` before
+`worksheet()` plus styled `delete_columns()` materialized shift path exposes
+stable reopened `row_cells()` and `column_cells()` snapshots after both the
+first save and the clean no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift()`.
+- The reopened output helper now checks row-two snapshot ordering for the
+  shifted source-backed `A2`, `B2`, and styled `C2` formula records.
+- The same helper checks column-three snapshot readback for the shifted styled
+  `C2` formula translated to `#REF!+A1`.
+- Reuses the existing first-save and no-op-save output lifecycle, so both saved
+  workbooks go through the same snapshot assertions.
+
+Non-goals:
+- No production `WorkbookEditor` / `WorksheetEditor` behavior changes.
+- No full-calculation metadata changes, formula translator changes, formula
+  evaluation, cached value preservation, metadata/range repair, calcChain
+  rebuild/generation, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

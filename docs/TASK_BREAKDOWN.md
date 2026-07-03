@@ -64934,6 +64934,48 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1603 - Pin non-formula shift-after-rename retry second no-op saves
+
+Type: public `WorksheetEditor` shift-after-rename non-formula failed-save retry
+no-op/readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the non-formula shift-after-rename failed-save retry path preserves
+source and prior outputs across a second clean no-op save before the later
+delete mutation.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_after_rename_failed_save_preserves_planned_session()`.
+- Adds a second no-op output after the safe retry and first no-op save.
+- Keeps the existing rejected exact source, path-equivalent source, empty path,
+  missing-parent, non-directory-parent, and directory-output save coverage.
+- Requires stable public catalog/save state, empty dirty materialized diagnostics,
+  no replacement diagnostics, and unchanged pending handoff count.
+- Requires the second no-op package to match the first no-op package while the
+  original source package, first row-shift output, and safe retry output remain
+  unchanged.
+- Fresh-reopens the second no-op output to verify the planned `RenamedData`
+  catalog, combined row/column-shifted source cells, bounds, and absent old
+  coordinates.
+- Leaves the later delete mutation and third output checks in the same test
+  unchanged; no production code changes.
+
+Non-goals:
+- No save rejection behavior changes, path normalization changes, overwrite mode,
+  rollback, transaction replay, rename semantic changes, row/column shift
+  semantic changes, formula evaluation, calcChain rebuild, sharedStrings/styles
+  migration, metadata/range repair, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

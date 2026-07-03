@@ -42694,6 +42694,8 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-third-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-failed-save-second-noop-output.xlsx");
     std::filesystem::remove_all(missing_parent_output.parent_path());
     std::filesystem::remove_all(file_parent);
     fastxlsx::test::write_file(file_parent, "not a directory");
@@ -42985,10 +42987,50 @@ void test_public_worksheet_editor_shift_after_rename_failed_save_preserves_plann
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "renamed shift failed save after retry no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
         "renamed shift failed save after retry no-op output should match the safe retry output");
     check_reopened_renamed_shift_noop_output(
         noop_output, "renamed shift failed save after retry no-op output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "renamed shift failed save after retry second no-op save should keep all shared handles clean");
+    check(editor.pending_change_count() == 3,
+        "renamed shift failed save after retry second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift failed save after retry second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift failed save after retry second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift failed save after retry second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "renamed shift failed save after retry second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "renamed shift failed save after retry second no-op save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed shift failed save after retry second no-op save should keep source entries unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "renamed shift failed save after retry second no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "renamed shift failed save after retry second no-op save should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "renamed shift failed save after retry second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "renamed shift failed save after retry second no-op output should match the first no-op output");
+    check_reopened_renamed_shift_noop_output(
+        second_noop_output,
+        "renamed shift failed save after retry second no-op output");
 
     after_retry.delete_rows(3, 1);
     const std::size_t deleted_memory = after_retry.estimated_memory_usage();

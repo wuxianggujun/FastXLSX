@@ -312,6 +312,13 @@ carry the same second no-op evidence too: both `delete_columns()` and
 first no-op output before fresh-reopening the second no-op output with the
 delete-shifted source cells and translated styled `#REF!` formulas under
 `RenamedData`.
+The non-formula shift-after-rename failed-save retry path now has the same
+repeated no-op proof before its later delete mutation: rejected exact,
+path-equivalent, empty, missing-parent, non-directory-parent, and
+directory-output saves leave the dirty planned session intact, then the safe
+retry, first no-op output, and second no-op output preserve source and prior
+package bytes while reopening the combined row/column-shifted `RenamedData`
+state cleanly.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

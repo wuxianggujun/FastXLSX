@@ -22390,6 +22390,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-rows-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -22440,6 +22442,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         "full-calc insert_rows save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc insert_rows save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -22549,6 +22553,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc insert_rows no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc insert_rows no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "full-calc insert_rows no-op save",
         inspect_full_calc_insert_rows_output);
     check_reopened_untouched_keep_me_output(
@@ -22583,6 +22589,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc insert_rows second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc insert_rows second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc insert_rows second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -22877,6 +22885,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.request_full_calculation();
@@ -22944,6 +22954,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         "full-calc before insert_rows styled formula save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_rows styled formula save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -23065,6 +23077,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc before insert_rows styled formula no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_rows styled formula no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "full-calc before insert_rows styled formula no-op save",
         inspect_full_calc_before_insert_rows_styled_output);
@@ -23100,6 +23114,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc before insert_rows styled formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_rows styled formula second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before insert_rows styled formula second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -24156,6 +24172,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
     const std::filesystem::path post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-insert-columns-styled-post-noop-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -24223,6 +24241,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns styled source formula save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="F2" s=")")
@@ -24306,6 +24326,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "insert_columns styled source formula no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns styled source formula no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "insert_columns styled source formula no-op save",
         inspect_insert_columns_styled_output);
@@ -24338,6 +24360,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "insert_columns styled source formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns styled source formula second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "insert_columns styled source formula second no-op save should leave the first no-op output unchanged");
     check_reopened_shift_output(second_noop_output,
@@ -24387,6 +24411,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         "insert_columns styled source formula post-noop save should leave the second no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns styled source formula post-noop save should leave the source package unchanged");
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml, styled_formula_xml,
         "insert_columns styled source formula post-noop save should keep the styled formula cell");
@@ -24453,6 +24479,8 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         fastxlsx::test::read_zip_entries(post_noop_noop_output);
     check(post_noop_noop_entries == post_noop_entries,
         "insert_columns styled source formula post-noop noop output should match post-noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns styled source formula post-noop noop save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "insert_columns styled source formula post-noop noop save should leave prior post-noop output unchanged");
     check_reopened_shift_output(post_noop_noop_output,
@@ -24473,6 +24501,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-columns-styled-noop-output.xlsx");
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-insert-columns-styled-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -24533,6 +24563,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         "full-calc insert_columns styled formula save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc insert_columns styled formula save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -24659,6 +24691,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc insert_columns styled formula no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc insert_columns styled formula no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "full-calc insert_columns styled formula no-op save",
         inspect_full_calc_insert_columns_styled_output);
@@ -24693,6 +24727,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styl
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc insert_columns styled formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc insert_columns styled formula second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc insert_columns styled formula second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -25000,6 +25036,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.request_full_calculation();
@@ -25067,6 +25105,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         "full-calc before insert_columns styled formula save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_columns styled formula save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="F2" s=")")
@@ -25189,6 +25229,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc before insert_columns styled formula no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_columns styled formula no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output,
         "full-calc before insert_columns styled formula no-op save",
         inspect_full_calc_before_insert_columns_styled_output);
@@ -25224,6 +25266,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc before insert_columns styled formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_columns styled formula second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before insert_columns styled formula second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
@@ -25558,6 +25602,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
     const std::filesystem::path second_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.request_full_calculation();
@@ -25617,6 +25663,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         "full-calc before insert_columns save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_columns save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(output_entries.at("xl/workbook.xml"), R"(fullCalcOnLoad="1")",
         "full-calc before insert_columns save_as should persist workbook fullCalcOnLoad metadata");
@@ -25695,6 +25743,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "full-calc before insert_columns no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_columns no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "full-calc before insert_columns no-op save",
         inspect_full_calc_insert_columns_output);
     check_reopened_untouched_keep_me_output(
@@ -25729,6 +25779,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc before insert_columns second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc before insert_columns second no-op save should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before insert_columns second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,

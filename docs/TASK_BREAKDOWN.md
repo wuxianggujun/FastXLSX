@@ -65789,6 +65789,48 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
 
+### P8.1623 - Pin clean invalid-to-valid recovery repeat no-op saves
+
+Type: public `WorksheetEditor` clean invalid-to-valid row/column shift recovery
+saved-session no-op/readback and post-noop preservation regression.
+
+Status: completed.
+
+Goal:
+Verify that clean invalid-to-valid row/column shift recovery paths preserve
+source and prior outputs across a second clean no-op save, and that the later
+post-noop materialized edit does not rewrite that repeat no-op output.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()`.
+- Adds a second no-op output after invalid row/column shift calls are rejected,
+  the valid recovery insert saves, and the first clean no-op output is written.
+- Requires stable public catalog/save state, empty dirty materialized
+  diagnostics, no replacement diagnostics, clear diagnostics, and unchanged
+  pending handoff count.
+- Requires the second no-op package to match the first no-op package while the
+  first shifted output and first no-op output remain unchanged.
+- Fresh-reopens the second no-op outputs to verify shifted `A3` / `C1` state
+  and absent old coordinates.
+- Extends the later post-noop `C3` / `D2` saves to verify the repeat no-op
+  output also remains unchanged.
+- Leaves production code unchanged.
+
+Non-goals:
+- No shift validation changes, diagnostic clearing policy changes, save
+  behavior changes, overwrite mode, staged handoff retention changes,
+  commit/close semantics, rollback, transaction replay, row/column shift
+  semantic changes, formula evaluation, calcChain rebuild,
+  sharedStrings/styles migration, metadata/range repair, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

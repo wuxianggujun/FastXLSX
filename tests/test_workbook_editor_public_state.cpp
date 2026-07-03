@@ -10056,6 +10056,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
                 fastxlsx::test::read_zip_entries(reject_output);
             check(reject_output_entries == source_entries,
                 prefix + " style rejection save should copy source entries");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                prefix + " style rejection save should leave the source package unchanged");
             check_reopened_default_data_sheet_output(
                 reject_output, prefix + " style rejection save");
 
@@ -10083,6 +10085,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
                 prefix + " style rejection noop save should still copy source entries");
             check(reject_noop_entries == reject_output_entries,
                 prefix + " style rejection noop output should match the first output");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                prefix + " style rejection noop save should leave the source package unchanged");
             check_reopened_default_data_sheet_output(
                 reject_noop_output, prefix + " style rejection noop save");
         };
@@ -10161,6 +10165,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "initializer-list batch save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<c r="B1"/>)",
         "initializer-list clear_cell_values should persist explicit blank cells");
@@ -10227,6 +10233,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "initializer-list batch no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "initializer-list batch no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "initializer-list batch no-op save",
         inspect_initializer_list_batch_output);
 
@@ -10255,6 +10263,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         "initializer-list batch second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "initializer-list batch second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "initializer-list batch second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         second_noop_output, "Data", "initializer-list batch second no-op save",
         inspect_initializer_list_batch_output);

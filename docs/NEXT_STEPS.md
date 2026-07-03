@@ -2220,6 +2220,12 @@ the shifted materialized output writes `fullCalcOnLoad` without inventing
 `calcChain.xml`, each path performs two clean no-op saves, compares package
 entries, and fresh-reopens the second no-op output through the full-calc shift
 inspectors.
+Full-calculation plus delete-shift success paths now have matching repeated
+no-op-save readback. The styled `delete_rows()` path writes a second clean
+no-op output, while the styled `delete_columns()` path now also fresh-reopens
+the materialized output and both no-op outputs, checking translated styled
+`#REF!` formulas, stable package entries, `fullCalcOnLoad`, and no invented
+`calcChain.xml`.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

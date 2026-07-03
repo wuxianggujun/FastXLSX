@@ -146,6 +146,9 @@ coverage: the row-shifted clean no-op output stays byte-stable, a later `C3`
 edit re-dirties the optional reacquired session and original handle with aligned
 materialized diagnostics, and the next output fresh-reopens with shifted `A3`
 plus the new `C3`.
+It now also repeats the clean no-op save before that later `C3` edit: the
+second no-op output is byte-identical to the first, fresh-reopens with the
+shifted `A3` state, and remains unchanged after the post-noop save.
 The option-mismatch saved-session path now carries the same post-noop reuse
 evidence as well: rejected mismatched options and a clean no-op save leave the
 row-shifted session reusable, a later matching reacquire can write `C3`, and the

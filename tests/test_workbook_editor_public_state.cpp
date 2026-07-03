@@ -36817,6 +36817,8 @@ void test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserv
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-failed-save-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-formula-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_source_names = editor.source_worksheet_names();
@@ -36966,8 +36968,73 @@ void test_public_worksheet_editor_shift_after_rename_formula_failed_save_preserv
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "renamed formula failed save no-op retry");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "renamed formula failed save no-op retry should keep output entries stable");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "renamed formula failed save second no-op retry should keep the styled handle clean");
+    check(editor.pending_change_count() == 2,
+        "renamed formula failed save second no-op retry should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed formula failed save second no-op retry should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed formula failed save second no-op retry should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed formula failed save second no-op retry should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "renamed formula failed save second no-op retry");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "renamed formula failed save second no-op retry");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula failed save second no-op retry should keep source entries unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "renamed formula failed save second no-op retry should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "renamed formula failed save second no-op retry should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "renamed formula failed save second no-op retry should keep output entries stable");
+    fastxlsx::WorkbookEditor reopened_second_noop =
+        fastxlsx::WorkbookEditor::open(second_noop_output);
+    check(reopened_second_noop.has_worksheet("RenamedData") &&
+            !reopened_second_noop.has_worksheet("Data"),
+        "renamed formula failed save reopened second no-op output should expose only the planned catalog name");
+    fastxlsx::WorksheetEditor reopened_second_noop_sheet =
+        reopened_second_noop.worksheet("RenamedData");
+    check(!reopened_second_noop.has_pending_changes() &&
+            !reopened_second_noop_sheet.has_pending_changes(),
+        "renamed formula failed save reopened second no-op output should start clean");
+    check(reopened_second_noop_sheet.cell_count() == 7,
+        "renamed formula failed save reopened second no-op output should keep shifted sparse count");
+    check_cell_range_equals(reopened_second_noop_sheet.used_range(), 1, 1, 5, 4,
+        "renamed formula failed save reopened second no-op output should expose row-shifted bounds");
+    const std::optional<fastxlsx::CellValue> reopened_second_noop_d4 =
+        reopened_second_noop_sheet.try_cell("D4");
+    check(reopened_second_noop_d4.has_value() &&
+            reopened_second_noop_d4->kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_second_noop_d4->text_value() == "A3+B3" &&
+            reopened_second_noop_d4->has_style() &&
+            reopened_second_noop_d4->style_id().value() == styled_formula_style.value(),
+        "renamed formula failed save reopened second no-op output should read translated styled formula");
+    check(reopened_second_noop_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+            reopened_second_noop_sheet.get_cell("B4").text_value() == "row2-gap-b2" &&
+            reopened_second_noop_sheet.get_cell("C4").text_value() == "row2-gap-c2" &&
+            reopened_second_noop_sheet.get_cell("A5").text_value() == "extra-c3",
+        "renamed formula failed save reopened second no-op output should read shifted source cells");
+    check(!reopened_second_noop_sheet.try_cell("D2").has_value() &&
+            !reopened_second_noop_sheet.try_cell("A2").has_value(),
+        "renamed formula failed save reopened second no-op output should keep old coordinates absent");
+
     fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
     check(reopened_noop.has_worksheet("RenamedData") && !reopened_noop.has_worksheet("Data"),
         "renamed formula failed save reopened no-op output should expose only the planned catalog name");

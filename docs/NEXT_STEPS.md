@@ -302,6 +302,10 @@ uses that second clean no-op contract: after rejected source overwrite and a
 safe retry, it preserves source bytes, the shifted output, and the first
 no-op package across another no-op save, then fresh-reopens the second no-op
 output with the same styled qualified formula references.
+The shift-after-rename styled formula failed-save retry path now carries the
+same second no-op evidence: the safe retry output, first no-op output, and
+source package remain unchanged, and the second no-op output fresh-reopens with
+the translated styled formula plus shifted source cells under `RenamedData`.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

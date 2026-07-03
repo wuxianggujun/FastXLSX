@@ -634,6 +634,11 @@ and
 `generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_save`,
 requiring the final fresh-reopen edited workbook to no-op save byte-identically
 after the `Data!F1` / `Summary!E1` save.
+The final no-op output is now also reused as another fresh editor source through
+`generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save`
+and
+`generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_save`,
+which edit `Data!G1` and `Summary!F1` after opening that final no-op workbook.
 The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already

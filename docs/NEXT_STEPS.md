@@ -1076,6 +1076,10 @@ exact source overwrite: the failed save preserves dirty diagnostics, the
 translated `C2` formula/style, shifted source columns, queued workbook metadata,
 and source bytes before a safe retry writes `fullCalcOnLoad="1"` with no
 `xl/calcChain.xml`.
+The reverse-order insert-row/full-calculation failed-save retry path now also
+checks fresh-reopened no-op output snapshots: row four exposes shifted source
+cells and the styled translated `D4` formula in row-major order, while column
+four exposes the same `A3+B3` formula/style.
 The after-shift delete-column retry path now matches the same no-op save
 stability contract after safe retry: clean diagnostics, stable public
 save/catalog state, no extra handoff, and byte-identical output.

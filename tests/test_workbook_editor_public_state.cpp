@@ -21934,6 +21934,40 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
                     reopened_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
                     reopened_sheet.get_cell("A5").text_value() == "extra-c3",
                 "full-calc before insert_rows styled formula failed save no-op reopened output should read shifted source rows");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_four =
+                reopened_sheet.row_cells(4);
+            check(reopened_row_four.size() == 4 &&
+                    reopened_row_four[0].reference.row == 4 &&
+                    reopened_row_four[0].reference.column == 1 &&
+                    reopened_row_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_four[0].value.text_value() == "placeholder-a2" &&
+                    reopened_row_four[1].reference.row == 4 &&
+                    reopened_row_four[1].reference.column == 2 &&
+                    reopened_row_four[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_four[1].value.text_value() == "row2-gap-b2" &&
+                    reopened_row_four[2].reference.row == 4 &&
+                    reopened_row_four[2].reference.column == 3 &&
+                    reopened_row_four[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_four[2].value.text_value() == "row2-gap-c2" &&
+                    reopened_row_four[3].reference.row == 4 &&
+                    reopened_row_four[3].reference.column == 4 &&
+                    reopened_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_row_four[3].value.text_value() == "A3+B3" &&
+                    reopened_row_four[3].value.has_style() &&
+                    reopened_row_four[3].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_rows styled formula failed save no-op reopened row_cells should expose shifted sparse order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+                reopened_sheet.column_cells(4);
+            check(reopened_column_four.size() == 1 &&
+                    reopened_column_four[0].reference.row == 4 &&
+                    reopened_column_four[0].reference.column == 4 &&
+                    reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_four[0].value.text_value() == "A3+B3" &&
+                    reopened_column_four[0].value.has_style() &&
+                    reopened_column_four[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_rows styled formula failed save no-op reopened column_cells should expose shifted styled formula");
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value(),
                 "full-calc before insert_rows styled formula failed save no-op reopened output should keep old coordinates absent");

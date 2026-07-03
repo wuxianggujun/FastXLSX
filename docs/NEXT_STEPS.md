@@ -137,6 +137,10 @@ same current shift-family coverage: later `D3` / `F3` edits re-dirty the shared
 handles, preserve the translated formula cells, save as the next handoff, leave
 earlier outputs unchanged, and fresh-reopen with the shifted source-backed
 cells plus the post-noop edits.
+They also repeat the clean no-op save before those later `D3` / `F3` edits:
+the second no-op outputs are byte-identical to the first no-op outputs,
+fresh-reopen with the shifted formula state, and remain unchanged after the
+post-noop saves.
 The optional `try_worksheet()` saved-session path now has the same post-noop
 coverage: the row-shifted clean no-op output stays byte-stable, a later `C3`
 edit re-dirties the optional reacquired session and original handle with aligned

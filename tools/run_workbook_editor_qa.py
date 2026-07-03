@@ -134,6 +134,7 @@ GENERATED_CASE_DIRECTORY_ALIASES = {
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
         "ms-pe-post-noop-third",
 }
+GENERATED_CASE_DIRECTORY_MAX_LENGTH = 64
 
 DEFAULT_XLNT_RENAME_FIXTURES = [
     "2_minimal.xlsx",
@@ -269,6 +270,19 @@ def formula_fixture_case_slug(
     safe_sheet = compact_slug_component(sheet_name, max_length=10)
     digest = hashlib.sha1(sheet_name.encode("utf-8")).hexdigest()[:8]
     return f"{fixture_case_slug(fixture_root, fixture_path)}__{safe_sheet}-{digest}"
+
+
+def generated_case_directory_name(scenario: str) -> str:
+    alias = GENERATED_CASE_DIRECTORY_ALIASES.get(scenario)
+    if alias is not None:
+        return alias
+    if len(scenario) <= GENERATED_CASE_DIRECTORY_MAX_LENGTH:
+        return scenario
+
+    digest = hashlib.sha1(scenario.encode("utf-8")).hexdigest()[:8]
+    prefix_length = GENERATED_CASE_DIRECTORY_MAX_LENGTH - len(digest) - 1
+    prefix = compact_slug_component(scenario, max_length=prefix_length).rstrip("._-")
+    return f"{prefix}-{digest}"
 
 
 def discover_external_fixtures(
@@ -4346,7 +4360,7 @@ def run_generated_case(
     work_dir: Path,
     scenario: str,
 ) -> ScenarioResult:
-    case_dir = work_dir / GENERATED_CASE_DIRECTORY_ALIASES.get(scenario, scenario)
+    case_dir = work_dir / generated_case_directory_name(scenario)
     tool_report = run_tool(qa_exe, scenario, case_dir)
     output_path = Path(tool_report["output"])
     replacement_image = Path(tool_report["replacement_image"]) if tool_report.get("replacement_image") else None
@@ -5272,6 +5286,34 @@ def run_self_test() -> int:
         require(
             len(long_formula_slug) <= 48,
             f"self-test: formula fixture slug too long {long_formula_slug!r}",
+        )
+        short_generated_dir = generated_case_directory_name("generated_in_memory_retry_noop_save")
+        require(
+            short_generated_dir == "generated_in_memory_retry_noop_save",
+            f"self-test: short generated case dir changed {short_generated_dir!r}",
+        )
+        aliased_generated_dir = generated_case_directory_name(
+            "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save"
+        )
+        require(
+            aliased_generated_dir == "fc-ms-pe-post-noop-third",
+            f"self-test: explicit generated case alias mismatch {aliased_generated_dir!r}",
+        )
+        long_generated_scenario = "generated_" + ("very_long_scenario_name_" * 5)
+        long_generated_dir = generated_case_directory_name(long_generated_scenario)
+        require(
+            long_generated_dir.isascii(),
+            f"self-test: long generated case dir is not ASCII {long_generated_dir!r}",
+        )
+        require(
+            len(long_generated_dir) <= GENERATED_CASE_DIRECTORY_MAX_LENGTH,
+            f"self-test: long generated case dir too long {long_generated_dir!r}",
+        )
+        require(
+            long_generated_dir.endswith(
+                hashlib.sha1(long_generated_scenario.encode("utf-8")).hexdigest()[:8]
+            ),
+            f"self-test: long generated case dir missing digest {long_generated_dir!r}",
         )
 
         image_fixture = workspace_asset("xlnt/tests/data/14_images.xlsx")

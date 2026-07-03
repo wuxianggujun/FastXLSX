@@ -63312,6 +63312,44 @@ Verification:
 - `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save --scenario generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-multi-sheet-retry-reopen-post-noop-third --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
   passes.
 
+### P8.1563 - Harden generated QA case directory path budget
+
+Type: opt-in workbook-editor generated QA runner path hygiene for long scenario
+names on Windows.
+
+Status: completed.
+
+Goal:
+Keep long-named generated retry/reopen/no-op scenarios runnable under nested
+Windows work directories without adding one-off aliases for every future case.
+
+Coverage:
+- Adds `generated_case_directory_name()` in `tools/run_workbook_editor_qa.py`.
+- Preserves explicit generated-case aliases for known long scenarios.
+- Leaves short scenario names mapped directly to their original case
+  directories.
+- Maps any later generated scenario name longer than the path-budget threshold
+  to a deterministic shortened directory with an SHA-1 suffix while preserving
+  the full scenario name in tool reports and aggregate QA JSON.
+- Extends `--self-test` coverage for direct names, explicit aliases, and
+  automatic long-name shortening.
+
+Non-goals:
+- No production logic changes, `WorkbookEditor` / `WorksheetEditor` save
+  behavior changes, generated workbook content changes, scenario semantic
+  changes, production path handling changes, overwrite mode, rollback,
+  transaction replay, metadata/range repair, sharedStrings/styles migration,
+  calcChain rebuild/generation, relationship repair, default CTest/CI
+  expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `py tools\\run_workbook_editor_qa.py --self-test` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_qa_tool`
+  passes.
+- `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save --scenario generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-multi-sheet-retry-reopen-post-noop-third --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

@@ -614,7 +614,11 @@ also has post-noop third-stage variants through
 and
 `generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save`,
 covering another `Data` / `Summary` edit after the clean no-op save plus final
-byte-stable output.
+byte-stable output. The generated QA runner now also centralizes case-directory
+path budgeting: explicit aliases remain for known long scenarios, short
+scenario names still map directly, and future over-budget generated scenario
+names receive deterministic shortened directories with SHA-1 suffixes so long
+Windows work directories do not block retry/reopen/no-op QA runs.
 The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already

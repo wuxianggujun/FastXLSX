@@ -129,6 +129,9 @@ formula-translated shifted session: after the clean no-op save, a later `D2`
 edit re-dirties the shared handles, preserves the translated `B1` formula
 diagnostics, saves as the next handoff, leaves earlier outputs unchanged, and
 fresh-reopens with shifted `A1`, translated `B1`, shifted `C2`, and new `D2`.
+It also repeats the clean no-op save before that later `D2` edit: the second
+no-op output is byte-identical to the first, reopens with the translated
+delete-column state, and remains unchanged after the post-noop save.
 The delete-row and insert-column saved/reacquired no-op paths now complete the
 same current shift-family coverage: later `D3` / `F3` edits re-dirty the shared
 handles, preserve the translated formula cells, save as the next handoff, leave

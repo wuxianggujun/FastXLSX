@@ -55411,6 +55411,7 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-output.xlsx");
     const std::filesystem::path max_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-max-budget-noop-output.xlsx");
+    const auto max_source_entries = fastxlsx::test::read_zip_entries(max_source);
 
     fastxlsx::WorkbookEditor max_sizing_editor = fastxlsx::WorkbookEditor::open(max_source);
     const fastxlsx::WorksheetEditor max_sizing_sheet = max_sizing_editor.worksheet("Data");
@@ -55437,6 +55438,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "failed exact max_cells insertion should update last_edit_error before erase");
     check(!max_editor.has_pending_changes(),
         "failed exact max_cells insertion before erase should not dirty the editor");
+    check(fastxlsx::test::read_zip_entries(max_source) == max_source_entries,
+        "failed exact max_cells insertion before erase should leave the source package unchanged");
 
     max_sheet.erase_cell("A2");
     check(!max_editor.last_edit_error().has_value(),
@@ -55469,6 +55472,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "pending materialized memory should include the replacement insertion");
 
     max_editor.save_as(max_output);
+    check(fastxlsx::test::read_zip_entries(max_source) == max_source_entries,
+        "max_cells budget-release save_as should leave the source package unchanged");
     const auto max_output_entries = fastxlsx::test::read_zip_entries(max_output);
     const std::string max_worksheet_xml = max_output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(max_worksheet_xml, "after-erase-max-cells",
@@ -55509,6 +55514,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
     const auto max_noop_entries = fastxlsx::test::read_zip_entries(max_noop_output);
     check(max_noop_entries == max_output_entries,
         "max_cells budget-release noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(max_source) == max_source_entries,
+        "max_cells budget-release noop save should leave the source package unchanged");
     check_reopened_guardrail_budget_release_output(
         max_noop_output,
         max_options,
@@ -55521,6 +55528,7 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-output.xlsx");
     const std::filesystem::path memory_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-memory-budget-noop-output.xlsx");
+    const auto memory_source_entries = fastxlsx::test::read_zip_entries(memory_source);
 
     fastxlsx::WorkbookEditor memory_sizing_editor =
         fastxlsx::WorkbookEditor::open(memory_source);
@@ -55551,6 +55559,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "failed exact memory-budget insertion should update last_edit_error before erase");
     check(!memory_editor.has_pending_changes(),
         "failed exact memory-budget insertion before erase should not dirty the editor");
+    check(fastxlsx::test::read_zip_entries(memory_source) == memory_source_entries,
+        "failed exact memory-budget insertion before erase should leave the source package unchanged");
 
     memory_sheet.erase_cell("A2");
     check(!memory_editor.last_edit_error().has_value(),
@@ -55585,6 +55595,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         "pending materialized memory should include the memory-budget replacement");
 
     memory_editor.save_as(memory_output);
+    check(fastxlsx::test::read_zip_entries(memory_source) == memory_source_entries,
+        "memory-budget budget-release save_as should leave the source package unchanged");
     const auto memory_output_entries = fastxlsx::test::read_zip_entries(memory_output);
     const std::string memory_worksheet_xml =
         memory_output_entries.at("xl/worksheets/sheet1.xml");
@@ -55627,6 +55639,8 @@ void test_public_worksheet_editor_erase_releases_guardrail_budget_for_insertions
         fastxlsx::test::read_zip_entries(memory_noop_output);
     check(memory_noop_entries == memory_output_entries,
         "memory-budget budget-release noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(memory_source) == memory_source_entries,
+        "memory-budget budget-release noop save should leave the source package unchanged");
     check_reopened_guardrail_budget_release_output(
         memory_noop_output,
         memory_options,

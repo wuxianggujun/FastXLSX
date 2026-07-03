@@ -3261,7 +3261,8 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
     bool verify_post_noop_third_save,
     bool use_path_equivalent_source,
     bool request_full_calculation,
-    bool verify_final_reopen_modify_save)
+    bool verify_final_reopen_modify_save,
+    bool verify_final_reopen_noop_save)
 {
     const bool verify_clean_noop = verify_noop_save || verify_post_noop_third_save;
     Report report;
@@ -3300,25 +3301,41 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         output_filename =
             request_full_calculation ? "fx-fc-ms-post-reopen-out.xlsx" : "fx-ms-post-reopen-out.xlsx";
     }
+    if (verify_final_reopen_noop_save) {
+        source_filename =
+            request_full_calculation ? "fx-fc-ms-post-reopen-noop-src.xlsx" : "fx-ms-post-reopen-noop-src.xlsx";
+        output_filename =
+            request_full_calculation ? "fx-fc-ms-post-reopen-noop-out.xlsx" : "fx-ms-post-reopen-noop-out.xlsx";
+    }
     if (use_path_equivalent_source) {
         if (request_full_calculation) {
-            source_filename =
-                verify_final_reopen_modify_save
-                    ? "fx-fc-ms-pe-post-reopen-src.xlsx"
-                    : (verify_post_noop_third_save ? "fx-fc-ms-pe-post-src.xlsx" : "fx-fc-ms-pe-reopen-src.xlsx");
-            output_filename =
-                verify_final_reopen_modify_save
-                    ? "fx-fc-ms-pe-post-reopen-out.xlsx"
-                    : (verify_post_noop_third_save ? "fx-fc-ms-pe-post-out.xlsx" : "fx-fc-ms-pe-reopen-out.xlsx");
+            if (verify_final_reopen_noop_save) {
+                source_filename = "fx-fc-ms-pe-post-reopen-noop-src.xlsx";
+                output_filename = "fx-fc-ms-pe-post-reopen-noop-out.xlsx";
+            } else if (verify_final_reopen_modify_save) {
+                source_filename = "fx-fc-ms-pe-post-reopen-src.xlsx";
+                output_filename = "fx-fc-ms-pe-post-reopen-out.xlsx";
+            } else if (verify_post_noop_third_save) {
+                source_filename = "fx-fc-ms-pe-post-src.xlsx";
+                output_filename = "fx-fc-ms-pe-post-out.xlsx";
+            } else {
+                source_filename = "fx-fc-ms-pe-reopen-src.xlsx";
+                output_filename = "fx-fc-ms-pe-reopen-out.xlsx";
+            }
         } else {
-            source_filename =
-                verify_final_reopen_modify_save
-                    ? "fx-ms-pe-post-reopen-src.xlsx"
-                    : (verify_post_noop_third_save ? "fx-ms-pe-post-src.xlsx" : "fx-ms-pe-reopen-src.xlsx");
-            output_filename =
-                verify_final_reopen_modify_save
-                    ? "fx-ms-pe-post-reopen-out.xlsx"
-                    : (verify_post_noop_third_save ? "fx-ms-pe-post-out.xlsx" : "fx-ms-pe-reopen-out.xlsx");
+            if (verify_final_reopen_noop_save) {
+                source_filename = "fx-ms-pe-post-reopen-noop-src.xlsx";
+                output_filename = "fx-ms-pe-post-reopen-noop-out.xlsx";
+            } else if (verify_final_reopen_modify_save) {
+                source_filename = "fx-ms-pe-post-reopen-src.xlsx";
+                output_filename = "fx-ms-pe-post-reopen-out.xlsx";
+            } else if (verify_post_noop_third_save) {
+                source_filename = "fx-ms-pe-post-src.xlsx";
+                output_filename = "fx-ms-pe-post-out.xlsx";
+            } else {
+                source_filename = "fx-ms-pe-reopen-src.xlsx";
+                output_filename = "fx-ms-pe-reopen-out.xlsx";
+            }
         }
     }
 
@@ -3346,11 +3363,15 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
     const std::filesystem::path final_noop_output =
         report.output.parent_path() /
         (use_path_equivalent_source ? "u.xlsx" : "third-noop-output.xlsx");
+    const std::filesystem::path final_reopen_noop_output =
+        report.output.parent_path() /
+        (use_path_equivalent_source ? "v.xlsx" : "final-reopen-noop-output.xlsx");
     ensure_parent_directory(retry_output);
     ensure_parent_directory(second_stage_output);
     ensure_parent_directory(prior_noop_output);
     ensure_parent_directory(third_stage_output);
     ensure_parent_directory(final_noop_output);
+    ensure_parent_directory(final_reopen_noop_output);
     ensure_parent_directory(report.output);
     report.source_sheet_name = "Data";
     report.mutations = {
@@ -3394,6 +3415,9 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         report.mutations.push_back("sixth:worksheet(Summary).set_cell(E1,formula)");
         report.mutations.push_back("sixth:save_as(final-reopen-output)");
     }
+    if (verify_final_reopen_noop_save) {
+        report.mutations.push_back("seventh:save_as(final-reopen-noop-output)");
+    }
     report.notes = {
         "Source-overwrite save_as should fail before the safe retry",
         "Intermediate retry output should be usable as a fresh WorkbookEditor source",
@@ -3411,6 +3435,10 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
     if (verify_final_reopen_modify_save) {
         report.notes.push_back(
             "The post-noop no-op output should reopen as a fresh WorkbookEditor source");
+    }
+    if (verify_final_reopen_noop_save) {
+        report.notes.push_back(
+            "The final fresh-reopen edit output should no-op save byte-identically");
     }
     if (request_full_calculation) {
         report.notes.push_back(
@@ -3503,6 +3531,13 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
             throw std::runtime_error(
                 "final reopen edit should leave the post-noop no-op output unchanged");
         }
+        if (verify_final_reopen_noop_save) {
+            final_reopened.save_as(final_reopen_noop_output);
+            if (!file_bytes_equal(report.output, final_reopen_noop_output)) {
+                throw std::runtime_error(
+                    "final fresh-reopen no-op save output should be byte-identical");
+            }
+        }
     }
     return report;
 }
@@ -3511,6 +3546,7 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_save(const CliOpt
 {
     return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         options,
+        false,
         false,
         false,
         false,
@@ -3526,6 +3562,7 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_noop_save(const C
         false,
         false,
         false,
+        false,
         false);
 }
 
@@ -3537,6 +3574,7 @@ Report run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_n
         true,
         false,
         true,
+        false,
         false,
         false);
 }
@@ -3550,6 +3588,7 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_noop_sa
         false,
         false,
         true,
+        false,
         false);
 }
 
@@ -3562,6 +3601,7 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reope
         false,
         true,
         true,
+        false,
         false);
 }
 
@@ -3574,6 +3614,7 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_no
         true,
         false,
         true,
+        false,
         false);
 }
 
@@ -3586,6 +3627,7 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reope
         true,
         true,
         true,
+        false,
         false);
 }
 
@@ -3598,7 +3640,8 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_no
         true,
         false,
         true,
-        true);
+        true,
+        false);
 }
 
 Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_save(
@@ -3606,6 +3649,33 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reope
 {
     return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
         options,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false);
+}
+
+Report run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options,
+        true,
+        true,
+        false,
+        true,
+        true,
+        true);
+}
+
+Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options,
+        true,
         true,
         true,
         true,
@@ -3622,6 +3692,7 @@ Report run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_p
         true,
         true,
         false,
+        false,
         false);
 }
 
@@ -3632,6 +3703,7 @@ Report run_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_s
         options,
         true,
         true,
+        false,
         false,
         false,
         false);
@@ -4441,6 +4513,16 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario ==
         "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_save") {
         return run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_save(
+            options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_save") {
+        return run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_save(
+            options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_save") {
+        return run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_save(
             options);
     }
     if (options.scenario ==

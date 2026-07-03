@@ -628,6 +628,12 @@ after proving the post-noop no-op output is byte-stable, the QA tool opens that
 file as a fresh `WorkbookEditor` source, edits `Data!F1` and `Summary!E1`, and
 saves a final readable output while keeping the scope limited to generated
 in-memory QA.
+The same lane also has final clean no-op variants through
+`generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_save`
+and
+`generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_save`,
+requiring the final fresh-reopen edited workbook to no-op save byte-identically
+after the `Data!F1` / `Summary!E1` save.
 The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already

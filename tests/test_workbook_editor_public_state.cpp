@@ -16555,6 +16555,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "missing clear_column save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing clear_column save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "missing clear_column save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -16581,6 +16583,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "missing clear_column noop save should still copy source entries");
         check(noop_entries == output_entries,
             "missing clear_column noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing clear_column noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "missing clear_column noop save");
     }
@@ -16590,6 +16594,7 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -16617,6 +16622,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_column save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
             "clear_column should keep the projected dimension over explicit blanks");
@@ -16677,6 +16684,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             editor, catalog_before_noop, "clear_column no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clear_column no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_column no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_column no-op save", inspect_clear_column_output);
     }
@@ -16704,6 +16713,7 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             }
             writer.close();
         }
+        const auto style_source_entries = fastxlsx::test::read_zip_entries(style_source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
@@ -16721,6 +16731,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_column save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string styled_blank =
             R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
@@ -16787,6 +16799,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "styled clear_column no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_column no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_column no-op save",
             inspect_styled_clear_column_output);
@@ -16818,6 +16832,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "styled clear_column second no-op save");
         check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
             "styled clear_column second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_column second no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             second_noop_output, "Styled", "styled clear_column second no-op save",
             inspect_styled_clear_column_output);
@@ -16828,6 +16844,7 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -16849,6 +16866,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_columns save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
             "clear_columns should keep explicit blanks in the projected dimension");
@@ -16914,6 +16933,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             editor, catalog_before_noop, "clear_columns no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clear_columns no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_columns no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_columns no-op save", inspect_clear_columns_output);
     }
@@ -16941,6 +16962,7 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             }
             writer.close();
         }
+        const auto style_source_entries = fastxlsx::test::read_zip_entries(style_source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
@@ -16958,6 +16980,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_columns save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string styled_blank =
             R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
@@ -17024,6 +17048,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "styled clear_columns no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_columns no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_columns no-op save",
             inspect_styled_clear_columns_output);
@@ -17055,6 +17081,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "styled clear_columns second no-op save");
         check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
             "styled clear_columns second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_columns second no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             second_noop_output, "Styled", "styled clear_columns second no-op save",
             inspect_styled_clear_columns_output);
@@ -17145,6 +17173,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "clear_column invalid/reversed failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_column invalid/reversed failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             output, "clear_column invalid/reversed failure save");
 
@@ -17178,6 +17208,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "clear_column invalid/reversed failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "clear_column invalid/reversed failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_column invalid/reversed failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "clear_column invalid/reversed failure noop save");
     }

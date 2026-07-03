@@ -31316,6 +31316,7 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-shift-formula-audit-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -31409,6 +31410,8 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
         "full-calc shifted formula audit save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc shifted formula audit save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D3" s=")")
@@ -31468,6 +31471,8 @@ void test_public_worksheet_editor_full_calculation_shift_formula_audits_preserve
         editor, catalog_before_noop, "full-calc shifted formula audit no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "full-calc shifted formula audit no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc shifted formula audit no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "full-calc shifted formula audit no-op save",
         inspect_full_calc_shift_formula_audit_output);
 }
@@ -31484,6 +31489,7 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-source-formula-audit-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -31580,6 +31586,8 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
         "full-calc source formula audit save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc source formula audit save_as should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D3" s=")")
@@ -31639,6 +31647,8 @@ void test_public_worksheet_editor_full_calculation_source_formula_audits_preserv
         editor, catalog_before_noop, "full-calc source formula audit no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "full-calc source formula audit no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-calc source formula audit no-op save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "full-calc source formula audit no-op save",
         inspect_full_calc_source_formula_audit_output);
 }
@@ -31655,6 +31665,7 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-source-formula-audit-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
@@ -31711,6 +31722,8 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
         "renamed full-calc source formula audit save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc source formula audit save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -31760,6 +31773,8 @@ void test_public_worksheet_editor_full_calculation_renamed_source_formula_audits
         "renamed full-calc source formula audit no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed full-calc source formula audit no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc source formula audit no-op save should leave the source package unchanged");
     check_public_state_reopened_shift_formula_audit_output(
         noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
         "Data!A2", "A2", "Data!B2", "B2",
@@ -31778,6 +31793,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_preser
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
@@ -31825,6 +31841,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_preser
         "renamed full-calc formula audit save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -31874,6 +31892,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_preser
         "renamed full-calc formula audit no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "renamed full-calc formula audit no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit no-op save should leave the source package unchanged");
     check_public_state_reopened_shift_formula_audit_output(
         noop_output, "D3", 3, 4, shifted_formula, styled_formula_style,
         "Data!A2", "A2", "Data!B2", "B2",

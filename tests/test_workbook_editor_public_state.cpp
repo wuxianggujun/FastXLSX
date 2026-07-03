@@ -17400,6 +17400,7 @@ void test_public_worksheet_editor_clear_row_column_memory_budget_release()
     const std::filesystem::path source =
         write_two_sheet_source_with_large_clear_payload(
             "fastxlsx-workbook-editor-public-worksheet-clear-memory-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     {
         const std::filesystem::path output =
@@ -17472,6 +17473,8 @@ void test_public_worksheet_editor_clear_row_column_memory_budget_release()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_row memory-budget release save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<c r="A1"/>)",
             "clear_row memory-budget recovery should persist A1 as a blank record");
@@ -17540,6 +17543,8 @@ void test_public_worksheet_editor_clear_row_column_memory_budget_release()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "clear_row memory-budget release noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_row memory-budget release noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_row memory-budget release noop save",
             inspect_clear_row_memory_release_output);
@@ -17618,6 +17623,8 @@ void test_public_worksheet_editor_clear_row_column_memory_budget_release()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_column memory-budget release save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<c r="A1"/>)",
             "clear_column memory-budget recovery should persist A1 as a blank record");
@@ -17694,6 +17701,8 @@ void test_public_worksheet_editor_clear_row_column_memory_budget_release()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "clear_column memory-budget release noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_column memory-budget release noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_column memory-budget release noop save",
             inspect_clear_column_memory_release_output);
@@ -17705,6 +17714,7 @@ void test_public_worksheet_editor_clear_row_column_range_memory_budget_release()
     const std::filesystem::path source =
         write_two_sheet_source_with_large_clear_range_payload(
             "fastxlsx-workbook-editor-public-worksheet-clear-range-memory-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     {
         const std::filesystem::path output =
@@ -17779,6 +17789,8 @@ void test_public_worksheet_editor_clear_row_column_range_memory_budget_release()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_rows memory-budget release save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<c r="A1"/>)",
             "clear_rows memory-budget recovery should persist A1 as a blank record");
@@ -17849,6 +17861,8 @@ void test_public_worksheet_editor_clear_row_column_range_memory_budget_release()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "clear_rows memory-budget release noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_rows memory-budget release noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_rows memory-budget release noop save",
             inspect_clear_rows_memory_release_output);
@@ -17929,6 +17943,8 @@ void test_public_worksheet_editor_clear_row_column_range_memory_budget_release()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_columns memory-budget release save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<c r="A1"/>)",
             "clear_columns memory-budget recovery should persist A1 as a blank record");
@@ -18005,6 +18021,8 @@ void test_public_worksheet_editor_clear_row_column_range_memory_budget_release()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "clear_columns memory-budget release noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_columns memory-budget release noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_columns memory-budget release noop save",
             inspect_clear_columns_memory_release_output);

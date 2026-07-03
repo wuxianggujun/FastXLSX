@@ -259,6 +259,10 @@ The full-calculation `insert_rows()` materialized shift path now also pins
 reopened `row_cells()` / `column_cells()` snapshots: both the first shifted
 output and its clean no-op output expose row-five source/dirty trailing cells
 in sparse order and column-four as the styled translated formula.
+That same after-shift `insert_rows()` full-calculation path now also reopens
+the `Untouched` sheet from the shifted output and both no-op outputs, and the
+second no-op save proves the shifted output plus first no-op package remain
+unchanged.
 The full-calculation `delete_rows()` materialized shift path now mirrors that
 snapshot readback: both the shifted output and its clean no-op output expose
 row-one as the shifted source row plus styled `#REF!+#REF!` formula, and

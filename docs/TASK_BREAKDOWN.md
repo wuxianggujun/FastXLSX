@@ -64628,6 +64628,42 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1595 - Pin after-shift full-calc insert-row untouched/prior outputs
+
+Type: public `WorksheetEditor` after-shift full-calculation insert-row
+no-op save/readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the after-shift `insert_rows()` full-calculation success path keeps
+untouched worksheets readable and prior outputs unchanged across a second clean
+no-op save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()`.
+- Requires the shifted output to preserve `Untouched`.
+- Fresh-reopens `Untouched` from the shifted output, first no-op output, and
+  second no-op output.
+- Requires the second no-op save to leave both the materialized output and the
+  first no-op output byte-identical while preserving the existing shifted `Data`
+  readback checks.
+- Reuses existing full-calc XML checks, including `fullCalcOnLoad` and no
+  invented `calcChain.xml`; no production code changes.
+
+Non-goals:
+- No insert semantic changes, formula translation changes, source style
+  preservation changes, calcChain cleanup/rebuild changes, style migration/merge,
+  row/column metadata synchronization, sharedStrings migration, metadata/range
+  repair, relationship repair, broader Patch/materialized composition, default
+  CTest/CI expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

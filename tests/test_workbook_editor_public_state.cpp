@@ -21772,6 +21772,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         "full-calc insert_rows save_as should omit old formula coordinate");
     check_not_contains(worksheet_xml, R"(r="C3")",
         "full-calc insert_rows save_as should omit old dirty coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "full-calc insert_rows save_as should preserve untouched worksheets");
 
     const auto inspect_full_calc_insert_rows_output =
         [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -21828,6 +21830,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         };
     check_reopened_shift_output(output, "full-calc insert_rows",
         inspect_full_calc_insert_rows_output);
+    check_reopened_untouched_keep_me_output(
+        output, "full-calc insert_rows Untouched");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -21857,6 +21861,8 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         "full-calc insert_rows no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "full-calc insert_rows no-op save",
         inspect_full_calc_insert_rows_output);
+    check_reopened_untouched_keep_me_output(
+        noop_output, "full-calc insert_rows no-op Untouched");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -21887,11 +21893,15 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_shift()
         fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "full-calc insert_rows second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc insert_rows second no-op save should leave materialized output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "full-calc insert_rows second no-op save should leave the first no-op output unchanged");
     check_reopened_shift_output(second_noop_output,
         "full-calc insert_rows second no-op save",
         inspect_full_calc_insert_rows_output);
+    check_reopened_untouched_keep_me_output(
+        second_noop_output, "full-calc insert_rows second no-op Untouched");
 }
 
 void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_save_state()

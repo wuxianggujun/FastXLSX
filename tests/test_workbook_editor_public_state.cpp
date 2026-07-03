@@ -7496,6 +7496,8 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-used-range-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -7556,6 +7558,8 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     check(editor.last_edit_error() == empty_prior_error,
         "save_as after used_range inspection should preserve prior diagnostics");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "used_range save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1"/>)",
         "used_range should not interfere with dirty-session save_as projection");
@@ -7606,6 +7610,8 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "used_range no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "used_range no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -7632,6 +7638,8 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
         "used_range second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "used_range second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "used_range second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "used_range second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

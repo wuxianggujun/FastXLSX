@@ -54596,6 +54596,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
         "failed insert_rows memory-budget mutation should preserve sparse cell count");
     check(sheet.estimated_memory_usage() == baseline_memory,
         "failed insert_rows memory-budget mutation should preserve sparse memory estimate");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed insert_rows memory-budget mutation should leave the source package unchanged");
     const fastxlsx::CellValue original_formula = sheet.get_cell("A2");
     check(original_formula.kind() == fastxlsx::CellValueKind::Formula &&
             original_formula.text_value() == "A9+A9+A9+A9+A9",
@@ -54607,6 +54609,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "save_as after failed insert_rows memory-budget mutation should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "save_as after failed insert_rows memory-budget mutation should leave the source package unchanged");
     const auto inspect_reopened_shift_memory_guard_failure =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 2,
@@ -54655,6 +54659,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "shift memory guard failure noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift memory guard failure noop save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data",
         "shift memory guard failure noop save",
         inspect_reopened_shift_memory_guard_failure);

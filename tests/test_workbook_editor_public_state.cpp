@@ -9113,6 +9113,8 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after row/column read failures should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column read failure no-op save should leave the source package unchanged");
     check_reopened_default_data_sheet_output(output, "row/column read failure no-op");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -9142,6 +9144,8 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
         "row/column read failure second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "row/column read failure second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column read failure second no-op save should leave the source package unchanged");
     check_reopened_default_data_sheet_output(noop_output, "row/column read failure second no-op");
 }
 
@@ -9270,6 +9274,8 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid range reads should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid sparse range read no-op save should leave the source package unchanged");
     check_reopened_default_data_sheet_output(output, "invalid sparse range read no-op");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -9299,6 +9305,8 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
         "invalid sparse range read second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "invalid sparse range read second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid sparse range read second no-op save should leave the source package unchanged");
     check_reopened_default_data_sheet_output(noop_output, "invalid sparse range read second no-op");
 }
 

@@ -22370,6 +22370,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-failed-save-output.xlsx");
     const std::filesystem::path noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -22516,7 +22518,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         editor,
         catalog_before_noop,
         "full-calc before insert_rows styled formula failed save no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "full-calc before insert_rows styled formula failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before insert_rows styled formula failed save no-op save should leave safe retry output unchanged");
@@ -22578,13 +22581,92 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
                     !reopened_sheet.try_cell("A3").has_value(),
                 "full-calc before insert_rows styled formula failed save no-op reopened output should keep old coordinates absent");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_rows styled formula failed save second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_rows styled formula failed save second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_rows styled formula failed save second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_rows styled formula failed save second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_rows styled formula failed save second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_second_noop,
+        "full-calc before insert_rows styled formula failed save second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_second_noop,
+        "full-calc before insert_rows styled formula failed save second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc before insert_rows styled formula failed save second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc before insert_rows styled formula failed save second no-op save should leave safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc before insert_rows styled formula failed save second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(
+        second_noop_output,
+        "full-calc before insert_rows styled formula failed save second no-op save",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc before insert_rows styled formula failed save second no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+                "full-calc before insert_rows styled formula failed save second no-op reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d4 =
+                reopened_sheet.try_cell("D4");
+            check(reopened_d4.has_value() &&
+                    reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d4->text_value() == "A3+B3" &&
+                    reopened_d4->has_style() &&
+                    reopened_d4->style_id().value() == styled_formula_style.value(),
+                "full-calc before insert_rows styled formula failed save second no-op reopened output should read shifted formula style");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("B1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("A5").text_value() == "extra-c3",
+                "full-calc before insert_rows styled formula failed save second no-op reopened output should read shifted source rows");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+                reopened_sheet.column_cells(4);
+            check(reopened_column_four.size() == 1 &&
+                    reopened_column_four[0].reference.row == 4 &&
+                    reopened_column_four[0].reference.column == 4 &&
+                    reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_four[0].value.text_value() == "A3+B3" &&
+                    reopened_column_four[0].value.has_style() &&
+                    reopened_column_four[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_rows styled formula failed save second no-op reopened column_cells should expose shifted styled formula");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "full-calc before insert_rows styled formula failed save second no-op reopened output should keep old coordinates absent");
+        });
     check_reopened_untouched_keep_me_output(
         noop_output,
         "full-calc before insert_rows styled formula failed save no-op Untouched");
+    check_reopened_untouched_keep_me_output(
+        second_noop_output,
+        "full-calc before insert_rows styled formula failed save second no-op Untouched");
     check_reopened_styled_shift_source_output(
         source,
         styled_formula_style,
         "full-calc before insert_rows styled formula failed save source after no-op");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc before insert_rows styled formula failed save source after second no-op");
 }
 
 void test_public_worksheet_editor_insert_rows_shifted_sparse_snapshot()
@@ -24329,6 +24411,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-failed-save-output.xlsx");
     const std::filesystem::path noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-failed-save-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-failed-save-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -24477,7 +24561,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         editor,
         catalog_before_noop,
         "full-calc before insert_columns styled formula failed save no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "full-calc before insert_columns styled formula failed save no-op output should match safe retry output");
     check(fastxlsx::test::read_zip_entries(output) == output_entries,
         "full-calc before insert_columns styled formula failed save no-op save should leave safe retry output unchanged");
@@ -24540,13 +24625,93 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
                     !reopened_sheet.try_cell("C2").has_value(),
                 "full-calc before insert_columns styled formula failed save no-op reopened output should keep inserted coordinates absent");
         });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_columns styled formula failed save second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_columns styled formula failed save second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_columns styled formula failed save second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_columns styled formula failed save second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_columns styled formula failed save second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_second_noop,
+        "full-calc before insert_columns styled formula failed save second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_second_noop,
+        "full-calc before insert_columns styled formula failed save second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc before insert_columns styled formula failed save second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc before insert_columns styled formula failed save second no-op save should leave safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc before insert_columns styled formula failed save second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(
+        second_noop_output,
+        "full-calc before insert_columns styled formula failed save second no-op save",
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc before insert_columns styled formula failed save second no-op reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "full-calc before insert_columns styled formula failed save second no-op reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_f2->text_value() == "C1+D1" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "full-calc before insert_columns styled formula failed save second no-op reopened output should read shifted formula style");
+            check(reopened_sheet.get_cell("D1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A3").text_value() == "extra-c3",
+                "full-calc before insert_columns styled formula failed save second no-op reopened output should read shifted source cells");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_six =
+                reopened_sheet.column_cells(6);
+            check(reopened_column_six.size() == 1 &&
+                    reopened_column_six[0].reference.row == 2 &&
+                    reopened_column_six[0].reference.column == 6 &&
+                    reopened_column_six[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_six[0].value.text_value() == "C1+D1" &&
+                    reopened_column_six[0].value.has_style() &&
+                    reopened_column_six[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_columns styled formula failed save second no-op reopened column_cells should expose shifted styled formula");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "full-calc before insert_columns styled formula failed save second no-op reopened output should keep inserted coordinates absent");
+        });
     check_reopened_untouched_keep_me_output(
         noop_output,
         "full-calc before insert_columns styled formula failed save no-op Untouched");
+    check_reopened_untouched_keep_me_output(
+        second_noop_output,
+        "full-calc before insert_columns styled formula failed save second no-op Untouched");
     check_reopened_styled_shift_source_output(
         source,
         styled_formula_style,
         "full-calc before insert_columns styled formula failed save source after no-op");
+    check_reopened_styled_shift_source_output(
+        source,
+        styled_formula_style,
+        "full-calc before insert_columns styled formula failed save source after second no-op");
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()

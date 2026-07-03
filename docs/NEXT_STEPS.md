@@ -286,6 +286,12 @@ column deletion extends its no-op readback with a second clean no-op output.
 Both paths keep stable public state, byte-identical package entries,
 `fullCalcOnLoad`, no invented `calcChain.xml`, and row/column snapshot readback
 of the translated styled `#REF!` formulas.
+The reverse-order full-calculation insert-shift failed-save retry paths now also
+cover a second clean no-op output after the safe retry and first no-op save. The
+styled row/column insert tests keep source overwrite rejection non-mutating,
+verify unchanged safe retry and first no-op packages, and fresh-reopen the
+second no-op workbook plus the untouched sheet while confirming source bytes
+remain unchanged.
 The after-shift `delete_columns()` full-calculation failed-save retry path now
 uses the same reopened snapshot checks after exact source overwrite rejection:
 the clean no-op retry output exposes row-two sparse order and column-three as

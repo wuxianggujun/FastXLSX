@@ -279,6 +279,13 @@ cells once, fresh-reopens the materialized output, then writes first and second
 clean no-op outputs with stable public state, byte-identical package entries,
 `fullCalcOnLoad`, no invented `calcChain.xml`, and row/column snapshot readback
 of the translated styled formulas.
+The reverse-order full-calculation `delete_rows()` and `delete_columns()`
+success paths now match that repeated no-op coverage too: row deletion
+fresh-reopens the shifted output plus first and second no-op outputs, while
+column deletion extends its no-op readback with a second clean no-op output.
+Both paths keep stable public state, byte-identical package entries,
+`fullCalcOnLoad`, no invented `calcChain.xml`, and row/column snapshot readback
+of the translated styled `#REF!` formulas.
 The after-shift `delete_columns()` full-calculation failed-save retry path now
 uses the same reopened snapshot checks after exact source overwrite rejection:
 the clean no-op retry output exposes row-two sparse order and column-three as

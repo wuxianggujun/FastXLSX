@@ -15047,6 +15047,7 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             }
             writer.close();
         }
+        const auto style_source_entries = fastxlsx::test::read_zip_entries(style_source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
@@ -15094,6 +15095,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "clear_cell_values first save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string styled_blank =
             R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
@@ -15162,6 +15165,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "clear_cell_values() no-op output should match the first materialized output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "clear_cell_values() no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Styled", "clear_cell_values() no-op save",
             inspect_clear_all_blank_output);
 
@@ -15190,6 +15195,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "clear_cell_values() second no-op save");
         check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
             "clear_cell_values() second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "clear_cell_values() second no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             second_noop_output, "Styled", "clear_cell_values() second no-op save",
             inspect_clear_all_blank_output);
@@ -15228,6 +15235,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
 
         editor.save_as(output_after_reacquire);
         const auto reacquired_entries = fastxlsx::test::read_zip_entries(output_after_reacquire);
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "clear_cell_values reacquired save should leave the source package unchanged");
         const std::string reacquired_xml = reacquired_entries.at("xl/worksheets/sheet1.xml");
         check_contains(reacquired_xml, R"(<dimension ref="A1:B1"/>)",
             "reacquired whole-store clear session should keep edited bounds on second save_as");
@@ -15292,6 +15301,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "clear_cell_values reacquired no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output_after_reacquire) == reacquired_entries,
             "clear_cell_values reacquired no-op output should match the reacquired save output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "clear_cell_values reacquired no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output_after_reacquire, "Styled",
             "clear_cell_values reacquired no-op save", inspect_clear_all_reacquired_output);
     }
@@ -15309,6 +15320,7 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-output.xlsx");
         const std::filesystem::path noop_output_after_reacquire =
             artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-reacquire-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15349,6 +15361,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells first save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1"/>)",
             "erase_cells() should project an empty sparse worksheet dimension");
@@ -15412,6 +15426,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "erase_cells() no-op output should match the first materialized output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells() no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data", "erase_cells() no-op save",
             inspect_erase_all_empty_output);
 
@@ -15440,6 +15456,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "erase_cells() second no-op save");
         check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
             "erase_cells() second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells() second no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             second_noop_output, "Data", "erase_cells() second no-op save",
             inspect_erase_all_empty_output);
@@ -15497,6 +15515,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
         const auto empty_noop_entries = fastxlsx::test::read_zip_entries(empty_noop_output);
         check(empty_noop_entries == noop_entries,
             "empty whole-store clear/erase no-op output should match the prior no-op output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty whole-store clear/erase no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             empty_noop_output, "Data", "empty whole-store clear/erase no-op save",
             inspect_erase_all_empty_output);
@@ -15536,6 +15556,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
 
         editor.save_as(output_after_reacquire);
         const auto reacquired_entries = fastxlsx::test::read_zip_entries(output_after_reacquire);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells reacquired save should leave the source package unchanged");
         const std::string reacquired_xml = reacquired_entries.at("xl/worksheets/sheet1.xml");
         check_contains(reacquired_xml, R"(<dimension ref="A1:B1"/>)",
             "reacquired whole-store erase session should persist appended bounds");
@@ -15600,6 +15622,8 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "erase_cells reacquired no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output_after_reacquire) == reacquired_entries,
             "erase_cells reacquired no-op output should match the reacquired save output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_cells reacquired no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output_after_reacquire, "Data",
             "erase_cells reacquired no-op save", inspect_erase_all_reacquired_output);
     }
@@ -15615,6 +15639,7 @@ void test_public_worksheet_editor_erase_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-all-memory-noop-output.xlsx");
     const std::string rejected_value =
         "erase-all-memory-rejected-" + std::string(4096, 'a');
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -15665,6 +15690,8 @@ void test_public_worksheet_editor_erase_all_memory_budget_release()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_cells() memory-budget release save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "all-cells-mb-release",
         "memory-budget insertion after erase_cells() should persist through save_as");
@@ -15726,6 +15753,8 @@ void test_public_worksheet_editor_erase_all_memory_budget_release()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "erase_cells() memory-budget release noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_cells() memory-budget release noop save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data",
         "erase_cells() memory-budget release noop save",
         inspect_erase_all_memory_release_output);

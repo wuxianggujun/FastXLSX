@@ -64151,6 +64151,43 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
   passes.
 
+### P8.1583 - Pin styled value-prefix second no-op saves
+
+Type: public `WorksheetEditor` styled value-prefix no-op save/readback
+regression.
+
+Status: completed.
+
+Goal:
+Verify that styled source-backed `set_row_values()` and
+`set_column_values()` materialized outputs remain stable across a second clean
+no-op save after the initial materialized save and first no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()`.
+- The styled `set_row_values()` branch now writes a second no-op output,
+  verifies catalog/save-state stability, no dirty materialized diagnostics,
+  no replacement diagnostics, byte-identical package entries, and fresh reopen
+  readback of the preserved source style id plus row tail.
+- The styled `set_column_values()` branch mirrors the same checks for the
+  preserved source style id and column tail.
+- Reuses the existing value-only source-style preservation and save/no-op
+  lifecycle; no production code changes.
+
+Non-goals:
+- No caller-supplied non-default style writes, style migration/merge,
+  styles.xml repair, sharedStrings migration, formula repair, metadata/range
+  repair, calcChain rebuild/generation, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

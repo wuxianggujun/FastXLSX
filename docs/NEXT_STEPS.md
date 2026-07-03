@@ -2187,6 +2187,10 @@ large-file low-memory random editing.
 Their saved outputs are also reopened in public-state coverage to verify clean
 readback for row/column prefix values, explicit blanks, formulas, untouched
 tail cells, and preserved source `StyleId` handles on value-only overwrites.
+The styled source-backed row/column value-prefix paths now also repeat a second
+clean no-op `save_as()` after the first no-op output, requiring byte-identical
+entries and fresh reopen readback of the preserved source `StyleId` plus the
+untouched row/column tail.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

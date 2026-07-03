@@ -7081,6 +7081,8 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-sparse-a1-range-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -7149,6 +7151,8 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 range sparse_cells save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
         "A1 range sparse_cells should not interfere with dirty-session save_as");
@@ -7211,6 +7215,8 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "A1 range sparse_cells no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 range sparse_cells no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -7237,6 +7243,8 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
         "A1 range sparse_cells second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "A1 range sparse_cells second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 range sparse_cells second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "A1 range sparse_cells second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

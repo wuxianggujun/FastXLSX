@@ -33131,6 +33131,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
@@ -33171,6 +33172,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire first save should keep diagnostics clear");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit saved reacquire first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -33311,6 +33314,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire second save should keep diagnostics clear");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit saved reacquire second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -33376,6 +33381,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == second_entries,
         "renamed full-calc formula audit saved reacquire no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit saved reacquire no-op save should leave the source package unchanged");
     const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> noop_audits =
         check_public_state_formula_audits_preserve_editor_diagnostics(
             editor, "renamed full-calc formula audit saved reacquire no-op materialized audit");
@@ -33672,6 +33679,7 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-renamed-full-calc-formula-audit-saved-reacquire-invalid-mutation-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
@@ -33695,6 +33703,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed full-calc formula audit saved reacquire invalid mutation first save should clear dirty diagnostics");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit saved reacquire invalid mutation first save should leave the source package unchanged");
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
     check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
@@ -33831,6 +33841,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation first output should omit the later recovery cell");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit saved reacquire invalid mutation recovery save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -33896,6 +33908,8 @@ void test_public_worksheet_editor_full_calculation_renamed_formula_audits_saved_
         "renamed full-calc formula audit saved reacquire invalid mutation no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed full-calc formula audit saved reacquire invalid mutation no-op output should match the recovery output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed full-calc formula audit saved reacquire invalid mutation no-op save should leave the source package unchanged");
     check_public_state_renamed_full_calc_noop_formula_audit_readback(
         editor, noop_output, shifted_formula, styled_formula_style,
         "invalid-recovery-c5",

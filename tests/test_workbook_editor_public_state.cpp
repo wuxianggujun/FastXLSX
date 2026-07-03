@@ -11314,6 +11314,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "empty set_row no-op save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty set_row no-op save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "empty set_row no-op save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -11343,6 +11345,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "empty set_row second no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "empty set_row second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty set_row second no-op save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "empty set_row second no-op save");
     }
@@ -11352,6 +11356,7 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-clear-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-clear-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -11373,6 +11378,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row clear save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "placeholder-a2",
             "row clear should persist non-target row source cells");
@@ -11430,6 +11437,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "set_row clear noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row clear noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "set_row clear noop save",
             inspect_set_row_clear_output);
@@ -11503,6 +11512,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "set_row width failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row width failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "set_row width failure save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -11531,6 +11542,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "set_row width failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "set_row width failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row width failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "set_row width failure noop save");
     }
@@ -11595,6 +11608,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "set_row invalid-row failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row invalid-row failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "set_row invalid-row failure save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -11623,6 +11638,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "set_row invalid-row failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "set_row invalid-row failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row invalid-row failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "set_row invalid-row failure noop save");
     }
@@ -11688,6 +11705,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             fastxlsx::test::read_zip_entries(style_reject_output);
         check(style_reject_output_entries == style_reject_source_entries,
             "set_row style rejection save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == style_reject_source_entries,
+            "set_row style rejection save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             style_reject_output, "set_row style rejection save");
 
@@ -11712,6 +11731,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "set_row style rejection noop save should still copy source entries");
         check(style_reject_noop_entries == style_reject_output_entries,
             "set_row style rejection noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == style_reject_source_entries,
+            "set_row style rejection noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             style_reject_noop_output, "set_row style rejection noop save");
     }
@@ -11721,6 +11742,7 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-guards-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-row-guards-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -11762,6 +11784,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row guardrail recovery save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "replace-row-a1",
             "in-budget set_row should persist through save_as");
@@ -11825,6 +11849,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "set_row guardrail recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row guardrail recovery noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "set_row guardrail recovery noop save",
             inspect_set_row_guardrail_recovery_output);
@@ -11837,6 +11863,7 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
             "fastxlsx-workbook-editor-public-worksheet-set-row-memory-budget-recovery-noop-output.xlsx");
         const std::string rejected_value =
             "set-row-memory-rejected-" + std::string(4096, 'r');
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -11899,6 +11926,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row memory-budget recovery save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "row-mb-ok",
             "set_row memory-budget recovery should persist through save_as");
@@ -11959,6 +11988,8 @@ void test_public_worksheet_editor_set_row_empty_and_guardrails()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "set_row memory-budget recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_row memory-budget recovery noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "set_row memory-budget recovery noop save",
             inspect_set_row_memory_budget_recovery_output);

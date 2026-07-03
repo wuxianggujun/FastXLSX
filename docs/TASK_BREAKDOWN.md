@@ -8,6 +8,16 @@
 当前优先级拆成可讨论、可验收、可并行的小任务。后续执行时，应先在本文件选定一个
 最小任务，再进入设计或实现。
 
+## 执行入口治理
+
+新任务默认只从下方 active queue 选择最小可验收切片：`C0 -> C7` 和当前功能 lane 是执行入口。
+旧 `P*` / `P8.*` 条目保留为历史索引、设计证据和能力检索资料，不再作为默认下一步队列，也不要继续把
+执行入口当作流水日志追加。
+
+如果一个任务需要引用历史 P 编号，应同时写清它映射到哪个 active queue / lane、是否改变 public API、
+是否触碰 Streaming / Patch / In-memory 边界，以及当前能力事实是否已同步到
+[CURRENT_CAPABILITIES.md](CURRENT_CAPABILITIES.md)。
+
 ## 当前阶段任务重设计
 
 截至 2026-06-12，旧的 `P3 → P4.0 → P4 → P5 → P6 → P7 → P8`
@@ -65904,6 +65914,41 @@ Non-goals:
   sharedStrings/styles migration, metadata/range repair, relationship repair,
   broader Patch/materialized composition, default CTest/CI expansion, or
   low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
+### P8.1626 - Pin rich formula shift source preservation
+
+Type: public `WorksheetEditor` rich formula row/column insert/delete
+source-preservation regression.
+
+Status: completed.
+
+Goal:
+Verify that the rich formula reference-shape row/column insert/delete matrix
+never rewrites or mutates the original source package while translated formula
+cells are shifted, saved again as no-ops, edited after no-op, and saved again.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()`.
+- Snapshots source package entries before opening the formula-shift branches.
+- Requires source package entries to remain unchanged after the initial
+  translated-formula shift save, the clean no-op save, the later post-noop
+  formula edit save, and the final post-noop clean no-op save.
+- Leaves production code unchanged.
+
+Non-goals:
+- No formula translation semantic changes, formula evaluation changes,
+  source-overwrite validation changes, save behavior changes, overwrite mode,
+  handle sharing/lifetime changes, dirty-session preservation changes,
+  row/column shift semantic changes, calcChain rebuild, sharedStrings/styles
+  migration, metadata/range repair, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
 
 Verification:
 - `git diff --check`

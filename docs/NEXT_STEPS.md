@@ -461,6 +461,11 @@ still reads the translated formula plus the later formula edit.
 Those delete-side rich formula post-noop saves now also assert replacement
 diagnostics stay empty at the formula-edit save point and at the following
 clean no-op save.
+The rich formula-shape row/column insert/delete matrix now also snapshots the
+source package before the formula-shift branches and requires it to remain
+unchanged after the initial translated-formula shift save, the clean no-op save,
+the later formula-edit save, and the final clean no-op save while prior outputs
+stay byte-stable.
 The delete-side `#REF!` formula paths now carry the same repeated no-op save
 coverage after their post-noop edits, preserving the translated `#REF!` formula,
 the later formula edit, shifted source cells, and clean diagnostics across a

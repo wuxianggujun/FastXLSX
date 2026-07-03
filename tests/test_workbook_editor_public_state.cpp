@@ -52587,6 +52587,11 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-source.xlsx");
     const std::string formula =
         R"(SUM(A1,$B$2,A1:B2,Sheet1!C3,'Other Sheet'!D:D,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(E5),A1foo,_A1,A1_,R1C1))";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto check_source_package_unchanged =
+        [&source, &source_entries](const char* message) {
+            check(fastxlsx::test::read_zip_entries(source) == source_entries, message);
+        };
 
     {
         const std::filesystem::path output =
@@ -52621,6 +52626,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "insert_rows rich formula save_as should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string expected_cell_xml = "<c r=\"C3\"><f>" + expected + "</f></c>";
         check_contains(worksheet_xml, expected_cell_xml,
@@ -52698,6 +52705,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "insert_rows rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "insert_rows rich formula noop save should leave the source package unchanged");
         check_reopened_shift_output(noop_output, "insert_rows rich formula noop save",
             inspect_reopened_row_formula);
 
@@ -52737,6 +52746,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "insert_rows rich formula post-noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "insert_rows rich formula post-noop save should leave the source package unchanged");
 
         const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
         const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -52829,6 +52840,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula post-noop noop save should keep output entries stable");
         check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
             "insert_rows rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "insert_rows rich formula post-noop noop save should leave the source package unchanged");
         check_reopened_shift_output(post_noop_noop_output,
             "insert_rows rich formula post-noop noop save",
             inspect_reopened_row_post_noop_formula);
@@ -52867,6 +52880,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "insert_columns rich formula save_as should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string expected_cell_xml = "<c r=\"E2\"><f>" + expected + "</f></c>";
         check_contains(worksheet_xml, expected_cell_xml,
@@ -52944,6 +52959,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "insert_columns rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "insert_columns rich formula noop save should leave the source package unchanged");
         check_reopened_shift_output(noop_output, "insert_columns rich formula noop save",
             inspect_reopened_column_formula);
 
@@ -52983,6 +53000,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns rich formula post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "insert_columns rich formula post-noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "insert_columns rich formula post-noop save should leave the source package unchanged");
 
         const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
         const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -53075,6 +53094,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns rich formula post-noop noop save should keep output entries stable");
         check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
             "insert_columns rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "insert_columns rich formula post-noop noop save should leave the source package unchanged");
         check_reopened_shift_output(post_noop_noop_output,
             "insert_columns rich formula post-noop noop save",
             inspect_reopened_column_post_noop_formula);
@@ -53113,6 +53134,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "delete_rows rich formula save_as should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string expected_cell_xml = "<c r=\"C3\"><f>" + expected + "</f></c>";
         check_contains(worksheet_xml, expected_cell_xml,
@@ -53170,6 +53193,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "delete_rows rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "delete_rows rich formula noop save should leave the source package unchanged");
         check_reopened_shift_output(noop_output, "delete_rows rich formula noop save",
             inspect_reopened_delete_row_formula);
 
@@ -53209,6 +53234,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "delete_rows rich formula post-noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_rows rich formula post-noop save should leave the source package unchanged");
 
         const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
         const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -53277,6 +53304,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula post-noop noop save should keep output entries stable");
         check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
             "delete_rows rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "delete_rows rich formula post-noop noop save should leave the source package unchanged");
         check_reopened_shift_output(post_noop_noop_output,
             "delete_rows rich formula post-noop noop save",
             inspect_reopened_delete_row_post_noop_formula);
@@ -53315,6 +53344,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "delete_columns rich formula save_as should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string expected_cell_xml = "<c r=\"C2\"><f>" + expected + "</f></c>";
         check_contains(worksheet_xml, expected_cell_xml,
@@ -53372,6 +53403,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "delete_columns rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "delete_columns rich formula noop save should leave the source package unchanged");
         check_reopened_shift_output(noop_output, "delete_columns rich formula noop save",
             inspect_reopened_delete_column_formula);
 
@@ -53411,6 +53444,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "delete_columns rich formula post-noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_columns rich formula post-noop save should leave the source package unchanged");
 
         const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
         const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -53479,6 +53514,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula post-noop noop save should keep output entries stable");
         check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
             "delete_columns rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "delete_columns rich formula post-noop noop save should leave the source package unchanged");
         check_reopened_shift_output(post_noop_noop_output,
             "delete_columns rich formula post-noop noop save",
             inspect_reopened_delete_column_post_noop_formula);

@@ -598,7 +598,12 @@ output. The retry-reopen lane now also has full-calculation variants through
 `generated_in_memory_full_calc_retry_reopen_modify_noop_save` and
 `generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save`,
 covering rejected source saves, safe retry, fresh reopen, second-stage formula
-edits, final `fullCalcOnLoad`, and byte-stable no-op output. The
+edits, final `fullCalcOnLoad`, and byte-stable no-op output. The same
+full-calculation retry-reopen lane now also has post-noop third-stage variants through
+`generated_in_memory_full_calc_retry_reopen_modify_post_noop_third_save` and
+`generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_post_noop_third_save`,
+covering another edit after the clean no-op save plus final byte-stable output.
+The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same

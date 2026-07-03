@@ -54302,6 +54302,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "fastxlsx-workbook-editor-public-worksheet-shift-row-overflow-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-row-overflow-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -54340,10 +54341,14 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows overflow failure should retain the shift overflow diagnostic");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 0, "insert_rows overflow failure", row_overflow_error);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "insert_rows overflow failure should leave the source package unchanged");
 
         editor.save_as(output);
         check(editor.last_edit_error() == row_overflow_error,
             "insert_rows overflow save_as should preserve the shift overflow diagnostic");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "insert_rows overflow save_as should leave the source package unchanged");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:B1048576"/>)",
@@ -54399,6 +54404,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_rows overflow noop save should keep dirty memory estimate empty");
         check(editor.pending_worksheet_edits().empty(),
             "insert_rows overflow noop save should keep materialized summaries empty");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "insert_rows overflow noop save should leave the source package unchanged");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
             "insert_rows overflow noop save");
@@ -54417,6 +54424,7 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "fastxlsx-workbook-editor-public-worksheet-shift-column-overflow-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-column-overflow-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -54455,10 +54463,14 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_columns overflow failure should retain the shift overflow diagnostic");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 0, "insert_columns overflow failure", column_overflow_error);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "insert_columns overflow failure should leave the source package unchanged");
 
         editor.save_as(output);
         check(editor.last_edit_error() == column_overflow_error,
             "insert_columns overflow save_as should preserve the shift overflow diagnostic");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "insert_columns overflow save_as should leave the source package unchanged");
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:XFD2"/>)",
@@ -54513,6 +54525,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "insert_columns overflow noop save should keep dirty memory estimate empty");
         check(editor.pending_worksheet_edits().empty(),
             "insert_columns overflow noop save should keep materialized summaries empty");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "insert_columns overflow noop save should leave the source package unchanged");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
             "insert_columns overflow noop save");

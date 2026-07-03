@@ -15829,6 +15829,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "missing clear_row save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing clear_row save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "missing clear_row save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -15855,6 +15857,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "missing clear_row noop save should still copy source entries");
         check(noop_entries == output_entries,
             "missing clear_row noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing clear_row noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "missing clear_row noop save");
     }
@@ -15864,6 +15868,7 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15891,6 +15896,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_row save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
             "clear_row should keep the projected dimension over explicit blanks");
@@ -15951,6 +15958,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             editor, catalog_before_noop, "clear_row no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clear_row no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_row no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_row no-op save", inspect_clear_row_output);
     }
@@ -15960,6 +15969,7 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -15981,6 +15991,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_rows save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
             "clear_rows should keep explicit blanks in the projected dimension");
@@ -16046,6 +16058,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             editor, catalog_before_noop, "clear_rows no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clear_rows no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_rows no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "clear_rows no-op save", inspect_clear_rows_output);
     }
@@ -16074,6 +16088,7 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             }
             writer.close();
         }
+        const auto style_source_entries = fastxlsx::test::read_zip_entries(style_source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
@@ -16094,6 +16109,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_rows save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string styled_blank =
             R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
@@ -16168,6 +16185,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "styled clear_rows no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_rows no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_rows no-op save",
             inspect_styled_clear_rows_output);
@@ -16199,6 +16218,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "styled clear_rows second no-op save");
         check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
             "styled clear_rows second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_rows second no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             second_noop_output, "Styled", "styled clear_rows second no-op save",
             inspect_styled_clear_rows_output);
@@ -16226,6 +16247,7 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             }
             writer.close();
         }
+        const auto style_source_entries = fastxlsx::test::read_zip_entries(style_source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(style_source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
@@ -16241,6 +16263,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_row save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         const std::string styled_blank =
             R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
@@ -16295,6 +16319,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "styled clear_row no-op output should match the materialized output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_row no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             noop_output, "Styled", "styled clear_row no-op save",
             inspect_styled_clear_row_output);
@@ -16326,6 +16352,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "styled clear_row second no-op save");
         check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
             "styled clear_row second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(style_source) == style_source_entries,
+            "styled clear_row second no-op save should leave the source package unchanged");
         check_reopened_clean_sheet_output(
             second_noop_output, "Styled", "styled clear_row second no-op save",
             inspect_styled_clear_row_output);
@@ -16416,6 +16444,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "clear_row invalid/reversed failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_row invalid/reversed failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             output, "clear_row invalid/reversed failure save");
 
@@ -16449,6 +16479,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_row invalid/reversed failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "clear_row invalid/reversed failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clear_row invalid/reversed failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "clear_row invalid/reversed failure noop save");
     }

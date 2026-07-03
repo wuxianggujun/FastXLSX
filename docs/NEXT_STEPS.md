@@ -608,7 +608,13 @@ variants through `generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_
 and
 `generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save`,
 covering `Data` / `Summary` edits, preserved `Notes`, final `fullCalcOnLoad`,
-and byte-stable no-op output.
+and byte-stable no-op output. The same multi-sheet full-calculation lane now
+also has post-noop third-stage variants through
+`generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save`
+and
+`generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save`,
+covering another `Data` / `Summary` edit after the clean no-op save plus final
+byte-stable output.
 The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already

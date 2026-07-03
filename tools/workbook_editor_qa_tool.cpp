@@ -3515,6 +3515,28 @@ Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reope
         true);
 }
 
+Report run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options,
+        true,
+        true,
+        false,
+        true);
+}
+
+Report run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_multi_sheet_retry_reopen_modify_save_impl(
+        options,
+        true,
+        true,
+        true,
+        true);
+}
+
 Report run_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
     const CliOptions& options)
 {
@@ -4321,6 +4343,16 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario ==
         "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save") {
         return run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save(
+            options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save") {
+        return run_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save(
+            options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save") {
+        return run_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
             options);
     }
     if (options.scenario ==

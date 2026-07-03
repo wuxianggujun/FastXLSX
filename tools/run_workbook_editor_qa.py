@@ -93,6 +93,8 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
     "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_noop_save",
     "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
+    "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save",
+    "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
     "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
@@ -125,6 +127,10 @@ GENERATED_SCENARIOS = [
 ]
 
 GENERATED_CASE_DIRECTORY_ALIASES = {
+    "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save":
+        "fc-ms-post-noop-third",
+    "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
+        "fc-ms-pe-post-noop-third",
     "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
         "ms-pe-post-noop-third",
 }
@@ -2625,6 +2631,44 @@ def verify_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_p
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = (
+        "generated in-memory full-calc multi-sheet retry reopen modify "
+        "post-noop third save"
+    )
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save(
+            path,
+            tool_report,
+        )
+    )
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = (
+        "generated in-memory full-calc multi-sheet path-equivalent retry "
+        "reopen modify post-noop third save"
+    )
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
+            path,
+            tool_report,
+        )
+    )
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
 def verify_generated_source_formula_audit(
     path: Path,
     tool_report: dict[str, Any],
@@ -4168,6 +4212,8 @@ def create_xlsxwriter_reference(
             "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
             "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_noop_save",
             "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
+            "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save",
+            "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
             "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
             "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
             "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
@@ -4188,6 +4234,8 @@ def create_xlsxwriter_reference(
                 "generated_in_memory_multi_sheet_retry_reopen_modify_noop_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_noop_save",
                 "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_noop_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
@@ -4195,6 +4243,8 @@ def create_xlsxwriter_reference(
                 data.write("D1", "retry-reopened-data")
                 summary.write_formula("C1", "=Data!B1+10")
             if scenario in {
+                "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save",
+                "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save",
                 "generated_in_memory_multi_sheet_retry_reopen_modify_post_noop_third_save",
             }:
@@ -4603,6 +4653,20 @@ def run_generated_case(
     elif scenario == "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save":
         zip_xml, openpyxl_report = (
             verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_third_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_third_save(
                 output_path,
                 tool_report,
             )

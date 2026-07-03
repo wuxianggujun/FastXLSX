@@ -343,6 +343,11 @@ but do not dirty either planned-name handle or leak rejected payloads, and the
 later valid column shift plus repeated no-op saves preserve source and prior
 package bytes while fresh readback still exposes the combined row/column-shifted
 `RenamedData` state cleanly.
+The same-handle row/column shift reuse path now carries the repeated no-op
+proof as well: one borrowed `WorksheetEditor` can save a row shift, apply and
+save a later column shift, then run first and second no-op saves while source
+and prior package bytes remain unchanged and fresh readback exposes the combined
+row/column-shifted `Data` state cleanly.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

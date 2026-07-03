@@ -44148,6 +44148,8 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -44200,6 +44202,8 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
             editor.estimated_pending_materialized_memory_usage() == 0,
         "shift handle reuse second save should clear aggregate dirty materialized diagnostics");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -44224,8 +44228,43 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "shift handle reuse no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
         "shift handle reuse no-op output should match the second output");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "shift handle reuse second no-op save should keep the reused handle clean");
+    check(editor.pending_change_count() == 2,
+        "shift handle reuse second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift handle reuse second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift handle reuse second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift handle reuse second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "shift handle reuse second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "shift handle reuse second no-op save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift handle reuse second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift handle reuse second no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "shift handle reuse second no-op save should leave the second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift handle reuse second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "shift handle reuse second no-op output should match the first no-op output");
 
     check_reopened_shift_output(first_output, "shift handle reuse first save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -44258,6 +44297,22 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift handle reuse second save should keep old sparse coordinates absent");
+        });
+    check_reopened_shift_output(second_noop_output, "shift handle reuse second no-op output",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift handle reuse second no-op output should reopen with second-shift sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift handle reuse second no-op output should reopen with second-shift bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift handle reuse second no-op output should keep shifted B1 at C1");
+            check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "shift handle reuse second no-op output should keep the prior row shift");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift handle reuse second no-op output should keep old sparse coordinates absent");
         });
 }
 

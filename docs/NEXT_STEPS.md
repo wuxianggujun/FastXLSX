@@ -2203,6 +2203,11 @@ no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 writes a second no-op output, requires byte-identical entries, and fresh-reopens
 to verify erased coordinates stay absent while non-target source cells or
 inserted tail records remain represented.
+The base sparse row/column shift success paths now also repeat that second
+clean no-op save before their existing post-noop edit checks. `insert_rows()`,
+`delete_rows()`, `insert_columns()`, and `delete_columns()` now require the
+second no-op package to match the first no-op output and fresh-reopen through
+the same shifted-coordinate inspectors before further edits are attempted.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

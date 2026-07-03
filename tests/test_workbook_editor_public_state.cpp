@@ -21340,6 +21340,8 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-rows-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
@@ -21537,6 +21539,34 @@ void test_public_worksheet_editor_insert_rows_shifts_sparse_records()
     check(noop_entries == output_entries,
         "insert_rows no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "insert_rows no-op save",
+        inspect_insert_rows_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_rows second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "insert_rows second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "insert_rows second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "insert_rows second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_rows second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_rows second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop, "insert_rows second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop, "insert_rows second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "insert_rows second no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "insert_rows second no-op save",
         inspect_insert_rows_output);
 
     sheet.set_cell("E5", fastxlsx::CellValue::text("post-noop-insert-rows-styled"));
@@ -22434,6 +22464,8 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
@@ -22578,6 +22610,34 @@ void test_public_worksheet_editor_delete_rows_shifts_sparse_records()
     check_reopened_shift_output(noop_output, "delete_rows no-op save",
         inspect_delete_rows_output);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_rows second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_rows second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_rows second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_rows second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_rows second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop, "delete_rows second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop, "delete_rows second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "delete_rows second no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "delete_rows second no-op save",
+        inspect_delete_rows_output);
+
     sheet.set_cell("D3", fastxlsx::CellValue::text("post-noop-delete-rows-basic"));
     check(sheet.has_pending_changes(),
         "delete_rows post-noop edit should dirty the saved handle");
@@ -22718,6 +22778,8 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-insert-columns-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
@@ -22872,6 +22934,34 @@ void test_public_worksheet_editor_insert_columns_shifts_sparse_records()
     check(noop_entries == output_entries,
         "insert_columns no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "insert_columns no-op save",
+        inspect_insert_columns_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "insert_columns second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "insert_columns second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "insert_columns second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "insert_columns second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "insert_columns second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop, "insert_columns second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop, "insert_columns second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "insert_columns second no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "insert_columns second no-op save",
         inspect_insert_columns_output);
 
     sheet.set_cell("F3", fastxlsx::CellValue::text("post-noop-insert-columns-basic"));
@@ -24221,6 +24311,8 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
@@ -24360,6 +24452,34 @@ void test_public_worksheet_editor_delete_columns_shifts_sparse_records()
     check(noop_entries == output_entries,
         "delete_columns no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "delete_columns no-op save",
+        inspect_delete_columns_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "delete_columns second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 1,
+        "delete_columns second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "delete_columns second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "delete_columns second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "delete_columns second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "delete_columns second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop, "delete_columns second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop, "delete_columns second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "delete_columns second no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "delete_columns second no-op save",
         inspect_delete_columns_output);
 
     sheet.set_cell("D2", fastxlsx::CellValue::text("post-noop-delete-columns-basic"));

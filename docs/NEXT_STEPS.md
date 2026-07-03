@@ -2197,6 +2197,12 @@ no-op-save contract for `clear_row()`, `clear_rows()`, `clear_column()`, and
 writes a second clean no-op output, requires byte-identical entries, and
 fresh-reopens the workbook to verify preserved source `StyleId` handles,
 unstyled blanks, and untouched row/column tails.
+The successful sparse row/column erase paths now have the same repeated
+no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
+`erase_columns()`: after the erase output and first clean no-op save, each path
+writes a second no-op output, requires byte-identical entries, and fresh-reopens
+to verify erased coordinates stay absent while non-target source cells or
+inserted tail records remain represented.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

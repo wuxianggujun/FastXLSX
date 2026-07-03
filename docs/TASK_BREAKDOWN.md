@@ -64228,6 +64228,48 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1585 - Pin sparse erase second no-op saves
+
+Type: public `WorksheetEditor` sparse erase no-op save/readback regression.
+
+Status: completed.
+
+Goal:
+Verify that successful sparse row/column erase operations remain stable across
+a second clean no-op save after the initial materialized erase save and first
+no-op save.
+
+Coverage:
+- Extends `test_public_worksheet_editor_erase_row_removes_sparse_row()`.
+- The `erase_row()` branch now writes a second no-op output, verifies
+  catalog/save-state stability, clean materialized diagnostics, no replacement
+  diagnostics, byte-identical package entries, and fresh reopen readback of the
+  remaining non-target source row.
+- Extends `test_public_worksheet_editor_erase_rows_noop_invalid_and_range()`.
+- The successful `erase_rows()` range branch mirrors the same checks for erased
+  row coordinates and the inserted non-target tail record.
+- Extends `test_public_worksheet_editor_erase_column_removes_sparse_column()`.
+- The `erase_column()` branch mirrors the same checks for erased column
+  coordinates and the preserved non-target source column cell.
+- Extends `test_public_worksheet_editor_erase_columns_noop_invalid_and_range()`.
+- The successful `erase_columns()` range branch mirrors the same checks for
+  erased column coordinates and the inserted non-target tail record.
+- Reuses the existing sparse erase and save/no-op lifecycle; no production code
+  changes.
+
+Non-goals:
+- No tombstones, dense row/column deletion, row/column metadata synchronization,
+  formula repair, sharedStrings/styles migration, metadata/range repair,
+  calcChain rebuild/generation, relationship repair, broader
+  Patch/materialized composition, default CTest/CI expansion, or low-memory
+  random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

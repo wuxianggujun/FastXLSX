@@ -26927,6 +26927,8 @@ void test_public_worksheet_editor_materialized_only_formula_failed_save_preserve
         "materialized-only formula failed-save safe retry should clear materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before_failed_save,
+        "materialized-only formula failed-save safe retry should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="C2"><f>Data!A1+Data!B1</f></c>)",
         "materialized-only formula failed-save safe retry should write the dirty formula");
@@ -26960,12 +26962,16 @@ void test_public_worksheet_editor_materialized_only_formula_failed_save_noop_pre
             "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-failed-save-noop-second-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!A1+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     sheet.set_cell(2, 3, fastxlsx::CellValue::formula(std::string(expected_formula)));
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "materialized-only formula failed-save no-op should reject exact source overwrite");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula failed-save no-op rejected save should leave the source package unchanged");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -26978,6 +26984,8 @@ void test_public_worksheet_editor_materialized_only_formula_failed_save_noop_pre
         "materialized-only formula failed-save no-op safe retry should clear materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula failed-save no-op safe retry should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="C2"><f>Data!A1+Data!B1</f></c>)",
         "materialized-only formula failed-save no-op safe retry should write the formula");
@@ -27010,6 +27018,8 @@ void test_public_worksheet_editor_materialized_only_formula_failed_save_noop_pre
         "materialized-only formula failed-save no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "materialized-only formula failed-save no-op output should match the safe retry output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula failed-save no-op save should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -27048,6 +27058,8 @@ void test_public_worksheet_editor_materialized_only_formula_same_editor_saved_au
             "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-same-editor-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!A1+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -27064,6 +27076,8 @@ void test_public_worksheet_editor_materialized_only_formula_same_editor_saved_au
         "materialized-only formula same-editor saved audit should clear materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula same-editor saved audit save_as should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="C2"><f>Data!A1+Data!B1</f></c>)",
         "materialized-only formula same-editor saved audit should write the formula");
@@ -27145,6 +27159,8 @@ void test_public_worksheet_editor_materialized_only_formula_same_editor_saved_au
         "materialized-only formula same-editor saved audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "materialized-only formula same-editor saved audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula same-editor saved audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(
@@ -27170,6 +27186,8 @@ void test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_
             "fastxlsx-workbook-editor-public-worksheet-materialized-only-formula-reopen-audit-noop-output.xlsx");
 
     constexpr std::string_view expected_formula = "Data!A1+Data!B1";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     {
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -27193,6 +27211,8 @@ void test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_
     }
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula saved reopen audit setup should leave the source package unchanged");
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.has_worksheet("Data") && reopened.has_worksheet("Untouched"),
         "materialized-only formula saved reopen audit should expose saved worksheets");
@@ -27291,6 +27311,8 @@ void test_public_worksheet_editor_materialized_only_formula_saved_reopen_audits_
         "materialized-only formula saved reopen audit no-op");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "materialized-only formula saved reopen audit no-op should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized-only formula saved reopen audit no-op should leave the source package unchanged");
 
     fastxlsx::WorkbookEditor noop_reopened = fastxlsx::WorkbookEditor::open(noop_output);
     check_public_state_reopened_formula_audit_clean_editor(

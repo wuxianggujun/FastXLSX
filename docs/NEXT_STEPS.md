@@ -266,6 +266,10 @@ That delete-columns cross-handle path now also runs a second clean no-op
 `save_as()` after the post-noop edit, keeping both handles clean, retaining the
 same handoff count, preserving byte-stable package entries, and fresh-reopening
 both sheets with the deleted-column post-noop edits intact.
+The cross-handle row/column insert/delete post-noop matrix now also snapshots
+the original source package and requires it to remain unchanged after the first
+multi-handle save, the clean no-op save, the post-noop edit save, and the final
+post-noop clean no-op save.
 The `delete_rows()` styled source formula path now also continues after its
 clean no-op save: a later `E2` edit re-dirties the saved materialized handle,
 preserves the shifted styled `D1` formula, writes a fresh-reopenable post-noop

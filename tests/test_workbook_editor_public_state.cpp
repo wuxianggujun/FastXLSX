@@ -51202,6 +51202,7 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -51281,6 +51282,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
         "cross-handle shift save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift save_as should leave the source package unchanged");
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
     check_contains(data_xml, R"(<dimension ref="A1:B5"/>)",
@@ -51377,6 +51380,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "cross-handle shift noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift noop save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "cross-handle shift Data noop save",
         inspect_reopened_cross_handle_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
@@ -51428,6 +51433,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
         "cross-handle shift post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "cross-handle shift post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift post-noop save should leave the source package unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -51520,6 +51527,8 @@ void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
         "cross-handle shift post-noop noop save should keep output entries stable");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "cross-handle shift post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift post-noop noop save should leave the source package unchanged");
     check_reopened_shift_output(post_noop_noop_output,
         "cross-handle shift Data post-noop noop save",
         inspect_reopened_cross_handle_post_noop_data);
@@ -51540,6 +51549,7 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
         artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -51621,6 +51631,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
         "cross-handle column shift save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift save_as should leave the source package unchanged");
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
     check_contains(data_xml, R"(<dimension ref="A1:E2"/>)",
@@ -51718,6 +51730,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "cross-handle column shift noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift noop save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "cross-handle column shift Data noop save",
         inspect_reopened_cross_handle_column_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
@@ -51769,6 +51783,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
         "cross-handle column shift post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "cross-handle column shift post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift post-noop save should leave the source package unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -51861,6 +51877,8 @@ void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_stat
         "cross-handle column shift post-noop noop save should keep output entries stable");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "cross-handle column shift post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift post-noop noop save should leave the source package unchanged");
     check_reopened_shift_output(post_noop_noop_output,
         "cross-handle column shift Data post-noop noop save",
         inspect_reopened_cross_handle_column_post_noop_data);
@@ -51881,6 +51899,7 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -51954,6 +51973,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         "cross-handle delete_rows save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows save_as should leave the source package unchanged");
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
     check_contains(data_xml, R"(<dimension ref="A1:B3"/>)",
@@ -52054,6 +52075,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "cross-handle delete_rows noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows noop save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "cross-handle delete_rows Data noop save",
         inspect_reopened_cross_handle_delete_rows_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
@@ -52105,6 +52128,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         "cross-handle delete_rows post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "cross-handle delete_rows post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows post-noop save should leave the source package unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -52198,6 +52223,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         "cross-handle delete_rows post-noop noop save should keep output entries stable");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "cross-handle delete_rows post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows post-noop noop save should leave the source package unchanged");
     check_reopened_shift_output(post_noop_noop_output,
         "cross-handle delete_rows Data post-noop noop save",
         inspect_reopened_cross_handle_delete_rows_post_noop_data);
@@ -52218,6 +52245,7 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -52293,6 +52321,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         "cross-handle delete_columns save_as should clear dirty materialized memory");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns save_as should leave the source package unchanged");
     const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
     check_contains(data_xml, R"(<dimension ref="A1:C2"/>)",
@@ -52393,6 +52423,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "cross-handle delete_columns noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns noop save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "cross-handle delete_columns Data noop save",
         inspect_reopened_cross_handle_delete_columns_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
@@ -52444,6 +52476,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         "cross-handle delete_columns post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "cross-handle delete_columns post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns post-noop save should leave the source package unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -52537,6 +52571,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         "cross-handle delete_columns post-noop noop save should keep output entries stable");
     check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
         "cross-handle delete_columns post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns post-noop noop save should leave the source package unchanged");
     check_reopened_shift_output(post_noop_noop_output,
         "cross-handle delete_columns Data post-noop noop save",
         inspect_reopened_cross_handle_delete_columns_post_noop_data);

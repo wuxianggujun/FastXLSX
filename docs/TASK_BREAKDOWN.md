@@ -65874,6 +65874,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1625 - Pin cross-handle shift source preservation
+
+Type: public `WorksheetEditor` cross-handle row/column insert/delete
+source-preservation regression.
+
+Status: completed.
+
+Goal:
+Verify that cross-handle row/column insert/delete post-noop save paths never
+rewrite or mutate the original source package while multi-handle materialized
+sessions are flushed, saved again as no-ops, edited after no-op, and saved again.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()`.
+- Extends `test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state()`.
+- Extends `test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state()`.
+- Extends `test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_state()`.
+- Snapshots source package entries before opening `WorkbookEditor`.
+- Requires source package entries to remain unchanged after the initial
+  multi-handle shift save, the clean no-op save, the later post-noop edit save,
+  and the final post-noop clean no-op save.
+- Leaves production code unchanged.
+
+Non-goals:
+- No source-overwrite validation changes, save behavior changes, overwrite mode,
+  handle sharing/lifetime changes, dirty-session preservation changes,
+  row/column shift semantic changes, formula evaluation, calcChain rebuild,
+  sharedStrings/styles migration, metadata/range repair, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

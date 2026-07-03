@@ -619,6 +619,15 @@ path budgeting: explicit aliases remain for known long scenarios, short
 scenario names still map directly, and future over-budget generated scenario
 names receive deterministic shortened directories with SHA-1 suffixes so long
 Windows work directories do not block retry/reopen/no-op QA runs.
+That same full-calculation multi-sheet post-noop lane now also has final
+fresh-reopen variants through
+`generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_save`
+and
+`generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_save`:
+after proving the post-noop no-op output is byte-stable, the QA tool opens that
+file as a fresh `WorkbookEditor` source, edits `Data!F1` and `Summary!E1`, and
+saves a final readable output while keeping the scope limited to generated
+in-memory QA.
 The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already

@@ -6382,6 +6382,8 @@ void test_public_worksheet_editor_a1_range_mutations_invalid_references()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid A1 range mutations should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after invalid A1 range mutations should leave the source package unchanged");
     check_reopened_default_data_sheet_output(output, "invalid A1 range mutation no-op");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -6411,6 +6413,8 @@ void test_public_worksheet_editor_a1_range_mutations_invalid_references()
         "invalid A1 range mutation second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "invalid A1 range mutation second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid A1 range mutation second no-op save should leave the source package unchanged");
     check_reopened_default_data_sheet_output(noop_output, "invalid A1 range mutation second no-op");
 }
 
@@ -6694,6 +6698,8 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
         "no-op save_as after invalid cell reads should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after invalid cell reads should leave the source package unchanged");
     check_reopened_default_data_sheet_output(output, "invalid cell read no-op");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -6723,6 +6729,8 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
         "invalid cell read second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "invalid cell read second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid cell read second no-op save should leave the source package unchanged");
     check_reopened_default_data_sheet_output(noop_output, "invalid cell read second no-op");
 }
 

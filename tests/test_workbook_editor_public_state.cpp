@@ -46050,6 +46050,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-noop-first-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-noop-repeat-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-post-noop-output.xlsx");
 
@@ -46101,6 +46103,7 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
     check(!sheet.try_cell("A2").has_value(),
         "shift reacquire option mismatch noop save should keep old shifted rows absent");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
@@ -46146,6 +46149,60 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
                 "shift reacquire option mismatch noop save reopened output should omit later and old coordinates");
         });
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "shift reacquire option mismatch repeat noop save should keep the original handle clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire option mismatch repeat noop save should still not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire option mismatch repeat noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire option mismatch repeat noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire option mismatch repeat noop save should keep diagnostics clear after save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "shift reacquire option mismatch repeat noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "shift reacquire option mismatch repeat noop save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire option mismatch repeat noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift reacquire option mismatch repeat noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire option mismatch repeat noop save should leave the first no-op output unchanged");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "shift reacquire option mismatch repeat noop output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output,
+        "shift reacquire option mismatch repeat noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire option mismatch repeat noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "shift reacquire option mismatch repeat noop save reopened output should expose first-shift bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "shift reacquire option mismatch repeat noop save reopened output should keep B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire option mismatch repeat noop save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("C1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire option mismatch repeat noop save reopened output should omit later and old coordinates");
+        });
+
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
     check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
         "shift reacquire option mismatch post-noop matching reacquire should stay clean");
@@ -46184,6 +46241,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_noop_save_pres
         "shift reacquire option mismatch post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift reacquire option mismatch post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "shift reacquire option mismatch post-noop save should leave the repeat no-op output unchanged");
     check_reopened_shift_output(post_noop_output, "shift reacquire option mismatch post-noop save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,

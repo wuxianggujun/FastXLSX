@@ -154,6 +154,10 @@ evidence as well: rejected mismatched options and a clean no-op save leave the
 row-shifted session reusable, a later matching reacquire can write `C3`, and the
 next output fresh-reopens with shifted `A3` plus the new `C3` while the earlier
 first/no-op outputs stay unchanged.
+It now also writes a second clean no-op output after the rejected mismatched
+options path: public state stays stable, the second no-op package is
+byte-identical to the first, fresh-reopens with shifted `A3`, and remains
+unchanged after the later matching `C3` save.
 The missing-query saved-session path mirrors that evidence too: rejected
 missing-sheet lookups and the clean no-op output leave the row-shifted session
 reusable, a later matching reacquire writes `C3`, and the next output

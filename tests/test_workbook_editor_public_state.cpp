@@ -3689,6 +3689,8 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-names-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     check(editor.pending_materialized_worksheet_names().empty(),
         "fresh WorkbookEditor should expose no pending materialized worksheet names");
@@ -3733,6 +3735,8 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "save_as path preflight failure should not flush dirty materialized sessions");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names failed save_as should leave the source package unchanged");
     {
         const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
         check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
@@ -3746,6 +3750,8 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
         "successful save_as should count both materialized Patch handoffs");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names save_as should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "dirty-data",
         "first dirty materialized worksheet should persist through save_as");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "dirty-untouched",
@@ -3821,6 +3827,8 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "pending materialized names no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "pending materialized names no-op Data",
         inspect_materialized_names_data);
     check_reopened_clean_sheet_output(
@@ -3838,6 +3846,9 @@ void test_public_workbook_editor_pending_materialized_names_move_with_owner()
         artifact("fastxlsx-workbook-editor-public-materialized-names-move-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-names-move-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
@@ -3877,6 +3888,10 @@ void test_public_workbook_editor_pending_materialized_names_move_with_owner()
         "save_as after move assignment should count the assigned materialized handoff");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "move-assigned materialized save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "move-assigned materialized save_as should leave the discarded target source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-dirty-data",
         "move-assigned editor should save assigned dirty materialized payload");
     check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-target-dirty",
@@ -3950,6 +3965,10 @@ void test_public_workbook_editor_pending_materialized_names_move_with_owner()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "move-assigned materialized no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "move-assigned materialized no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "move-assigned materialized no-op save should leave the discarded target source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "materialized names move no-op Data",
         inspect_materialized_names_move_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
@@ -3965,6 +3984,8 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
         artifact("fastxlsx-workbook-editor-public-materialized-aggregate-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-aggregate-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -4024,6 +4045,8 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "failed save_as should preserve dirty materialized aggregate diagnostics");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate failed save_as should leave the source package unchanged");
     check(editor.pending_materialized_cell_count() == expected_dirty_cells,
         "failed save_as should preserve materialized cell aggregate");
     check(editor.estimated_pending_materialized_memory_usage() == expected_dirty_memory,
@@ -4040,6 +4063,8 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
         "successful save_as should count both materialized Patch handoffs");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate save_as should leave the source package unchanged");
 
     const auto inspect_materialized_aggregate_data =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -4118,6 +4143,8 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "pending materialized aggregate no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data",
         "pending materialized aggregate no-op Data",
         inspect_materialized_aggregate_data);

@@ -280,6 +280,11 @@ now has matching column-side snapshot coverage too: both the shifted output
 and its clean no-op output expose row-two source/formula ordering after
 deleting column A, and column-three as the styled translated `#REF!+A1`
 formula.
+The after-shift full-calculation delete-side paths now also reopen `Untouched`
+from the shifted output and both no-op outputs. `delete_rows()` and
+`delete_columns()` both prove the second clean no-op save leaves the shifted
+output plus first no-op package unchanged while preserving the existing
+translated `#REF!` formula readback.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

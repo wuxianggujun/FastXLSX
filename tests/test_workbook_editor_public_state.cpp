@@ -49226,6 +49226,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-parent-post-noop-output.xlsx");
     std::filesystem::remove_all(missing_parent_output.parent_path());
@@ -49443,6 +49445,64 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
                 "shift reacquire missing-parent failed save noop save reopened output should keep old coordinates absent");
         });
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire missing-parent failed save repeat no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire missing-parent failed save repeat no-op save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire missing-parent failed save repeat no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire missing-parent failed save repeat no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire missing-parent failed save repeat no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "shift reacquire missing-parent failed save repeat no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "shift reacquire missing-parent failed save repeat no-op save");
+    check(!std::filesystem::exists(missing_parent_output),
+        "shift reacquire missing-parent failed save repeat no-op save should not create the rejected output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire missing-parent failed save repeat no-op save should leave the source unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift reacquire missing-parent failed save repeat no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "shift reacquire missing-parent failed save repeat no-op save should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire missing-parent failed save repeat no-op save should leave the first no-op output unchanged");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "shift reacquire missing-parent failed save repeat no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "shift reacquire missing-parent failed save repeat no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire missing-parent failed save repeat no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire missing-parent failed save repeat no-op save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire missing-parent failed save repeat no-op save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire missing-parent failed save repeat no-op save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire missing-parent failed save repeat no-op save reopened output should keep old coordinates absent");
+        });
+
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-missing-parent-failed-save"));
     check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
             reacquired.has_pending_changes(),
@@ -49485,6 +49545,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
         "shift reacquire missing-parent failed save post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift reacquire missing-parent failed save post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "shift reacquire missing-parent failed save post-noop save should leave the repeat no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -49527,6 +49589,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-file-parent-post-noop-output.xlsx");
     std::filesystem::remove_all(file_parent);
@@ -49746,6 +49810,65 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
                 "shift reacquire file-parent failed save noop save reopened output should keep old coordinates absent");
         });
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire file-parent failed save repeat no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire file-parent failed save repeat no-op save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire file-parent failed save repeat no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire file-parent failed save repeat no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire file-parent failed save repeat no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "shift reacquire file-parent failed save repeat no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "shift reacquire file-parent failed save repeat no-op save");
+    check(std::filesystem::is_regular_file(file_parent) &&
+            fastxlsx::test::read_file(file_parent) == "not a directory",
+        "shift reacquire file-parent failed save repeat no-op save should preserve the non-directory parent file");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire file-parent failed save repeat no-op save should leave the source unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift reacquire file-parent failed save repeat no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "shift reacquire file-parent failed save repeat no-op save should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire file-parent failed save repeat no-op save should leave the first no-op output unchanged");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "shift reacquire file-parent failed save repeat no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "shift reacquire file-parent failed save repeat no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire file-parent failed save repeat no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire file-parent failed save repeat no-op save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire file-parent failed save repeat no-op save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire file-parent failed save repeat no-op save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire file-parent failed save repeat no-op save reopened output should keep old coordinates absent");
+        });
+
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-file-parent-failed-save"));
     check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
             reacquired.has_pending_changes(),
@@ -49789,6 +49912,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
         "shift reacquire file-parent failed save post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift reacquire file-parent failed save post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "shift reacquire file-parent failed save post-noop save should leave the repeat no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -49830,6 +49955,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-second-noop-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-directory-output-post-noop-output.xlsx");
     std::filesystem::remove_all(directory_output);
@@ -50051,6 +50178,66 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
                 "shift reacquire directory-output failed save noop save reopened output should keep old coordinates absent");
         });
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire directory-output failed save repeat no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "shift reacquire directory-output failed save repeat no-op save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire directory-output failed save repeat no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire directory-output failed save repeat no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire directory-output failed save repeat no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_second_noop,
+        "shift reacquire directory-output failed save repeat no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_second_noop,
+        "shift reacquire directory-output failed save repeat no-op save");
+    check(std::filesystem::is_directory(directory_output),
+        "shift reacquire directory-output failed save repeat no-op save should preserve the rejected output directory");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire directory-output failed save repeat no-op save should leave the source unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift reacquire directory-output failed save repeat no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "shift reacquire directory-output failed save repeat no-op save should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire directory-output failed save repeat no-op save should leave the first no-op output unchanged");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "shift reacquire directory-output failed save repeat no-op output should match the first no-op output");
+    check_reopened_shift_output(second_noop_output, "shift reacquire directory-output failed save repeat no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "shift reacquire directory-output failed save repeat no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "shift reacquire directory-output failed save repeat no-op save reopened output should expose combined bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire directory-output failed save repeat no-op save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire directory-output failed save repeat no-op save reopened output should keep shifted A2");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire directory-output failed save repeat no-op save reopened output should keep old coordinates absent");
+        });
+
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-directory-output-failed-save"));
     check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
             reacquired.has_pending_changes(),
@@ -50093,6 +50280,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
         "shift reacquire directory-output failed save post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift reacquire directory-output failed save post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "shift reacquire directory-output failed save post-noop save should leave the repeat no-op output unchanged");
 
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");

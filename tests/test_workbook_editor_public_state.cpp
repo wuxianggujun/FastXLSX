@@ -19422,6 +19422,12 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     }
     writer.close();
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto check_source_unchanged =
+        [&source, &source_entries](const char* message) {
+            check(fastxlsx::test::read_zip_entries(source) == source_entries, message);
+        };
+
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
     const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
@@ -19556,6 +19562,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_renamed_clear_all_summary(true, 4,
         "clear_cell_values() memory-budget renamed summary after rejected save");
     const auto source_after_rejected_save_entries = fastxlsx::test::read_zip_entries(source);
+    check(source_after_rejected_save_entries == source_entries,
+        "clear_cell_values() memory-budget renamed summary rejected save should leave the source package unchanged");
     const std::string source_after_rejected_save_workbook_xml =
         source_after_rejected_save_entries.at("xl/workbook.xml");
     const std::string source_after_rejected_save_worksheet_xml =
@@ -19694,6 +19702,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary after read-only diagnostics");
 
     editor.save_as(first_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary first save should leave the source package unchanged");
     check(!sheet.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary first save should clean the planned handle");
     check(editor.pending_change_count() == 2,
@@ -19751,6 +19761,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(no_op_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary no-op save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
@@ -19811,6 +19823,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(option_no_op_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary option mismatch no-op save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary option no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
@@ -19862,6 +19876,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(missing_no_op_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary missing lookup no-op save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary missing no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
@@ -19923,6 +19939,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(read_only_no_op_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary read-only no-op save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary read-only no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
@@ -19994,6 +20012,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(invalid_read_no_op_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary invalid-read no-op save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary invalid-read no-op save should keep both handles clean");
     check(editor.pending_change_count() == 2,
@@ -20041,6 +20061,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         "clear_cell_values() memory-budget renamed summary later mutation");
 
     editor.save_as(second_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary second save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary second save should clean both handles");
     check(editor.pending_change_count() == 3,
@@ -20102,6 +20124,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(second_no_op_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget renamed summary second no-op save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget renamed summary second no-op save should keep both handles clean");
     check(editor.pending_change_count() == 3,

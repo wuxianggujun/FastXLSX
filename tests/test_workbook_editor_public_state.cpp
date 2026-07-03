@@ -8511,6 +8511,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_blank =
         R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("/>)";
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style save should leave the source workbook unchanged");
     check_contains(worksheet_xml, styled_blank,
         "snapshot source-style save should persist styled blank A1");
     check_contains(worksheet_xml, "unstyled-b1",
@@ -8548,6 +8550,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "snapshot source-style no-op output should match the first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style no-op save should leave the source workbook unchanged");
     check_reopened_clean_sheet_output(noop_output, "Styled",
         "snapshot source-style no-op save", inspect_saved_snapshot_output);
 
@@ -8579,6 +8583,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
     const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == noop_entries,
         "snapshot source-style second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style second no-op save should leave the source workbook unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Styled",
         "snapshot source-style second no-op save", inspect_saved_snapshot_output);
 
@@ -8616,6 +8622,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
         "snapshot source-style post-noop save should leave the second no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "snapshot source-style post-noop save should leave the source workbook unchanged");
     const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
     const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_xml,

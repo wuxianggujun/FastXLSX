@@ -43648,6 +43648,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-reacquire-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
     editor.rename_sheet("Data", "RenamedData");
@@ -43788,6 +43790,8 @@ void test_public_worksheet_editor_shift_after_rename_reacquire_reuses_planned_se
         "renamed shift reacquire no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed shift reacquire no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed shift reacquire no-op save should leave the source package unchanged");
     check_reopened_renamed_shift_noop_output(
         noop_output, "renamed shift reacquire no-op output");
 
@@ -46665,6 +46669,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-try-reacquire-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -46786,6 +46792,8 @@ void test_public_worksheet_editor_shift_try_reacquire_reuses_saved_session()
         "shift try-reacquire second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift try-reacquire second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift try-reacquire second no-op save should leave the source package unchanged");
 
     check_reopened_shift_output(second_output, "shift try-reacquire second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -47032,6 +47040,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-options-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -47164,6 +47174,8 @@ void test_public_worksheet_editor_shift_reacquire_option_mismatch_preserves_save
         "shift reacquire option mismatch second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift reacquire option mismatch second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire option mismatch second no-op save should leave the source package unchanged");
 
     check_reopened_shift_output(second_output, "shift reacquire option mismatch second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -47421,6 +47433,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-missing-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -47556,6 +47570,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_query_preserves_saved_
         "shift reacquire missing query second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift reacquire missing query second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire missing query second no-op save should leave the source package unchanged");
 
     check_reopened_shift_output(second_output, "shift reacquire missing query second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -47810,6 +47826,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-read-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -47972,6 +47990,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_reads_preserve_saved_s
         "shift reacquire invalid reads second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift reacquire invalid reads second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire invalid reads second no-op save should leave the source package unchanged");
 
     check_reopened_shift_output(second_output, "shift reacquire invalid reads second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -48261,6 +48281,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-invalid-mutation-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -48434,6 +48456,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_mutations_preserve_sav
         "shift reacquire invalid mutations second no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "shift reacquire invalid mutations second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire invalid mutations second no-op save should leave the source package unchanged");
 
     check_reopened_shift_output(second_output, "shift reacquire invalid mutations second save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -49299,6 +49323,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-third-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_names = editor.worksheet_names();
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> expected_catalog =
@@ -49336,6 +49362,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "shift reacquire after retry should reject saving over the source workbook");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire after retry rejected source-overwrite should leave the source package unchanged");
     check_public_dirty_materialized_recovery_state(
         editor,
         sheet,
@@ -49478,6 +49506,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_reuses
         "shift reacquire after retry third no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == third_entries,
         "shift reacquire after retry third no-op output should match the third output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire after retry third no-op save should leave the source package unchanged");
 
     check_reopened_shift_output(third_output, "shift reacquire after retry third save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -49506,6 +49536,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-noop-retry-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     const std::vector<std::string> expected_names = editor.worksheet_names();
@@ -49545,6 +49577,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
 
     check(threw_fastxlsx_error([&] { editor.save_as(source); }),
         "shift reacquire after retry noop save should reject saving over the source workbook");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire after retry noop save rejected source-overwrite should leave the source package unchanged");
     check_public_dirty_materialized_recovery_state(
         editor,
         sheet,
@@ -49626,6 +49660,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == retry_entries,
         "shift reacquire after retry noop output should match the safe retry output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire after retry noop save should leave the source package unchanged");
     check_reopened_shift_output(noop_output, "shift reacquire after retry noop save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,

@@ -25,7 +25,8 @@ builder 做 core/app docProps generated-small-XML Patch 小切片，但这不代
 当前内部回归只证明该 Patch 小切片在重写 package relationships / content types 时
 会保留已有 `docProps/custom.xml`、custom-properties package relationship、custom
 properties content type override 和 unknown bytes。
-Phase 5 仍是计划。
+完整 worksheet object / metadata editing 仍是 planned / not yet public，以
+`docs/CURRENT_CAPABILITIES.md` 为准。
 
 当前新建 workbook streaming 路径已有 external-only hyperlink worksheet relationships
 输出：`WorksheetWriter::add_external_hyperlink()` 会为有链接的 sheet 生成
@@ -1389,13 +1390,12 @@ existing-file image passthrough、drawing 编辑或 package preservation。
 
 - OPC edit plan：基础。内部 manifest、PartIndex、RelationshipGraph、content type
   registry 和 write-mode metadata 可作为规划入口。
-- 当前默认推进线：先按 `docs/TASK_BREAKDOWN.md` 完成 `P4.0 API surface unification`，
-  统一 public facade、命名、`CellView` / `Cell` / future `CellValue` 边界和
-  internal/public 分界；再推进窄 Patch MVP、preservation fixture、dependency policy
-  和后续 In-memory 子任务。writer/backend/sharedStrings/benchmark 可继续并行硬化，
-  但不应阻塞 `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、
-  `ReferencePolicy` 和 preservation fixture 的设计，也不能绕过 P4.0 直接扩大 public
-  Patch API。
+- 当前默认推进线：只从 `docs/TASK_BREAKDOWN.md` active queue 选择任务，先校准
+  public facade、命名、`CellView` / `Cell` / `CellValue` 边界和 internal/public
+  分界；再推进窄 Patch MVP、preservation fixture、dependency policy 和后续
+  In-memory 子任务。writer/backend/sharedStrings/benchmark 可继续并行硬化，但不应阻塞
+  `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、`ReferencePolicy`
+  和 preservation fixture 的设计，也不能绕过 active queue 直接扩大 public Patch API。
 - EditPlan / DependencyAnalyzer / ReferencePolicy / PartRewritePlanner：基础。
   它们是内部 Patch 计划元数据，只能表达 copy-original、目标 part rewrite、
   registered-part removal audit、worksheet dependency notes、沿已知 internal worksheet relationship target 的保守遍历

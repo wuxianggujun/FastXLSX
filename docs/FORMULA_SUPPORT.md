@@ -1,6 +1,6 @@
 # Formula Support
 
-FastXLSX does **not** implement a complete Excel formula engine.
+FastXLSX does **not** implement an in-process Excel formula evaluator.
 
 Current formula support is formula-compatible XLSX editing: FastXLSX can write,
 read, materialize, audit, and narrowly rewrite selected formula text, then ask
@@ -9,8 +9,8 @@ metadata. It does not evaluate formulas in-process.
 
 Recommended positioning:
 
-> FastXLSX supports formula-compatible XLSX editing, not an embedded Excel
-> calculation engine.
+> FastXLSX supports formula-compatible XLSX editing, not embedded Excel
+> calculation.
 
 ## Current supported behavior
 
@@ -35,7 +35,7 @@ Recommended positioning:
 | Full formula parser | Not implemented. The current parser/auditor is a narrow scanner for reference diagnostics and selected sheet-name rewrites. |
 | Tokenizer recovery | The tokenizer preserves malformed/incomplete lexical spans for diagnostics. It does not repair formulas or guarantee that Excel accepts the formula. |
 | Shared formula preservation | Dirty materialized output is flattened to ordinary `<f>...</f>` formula cells. It does not preserve shared formula `si` / `ref` metadata. Untouched worksheet parts can still be preserved by copy-original paths. |
-| Array formulas / data tables / dynamic arrays | Metadata is not preserved after dirty output, no spill range engine exists, and data table recalculation is not implemented. |
+| Array formulas / data tables / dynamic arrays | Metadata is not preserved after dirty output, spill range evaluation is not implemented, and data table recalculation is not implemented. |
 | External workbook and 3D references | Classified for audit only. FastXLSX does not validate external workbook targets, evaluate 3D references, or repair linked workbooks. |
 | Dependency graph | Not implemented. FastXLSX does not build Excel's calculation dependency graph. |
 | `calcChain.xml` rebuild | Not implemented. Rebuild requests are rejected; supported edit paths either preserve or remove stale calcChain metadata according to policy. |
@@ -60,9 +60,9 @@ When a source worksheet stores a shared formula:
 This is enough for common Excel/LibreOffice-style shared formula storage shapes,
 but it is still not a complete formula grammar.
 
-## Why there is no full formula engine yet
+## Why FastXLSX Does Not Evaluate Formulas
 
-A real Excel formula engine is a separate large subsystem:
+Excel-compatible formula evaluation is a separate large subsystem:
 
 - function catalog and compatibility quirks;
 - dependency graph and recalculation order;
@@ -73,8 +73,8 @@ A real Excel formula engine is a separate large subsystem:
 
 For an XLSX editing library, the practical first-class requirement is usually to
 preserve or rewrite formula text safely and let Excel-compatible applications
-recalculate. Implementing a full calculation engine should be treated as a
-separate long-term feature, not as a hidden side effect of the editor.
+recalculate. Formula evaluation is outside the current product boundary and must
+not appear as a hidden side effect of the editor.
 
 ## Verification entry points
 

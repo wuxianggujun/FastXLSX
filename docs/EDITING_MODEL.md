@@ -310,7 +310,7 @@ P6 sheet dependency policy 的当前收束矩阵如下：
   `.rels`、content types 或 workbook/worksheet references。
 
 这个矩阵只是内部 Patch MVP 的风险分流和状态卫生边界，不是 public `PackageEditor`、
-full preservation pipeline、relationship/content-type repair engine、formula engine 或 broad
+full preservation pipeline、relationship/content-type repair 子系统、公式求值器或 broad
 existing-file semantic editor。
 
 当前另有 internal `PackageEditor::replace_worksheet_sheet_data()` helper，只替换
@@ -759,7 +759,7 @@ P8.5 controlled template-fill fixture：
 - replacement 可使用 inline string，旧 placeholder sharedStrings 仍会保留；这证明 preserve
   baseline，不是 sharedStrings pruning / migration。
 - 该 fixture 仍是 bounded local rewrite baseline，不是 large-file streaming transformer、
-  placeholder parser、range patch engine 或 public editor API。
+  placeholder parser、range patch subsystem 或 public editor API。
 
 P8.1-P8.5 完成后，编辑模型已有 controlled large worksheet editing 的 baseline 和首个
 bounded local fixture；真正低内存 event reader / transformer / stream rewrite 仍是后续

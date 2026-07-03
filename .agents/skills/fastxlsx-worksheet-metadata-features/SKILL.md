@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-worksheet-metadata-features
-description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data validations、hyperlinks、conditional formatting、table references、worksheet .rels、Phase 5 早期切片，以及判断这些功能是否会破坏 streaming worksheet 热路径或需要 RelationshipGraph。"
+description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data validations、hyperlinks、conditional formatting、table references、worksheet .rels、当前 worksheet metadata 基础切片，以及判断这些功能是否会破坏 streaming worksheet 热路径或需要 RelationshipGraph。"
 ---
 
 # FastXLSX Worksheet Metadata Features
@@ -18,7 +18,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 - `docs/TESTING_WORKFLOW.md`
 - `docs/API_DESIGN_AND_DOCUMENTATION.md`
 
-先用 `rg` 确认符号是否真实存在。当前没有完整 Phase 5，也没有
+先用 `rg` 确认符号是否真实存在。当前没有完整 worksheet metadata / object 功能集，也没有
 `PackageReader`、生产 `PackageWriter` 或已有文件编辑管线。内部
 `PartIndex` / `RelationshipGraph` 已存在，但它们只是 detail groundwork。
 
@@ -148,7 +148,7 @@ description: "规划或实现 FastXLSX worksheet metadata 功能。用于 data v
 
 ## 禁止事项
 
-- 不要把 Phase 5 写成已实现。
+- 不要把 worksheet metadata / object planned 能力写成已实现。
 - 不要因为基础 hyperlink slices（external URL + internal location）已存在就宣称完整 hyperlinks 已支持。
 - 不要因为 streaming-only table slice 已存在就宣称完整 tables 已支持。
 - 不要让 data validation / conditional formatting API 持有完整 worksheet cell matrix。

@@ -4,7 +4,7 @@
 
 This document summarizes what should be pushed next after the current
 new-workbook foundations. The current product direction is an editable
-high-performance XLSX/OpenXML engine: Streaming for large new workbooks and
+high-performance XLSX library: Streaming for large new workbooks and
 large rewrites, Patch for existing-file editing and preservation, and In-memory
 for small-file random editing. It is intentionally scoped to project facts that
 exist in code, CMake, tests, docs, or local verification.
@@ -2873,8 +2873,8 @@ present. The narrow scanner/translator now lives in internal
 `include/fastxlsx/detail/formula.hpp` / `src/formula.cpp`, with
 `fastxlsx.formula` covering scanner boundaries, raw sheet qualifier spans, and
 reference translation; this is a reusable foundation for later dependency
-graphing, sheet-rename formula sync, and calcChain policy work, not a formula
-engine.
+graphing, sheet-rename formula sync, and calcChain policy work, not an
+in-process formula evaluator.
 The public editor now exposes the first narrow read-only dependency diagnostic
 on top of that scanner: `WorkbookEditor::formula_reference_audits()` scans only
 already-materialized `WorksheetEditor` sessions, reports sheet-qualified
@@ -2960,7 +2960,7 @@ formula metadata or stale cached formula results. This is not dynamic array
 spill support, data table recalculation, or formula dependency graphing.
 The consolidated formula capability matrix is now tracked in
 `docs/FORMULA_SUPPORT.md`: FastXLSX supports formula-compatible XLSX editing,
-not an embedded Excel calculation engine.
+not embedded Excel formula evaluation.
 The current regression matrix now also pins multiple followers per `si`,
 interleaved shared formula indexes, latest source-order definition behavior for
 later followers, function/name-like token boundaries, structured-reference and
@@ -3690,7 +3690,7 @@ source/planned catalog, and flags
 formula text that still references a renamed source sheet. The facade regression
 also proves save-as keeps the formula text unchanged. This is read-only audit
 evidence only, not full-workbook formula scanning, formula rewrite, dependency
-graphing, calcChain rebuild, or a complete formula engine.
+graphing, calcChain rebuild, or a complete in-process formula evaluator.
 P8.572 keeps that same public diagnostic conservative for non-local sheet
 qualifiers: external workbook qualifiers such as `[Book.xlsx]Data!A1` and 3D
 sheet-range qualifiers such as `Data:Formula!A1` are reported with exact tokens
@@ -3712,18 +3712,18 @@ local-sheet-scoped name context, maps ordinary sheet qualifiers against the
 current source/planned catalog, flags source-name references after
 `rename_sheet()`, and keeps external-workbook / 3D qualifiers audit-only. It
 does not update definedName formulas, repair workbook metadata, validate
-external targets, interpret 3D semantics, or become a formula engine.
+external targets, interpret 3D semantics, or become a formula evaluator.
 When a small workbook rewrite is queued, the diagnostic now reflects the
 current planned `xl/workbook.xml` small metadata instead of the source-only
 metadata snapshot, so opt-in definedName rewrites are visible to the audit.
 P8.573a adds the first explicit rename-sync opt-in:
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It is still a
-small-workbook-metadata Patch policy, not a formula engine: it rewrites only
+small-workbook-metadata Patch policy, not a formula evaluator: it rewrites only
 direct workbook definedName formula text from the old sheet qualifier to the new
 quoted sheet qualifier, skips external-workbook and 3D sheet-range qualifiers,
 leaves worksheet formula cells and other workbook/worksheet metadata untouched,
 and fails before state mutation on malformed/nested definedName XML.
-P8.573b extends that opt-in line without turning it into a formula engine:
+P8.573b extends that opt-in line without turning it into a formula evaluator:
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
 also rewrites matching formula cells that are already loaded into
 WorkbookEditor-owned WorksheetEditor materialized sessions, preserves existing
@@ -3859,7 +3859,7 @@ workbook catalog XML attribute escaping, definedName XML text escaping, quoted
 formula qualifiers with doubled apostrophes, unchanged external-workbook / 3D /
 string-literal / non-materialized references, calcChain absence, and Excel COM
 read-only compatibility. This is still narrow formula-text rewrite QA, not a
-complete Excel formula parser or semantic rename engine.
+complete Excel formula parser or semantic rename subsystem.
 P8.592 adds `generated_formula_rename_chain_rewrite` for chained rename
 coverage. It queues `Data -> TemporaryData` with the default catalog-only
 rename, then queues `TemporaryData -> FinalData` with
@@ -3870,7 +3870,7 @@ direct definedNames and already-materialized worksheet formulas. External
 workbook references, 3D sheet ranges, string literals, non-materialized
 worksheet formulas, and calcChain absence stay on the documented boundary.
 This is QA hardening for the existing explicit policy, not a semantic formula
-engine, default formula rewrite, non-materialized worksheet rewrite, or
+evaluator, default formula rewrite, non-materialized worksheet rewrite, or
 relationship repair.
 The same five generated formula rename lanes now also have no-op save variants
 that require the follow-up clean `save_as()` package to be byte-identical after
@@ -7013,7 +7013,7 @@ commit or short series with its own tests and docs update.
 
 1. Task docs, skills, and branch/worktree context.
    - Align `TASK_PLAN.md`, `TASK_BREAKDOWN.md`, `NEXT_STEPS.md`, `AGENTS.md`,
-     and FastXLSX skills with the editable-engine positioning.
+     and FastXLSX skills with the editable XLSX library positioning.
    - Reconcile concurrent agent output before overlapping file edits.
    - Keep the cross-language reference notes current in `ARCHITECTURE.md`.
      Feature tasks should name the reference libraries they borrow from and

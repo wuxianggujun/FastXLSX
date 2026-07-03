@@ -2,8 +2,8 @@
 
 ## Purpose
 
-This file is the execution plan for moving FastXLSX from the Phase 1 bootstrap
-writer toward the editable high-performance XLSX/OpenXML engine described by
+This file is the execution plan for moving FastXLSX from the minimal bootstrap
+writer toward the editable high-performance XLSX library described by
 the project docs. FastXLSX is not only a fast new-workbook writer; the long-term
 product shape is a shared OpenXML/OPC foundation with Streaming, Patch, and
 In-memory modes. Keep tasks factual and update this file whenever an
@@ -4005,7 +4005,7 @@ Validation:
 
 Status: the small-workbook `Workbook` convenience surface is implemented and
 tested for the current narrow creation path. The current `Workbook` type
-remains new-workbook-only, not an existing-file random-edit engine, and any
+remains new-workbook-only, not an existing-file random-edit API, and any
 later widening must stay explicitly bounded.
 
 Use this lane for the editing experience users expect from a workbook library:
@@ -4640,7 +4640,7 @@ Status: 进行中. The public streaming writer skeleton exists, and final packag
 output can use either the stored ZIP bootstrap or the opt-in minizip-ng
 backend. True package streaming remains 计划. Phase 2 remains essential for
 large new-workbook generation and large worksheet rewrite, but it is now a
-supporting lane for the editable engine rather than the only product axis.
+supporting lane for the editable XLSX library rather than the only product axis.
 
 Current facts:
 - `WorkbookWriter`, `WorksheetWriter`, and `CellView` are present as Streaming

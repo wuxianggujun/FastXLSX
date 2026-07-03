@@ -5,7 +5,7 @@
 FastXLSX 是一个面向高性能 XLSX 处理和可控编辑的现代 C++ 库。
 
 项目目标不是简单延续 `FastExcel` 的旧实现，而是重新设计一个
-**可编辑的高性能 XLSX/OpenXML 引擎**：大文件走流式路径，已有文件走
+**可编辑的高性能 XLSX 读写与编辑库**：大文件走流式路径，已有文件走
 part-level patch，小文件保留 in-memory 随机编辑体验。
 
 ## 定位
@@ -47,7 +47,7 @@ part-level patch，小文件保留 in-memory 随机编辑体验。
 FastXLSX 的当前定位是：
 
 ```text
-一个 C++20 / MSVC 2026 优先的可编辑高性能 XLSX/OpenXML 引擎，
+一个 C++20 / MSVC 2026 优先的可编辑高性能 XLSX 处理库，
 共享 OpenXML/OPC 底座，
 同时提供 Streaming、Patch 和 In-memory 三条 API 路径。
 ```
@@ -222,7 +222,7 @@ FastXLSX
 - 大型 XML 流式读取：`Expat` 仍是后续 planned dependency。
 - 小型 XML DOM 编辑：`pugixml` 仍是后续 planned dependency；当前已有小型 XML
   局部重写 helper，但没有默认接入 pugixml。
-- Phase 5 图片读取/插入解码：`stb` 默认通过 vcpkg manifest 接入，用于
+- 图片读取/插入解码：`stb` 默认通过 vcpkg manifest 接入，用于
   PNG/JPEG `read_image_info()` 元数据 helper 和
   `WorksheetWriter::add_image()` 基础插入切片；仍不代表 existing-workbook
   图片保真、drawing 编辑或完整图片功能。
@@ -233,156 +233,28 @@ FastXLSX
 
 ## 当前状态
 
-项目已越过单纯 Phase 1 bootstrap：最小可写 XLSX、新建 workbook 流式写入骨架、
-多项 worksheet metadata、图片插入基础切片、内部 OPC/Patch 底座，以及首个
-public `WorkbookEditor` Patch facade 都已经存在。当前仍不是完整 XLSX 引擎；
-文档和 API 继续按 Streaming、Patch、In-memory 三条路径区分能力边界。
+FastXLSX 当前不是单纯的最小 writer bootstrap：新建 workbook、Streaming writer、窄 Patch facade、
+small-file In-memory worksheet editor、图片 helper / streaming 插入，以及 internal OPC/Patch 底座都已经存在。
+项目仍不是 Excel 本体或全量 Office 兼容实现，文档和 API 继续按 Streaming、Patch、In-memory 三条路径说明边界。
 
-当前已具备：
+当前能力矩阵和 non-goals 统一维护在 [docs/CURRENT_CAPABILITIES.md](docs/CURRENT_CAPABILITIES.md)。
+README 只保留用户入口摘要和示例，避免把 public/internal/future 状态重复维护成另一份事实源。
 
-- compiled `fastxlsx` CMake target 和 `FastXLSX::fastxlsx` alias。
-- 保守 `vcpkg.json`、`CMakePresets.json` 和 Windows VS2026/NMake CI workflow 基础。
-- 新建小工作簿 public API：`Workbook`、`Worksheet`、`Cell`、`CellRange`、
-  `RowOptions`、`DocumentProperties`、`Workbook::add_worksheet()`、
-  `worksheet_count()`、`worksheet_names()`、`has_worksheet()`、`worksheet()`、
-  `try_worksheet()`、`rename_worksheet()`、`remove_worksheet()`、
-  `Workbook::cell_count()`、`Workbook::estimated_memory_usage()`、
-  `Worksheet::cell_count()`、`Worksheet::estimated_memory_usage()` 和
-  `FastXlsxError`。这些 size diagnostics 是小型 buffered creation path 的近似观测值，
-  不是进程 RSS、硬内存预算或 large-export progress API；sheet lookup、
-  rename old-name lookup 和 remove lookup 与 duplicate-name 规则一致，都是
-  ASCII case-insensitive。
-- 流式 writer public API：`WorkbookWriter`、`WorksheetWriter`、`CellView`、
-  `WorkbookWriterOptions`、`StringStrategy`、`StyleId`、`CellStyle` 及当前窄
-  styles / worksheet metadata / image insertion 值类型。
-- Patch public API 首片：`WorkbookEditorOptions`、`WorkbookEditor::open()`、
-  `WorkbookEditor::open(path, options)`、`worksheet_names()`、`has_worksheet()`、
-  `source_worksheet_names()`、`has_source_worksheet()`、`has_pending_changes()`、
-  `pending_change_count()`、
-  `pending_replacement_cell_count()`、`pending_replacement_worksheet_names()`、
-  `pending_materialized_worksheet_names()`、
-  `pending_materialized_cell_count()`、
-  `estimated_pending_materialized_memory_usage()`、
-  `has_pending_replacement()`、`estimated_pending_replacement_memory_usage()`、
-  `last_edit_error()`、
-  `WorkbookEditorWorksheetCatalogEntry`、`worksheet_catalog()`、
-  `WorkbookEditorWorksheetEditSummary`、`pending_worksheet_edits()`、
-  `pending_targeted_cell_replacement_count()`、
-  `pending_targeted_cell_replacement_worksheet_names()`、
-  `has_pending_targeted_cell_replacement()`、
-  `estimated_pending_targeted_cell_replacement_xml_bytes()`、
-  `CellPatchMissingCellPolicy`、
-  `replace_sheet_data()`、`replace_cells()`、`replace_image()`、`rename_sheet()` 和
-  `save_as()`。
-  Patch path 支持已有 workbook 的 whole-`<sheetData>` 替换、已有 cell 定向替换、
-  targeted point upsert 和窄 sheet catalog 改名；`replace_cells()` 是大 worksheet
-  的 targeted Patch facade，默认 `CellPatchMissingCellPolicy::Fail` 要求目标 cell
-  已存在；显式传 `CellPatchMissingCellPolicy::Insert` 可以插入缺失 cells 或合成
-  minimal rows。该路径不做
-  row/column shifting、sharedStrings / styles migration、range metadata
-  recalculation 或 relationship repair；
-  `replace_image()` 只替换已有 PNG/JPEG `xl/media/*` part bytes，不编辑 drawing /
-  anchors / relationships / content types；这些都不是语义 rename、image insertion
-  或 public `PackageEditor`。
-- In-memory existing-workbook public API 首片：`WorksheetEditorOptions`、
-  `WorkbookEditor::worksheet()`、`WorkbookEditor::try_worksheet()`、
-  `WorksheetEditor`、`WorksheetEditor::name()`、`try_cell()`、`get_cell()`、
-  `set_cell()`、`set_cells()`、`set_cells(initializer_list<WorksheetCellUpdate>)`、
-  `append_row()`、`append_row(initializer_list<CellValue>)`、
-  `set_row()`、`set_row(initializer_list<CellValue>)`、
-  `set_column()`、`set_column(initializer_list<CellValue>)`、
-  `erase_row()`、`erase_rows()`、`erase_column()`、`erase_columns()`、
-  `insert_rows()`、`delete_rows()`、`insert_columns()`、`delete_columns()`、
-  `set_cell_value()`、`set_cell_values()`、
-  `set_cell_values(initializer_list<WorksheetCellUpdate>)`、
-  `set_row_values()`、`set_row_values(initializer_list<CellValue>)`、
-  `set_column_values()`、`set_column_values(initializer_list<CellValue>)`、
-  `clear_cell_value()`、`clear_row()`、`clear_rows()`、`clear_column()`、
-  `clear_columns()`、`clear_cell_values()`、`clear_cell_values(CellRange)`、
-  `clear_cell_values(std::string_view)`、
-  `clear_cell_values(span<WorksheetCellReference>)`、
-  `clear_cell_values(initializer_list<WorksheetCellReference>)`、`erase_cell()`、
-  `erase_cells()`、`erase_cells(CellRange)`、`erase_cells(std::string_view)`、
-  `erase_cells(span<WorksheetCellReference>)`、
-  `erase_cells(initializer_list<WorksheetCellReference>)`、
-  row/column coordinate guardrails、
-  single-cell mutation/read API 的 strict uppercase A1 string overload、
-  `WorksheetCellReference`、`WorksheetCellUpdate`、`WorksheetCellSnapshot`、
-`has_pending_changes()`、`sparse_cells()`、`sparse_cells(CellRange)`、
-`sparse_cells(std::string_view)` strict uppercase A1 range overload、
-`sparse_cells(std::span<const WorksheetCellReference>)` / initializer-list
-batch overload、
-  `contains_cell()`、`used_range()`、`row_cells()`、`column_cells()`、`cell_count()` 和
-  `estimated_memory_usage()`。它是小文件随机 cell 编辑路径，dirty session 由
-  `WorkbookEditor::save_as()` 自动 flush；caller-supplied default `StyleId{0}`
-  会归一化为 no style handle，workbook-backed source `t="s"` shared string cells
-  可只读 materialize 为 plain text，且 prefixed source sharedStrings `sst` / `si` /
-  `t` / `r` element names 按 local-name 匹配；prefixed source worksheet /
-  `sheetData` / row / cell / inlineStr wrapper element names 也按 local-name
-  匹配，namespace URI 不参与判断；`WorksheetEditorOptions::max_cells` 和
-  `memory_budget_bytes` 会约束 source materialization 与后续 sparse-store
-  mutations，且 source-load / mutation guardrail failure paths 均保持
-  no-state-pollution hygiene；`erase_cell()` / `erase_cells()` / `set_row()` /
-  `set_column()` / `erase_row()` / `erase_rows()` / `erase_column()` /
-  `erase_columns()` 会移除 active sparse record，并为后续
-  insertions 释放这些 sparse-store guardrail budgets；`insert_rows()` /
-  `delete_rows()` / `insert_columns()` / `delete_columns()` 只对 represented sparse
-  cells 做小文件坐标 shift / delete，不创建 row/column metadata，也不同步 formulas、
-  tables、drawing/chart/VBA、relationships、sharedStrings/styles 或 calcChain；
-  missing-cell `erase_cell()`
-  保持 clean no-op，并会清除先前 public mutation diagnostic；explicit blank
-  insertion 作为 active sparse record 也受这些 guardrail 约束；`clear_row()` /
-  `clear_rows()` / `clear_column()` / `clear_columns()` 是 value-only clear，
-  只把已有 sparse records 变成 explicit blanks 并保留 source style，不释放 sparse
-  record budget；不支持 namespace validation/repair、non-default `StyleId`、
-  sharedStrings writeback/rebuild/migration、style migration、semantic metadata
-  sync、relationship repair 或 large-file low-memory random editing。
-- 公共值和 helper：`CellValue` / `CellValueKind`、PNG/JPEG `ImageInfo` /
-  `ImagePixels`、`read_image_info()` 和 `read_image_pixels()`。
-- 最小 OpenXML package 输出：
-  `[Content_Types].xml`、`_rels/.rels`、`xl/workbook.xml`、
-  `xl/_rels/workbook.xml.rels`、`xl/worksheets/sheet1.xml`、
-  `docProps/core.xml` 和 `docProps/app.xml`。
-- 数字、inline string、布尔和公式单元格写入。
-- 公式能力边界见 `docs/FORMULA_SUPPORT.md`：当前是公式文本写入/读取、
-  共享公式有限展开、审计和重算请求，不是完整 Excel 公式计算引擎。
-- `StringStrategy::SharedString` 基础写出路径、`xl/sharedStrings.xml` package wiring
-  和结构测试；它是显式策略，内存随唯一字符串表增长。
-- 基础 `docProps/core.xml` 和 `docProps/app.xml` 配置；不生成
-  `docProps/custom.xml`，也不是完整 document properties editor。
-- 流式 worksheet 写入能力：行高、列宽、冻结窗格、自动筛选、合并单元格、公式
-  full recalculation request、data validations、external/internal hyperlinks、
-  streaming-only tables、two-/three-color color scales、basic data bars、basic
-  `3Arrows` icon sets、基础 styles 和 PNG/JPEG 图片插入。
-- 内部 OPC manifest / relationships / `PartIndex` / `RelationshipGraph`、ZIP
-  `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、
-  `ReferencePolicy` 和 worksheet event/transformer 基础；这些仍主要是 internal
-  Patch 底座，不是稳定 public package API。
-- 内部 `CellStore` / `CellRecord` sparse store、worksheet-local guardrail 首片、
-  standalone `<sheetData>` / full worksheet emission 和 by-name `PackageEditor`
-  handoff 回归；其首个 public 入口是 `WorkbookEditor::worksheet()` / `WorksheetEditor`。
-- 内部 package writer boundary：新建 workbook 输出通过 `src/package_writer.*`
-  进入 ZIP backend。默认构建使用 stored/no-compression bootstrap；
-  `FASTXLSX_ENABLE_MINIZIP_NG=ON` 构建使用 minizip-ng DEFLATE backend。
-  public `WorkbookWriterOptions::zip_compression_level` 可为 Streaming new-workbook
-  输出选择 `-1` backend default、`0` no-compression/stored output 或 `1..9`
-  minizip DEFLATE level；`-1` 保留 minizip/zlib default，不会自动映射为
-  throughput-first level 1，追求 close-time 吞吐时需要调用方显式选择。stored
-  bootstrap 构建会拒绝 positive level。内部 writer 会在写输出前拒绝需要
-  Zip64 的 entry count 或单 entry 未压缩大小，以及超过 ZIP 16-bit 字段的 entry name。
-- CTest 测试 `fastxlsx.unit`，覆盖 XML escape、cell reference、OpenXML 结构和
-  基础单元格编码。
-- CTest 测试 `fastxlsx.streaming` 与 `fastxlsx.streaming.*` shard，覆盖当前流式
-  writer 写入骨架及已拆分的 styles、conditional formatting、metadata、images 和
-  sharedStrings 回归。
-- CTest 测试 `fastxlsx.opc`，覆盖内部 OPC manifest、content types、
-  relationships 和 XML serializer 基础。
-- CTest 测试 `fastxlsx.package_reader`、`fastxlsx.workbook_editor`、
-  `fastxlsx.image`、`fastxlsx.worksheet_event_reader` 和
-  `fastxlsx.worksheet_transformer`，以及按对象/预算拆分的
-  `fastxlsx.package_editor.*` shards，覆盖当前内部 Patch / public Patch facade /
-  image helper / worksheet scan-transform 基础切片。
-- 本机已做 Excel 可视化验证并核对生成样例的关键单元格。
+入口摘要：
+
+- 构建入口：compiled `fastxlsx` CMake target，别名 `FastXLSX::fastxlsx`；默认 vcpkg 依赖 `stb`，
+  opt-in `FASTXLSX_ENABLE_MINIZIP_NG=ON` 走 minizip-ng DEFLATE backend。
+- Public new-workbook API：`Workbook` / `Worksheet` / `Cell` 适合小文件创建；`WorkbookWriter` /
+  `WorksheetWriter` / `CellView` 是大文件 Streaming 新建主线。
+- Public existing-workbook API：`WorkbookEditor` 提供已有文件 Patch facade，`WorksheetEditor` 提供 small-file
+  In-memory random cell editing；两者都通过 `save_as()` 输出新路径，不做原地覆盖。
+- 图片能力：`read_image_info()` / `read_image_pixels()` 读取 PNG/JPEG 元数据或像素；
+  `WorksheetWriter::add_image()` 只面向 streaming new-workbook 插入；`WorkbookEditor::replace_image()`
+  只替换已有 media part bytes，不编辑 drawing/anchor/relationship 语义。
+- Internal foundation：`PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、
+  `RelationshipGraph`、worksheet transformer 和 `CellStore` 是 internal 实现 / 审计证据，不是 public API。
+- 测试入口：CTest 已覆盖 unit、streaming shards、OPC、package reader/editor shards、workbook editor、image、
+  worksheet event reader 和 transformer；本 README 不再复制完整 coverage 清单。
 
 ## WorkbookEditor Patch facade 示例
 
@@ -539,8 +411,8 @@ replacement、不 dirty/create materialized sessions、不改 pending edit summa
 也不更新 `last_edit_error()`。
 显式 rewrite 仍只处理 local sheet-qualified references；external workbook qualifier、
 3D sheet range、structured reference 和 string literal 保持不变。
-完整公式支持矩阵见 `docs/FORMULA_SUPPORT.md`；该路径不能写成内置 Excel
-calculation engine。
+完整公式边界矩阵见 `docs/FORMULA_SUPPORT.md`；该路径不能写成内置 Excel
+公式求值器。
 本地兼容 QA 可以用 `tools/run_workbook_editor_qa.py --scenario
 generated_shared_formula_boundary_materialization` 跑生成型边界样本，用
 `--scenario generated_shared_formula_office_like_materialization` 跑 2D shared
@@ -899,7 +771,7 @@ worksheet 仍有 rename / whole-`<sheetData>` replacement summary。
 - Zip64、公开压缩等级配置和真正 package streaming。
 - Catch2 和 Google Benchmark 接入。
 - CI workflow 和 example 入口已有基础文件/分支，但仍需 GitHub 侧验证、完善和发布面确认。
-- 完整 Phase 3 写入特性、完整 Phase 5 对象编辑能力和系统化性能 benchmark。
+- 完整 worksheet metadata / writer feature set、完整对象语义编辑能力和系统化性能 benchmark。
 - workbook-level in-memory guardrails、non-default style migration、sharedStrings
   migration、完整 semantic metadata sync、relationship repair 和 large-file
   low-memory random editing。
@@ -939,7 +811,7 @@ worksheet 仍有 rename / whole-`<sheetData>` replacement summary。
 - existing-workbook 图片、VBA、table、chart、pivot、comments 等复杂对象的语义编辑。
 
 `src/package_writer.*` 是当前内部 package writer 边界。默认构建通过 vcpkg 拉取
-`stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` Phase 1 bootstrap；
+`stb` 图片依赖，但 ZIP 后端仍调用 `src/zip_store_writer.*` stored ZIP bootstrap；
 opt-in minizip 构建会写出 DEFLATE-compressed ZIP entries，并且内部 writer option
 可选择 backend default、`0` no-compression/stored output 或 `1..9` DEFLATE
 压缩等级。内部 writer 现在有 no-Zip64 写前 guardrail，但它仍不是 public package
@@ -951,7 +823,7 @@ FastXLSX 使用 MIT License，见 [LICENSE](LICENSE)。
 
 ## 支持项目
 
-FastXLSX 长期免费开源，但持续开发高性能 XLSX 引擎需要大量测试、
+FastXLSX 长期免费开源，但持续开发高性能 XLSX 读写与编辑库需要大量测试、
 兼容性验证、性能对比和文档维护。
 
 如果这个项目帮你节省了时间，欢迎通过爱发电或赞赏码支持我继续维护：

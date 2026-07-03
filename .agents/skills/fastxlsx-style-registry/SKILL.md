@@ -1,6 +1,6 @@
 ---
 name: fastxlsx-style-registry
-description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment、HorizontalAlignment、VerticalAlignment、CellFont、CellFill、CellStyle、WorkbookWriter::add_style()、CellView::with_style()、xl/styles.xml、number formats、wrap-text + limited horizontal/vertical alignment、bold/italic/direct ARGB font color、solid fill、worksheet s 属性、sharedStrings + styles 共存和样式 QA。用于 P9 styles、未来 full-font/full-fill/border/full-alignment、conditional formatting 与 styles 交互，或排查 Excel 修复样式输出。"
+description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment、HorizontalAlignment、VerticalAlignment、CellFont、CellFill、CellStyle、WorkbookWriter::add_style()、CellView::with_style()、xl/styles.xml、number formats、wrap-text + limited horizontal/vertical alignment、bold/italic/direct ARGB font color、solid fill、worksheet s 属性、sharedStrings + styles 共存和样式 QA。用于当前 streaming styles 基础、未来 full-font/full-fill/border/full-alignment、conditional formatting 与 styles 交互，或排查 Excel 修复样式输出。"
 ---
 
 # FastXLSX Style Registry
@@ -23,7 +23,7 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
 
 ## 当前事实
 
-- 当前 P9 基础切片支持 streaming-only new-workbook custom number format styles、窄
+- 当前 styles 基础切片支持 streaming-only new-workbook custom number format styles、窄
   wrap-text + limited horizontal/vertical alignment styles、窄 bold/italic/direct ARGB font color styles
   和窄 solid foreground fill styles。
 - `StyleId` 是 workbook-local handle；默认构造是 style `0`。非默认 id 必须来自同一个
@@ -68,7 +68,7 @@ description: "实现或审查 FastXLSX 样式注册表、StyleId、CellAlignment
   引用同步、existing-file style preservation、public style editing API 或完整样式编辑。
 - 当前 two-/three-color conditional color scale、basic data bar 和 basic 3Arrows icon set
   不是 style registry 功能：它们写 worksheet-local
-  `<conditionalFormatting>`，不生成 `styles.xml` 或 `dxfs`。不要把它当成 P9 styles
+  `<conditionalFormatting>`，不生成 `styles.xml` 或 `dxfs`。不要把它当成 styles registry
   完整 conditional formatting 支持。
 
 ## 推荐流程
@@ -142,7 +142,7 @@ Interior.Pattern 和 Interior.Color。
 
 ## 禁止事项
 
-- 不要把 P9 写成完整 styles 或 Excel formatting parity。
+- 不要把当前 styles 基础切片写成完整 styles 或 Excel formatting parity。
 - 不要声称支持 full font control、font name/size/underline/theme/tint/indexed/rich text、
   full fill/pattern control、border、full alignment、dxf-backed conditional formatting、
   named styles、date cell type 或 existing-file style preservation，除非代码和测试已覆盖。

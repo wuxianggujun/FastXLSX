@@ -1,4 +1,4 @@
 interface:
   display_name: "FastXLSX 最小写入"
   short_description: "实现最小可写 XLSX、Excel 验证和 XML 对比"
-  default_prompt: "使用 $fastxlsx-minimal-writer 实现或审查 FastXLSX Phase 1 最小可写 XLSX。"
+  default_prompt: "使用 $fastxlsx-minimal-writer 实现或审查 FastXLSX 最小可写 XLSX。"

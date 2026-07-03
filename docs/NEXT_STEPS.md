@@ -280,6 +280,10 @@ The after-shift `insert_columns()` full-calculation failed-save retry path now
 mirrors that check: after exact source overwrite rejection, the clean no-op
 retry output exposes row-two sparse order after the inserted gap and column-six
 as the styled translated `C1+D1` formula.
+The reverse-order `insert_columns()` full-calculation failed-save retry path
+now has the same coverage when `request_full_calculation()` is queued before
+materialization, including row-two sparse ordering and column-six styled
+formula readback after the safe retry/no-op output.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

@@ -279,6 +279,10 @@ cells once, fresh-reopens the materialized output, then writes first and second
 clean no-op outputs with stable public state, byte-identical package entries,
 `fullCalcOnLoad`, no invented `calcChain.xml`, and row/column snapshot readback
 of the translated styled formulas.
+The non-styled reverse-order `insert_columns()` success path now carries the
+same second no-op save contract too: the shifted output, first no-op output, and
+second no-op output remain byte-stable, fresh-reopen with the translated
+`C1+D1` formula, and keep the `Untouched` sheet readable.
 The reverse-order full-calculation `delete_rows()` and `delete_columns()`
 success paths now match that repeated no-op coverage too: row deletion
 fresh-reopens the shifted output plus first and second no-op outputs, while

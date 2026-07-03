@@ -64591,6 +64591,43 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1594 - Pin full-calc-before base insert-column second no-op save
+
+Type: public `WorksheetEditor` full-calculation-before non-styled
+insert-column no-op save/readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the base `insert_columns()` path remains stable across a second
+clean no-op save when workbook full-calculation metadata is queued before
+worksheet materialization.
+
+Coverage:
+- Extends `test_public_worksheet_editor_full_calculation_before_insert_columns_shift()`.
+- Adds a second clean no-op output after the materialized save and first no-op
+  output.
+- Requires stable public catalog/save state, empty dirty materialized
+  diagnostics, no replacement diagnostics, byte-identical package entries,
+  unchanged prior outputs, fresh reopen of shifted source-backed cells and the
+  translated `C1+D1` formula, and `Untouched` sheet readback for the first and
+  second no-op outputs.
+- Reuses existing full-calc XML checks, including `fullCalcOnLoad` and no
+  invented `calcChain.xml`; no production code changes.
+
+Non-goals:
+- No insert semantic changes, formula translation changes, calcChain
+  cleanup/rebuild changes, style migration/merge, row/column metadata
+  synchronization, sharedStrings migration, metadata/range repair, relationship
+  repair, broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

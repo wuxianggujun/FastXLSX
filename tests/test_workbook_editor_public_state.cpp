@@ -24722,6 +24722,8 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -24857,10 +24859,52 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_shift()
         editor, save_state_before_noop, "full-calc before insert_columns no-op save");
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop, "full-calc before insert_columns no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "full-calc before insert_columns no-op output should match the materialized output");
     check_reopened_shift_output(noop_output, "full-calc before insert_columns no-op save",
         inspect_full_calc_insert_columns_output);
+    check_reopened_untouched_keep_me_output(
+        noop_output, "full-calc before insert_columns no-op Untouched");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_columns second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_columns second no-op save should not record another workbook or materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "full-calc before insert_columns second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_columns second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "full-calc before insert_columns second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_columns second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "full-calc before insert_columns second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "full-calc before insert_columns second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc before insert_columns second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc before insert_columns second no-op save should leave materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc before insert_columns second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "full-calc before insert_columns second no-op save",
+        inspect_full_calc_insert_columns_output);
+    check_reopened_untouched_keep_me_output(
+        second_noop_output, "full-calc before insert_columns second no-op Untouched");
 }
 
 void test_public_worksheet_editor_delete_columns_shifts_sparse_records()

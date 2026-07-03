@@ -18380,6 +18380,11 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         artifact("fastxlsx-workbook-editor-public-worksheet-clear-all-memory-same-sheet-guard-recovery-output.xlsx");
     const std::string rejected_value =
         "clear-all-memory-rejected-" + std::string(4096, 'a');
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto check_source_unchanged =
+        [&source, &source_entries](const char* message) {
+            check(fastxlsx::test::read_zip_entries(source) == source_entries, message);
+        };
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -18476,6 +18481,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release initial recovery");
 
     editor.save_as(output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release save should leave the source package unchanged");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<c r="A1"/>)",
@@ -18532,6 +18539,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_first_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(first_noop_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release first noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes(),
         "clear_cell_values() memory-budget release first noop save should keep the handle clean");
     check(editor.pending_change_count() == pending_count_after_first_save,
@@ -18591,6 +18600,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release matching-option noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release matching-option noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
@@ -18650,6 +18661,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(option_mismatch_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release option mismatch noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release option mismatch noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
@@ -18715,6 +18728,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(missing_query_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release missing query noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release missing query noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
@@ -18804,6 +18819,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(invalid_read_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release invalid reads noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid reads noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
@@ -18904,6 +18921,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(invalid_mutation_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release invalid mutation noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid mutations noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire,
@@ -18961,6 +18980,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid mutation recovery");
 
     editor.save_as(invalid_mutation_recovery_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release invalid mutation recovery save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid mutation recovery save should clean handles");
     check(editor.pending_change_count() == pending_count_after_reacquire + 1,
@@ -19037,6 +19058,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(invalid_shift_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release invalid shifts noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid shifts noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire + 1,
@@ -19091,6 +19114,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release invalid shift recovery");
 
     editor.save_as(invalid_shift_recovery_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release invalid shift recovery save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release invalid shift recovery save should clean handles");
     check(editor.pending_change_count() == pending_count_after_reacquire + 2,
@@ -19173,6 +19198,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         workbook_editor_public_save_state_snapshot(editor);
 
     editor.save_as(same_sheet_guard_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release same-sheet guard noop save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release same-sheet guard noop save should keep handles clean");
     check(editor.pending_change_count() == pending_count_after_reacquire + 2,
@@ -19235,6 +19262,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release same-sheet guard recovery");
 
     editor.save_as(same_sheet_guard_recovery_output);
+    check_source_unchanged(
+        "clear_cell_values() memory-budget release same-sheet guard recovery save should leave the source package unchanged");
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
         "clear_cell_values() memory-budget release same-sheet guard recovery save should clean handles");
     check(editor.pending_change_count() == pending_count_after_reacquire + 3,

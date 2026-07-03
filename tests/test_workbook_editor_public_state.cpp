@@ -20174,6 +20174,8 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "missing erase_row save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing erase_row save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "missing erase_row save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -20200,6 +20202,8 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "missing erase_row noop save should still copy source entries");
         check(noop_entries == output_entries,
             "missing erase_row noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing erase_row noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "missing erase_row noop save");
     }
@@ -20422,6 +20426,8 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "erase_row invalid/reversed failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_row invalid/reversed failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             output, "erase_row invalid/reversed failure save");
 
@@ -20455,6 +20461,8 @@ void test_public_worksheet_editor_erase_rows_noop_invalid_and_range()
             "erase_row invalid/reversed failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "erase_row invalid/reversed failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_row invalid/reversed failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "erase_row invalid/reversed failure noop save");
     }
@@ -21023,6 +21031,8 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "missing erase_column save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing erase_column save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "missing erase_column save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -21049,6 +21059,8 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "missing erase_column noop save should still copy source entries");
         check(noop_entries == output_entries,
             "missing erase_column noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "missing erase_column noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "missing erase_column noop save");
     }
@@ -21271,6 +21283,8 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "erase_column invalid/reversed failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_column invalid/reversed failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             output, "erase_column invalid/reversed failure save");
 
@@ -21304,6 +21318,8 @@ void test_public_worksheet_editor_erase_columns_noop_invalid_and_range()
             "erase_column invalid/reversed failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "erase_column invalid/reversed failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "erase_column invalid/reversed failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "erase_column invalid/reversed failure noop save");
     }

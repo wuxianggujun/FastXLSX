@@ -10113,6 +10113,8 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
         artifact("fastxlsx-workbook-editor-public-worksheet-init-list-noop-output.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-init-list-second-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-init-list-post-noop-output.xlsx");
     const std::filesystem::path style_id_source = artifact(
         "fastxlsx-workbook-editor-public-worksheet-init-list-style-id-source.xlsx");
     const std::filesystem::path set_cells_style_reject_output = artifact(
@@ -10405,6 +10407,104 @@ void test_public_worksheet_editor_initializer_list_batch_overloads()
     check_reopened_clean_sheet_output(
         second_noop_output, "Data", "initializer-list batch second no-op save",
         inspect_initializer_list_batch_output);
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "initializer-list batch post-noop reacquire should return a clean saved session");
+    check(reacquired.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+            sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "initializer-list batch post-noop reacquire should share the saved blank state");
+    check(reacquired.get_cell("D4").boolean_value() &&
+            sheet.get_cell("D4").boolean_value(),
+        "initializer-list batch post-noop reacquire should share inserted boolean state");
+
+    reacquired.set_cell_values({
+        {fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::CellValue::text("post-noop-init-list-b1")},
+        {fastxlsx::WorksheetCellReference {5, 5},
+            fastxlsx::CellValue::formula("B1")},
+    });
+    reacquired.clear_cell_values({
+        fastxlsx::WorksheetCellReference {4, 4},
+        fastxlsx::WorksheetCellReference {9, 9},
+    });
+    reacquired.erase_cells({
+        fastxlsx::WorksheetCellReference {2, 1},
+        fastxlsx::WorksheetCellReference {2, 1},
+    });
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "initializer-list batch post-noop edit should dirty both shared handles");
+    check(reacquired.cell_count() == 3 && sheet.cell_count() == 3,
+        "initializer-list batch post-noop edit should preserve final sparse count");
+    check_cell_range_equals(reacquired.used_range(), 1, 2, 5, 5,
+        "initializer-list batch post-noop edit should expose shifted sparse bounds");
+    check(reacquired.get_cell("B1").text_value() == "post-noop-init-list-b1" &&
+            sheet.get_cell("B1").text_value() == "post-noop-init-list-b1",
+        "initializer-list batch post-noop edit should update B1 through both handles");
+    check(reacquired.get_cell("D4").kind() == fastxlsx::CellValueKind::Blank,
+        "initializer-list batch post-noop edit should clear D4 as an explicit blank");
+    const fastxlsx::CellValue post_noop_formula = reacquired.get_cell("E5");
+    check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            post_noop_formula.text_value() == "B1",
+        "initializer-list batch post-noop edit should insert E5 as a formula");
+    check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
+        "initializer-list batch post-noop edit should erase A2 through both handles");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "initializer-list batch post-noop save should clean both shared handles");
+    check(editor.pending_change_count() == 2,
+        "initializer-list batch post-noop save should record the second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "initializer-list batch post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "initializer-list batch post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "initializer-list batch post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "initializer-list batch post-noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "initializer-list batch post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "initializer-list batch post-noop save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "initializer-list batch post-noop save should leave the second no-op output unchanged");
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, R"(<dimension ref="B1:E5"/>)",
+        "initializer-list batch post-noop save should persist the refreshed sparse bounds");
+    check_contains(post_noop_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>post-noop-init-list-b1</t></is></c>)",
+        "initializer-list batch post-noop save should persist the B1 value edit");
+    check_contains(post_noop_xml, R"(<c r="D4"/>)",
+        "initializer-list batch post-noop save should persist D4 as an explicit blank");
+    check_contains(post_noop_xml, R"(<c r="E5"><f>B1</f></c>)",
+        "initializer-list batch post-noop save should persist the inserted E5 formula");
+    check_not_contains(post_noop_xml, R"(r="A2")",
+        "initializer-list batch post-noop save should omit erased A2");
+    check_reopened_clean_sheet_output(
+        post_noop_output, "Data", "initializer-list batch post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "initializer-list batch post-noop reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 2, 5, 5,
+                "initializer-list batch post-noop reopened output should expose final bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "post-noop-init-list-b1",
+                "initializer-list batch post-noop reopened output should read B1 text");
+            const fastxlsx::CellValue reopened_d4 = reopened_sheet.get_cell("D4");
+            check(reopened_d4.kind() == fastxlsx::CellValueKind::Blank,
+                "initializer-list batch post-noop reopened output should keep D4 blank");
+            const fastxlsx::CellValue reopened_e5 = reopened_sheet.get_cell("E5");
+            check(reopened_e5.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_e5.text_value() == "B1",
+                "initializer-list batch post-noop reopened output should read E5 formula");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "initializer-list batch post-noop reopened output should keep A2 erased");
+        });
 }
 
 void check_reopened_clean_sheet_output(

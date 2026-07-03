@@ -500,6 +500,9 @@ invalid-read, and invalid-mutation sessions.
 Saved-session and reacquire shift clean no-op paths now also keep replacement
 diagnostics empty for handle reuse, try-reacquire, option-mismatch,
 missing-query, invalid-read, invalid-mutation, and failed-save retry sessions.
+The invalid-read saved-session no-op path now also repeats a clean no-op save,
+fresh-reopens that repeat output, and verifies the later `C3` save leaves both
+no-op packages unchanged.
 Retry clean-reacquire and invalid-operation no-op shift paths now also assert
 replacement diagnostics stay empty while preserving expected invalid-operation
 `last_edit_error()` state.

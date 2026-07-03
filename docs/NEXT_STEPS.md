@@ -115,6 +115,11 @@ coverage for a row-shifted `WorksheetEditor`: after a byte-stable clean no-op
 save, a later `C3` edit re-dirties the shared handles with aligned public
 materialized diagnostics, saves as the next handoff, leaves earlier outputs
 unchanged, and fresh-reopens with both shifted `A3` and new `C3` values.
+The matching-options row/column shift reacquire path now also has repeated
+no-op-save evidence: after the original handle saves a row shift and a matching
+reacquire saves a later column shift, both no-op outputs are byte-identical,
+source and prior outputs stay unchanged, public state remains stable, and a
+fresh editor reopens the combined shifted `Data` state.
 The delete-column saved/reacquired no-op path now has the same coverage for a
 formula-translated shifted session: after the clean no-op save, a later `D2`
 edit re-dirties the shared handles, preserves the translated `B1` formula

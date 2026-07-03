@@ -39586,6 +39586,7 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-ref-formula-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-ref-formula-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -39632,6 +39633,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
         "renamed formula delete_columns save_as should clear dirty materialized diagnostics");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete_columns save_as should leave the source package unchanged");
     const std::string workbook_xml = output_entries.at("xl/workbook.xml");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
@@ -39708,6 +39711,8 @@ void test_public_worksheet_editor_shift_after_rename_deletes_formula_references(
                     !noop_sheet.try_cell("A3").has_value(),
                 "renamed formula delete_columns no-op save reopened output should keep old coordinates absent");
         });
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete_columns no-op save should leave the source package unchanged");
 }
 
 void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_failed_save_preserves_styled_session()
@@ -39969,6 +39974,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-options-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-options-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -40089,6 +40095,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
         "renamed formula delete-column option mismatch second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column option mismatch first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -40107,6 +40115,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
         "renamed formula delete-column option mismatch first output should not include the later row shift");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column option mismatch second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -40156,6 +40166,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_opti
         "renamed formula delete-column option mismatch no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column option mismatch no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column option mismatch no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         noop_output, "RenamedData",
         "renamed formula delete-column option mismatch no-op output",
@@ -40228,6 +40240,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-invalid-mutation-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-invalid-mutation-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -40356,6 +40369,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid mutations second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column invalid mutations first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -40374,6 +40389,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid mutations first output should not contain rejected payloads");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column invalid mutations second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -40425,6 +40442,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid mutations no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column invalid mutations no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column invalid mutations no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         noop_output, "RenamedData",
         "renamed formula delete-column invalid mutations no-op output",
@@ -40497,6 +40516,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-missing-query-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-missing-query-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -40617,6 +40637,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
         "renamed formula delete-column missing query second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column missing query first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -40635,6 +40657,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
         "renamed formula delete-column missing query first output should not include the later row shift");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column missing query second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -40684,6 +40708,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_miss
         "renamed formula delete-column missing query no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column missing query no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column missing query no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         noop_output, "RenamedData",
         "renamed formula delete-column missing query no-op output",
@@ -40756,6 +40782,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-invalid-read-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-invalid-read-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -40898,6 +40925,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid reads second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column invalid reads first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -40916,6 +40945,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid reads first output should not include the later row shift");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column invalid reads second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -40965,6 +40996,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_inva
         "renamed formula delete-column invalid reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column invalid reads no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column invalid reads no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         noop_output, "RenamedData",
         "renamed formula delete-column invalid reads no-op output",
@@ -41037,6 +41070,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-snapshot-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-snapshot-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -41057,6 +41091,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "renamed formula delete-column snapshot reads first save should clear dirty materialized diagnostics");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column snapshot reads first save should leave the source package unchanged");
 
     fastxlsx::WorksheetEditor reacquired = editor.worksheet("RenamedData");
     check(!reacquired.has_pending_changes() && !sheet.has_pending_changes(),
@@ -41233,6 +41269,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
         "renamed formula delete-column snapshot reads second save should clear dirty diagnostics again");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column snapshot reads second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -41276,6 +41314,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_snap
         "renamed formula delete-column snapshot reads no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column snapshot reads no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column snapshot reads no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         noop_output, "RenamedData",
         "renamed formula delete-column snapshot reads no-op output",
@@ -41379,6 +41419,7 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-reacquire-second-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-delete-column-formula-reacquire-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -41492,6 +41533,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
         "renamed formula delete-column reacquire second save should clear dirty diagnostics again");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column reacquire first save should leave the source package unchanged");
     const std::string first_workbook_xml = first_entries.at("xl/workbook.xml");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     const std::string first_styled_formula_xml =
@@ -41510,6 +41553,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
         "renamed formula delete-column reacquire first output should not include the later row shift");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column reacquire second save should leave the source package unchanged");
     const std::string second_workbook_xml = second_entries.at("xl/workbook.xml");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     const std::string second_styled_formula_xml =
@@ -41559,6 +41604,8 @@ void test_public_worksheet_editor_shift_after_rename_delete_columns_formula_reac
         "renamed formula delete-column reacquire no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "renamed formula delete-column reacquire no-op save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed formula delete-column reacquire no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         noop_output, "RenamedData",
         "renamed formula delete-column reacquire no-op output",

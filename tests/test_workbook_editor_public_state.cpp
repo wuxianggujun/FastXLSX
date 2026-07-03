@@ -21635,6 +21635,29 @@ void test_public_worksheet_editor_full_calculation_preserves_insert_rows_failed_
                     reopened_sheet.get_cell("A5").text_value() == "extra-c3" &&
                     reopened_sheet.get_cell("C5").text_value() == "extra-c3",
                 "full-calc insert_rows failed save no-op reopened output should read shifted source and dirty rows");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_five =
+                reopened_sheet.row_cells(5);
+            check(reopened_row_five.size() == 2 &&
+                    reopened_row_five[0].reference.row == 5 &&
+                    reopened_row_five[0].reference.column == 1 &&
+                    reopened_row_five[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_five[0].value.text_value() == "extra-c3" &&
+                    reopened_row_five[1].reference.row == 5 &&
+                    reopened_row_five[1].reference.column == 3 &&
+                    reopened_row_five[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_five[1].value.text_value() == "extra-c3",
+                "full-calc insert_rows failed save no-op reopened row_cells should expose shifted trailing cells");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+                reopened_sheet.column_cells(4);
+            check(reopened_column_four.size() == 1 &&
+                    reopened_column_four[0].reference.row == 4 &&
+                    reopened_column_four[0].reference.column == 4 &&
+                    reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_four[0].value.text_value() == "A3+B3" &&
+                    reopened_column_four[0].value.has_style() &&
+                    reopened_column_four[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc insert_rows failed save no-op reopened column_cells should expose shifted styled formula");
             check(!reopened_sheet.try_cell("D2").has_value() &&
                     !reopened_sheet.try_cell("A3").has_value() &&
                     !reopened_sheet.try_cell("C3").has_value(),

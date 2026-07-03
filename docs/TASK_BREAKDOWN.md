@@ -64025,6 +64025,48 @@ Verification:
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
   passes.
 
+### P8.1580 - Pin full-calc insert-row retry snapshots
+
+Type: public `WorksheetEditor` full-calculation row-insert failed-save retry
+snapshot readback regression.
+
+Status: completed.
+
+Goal:
+Verify that the existing styled `insert_rows()` before
+`request_full_calculation()` failed-save retry path exposes stable reopened
+`row_cells()` and `column_cells()` snapshots after the safe retry and clean
+no-op save.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_full_calculation_insert_rows_failed_save_preserves_state()`.
+- After exact source overwrite rejection and safe retry, the no-op output
+  reopened helper now checks row-five snapshot ordering for shifted `A5` and
+  dirty `C5` trailing cell records.
+- The same helper checks column-four snapshot readback for the shifted styled
+  `D4` formula translated to `A3+B3`.
+- Reuses the existing failed-save state preservation, source package
+  preservation, safe retry, and clean no-op output lifecycle.
+
+Non-goals:
+- No production `WorkbookEditor` / `WorksheetEditor` behavior changes.
+- No save rejection behavior changes, rollback/transaction replay, full
+  calculation metadata changes, formula translator changes, formula
+  evaluation, cached value preservation, metadata/range repair, calcChain
+  rebuild/generation, sharedStrings/styles migration, relationship repair,
+  broader Patch/materialized composition, default CTest/CI expansion, or
+  low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

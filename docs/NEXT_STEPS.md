@@ -2533,6 +2533,10 @@ Invalid-to-valid row/column shift recovery coverage now pins aggregate dirty
 materialized memory for both clean recovery and already-dirty recovery paths.
 Formula-translation shift coverage now pins dirty materialized count and memory
 before saving rich reference-shape and out-of-bounds `#REF!` formula shifts.
+The rich reference-shape shift readback now also pins `row_cells()` and
+`column_cells()` snapshots after fresh reopen and post-noop saves, so saved
+insert-row and insert-column formula outputs expose the same sparse ordering as
+`try_cell()` reads.
 Shift guard/no-op/overflow coverage now pins aggregate materialized memory for
 clean no-op/validation paths and dirty overflow rejection paths.
 Shift formula memory-budget failure coverage now pins aggregate materialized

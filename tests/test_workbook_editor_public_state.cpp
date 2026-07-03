@@ -48646,6 +48646,26 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula reopened output should read shifted source rows");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_rows rich formula reopened output should keep old coordinate absent");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+                    reopened_sheet.row_cells(3);
+                check(reopened_row_three.size() == 2 &&
+                        reopened_row_three[0].reference.row == 3 &&
+                        reopened_row_three[0].reference.column == 1 &&
+                        reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_three[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_three[1].reference.row == 3 &&
+                        reopened_row_three[1].reference.column == 3 &&
+                        reopened_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[1].value.text_value() == expected,
+                    "insert_rows rich formula reopened row_cells should expose shifted row order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_formula_column =
+                    reopened_sheet.column_cells(3);
+                check(reopened_formula_column.size() == 1 &&
+                        reopened_formula_column[0].reference.row == 3 &&
+                        reopened_formula_column[0].reference.column == 3 &&
+                        reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_formula_column[0].value.text_value() == expected,
+                    "insert_rows rich formula reopened column_cells should expose shifted formula");
             };
         check_reopened_shift_output(output, "insert_rows rich formula",
             inspect_reopened_row_formula);
@@ -48749,6 +48769,30 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula post-noop save reopened output should keep shifted source rows");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_rows rich formula post-noop save reopened output should keep old coordinate absent");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+                    reopened_sheet.row_cells(3);
+                check(reopened_row_three.size() == 3 &&
+                        reopened_row_three[0].reference.row == 3 &&
+                        reopened_row_three[0].reference.column == 1 &&
+                        reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_three[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_three[1].reference.row == 3 &&
+                        reopened_row_three[1].reference.column == 3 &&
+                        reopened_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[1].value.text_value() == expected &&
+                        reopened_row_three[2].reference.row == 3 &&
+                        reopened_row_three[2].reference.column == 4 &&
+                        reopened_row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[2].value.text_value() == "C3+A3",
+                    "insert_rows rich formula post-noop reopened row_cells should expose formula order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_post_noop_column =
+                    reopened_sheet.column_cells(4);
+                check(reopened_post_noop_column.size() == 1 &&
+                        reopened_post_noop_column[0].reference.row == 3 &&
+                        reopened_post_noop_column[0].reference.column == 4 &&
+                        reopened_post_noop_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_post_noop_column[0].value.text_value() == "C3+A3",
+                    "insert_rows rich formula post-noop reopened column_cells should expose new formula");
             };
         check_reopened_shift_output(post_noop_output, "insert_rows rich formula post-noop save",
             inspect_reopened_row_post_noop_formula);
@@ -48848,6 +48892,26 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula reopened output should read shifted source columns");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_columns rich formula reopened output should keep old coordinate absent");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                    reopened_sheet.row_cells(2);
+                check(reopened_row_two.size() == 2 &&
+                        reopened_row_two[0].reference.row == 2 &&
+                        reopened_row_two[0].reference.column == 1 &&
+                        reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_two[1].reference.row == 2 &&
+                        reopened_row_two[1].reference.column == 5 &&
+                        reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[1].value.text_value() == expected,
+                    "insert_columns rich formula reopened row_cells should expose shifted row order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_formula_column =
+                    reopened_sheet.column_cells(5);
+                check(reopened_formula_column.size() == 1 &&
+                        reopened_formula_column[0].reference.row == 2 &&
+                        reopened_formula_column[0].reference.column == 5 &&
+                        reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_formula_column[0].value.text_value() == expected,
+                    "insert_columns rich formula reopened column_cells should expose shifted formula");
             };
         check_reopened_shift_output(output, "insert_columns rich formula",
             inspect_reopened_column_formula);
@@ -48951,6 +49015,30 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula post-noop save reopened output should keep shifted source columns");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_columns rich formula post-noop save reopened output should keep old coordinate absent");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                    reopened_sheet.row_cells(2);
+                check(reopened_row_two.size() == 3 &&
+                        reopened_row_two[0].reference.row == 2 &&
+                        reopened_row_two[0].reference.column == 1 &&
+                        reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_two[1].reference.row == 2 &&
+                        reopened_row_two[1].reference.column == 5 &&
+                        reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[1].value.text_value() == expected &&
+                        reopened_row_two[2].reference.row == 2 &&
+                        reopened_row_two[2].reference.column == 6 &&
+                        reopened_row_two[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[2].value.text_value() == "E2+D1",
+                    "insert_columns rich formula post-noop reopened row_cells should expose formula order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_post_noop_column =
+                    reopened_sheet.column_cells(6);
+                check(reopened_post_noop_column.size() == 1 &&
+                        reopened_post_noop_column[0].reference.row == 2 &&
+                        reopened_post_noop_column[0].reference.column == 6 &&
+                        reopened_post_noop_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_post_noop_column[0].value.text_value() == "E2+D1",
+                    "insert_columns rich formula post-noop reopened column_cells should expose new formula");
             };
         check_reopened_shift_output(post_noop_output, "insert_columns rich formula post-noop save",
             inspect_reopened_column_post_noop_formula);

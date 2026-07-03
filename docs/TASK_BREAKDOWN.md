@@ -63619,6 +63619,45 @@ Verification:
 - `py tools\\run_workbook_editor_qa.py --scenario generated_in_memory_full_calc_multi_sheet_retry_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_noop_save --scenario generated_in_memory_full_calc_multi_sheet_retry_path_equivalent_reopen_modify_post_noop_reopen_modify_noop_reopen_modify_noop_reopen_modify_noop_save --work-dir build\\qa\\workbook-editor-in-memory-full-calc-multi-sheet-post-noop-reopen-noop-reopen-noop-reopen-noop --qa-exe build\\windows-nmake-release\\tools\\fastxlsx_workbook_editor_qa_tool.exe`
   passes.
 
+### P8.1570 - Pin rich formula shift snapshot readback
+
+Type: public `WorksheetEditor` rich formula shift row/column snapshot
+readback regression.
+
+Status: completed.
+
+Goal:
+Verify that reopened outputs from rich formula row/column shifts expose stable
+`row_cells()` and `column_cells()` snapshots, not just correct `try_cell()`,
+XML, and used-range readback.
+
+Coverage:
+- Extends
+  `test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()`.
+- The insert-row rich formula path now checks reopened row-three snapshots and
+  formula/new-formula column snapshots after the first save, clean no-op save,
+  post-noop formula save, and post-noop no-op save.
+- The insert-column rich formula path now checks reopened row-two snapshots and
+  formula/new-formula column snapshots across the same save/no-op lifecycle.
+- Verifies snapshot coordinate ordering, source-backed text/number cells, and
+  translated/new formula text.
+
+Non-goals:
+- No production `WorkbookEditor` / `WorksheetEditor` behavior changes.
+- No formula translator changes, formula evaluation, cached value preservation,
+  metadata/range repair, calcChain rebuild/generation, sharedStrings/styles
+  migration, relationship repair, broader Patch/materialized composition,
+  default CTest/CI expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check` passes.
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+  passes.
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+  passes.
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+  passes.
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

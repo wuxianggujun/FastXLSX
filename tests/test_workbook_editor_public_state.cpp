@@ -13165,6 +13165,8 @@ void test_public_worksheet_editor_set_cell_value_style_rejection_noop_save()
             const auto output_entries = fastxlsx::test::read_zip_entries(output);
             check(output_entries == source_entries,
                 prefix + " save should copy source entries");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                prefix + " save should leave the source package unchanged");
             check_reopened_default_data_sheet_output(output, prefix + " save");
 
             const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -13186,6 +13188,8 @@ void test_public_worksheet_editor_set_cell_value_style_rejection_noop_save()
                 prefix + " noop save should still copy source entries");
             check(noop_entries == output_entries,
                 prefix + " noop output should match the first output");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                prefix + " noop save should leave the source package unchanged");
             check_reopened_default_data_sheet_output(noop_output, prefix + " noop save");
         };
 
@@ -54439,6 +54443,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "zero-count row/column shift save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "zero-count row/column shift save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "zero-count row/column shift save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -54465,6 +54471,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "zero-count row/column shift noop save should still copy source entries");
         check(noop_entries == output_entries,
             "zero-count row/column shift noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "zero-count row/column shift noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "zero-count row/column shift noop save");
     }
@@ -54516,6 +54524,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "save_as after nonzero row/column shift no-ops should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "save_as after nonzero row/column shift no-ops should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "shift nonzero no-op");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
@@ -54549,6 +54559,8 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "nonzero row/column shift no-op save should still copy source entries");
         check(noop_entries == output_entries,
             "nonzero row/column shift no-op save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "nonzero row/column shift no-op save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(noop_output, "shift nonzero no-op save");
     }
 

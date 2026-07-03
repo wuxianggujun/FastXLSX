@@ -5926,6 +5926,8 @@ void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-a1-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -5950,6 +5952,8 @@ void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 overload save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
         "A1 overload save_as should refresh dimension through the existing handoff");
@@ -6008,6 +6012,8 @@ void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "A1 overload no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 overload no-op save should leave the source package unchanged");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -6034,6 +6040,8 @@ void test_public_worksheet_editor_a1_overloads_read_mutate_and_save()
         "A1 overload second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "A1 overload second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "A1 overload second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "A1 overload second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

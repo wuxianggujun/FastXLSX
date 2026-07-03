@@ -272,6 +272,13 @@ now has matching column-side snapshot coverage too: both the shifted output
 and its clean no-op output expose row-two source/formula ordering after
 deleting column A, and column-three as the styled translated `#REF!+A1`
 formula.
+The reverse-order full-calculation `insert_rows()` and `insert_columns()`
+success paths now also mirror the repeated no-op readback coverage: each queues
+`request_full_calculation()` before materialization, flushes the shifted sparse
+cells once, fresh-reopens the materialized output, then writes first and second
+clean no-op outputs with stable public state, byte-identical package entries,
+`fullCalcOnLoad`, no invented `calcChain.xml`, and row/column snapshot readback
+of the translated styled formulas.
 The after-shift `delete_columns()` full-calculation failed-save retry path now
 uses the same reopened snapshot checks after exact source overwrite rejection:
 the clean no-op retry output exposes row-two sparse order and column-three as

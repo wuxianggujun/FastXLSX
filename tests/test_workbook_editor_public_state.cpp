@@ -22122,6 +22122,10 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
             styled_formula_style);
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-rows-styled-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -22216,6 +22220,143 @@ void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_for
         "full-calc before insert_rows styled formula save_as should omit old trailing coordinate");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "full-calc before insert_rows styled formula should preserve untouched worksheets");
+
+    const auto inspect_full_calc_before_insert_rows_styled_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc before insert_rows styled formula reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 4,
+                "full-calc before insert_rows styled formula reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d4 =
+                reopened_sheet.try_cell("D4");
+            check(reopened_d4.has_value() &&
+                    reopened_d4->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d4->text_value() == "A3+B3" &&
+                    reopened_d4->has_style() &&
+                    reopened_d4->style_id().value() == styled_formula_style.value(),
+                "full-calc before insert_rows styled formula reopened output should read shifted styled formula");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("B1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("A4").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("B4").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("C4").text_value() == "row2-gap-c2" &&
+                    reopened_sheet.get_cell("A5").text_value() == "extra-c3",
+                "full-calc before insert_rows styled formula reopened output should read shifted source rows");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_four =
+                reopened_sheet.row_cells(4);
+            check(reopened_row_four.size() == 4 &&
+                    reopened_row_four[0].reference.row == 4 &&
+                    reopened_row_four[0].reference.column == 1 &&
+                    reopened_row_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_four[0].value.text_value() == "placeholder-a2" &&
+                    reopened_row_four[1].reference.row == 4 &&
+                    reopened_row_four[1].reference.column == 2 &&
+                    reopened_row_four[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_four[1].value.text_value() == "row2-gap-b2" &&
+                    reopened_row_four[2].reference.row == 4 &&
+                    reopened_row_four[2].reference.column == 3 &&
+                    reopened_row_four[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_four[2].value.text_value() == "row2-gap-c2" &&
+                    reopened_row_four[3].reference.row == 4 &&
+                    reopened_row_four[3].reference.column == 4 &&
+                    reopened_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_row_four[3].value.text_value() == "A3+B3" &&
+                    reopened_row_four[3].value.has_style() &&
+                    reopened_row_four[3].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_rows styled formula reopened row_cells should expose shifted row two");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+                reopened_sheet.column_cells(4);
+            check(reopened_column_four.size() == 1 &&
+                    reopened_column_four[0].reference.row == 4 &&
+                    reopened_column_four[0].reference.column == 4 &&
+                    reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_four[0].value.text_value() == "A3+B3" &&
+                    reopened_column_four[0].value.has_style() &&
+                    reopened_column_four[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_rows styled formula reopened column_cells should expose shifted styled formula");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value() &&
+                    !reopened_sheet.try_cell("C5").has_value(),
+                "full-calc before insert_rows styled formula reopened output should keep old and non-dirty coordinates absent");
+        };
+    check_reopened_shift_output(output,
+        "full-calc before insert_rows styled formula",
+        inspect_full_calc_before_insert_rows_styled_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_rows styled formula no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_rows styled formula no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_rows styled formula no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_rows styled formula no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_rows styled formula no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "full-calc before insert_rows styled formula no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
+        "full-calc before insert_rows styled formula no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "full-calc before insert_rows styled formula no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output,
+        "full-calc before insert_rows styled formula no-op save",
+        inspect_full_calc_before_insert_rows_styled_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_rows styled formula second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_rows styled formula second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_rows styled formula second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_rows styled formula second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_rows styled formula second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_second_noop,
+        "full-calc before insert_rows styled formula second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_second_noop,
+        "full-calc before insert_rows styled formula second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc before insert_rows styled formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc before insert_rows styled formula second no-op save should leave materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc before insert_rows styled formula second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "full-calc before insert_rows styled formula second no-op save",
+        inspect_full_calc_before_insert_rows_styled_output);
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_rows_styled_formula_failed_save_preserves_state()
@@ -23939,6 +24080,10 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
             styled_formula_style);
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-full-calc-before-insert-columns-styled-second-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -24034,6 +24179,143 @@ void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_
         "full-calc before insert_columns styled formula save_as should omit inserted C2");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "full-calc before insert_columns styled formula should preserve untouched worksheets");
+
+    const auto inspect_full_calc_before_insert_columns_styled_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "full-calc before insert_columns styled formula reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "full-calc before insert_columns styled formula reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_f2->text_value() == "C1+D1" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "full-calc before insert_columns styled formula reopened output should read shifted styled formula");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                    reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("A3").text_value() == "extra-c3" &&
+                    reopened_sheet.get_cell("D1").number_value() == 1.0 &&
+                    reopened_sheet.get_cell("D2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("E2").text_value() == "row2-gap-c2",
+                "full-calc before insert_columns styled formula reopened output should read shifted source cells");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                reopened_sheet.row_cells(2);
+            check(reopened_row_two.size() == 4 &&
+                    reopened_row_two[0].reference.row == 2 &&
+                    reopened_row_two[0].reference.column == 1 &&
+                    reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+                    reopened_row_two[1].reference.row == 2 &&
+                    reopened_row_two[1].reference.column == 4 &&
+                    reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[1].value.text_value() == "row2-gap-b2" &&
+                    reopened_row_two[2].reference.row == 2 &&
+                    reopened_row_two[2].reference.column == 5 &&
+                    reopened_row_two[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_row_two[2].value.text_value() == "row2-gap-c2" &&
+                    reopened_row_two[3].reference.row == 2 &&
+                    reopened_row_two[3].reference.column == 6 &&
+                    reopened_row_two[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_row_two[3].value.text_value() == "C1+D1" &&
+                    reopened_row_two[3].value.has_style() &&
+                    reopened_row_two[3].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_columns styled formula reopened row_cells should expose shifted sparse order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_six =
+                reopened_sheet.column_cells(6);
+            check(reopened_column_six.size() == 1 &&
+                    reopened_column_six[0].reference.row == 2 &&
+                    reopened_column_six[0].reference.column == 6 &&
+                    reopened_column_six[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_column_six[0].value.text_value() == "C1+D1" &&
+                    reopened_column_six[0].value.has_style() &&
+                    reopened_column_six[0].value.style_id().value() ==
+                        styled_formula_style.value(),
+                "full-calc before insert_columns styled formula reopened column_cells should expose shifted styled formula");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "full-calc before insert_columns styled formula reopened output should keep inserted coordinates absent");
+        };
+    check_reopened_shift_output(output,
+        "full-calc before insert_columns styled formula",
+        inspect_full_calc_before_insert_columns_styled_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_columns styled formula no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_columns styled formula no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_columns styled formula no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_columns styled formula no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_columns styled formula no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "full-calc before insert_columns styled formula no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_noop,
+        "full-calc before insert_columns styled formula no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "full-calc before insert_columns styled formula no-op output should match the materialized output");
+    check_reopened_shift_output(noop_output,
+        "full-calc before insert_columns styled formula no-op save",
+        inspect_full_calc_before_insert_columns_styled_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-calc before insert_columns styled formula second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "full-calc before insert_columns styled formula second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "full-calc before insert_columns styled formula second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "full-calc before insert_columns styled formula second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "full-calc before insert_columns styled formula second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_second_noop,
+        "full-calc before insert_columns styled formula second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_second_noop,
+        "full-calc before insert_columns styled formula second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "full-calc before insert_columns styled formula second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "full-calc before insert_columns styled formula second no-op save should leave materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "full-calc before insert_columns styled formula second no-op save should leave the first no-op output unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "full-calc before insert_columns styled formula second no-op save",
+        inspect_full_calc_before_insert_columns_styled_output);
 }
 
 void test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_failed_save_preserves_state()

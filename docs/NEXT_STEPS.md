@@ -473,6 +473,10 @@ fresh reopen.
 Those delete-side `#REF!` formula post-noop saves now also assert replacement
 diagnostics stay empty at the formula-edit save point and at the following
 clean no-op save.
+Those delete-side `#REF!` formula paths now also snapshot the source package
+before row/column deletion and require it to remain unchanged after the initial
+translated `#REF!` save, the clean no-op save, the later formula-edit save, and
+the final clean no-op save while prior outputs stay byte-stable.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

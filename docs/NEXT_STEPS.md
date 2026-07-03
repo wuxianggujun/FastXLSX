@@ -504,6 +504,9 @@ The invalid-read, invalid-mutation, and invalid-shift saved-session no-op paths
 now also repeat a clean no-op save, fresh-reopen that repeat output, and verify
 the later `C3` save leaves both no-op packages unchanged while preserving each
 path's expected diagnostic behavior.
+The saved-session failed-save retry no-op path now follows the same repeat
+no-op contract after the safe retry, preserving source, shifted, retry, and
+first no-op packages before the later `C3` post-noop save.
 Retry clean-reacquire and invalid-operation no-op shift paths now also assert
 replacement diagnostics stay empty while preserving expected invalid-operation
 `last_edit_error()` state.

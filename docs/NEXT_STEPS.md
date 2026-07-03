@@ -231,6 +231,11 @@ The dirty invalid-to-valid column-shift recovery path now mirrors that evidence:
 invalid shifts preserve the dirty tail, the valid recovery save/no-op output
 remains reusable, and a later `F2` edit saves a fresh-reopenable post-noop
 output with the shifted dirty tail intact.
+Those already-dirty invalid-to-valid recovery branches now also repeat the
+clean no-op save before the later `C3` / `F2` edits: the second no-op outputs
+are byte-identical to the first, keep dirty and replacement diagnostics clear,
+fresh-reopen with shifted source and dirty-tail cells, and remain unchanged
+after the post-noop saves.
 The row-shift cross-handle path now also carries post-noop evidence: after both
 `Data` and `Untouched` are saved and a clean no-op output is proven byte-stable,
 later edits on both materialized handles save a fresh-reopenable output while

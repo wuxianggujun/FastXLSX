@@ -50739,11 +50739,14 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-second-noop-output.xlsx");
         const std::filesystem::path post_noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-row-recovery-post-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         sheet.set_cell(4, 2, fastxlsx::CellValue::text("dirty-row-tail"));
         const std::size_t dirty_count = sheet.cell_count();
@@ -50848,6 +50851,43 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
         check_reopened_shift_output(noop_output, "dirty invalid-to-valid row shift noop save",
             inspect_reopened_dirty_row_shift_recovery);
 
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "dirty invalid-to-valid row shift second noop save should keep the materialized session clean");
+        check(editor.pending_change_count() == 1,
+            "dirty invalid-to-valid row shift second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "dirty invalid-to-valid row shift second noop save should keep dirty materialized diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "dirty invalid-to-valid row shift second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "dirty invalid-to-valid row shift second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "dirty invalid-to-valid row shift second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "dirty invalid-to-valid row shift second noop save");
+        const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "dirty invalid-to-valid row shift second noop output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "dirty invalid-to-valid row shift second noop save should leave the source unchanged");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "dirty invalid-to-valid row shift second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "dirty invalid-to-valid row shift second noop save should leave the first no-op output unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "dirty invalid-to-valid row shift second noop save",
+            inspect_reopened_dirty_row_shift_recovery);
+
         sheet.set_cell("C3", fastxlsx::CellValue::text("post-noop-dirty-invalid-row-recovery"));
         check(sheet.has_pending_changes(),
             "dirty invalid-to-valid row shift post-noop edit should dirty the saved session");
@@ -50881,10 +50921,14 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid row shift post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "dirty invalid-to-valid row shift post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "dirty invalid-to-valid row shift post-noop save should leave the source unchanged");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
             "dirty invalid-to-valid row shift post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "dirty invalid-to-valid row shift post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "dirty invalid-to-valid row shift post-noop save should leave the repeat no-op output unchanged");
 
         const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
         const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
@@ -50919,11 +50963,14 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-second-noop-output.xlsx");
         const std::filesystem::path post_noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-dirty-invalid-column-recovery-post-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         sheet.set_cell(2, 4, fastxlsx::CellValue::text("dirty-column-tail"));
         const std::size_t dirty_count = sheet.cell_count();
@@ -51031,6 +51078,43 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid column shift noop save",
             inspect_reopened_dirty_column_shift_recovery);
 
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "dirty invalid-to-valid column shift second noop save should keep the materialized session clean");
+        check(editor.pending_change_count() == 1,
+            "dirty invalid-to-valid column shift second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "dirty invalid-to-valid column shift second noop save should keep dirty materialized diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "dirty invalid-to-valid column shift second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "dirty invalid-to-valid column shift second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "dirty invalid-to-valid column shift second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "dirty invalid-to-valid column shift second noop save");
+        const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "dirty invalid-to-valid column shift second noop output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "dirty invalid-to-valid column shift second noop save should leave the source unchanged");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "dirty invalid-to-valid column shift second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "dirty invalid-to-valid column shift second noop save should leave the first no-op output unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "dirty invalid-to-valid column shift second noop save",
+            inspect_reopened_dirty_column_shift_recovery);
+
         sheet.set_cell("F2", fastxlsx::CellValue::text("post-noop-dirty-invalid-column-recovery"));
         check(sheet.has_pending_changes(),
             "dirty invalid-to-valid column shift post-noop edit should dirty the saved session");
@@ -51064,10 +51148,14 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
             "dirty invalid-to-valid column shift post-noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "dirty invalid-to-valid column shift post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "dirty invalid-to-valid column shift post-noop save should leave the source unchanged");
         check(fastxlsx::test::read_zip_entries(output) == output_entries,
             "dirty invalid-to-valid column shift post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "dirty invalid-to-valid column shift post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "dirty invalid-to-valid column shift post-noop save should leave the repeat no-op output unchanged");
 
         const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
         const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");

@@ -54229,6 +54229,34 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
         check(output_entries == source_entries,
             "save_as after shift validation failures should copy source entries");
         check_reopened_default_data_sheet_output(output, "shift validation failure");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "save_as after shift validation failures should leave the source package unchanged");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_recovery_noops =
+            workbook_editor_public_catalog_snapshot(editor);
+        sheet.insert_rows(2, 0);
+        sheet.delete_rows(2, 0);
+        sheet.insert_columns(2, 0);
+        sheet.delete_columns(2, 0);
+        check(!editor.last_edit_error().has_value(),
+            "valid zero-count shifts after validation failures should clear diagnostics");
+        check(!sheet.has_pending_changes(),
+            "valid zero-count shifts after validation failures should keep the materialized handle clean");
+        check_workbook_editor_public_no_pending_state(
+            editor, "valid zero-count shifts after validation failures");
+        check(sheet.cell_count() == 3,
+            "valid zero-count shifts after validation failures should preserve sparse cell count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "valid zero-count shifts after validation failures should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "valid zero-count shifts after validation failures should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "valid zero-count shifts after validation failures should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "valid zero-count shifts after validation failures");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_recovery_noops,
+            "valid zero-count shifts after validation failures");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
             workbook_editor_public_catalog_snapshot(editor);
@@ -54237,32 +54265,36 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
         editor.save_as(noop_output);
         check(!sheet.has_pending_changes(),
-            "shift validation failure noop save should keep materialized handle clean");
+            "shift validation recovery noop save should keep materialized handle clean");
         check(editor.pending_change_count() == 0,
-            "shift validation failure noop save should keep edit count empty");
+            "shift validation recovery noop save should keep edit count empty");
         check(editor.pending_materialized_worksheet_names().empty(),
-            "shift validation failure noop save should keep dirty materialized names empty");
+            "shift validation recovery noop save should keep dirty materialized names empty");
         check(editor.pending_materialized_cell_count() == 0,
-            "shift validation failure noop save should keep aggregate dirty cell count empty");
+            "shift validation recovery noop save should keep aggregate dirty cell count empty");
         check(editor.estimated_pending_materialized_memory_usage() == 0,
-            "shift validation failure noop save should keep dirty memory estimate empty");
+            "shift validation recovery noop save should keep dirty memory estimate empty");
         check(editor.pending_worksheet_edits().empty(),
-            "shift validation failure noop save should keep materialized summaries empty");
+            "shift validation recovery noop save should keep materialized summaries empty");
         check_workbook_editor_no_replacement_diagnostics(
-            editor, "shift validation failure noop save");
+            editor, "shift validation recovery noop save");
+        check(!editor.last_edit_error().has_value(),
+            "shift validation recovery noop save should keep diagnostics clear");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
-            "shift validation failure noop save");
+            "shift validation recovery noop save");
         check_workbook_editor_public_catalog_preserved(
             editor, catalog_before_noop,
-            "shift validation failure noop save");
+            "shift validation recovery noop save");
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == source_entries,
-            "shift validation failure noop save should still copy source entries");
+            "shift validation recovery noop save should still copy source entries");
         check(noop_entries == output_entries,
-            "shift validation failure noop save should keep output entries stable");
+            "shift validation recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "shift validation recovery noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(noop_output,
-            "shift validation failure noop save");
+            "shift validation recovery noop save");
     }
 
     {

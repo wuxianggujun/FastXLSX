@@ -9458,6 +9458,7 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-second.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-second-noop.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -9485,6 +9486,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "range erase save_as should expose one materialized worksheet handoff");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase first save should leave the source package unchanged");
     const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
     check_contains(first_worksheet_xml, R"(<dimension ref="A1"/>)",
         "range erase of all represented cells should shrink the projected dimension to A1");
@@ -9536,6 +9539,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
     const auto first_noop_entries = fastxlsx::test::read_zip_entries(first_noop_output);
     check(first_noop_entries == first_entries,
         "range erase first no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase first no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(first_noop_output, "Data", "range erase first no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 0,
@@ -9575,6 +9580,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "range erase first second no-op save");
     check(fastxlsx::test::read_zip_entries(first_second_noop_output) == first_noop_entries,
         "range erase first second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase first second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(first_second_noop_output, "Data",
         "range erase first second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -9614,6 +9621,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
 
     editor.save_as(second_output);
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase reacquired save should leave the source package unchanged");
     const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
     check_contains(second_worksheet_xml, "range-erase-reacquired",
         "post-reacquire mutation should persist on the second save_as");
@@ -9649,6 +9658,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "range erase reacquired no-op save");
     check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
         "range erase reacquired no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase reacquired no-op save should leave the source package unchanged");
 
     check_reopened_clean_sheet_output(second_output, "Data", "range erase reacquired save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

@@ -2214,6 +2214,12 @@ styled formula shift output and first no-op save, each path writes a second
 no-op output, requires byte-identical entries, fresh-reopens through the styled
 shift inspectors, and later post-noop edits prove both no-op packages remain
 unchanged.
+Full-calculation plus insert-shift success paths now carry the same repeated
+no-op-save readback for styled `insert_rows()` and `insert_columns()`: after
+the shifted materialized output writes `fullCalcOnLoad` without inventing
+`calcChain.xml`, each path performs two clean no-op saves, compares package
+entries, and fresh-reopens the second no-op output through the full-calc shift
+inspectors.
 `WorksheetEditor::row_cells()` and `column_cells()` now cover the matching
 small-file sparse row/column inspection convenience: they return owning
 row-major `WorksheetCellSnapshot` vectors for active sparse records already

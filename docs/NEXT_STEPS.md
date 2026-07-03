@@ -337,6 +337,12 @@ not dirty either planned-name handle, and after the later matching reacquire
 plus column shift, repeated no-op saves preserve source and prior package bytes
 while fresh readback still exposes the combined row/column-shifted
 `RenamedData` state cleanly.
+The non-formula shift-after-rename invalid-mutation path now has matching
+evidence: rejected `set_cell()` / `erase_cell()` calls may populate diagnostics
+but do not dirty either planned-name handle or leak rejected payloads, and the
+later valid column shift plus repeated no-op saves preserve source and prior
+package bytes while fresh readback still exposes the combined row/column-shifted
+`RenamedData` state cleanly.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

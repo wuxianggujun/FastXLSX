@@ -20184,6 +20184,8 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -20210,6 +20212,8 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_row save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A2"/>)",
         "erase_row should shrink the projected dimension to remaining sparse cells");
@@ -20265,6 +20269,8 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "erase_row no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_row no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "erase_row no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 1,
@@ -20308,6 +20314,8 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
         "erase_row second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "erase_row second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_row second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "erase_row second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -21041,6 +21049,8 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-second-noop-output.xlsx");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
@@ -21067,6 +21077,8 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_column save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="B1"/>)",
         "erase_column should shrink the projected dimension to remaining sparse cells");
@@ -21122,6 +21134,8 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "erase_column no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_column no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "erase_column no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 1,
@@ -21165,6 +21179,8 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
         "erase_column second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "erase_column second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase_column second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "erase_column second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

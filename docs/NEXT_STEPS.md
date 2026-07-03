@@ -272,6 +272,10 @@ now has matching column-side snapshot coverage too: both the shifted output
 and its clean no-op output expose row-two source/formula ordering after
 deleting column A, and column-three as the styled translated `#REF!+A1`
 formula.
+The after-shift `delete_columns()` full-calculation failed-save retry path now
+uses the same reopened snapshot checks after exact source overwrite rejection:
+the clean no-op retry output exposes row-two sparse order and column-three as
+the styled translated `#REF!+A1` formula.
 The `insert_rows()` rich formula-shape path now also has post-noop formula-sheet
 reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.

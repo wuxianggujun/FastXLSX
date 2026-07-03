@@ -12006,6 +12006,7 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
         artifact("fastxlsx-workbook-editor-public-worksheet-set-column-noop-output.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-set-column-second-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -12047,6 +12048,8 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column save should leave the source package unchanged");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:B4"/>)",
         "set_column should refresh the dirty worksheet dimension");
@@ -12124,6 +12127,8 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "set_column no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "set_column no-op save",
         inspect_set_column_output);
 
@@ -12152,6 +12157,8 @@ void test_public_worksheet_editor_set_column_replaces_sparse_column()
         "set_column second no-op save");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "set_column second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column second no-op save should leave the source package unchanged");
     check_reopened_clean_sheet_output(
         second_noop_output, "Data", "set_column second no-op save",
         inspect_set_column_output);
@@ -12217,6 +12224,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "empty set_column no-op save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty set_column no-op save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(output, "empty set_column no-op save");
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -12246,6 +12255,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "empty set_column second no-op save");
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "empty set_column second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty set_column second no-op save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "empty set_column second no-op save");
     }
@@ -12255,6 +12266,7 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-clear-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-clear-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -12276,6 +12288,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column clear save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, R"(<dimension ref="B1"/>)",
             "column clear should shrink the projected dimension to remaining sparse cells");
@@ -12335,6 +12349,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "set_column clear noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column clear noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "set_column clear noop save",
             inspect_set_column_clear_output);
@@ -12400,6 +12416,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
         check(output_entries == source_entries,
             "set_column invalid-column failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column invalid-column failure save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             output, "set_column invalid-column failure save");
 
@@ -12429,6 +12447,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "set_column invalid-column failure noop save should still copy source entries");
         check(noop_entries == output_entries,
             "set_column invalid-column failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column invalid-column failure noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             noop_output, "set_column invalid-column failure noop save");
     }
@@ -12494,6 +12514,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             fastxlsx::test::read_zip_entries(style_reject_output);
         check(style_reject_output_entries == style_reject_source_entries,
             "set_column style rejection save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == style_reject_source_entries,
+            "set_column style rejection save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             style_reject_output, "set_column style rejection save");
 
@@ -12518,6 +12540,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "set_column style rejection noop save should still copy source entries");
         check(style_reject_noop_entries == style_reject_output_entries,
             "set_column style rejection noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == style_reject_source_entries,
+            "set_column style rejection noop save should leave the source package unchanged");
         check_reopened_default_data_sheet_output(
             style_reject_noop_output, "set_column style rejection noop save");
     }
@@ -12527,6 +12551,7 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-budget-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-set-column-budget-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditorOptions options;
@@ -12571,6 +12596,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column guardrail recovery save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "replace-column-a1",
             "in-budget set_column should persist through save_as");
@@ -12636,6 +12663,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "set_column guardrail recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column guardrail recovery noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "set_column guardrail recovery noop save",
             inspect_set_column_guardrail_recovery_output);
@@ -12648,6 +12677,7 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
             "fastxlsx-workbook-editor-public-worksheet-set-column-memory-budget-recovery-noop-output.xlsx");
         const std::string rejected_value =
             "set-column-memory-rejected-" + std::string(4096, 'c');
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -12710,6 +12740,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column memory-budget recovery save should leave the source package unchanged");
         const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
         check_contains(worksheet_xml, "col-mb-ok",
             "set_column memory-budget recovery should persist through save_as");
@@ -12770,6 +12802,8 @@ void test_public_worksheet_editor_set_column_empty_and_guardrails()
         const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
         check(noop_entries == output_entries,
             "set_column memory-budget recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "set_column memory-budget recovery noop save should leave the source package unchanged");
         check_reopened_clean_sheet_output(noop_output, "Data",
             "set_column memory-budget recovery noop save",
             inspect_set_column_memory_budget_recovery_output);

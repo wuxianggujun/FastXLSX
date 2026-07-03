@@ -594,7 +594,11 @@ path-equivalent source overwrite rejection with
 `generated_in_memory_full_calc_retry_noop_save` and
 `generated_in_memory_full_calc_retry_path_equivalent_noop_save`, proving the
 source workbook stays unchanged before the safe retry and byte-stable no-op
-output. The
+output. The retry-reopen lane now also has full-calculation variants through
+`generated_in_memory_full_calc_retry_reopen_modify_noop_save` and
+`generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save`,
+covering rejected source saves, safe retry, fresh reopen, second-stage formula
+edits, final `fullCalcOnLoad`, and byte-stable no-op output. The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same

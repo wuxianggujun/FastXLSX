@@ -2662,26 +2662,42 @@ Report run_generated_in_memory_full_calc_retry_path_equivalent_noop_save(
 Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
     const CliOptions& options,
     bool verify_post_noop_third_save,
-    bool use_path_equivalent_source)
+    bool use_path_equivalent_source,
+    bool request_full_calculation)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
     std::string source_filename =
-        "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-noop-source.xlsx";
+        request_full_calculation
+            ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-reopen-noop-source.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-noop-source.xlsx";
     std::string output_filename =
-        "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-noop-output.xlsx";
+        request_full_calculation
+            ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-reopen-noop-output.xlsx"
+            : "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-noop-output.xlsx";
     if (verify_post_noop_third_save) {
         source_filename =
-            "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-post-noop-third-source.xlsx";
+            request_full_calculation
+                ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-reopen-post-noop-third-source.xlsx"
+                : "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-post-noop-third-source.xlsx";
         output_filename =
-            "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-post-noop-third-output.xlsx";
+            request_full_calculation
+                ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-retry-reopen-post-noop-third-output.xlsx"
+                : "fastxlsx-workbook-editor-qa-in-memory-retry-reopen-post-noop-third-output.xlsx";
     }
     if (use_path_equivalent_source) {
-        source_filename =
-            verify_post_noop_third_save ? "fx-pe-post-src.xlsx" : "fx-pe-reopen-src.xlsx";
-        output_filename =
-            verify_post_noop_third_save ? "fx-pe-post-out.xlsx" : "fx-pe-reopen-out.xlsx";
+        if (request_full_calculation) {
+            source_filename =
+                verify_post_noop_third_save ? "fx-fc-pe-post-src.xlsx" : "fx-fc-pe-reopen-src.xlsx";
+            output_filename =
+                verify_post_noop_third_save ? "fx-fc-pe-post-out.xlsx" : "fx-fc-pe-reopen-out.xlsx";
+        } else {
+            source_filename =
+                verify_post_noop_third_save ? "fx-pe-post-src.xlsx" : "fx-pe-reopen-src.xlsx";
+            output_filename =
+                verify_post_noop_third_save ? "fx-pe-post-out.xlsx" : "fx-pe-reopen-out.xlsx";
+        }
     }
 
     report.source = write_in_memory_reopen_modify_save_source(
@@ -2719,13 +2735,18 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         "second:save_as(output)",
         "second:save_as(noop-output)",
     };
-    if (use_path_equivalent_source) {
+    if (request_full_calculation) {
         report.mutations.insert(
             report.mutations.begin() + 2,
+            "request_full_calculation()");
+    }
+    if (use_path_equivalent_source) {
+        report.mutations.insert(
+            report.mutations.begin() + (request_full_calculation ? 3 : 2),
             "first:save_as(path-equivalent-source) rejected");
     } else {
         report.mutations.insert(
-            report.mutations.begin() + 2,
+            report.mutations.begin() + (request_full_calculation ? 3 : 2),
             "first:save_as(source) rejected");
     }
     if (verify_post_noop_third_save) {
@@ -2745,6 +2766,11 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         report.notes.push_back(
             "Post-noop third-stage edit should save and no-op save byte-identically");
     }
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should survive rejected save, "
+            "retry, fresh reopen, second save, and no-op output");
+    }
     if (use_path_equivalent_source) {
         report.notes.push_back(
             "The rejected first-stage output path is path-equivalent to the source package");
@@ -2761,6 +2787,9 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save_impl(
             CellValue::formula("B3*2"),
         });
         require_formula_cell(data, "C3", "B3*2");
+        if (request_full_calculation) {
+            editor.request_full_calculation();
+        }
 
         try {
             editor.save_as(rejected_output);
@@ -2811,6 +2840,7 @@ Report run_generated_in_memory_retry_reopen_modify_noop_save(const CliOptions& o
     return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         options,
         false,
+        false,
         false);
 }
 
@@ -2820,6 +2850,27 @@ Report run_generated_in_memory_retry_path_equivalent_reopen_modify_noop_save(
     return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         options,
         false,
+        true,
+        false);
+}
+
+Report run_generated_in_memory_full_calc_retry_reopen_modify_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
+        options,
+        false,
+        false,
+        true);
+}
+
+Report run_generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
+        options,
+        false,
+        true,
         true);
 }
 
@@ -2829,7 +2880,8 @@ Report run_generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_thi
     return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         options,
         true,
-        true);
+        true,
+        false);
 }
 
 Report run_generated_in_memory_retry_reopen_modify_post_noop_third_save(
@@ -2838,6 +2890,7 @@ Report run_generated_in_memory_retry_reopen_modify_post_noop_third_save(
     return run_generated_in_memory_retry_reopen_modify_noop_save_impl(
         options,
         true,
+        false,
         false);
 }
 
@@ -4111,6 +4164,14 @@ Report run_scenario(const CliOptions& options)
     }
     if (options.scenario == "generated_in_memory_full_calc_retry_path_equivalent_noop_save") {
         return run_generated_in_memory_full_calc_retry_path_equivalent_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_retry_reopen_modify_noop_save") {
+        return run_generated_in_memory_full_calc_retry_reopen_modify_noop_save(options);
+    }
+    if (options.scenario ==
+        "generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save") {
+        return run_generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save(
+            options);
     }
     if (options.scenario == "generated_in_memory_retry_reopen_modify_noop_save") {
         return run_generated_in_memory_retry_reopen_modify_noop_save(options);

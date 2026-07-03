@@ -73,6 +73,8 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_retry_path_equivalent_noop_save",
     "generated_in_memory_full_calc_retry_noop_save",
     "generated_in_memory_full_calc_retry_path_equivalent_noop_save",
+    "generated_in_memory_full_calc_retry_reopen_modify_noop_save",
+    "generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save",
     "generated_in_memory_retry_reopen_modify_noop_save",
     "generated_in_memory_retry_path_equivalent_reopen_modify_noop_save",
     "generated_in_memory_retry_path_equivalent_reopen_modify_post_noop_third_save",
@@ -1996,6 +1998,38 @@ def verify_generated_in_memory_retry_path_equivalent_reopen_modify_noop_save(
     require("first:save_as(path-equivalent-source) rejected" in tool_report.get("mutations", []),
             f"{label}: tool did not report the path-equivalent rejected save stage")
     zip_report["path_equivalent_retry"] = "checked"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_retry_reopen_modify_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc retry reopen modify no-op save"
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_retry_reopen_modify_noop_save(
+            path,
+            tool_report,
+        )
+    )
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc path-equivalent retry reopen modify no-op save"
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_retry_path_equivalent_reopen_modify_noop_save(
+            path,
+            tool_report,
+        )
+    )
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
     return zip_report, openpyxl_report
 
 
@@ -4377,6 +4411,20 @@ def run_generated_case(
     elif scenario == "generated_in_memory_full_calc_retry_path_equivalent_noop_save":
         zip_xml, openpyxl_report = (
             verify_generated_in_memory_full_calc_retry_path_equivalent_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_retry_reopen_modify_noop_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_retry_reopen_modify_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_retry_path_equivalent_reopen_modify_noop_save(
                 output_path,
                 tool_report,
             )

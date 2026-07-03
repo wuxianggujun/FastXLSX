@@ -271,6 +271,10 @@ The full-calculation `insert_columns()` materialized shift path now has the
 same snapshot readback for styled source formulas: both the shifted output and
 its clean no-op output expose row-two sparse ordering after the inserted gap
 and column-six as the styled translated `C1+D1` formula.
+That same after-shift `insert_columns()` full-calculation path now also reopens
+the `Untouched` sheet from the shifted output and both no-op outputs, and the
+second no-op save proves the shifted output plus first no-op package remain
+unchanged.
 The reverse-order full-calculation `delete_columns()` materialized shift path
 now has matching column-side snapshot coverage too: both the shifted output
 and its clean no-op output expose row-two source/formula ordering after

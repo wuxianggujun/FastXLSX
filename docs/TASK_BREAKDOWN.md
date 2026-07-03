@@ -65222,6 +65222,48 @@ Verification:
 - `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state`
 - `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state$" --output-on-failure`
 
+### P8.1610 - Pin saved row-shift reacquire repeat no-op saves
+
+Type: public `WorksheetEditor` saved row-shift reacquire no-op/readback and
+post-noop preservation regression.
+
+Status: completed.
+
+Goal:
+Verify that a matching-options saved-session reacquire preserves source and
+prior outputs across a second clean no-op save after the first row-shift save,
+and that the later post-noop materialized edit does not rewrite either no-op
+output.
+
+Coverage:
+- Extends `test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_session()`.
+- Adds a second no-op output after the original borrowed handle performs a row
+  shift, first save, matching reacquire, and first no-op save.
+- Requires stable public catalog/save state, empty dirty materialized
+  diagnostics, no replacement diagnostics, and unchanged pending handoff count.
+- Requires the second no-op package to match the first no-op package while the
+  source package, first row-shift output, and first no-op output remain
+  unchanged.
+- Fresh-reopens the second no-op output to verify the row-shifted `Data` cells,
+  bounds, and absent old coordinates.
+- Extends the later post-noop `C3` save to verify the repeat no-op output also
+  remains unchanged.
+- Leaves production code unchanged.
+
+Non-goals:
+- No handle sharing/lifetime behavior changes, matching-option reacquire
+  behavior changes, save behavior changes, overwrite mode, rollback,
+  transaction replay, row shift semantic changes, formula evaluation,
+  calcChain rebuild, sharedStrings/styles migration, metadata/range repair,
+  relationship repair, broader Patch/materialized composition, default CTest/CI
+  expansion, or low-memory random editing.
+
+Verification:
+- `git diff --check`
+- `cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_tests`
+- `build\\windows-nmake-release\\tests\\fastxlsx_workbook_editor_public_state_tests.exe --shard=public-state-reacquire`
+- `ctest --preset windows-nmake-release -R "fastxlsx\\.workbook_editor\\.public-state-reacquire$" --output-on-failure`
+
 ### P8.1202 - Pin full-calc insert-row setup aggregate memory
 
 Type: public `WorksheetEditor` full-calculation insert-row setup aggregate

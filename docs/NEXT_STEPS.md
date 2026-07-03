@@ -120,6 +120,10 @@ no-op-save evidence: after the original handle saves a row shift and a matching
 reacquire saves a later column shift, both no-op outputs are byte-identical,
 source and prior outputs stay unchanged, public state remains stable, and a
 fresh editor reopens the combined shifted `Data` state.
+The saved row-shift reacquire no-op path now repeats that clean no-op save
+before the later post-noop edit: the second no-op output is byte-identical to
+the first, reopens with shifted `A3`, and the subsequent `C3` save leaves both
+no-op packages unchanged.
 The delete-column saved/reacquired no-op path now has the same coverage for a
 formula-translated shifted session: after the clean no-op save, a later `D2`
 edit re-dirties the shared handles, preserves the translated `B1` formula

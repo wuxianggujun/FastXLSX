@@ -16177,6 +16177,8 @@ void test_public_worksheet_editor_clear_row_preserves_sparse_records()
             "clear_row should keep blank records in aggregate diagnostics");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             "clear_row should keep blank records in aggregate memory diagnostics");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "clear_row dirty summary");
         check(!editor.last_edit_error().has_value(),
             "successful clear_row should keep diagnostics clear");
 
@@ -16903,6 +16905,8 @@ void test_public_worksheet_editor_clear_columns_noop_invalid_and_range()
             "clear_column should keep blank records in aggregate diagnostics");
         check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
             "clear_column should keep blank records in aggregate memory diagnostics");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "clear_column dirty summary");
         check(!editor.last_edit_error().has_value(),
             "successful clear_column should keep diagnostics clear");
 
@@ -20313,6 +20317,8 @@ void test_public_worksheet_editor_erase_row_removes_sparse_row()
         "erase_row should update aggregate materialized diagnostics");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "erase_row should update aggregate materialized memory diagnostics");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "erase_row dirty summary");
     check(!editor.last_edit_error().has_value(),
         "successful erase_row should keep diagnostics clear");
 
@@ -21178,6 +21184,8 @@ void test_public_worksheet_editor_erase_column_removes_sparse_column()
         "erase_column should update aggregate materialized diagnostics");
     check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
         "erase_column should update aggregate materialized memory diagnostics");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "erase_column dirty summary");
     check(!editor.last_edit_error().has_value(),
         "successful erase_column should keep diagnostics clear");
 

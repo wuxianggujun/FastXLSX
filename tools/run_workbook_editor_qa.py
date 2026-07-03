@@ -63,8 +63,12 @@ GENERATED_SCENARIOS = [
     "generated_in_memory_clear_erase_noop_save",
     "generated_in_memory_append_row_formula",
     "generated_in_memory_append_row_formula_noop_save",
+    "generated_in_memory_full_calc_append_row_formula",
+    "generated_in_memory_full_calc_append_row_formula_noop_save",
     "generated_in_memory_overwrite_formula_text",
     "generated_in_memory_overwrite_formula_text_noop_save",
+    "generated_in_memory_full_calc_overwrite_formula_text",
+    "generated_in_memory_full_calc_overwrite_formula_text_noop_save",
     "generated_in_memory_retry_noop_save",
     "generated_in_memory_retry_path_equivalent_noop_save",
     "generated_in_memory_retry_reopen_modify_noop_save",
@@ -1712,6 +1716,32 @@ def verify_generated_in_memory_append_row_formula_noop_save(
     return zip_report, openpyxl_report
 
 
+def verify_generated_in_memory_full_calc_append_row_formula(
+    path: Path,
+    tool_report: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc append row formula"
+    zip_report, openpyxl_report = verify_generated_in_memory_append_row_formula(path)
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_append_row_formula_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc append row formula no-op save"
+    zip_report, openpyxl_report = verify_generated_in_memory_full_calc_append_row_formula(
+        path,
+        tool_report,
+    )
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
 def verify_generated_in_memory_overwrite_formula_text(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     zip_report: dict[str, Any] = {}
     names = zip_names(path)
@@ -1779,6 +1809,34 @@ def verify_generated_in_memory_overwrite_formula_text_noop_save(
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     label = "generated in-memory overwrite formula/text no-op save"
     zip_report, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(path)
+    require("save_as(noop-output)" in tool_report.get("mutations", []),
+            f"{label}: tool did not report the no-op save stage")
+    zip_report["noop_save"] = "byte-identical"
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_overwrite_formula_text(
+    path: Path,
+    tool_report: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc overwrite formula/text"
+    zip_report, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(path)
+    require_generated_full_calc_metadata(path, tool_report, label)
+    zip_report["full_calc_on_load"] = True
+    return zip_report, openpyxl_report
+
+
+def verify_generated_in_memory_full_calc_overwrite_formula_text_noop_save(
+    path: Path,
+    tool_report: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    label = "generated in-memory full-calc overwrite formula/text no-op save"
+    zip_report, openpyxl_report = (
+        verify_generated_in_memory_full_calc_overwrite_formula_text(
+            path,
+            tool_report,
+        )
+    )
     require("save_as(noop-output)" in tool_report.get("mutations", []),
             f"{label}: tool did not report the no-op save stage")
     zip_report["noop_save"] = "byte-identical"
@@ -4236,12 +4294,38 @@ def run_generated_case(
             output_path,
             tool_report,
         )
+    elif scenario == "generated_in_memory_full_calc_append_row_formula":
+        zip_xml, openpyxl_report = verify_generated_in_memory_full_calc_append_row_formula(
+            output_path,
+            tool_report,
+        )
+    elif scenario == "generated_in_memory_full_calc_append_row_formula_noop_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_append_row_formula_noop_save(
+                output_path,
+                tool_report,
+            )
+        )
     elif scenario == "generated_in_memory_overwrite_formula_text":
         zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text(output_path)
     elif scenario == "generated_in_memory_overwrite_formula_text_noop_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_overwrite_formula_text_noop_save(
             output_path,
             tool_report,
+        )
+    elif scenario == "generated_in_memory_full_calc_overwrite_formula_text":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_overwrite_formula_text(
+                output_path,
+                tool_report,
+            )
+        )
+    elif scenario == "generated_in_memory_full_calc_overwrite_formula_text_noop_save":
+        zip_xml, openpyxl_report = (
+            verify_generated_in_memory_full_calc_overwrite_formula_text_noop_save(
+                output_path,
+                tool_report,
+            )
         )
     elif scenario == "generated_in_memory_retry_noop_save":
         zip_xml, openpyxl_report = verify_generated_in_memory_retry_noop_save(

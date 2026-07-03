@@ -2355,19 +2355,40 @@ Report run_generated_in_memory_clear_erase_noop_save(const CliOptions& options)
     return run_generated_in_memory_clear_erase_impl(options, true);
 }
 
-Report run_generated_in_memory_append_row_formula_impl(const CliOptions& options, bool verify_noop_save)
+Report run_generated_in_memory_append_row_formula_impl(
+    const CliOptions& options,
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_append_row_formula_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-output.xlsx");
+    const char* source_filename =
+        request_full_calculation
+            ? (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-append-row-formula-noop-source.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-full-calc-append-row-formula-source.xlsx")
+            : (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-noop-source.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-source.xlsx");
+    const char* output_filename =
+        request_full_calculation
+            ? (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-append-row-formula-noop-output.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-full-calc-append-row-formula-output.xlsx")
+            : (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-noop-output.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-append-row-formula-output.xlsx");
+    report.source = write_in_memory_append_row_formula_source(
+        resolve_generated_source(options, source_filename));
+    report.output = resolve_output_path(options, output_filename);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).append_row(text,number,formula)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -2378,6 +2399,10 @@ Report run_generated_in_memory_append_row_formula_impl(const CliOptions& options
         "Appended formula B3*2 should survive save/reopen",
         "Notes sheet should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the appended formula row should be byte-identical");
@@ -2391,6 +2416,9 @@ Report run_generated_in_memory_append_row_formula_impl(const CliOptions& options
         CellValue::formula("B3*2"),
     });
     require_formula_cell(data, "C3", "B3*2");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     save_as_with_optional_noop(
         editor,
         report,
@@ -2410,23 +2438,52 @@ Report run_generated_in_memory_append_row_formula_noop_save(const CliOptions& op
     return run_generated_in_memory_append_row_formula_impl(options, true);
 }
 
+Report run_generated_in_memory_full_calc_append_row_formula(const CliOptions& options)
+{
+    return run_generated_in_memory_append_row_formula_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_append_row_formula_noop_save(const CliOptions& options)
+{
+    return run_generated_in_memory_append_row_formula_impl(options, true, true);
+}
+
 Report run_generated_in_memory_overwrite_formula_text_impl(
     const CliOptions& options,
-    bool verify_noop_save)
+    bool verify_noop_save,
+    bool request_full_calculation = false)
 {
     Report report;
     report.scenario = options.scenario;
     report.report_path = options.report;
-    report.source = write_in_memory_overwrite_formula_text_source(resolve_generated_source(
-        options, "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-source.xlsx"));
-    report.output = resolve_output_path(
-        options, "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-output.xlsx");
+    const char* source_filename =
+        request_full_calculation
+            ? (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-overwrite-formula-text-noop-source.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-full-calc-overwrite-formula-text-source.xlsx")
+            : (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-noop-source.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-source.xlsx");
+    const char* output_filename =
+        request_full_calculation
+            ? (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-full-calc-overwrite-formula-text-noop-output.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-full-calc-overwrite-formula-text-output.xlsx")
+            : (verify_noop_save
+                   ? "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-noop-output.xlsx"
+                   : "fastxlsx-workbook-editor-qa-in-memory-overwrite-formula-text-output.xlsx");
+    report.source = write_in_memory_overwrite_formula_text_source(
+        resolve_generated_source(options, source_filename));
+    report.output = resolve_output_path(options, output_filename);
     report.source_sheet_name = "Data";
     report.mutations = {
         "worksheet(Data).set_cell(A1,text)",
         "worksheet(Data).set_cell(B1,number)",
         "worksheet(Data).set_cell(C1,formula)",
     };
+    if (request_full_calculation) {
+        report.mutations.push_back("request_full_calculation()");
+    }
     if (verify_noop_save) {
         report.mutations.push_back("save_as(noop-output)");
     }
@@ -2436,6 +2493,10 @@ Report run_generated_in_memory_overwrite_formula_text_impl(
         "Original Data!C1 formula should be overwritten",
         "Data!A2 and Notes!A1 should remain preserved",
     };
+    if (request_full_calculation) {
+        report.notes.push_back(
+            "Workbook full-calculation metadata should be queued without calcChain rebuild");
+    }
     if (verify_noop_save) {
         report.notes.push_back(
             "No-op save after the overwrite formula/text mutation should be byte-identical");
@@ -2448,6 +2509,9 @@ Report run_generated_in_memory_overwrite_formula_text_impl(
     data.set_cell("B1", CellValue::number(5.0));
     data.set_cell("C1", CellValue::formula("B1+10"));
     require_formula_cell(data, "C1", "B1+10");
+    if (request_full_calculation) {
+        editor.request_full_calculation();
+    }
     save_as_with_optional_noop(
         editor,
         report,
@@ -2465,6 +2529,17 @@ Report run_generated_in_memory_overwrite_formula_text(const CliOptions& options)
 Report run_generated_in_memory_overwrite_formula_text_noop_save(const CliOptions& options)
 {
     return run_generated_in_memory_overwrite_formula_text_impl(options, true);
+}
+
+Report run_generated_in_memory_full_calc_overwrite_formula_text(const CliOptions& options)
+{
+    return run_generated_in_memory_overwrite_formula_text_impl(options, false, true);
+}
+
+Report run_generated_in_memory_full_calc_overwrite_formula_text_noop_save(
+    const CliOptions& options)
+{
+    return run_generated_in_memory_overwrite_formula_text_impl(options, true, true);
 }
 
 Report run_generated_in_memory_retry_noop_save_impl(
@@ -3977,11 +4052,23 @@ Report run_scenario(const CliOptions& options)
     if (options.scenario == "generated_in_memory_append_row_formula_noop_save") {
         return run_generated_in_memory_append_row_formula_noop_save(options);
     }
+    if (options.scenario == "generated_in_memory_full_calc_append_row_formula") {
+        return run_generated_in_memory_full_calc_append_row_formula(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_append_row_formula_noop_save") {
+        return run_generated_in_memory_full_calc_append_row_formula_noop_save(options);
+    }
     if (options.scenario == "generated_in_memory_overwrite_formula_text") {
         return run_generated_in_memory_overwrite_formula_text(options);
     }
     if (options.scenario == "generated_in_memory_overwrite_formula_text_noop_save") {
         return run_generated_in_memory_overwrite_formula_text_noop_save(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_overwrite_formula_text") {
+        return run_generated_in_memory_full_calc_overwrite_formula_text(options);
+    }
+    if (options.scenario == "generated_in_memory_full_calc_overwrite_formula_text_noop_save") {
+        return run_generated_in_memory_full_calc_overwrite_formula_text_noop_save(options);
     }
     if (options.scenario == "generated_in_memory_retry_noop_save") {
         return run_generated_in_memory_retry_noop_save(options);

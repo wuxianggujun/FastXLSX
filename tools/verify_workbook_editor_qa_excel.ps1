@@ -840,8 +840,12 @@ function Verify-Case {
             "generated_in_memory_clear_erase_noop_save" { Verify-GeneratedInMemoryClearErase $workbook }
             "generated_in_memory_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_append_row_formula_noop_save" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
+            "generated_in_memory_full_calc_append_row_formula" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
+            "generated_in_memory_full_calc_append_row_formula_noop_save" { Verify-GeneratedInMemoryAppendRowFormula $workbook }
             "generated_in_memory_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_overwrite_formula_text_noop_save" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
+            "generated_in_memory_full_calc_overwrite_formula_text" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
+            "generated_in_memory_full_calc_overwrite_formula_text_noop_save" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_retry_noop_save" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_retry_path_equivalent_noop_save" { Verify-GeneratedInMemoryOverwriteFormulaText $workbook }
             "generated_in_memory_retry_reopen_modify_noop_save" { Verify-GeneratedInMemoryReopenModifySave $workbook }

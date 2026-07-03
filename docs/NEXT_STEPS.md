@@ -584,7 +584,11 @@ follow-up clean `save_as()` output to be byte-identical after those structural
 formula rewrites. The same stationary generated QA lane now has full-calculation
 variants for both cell-reference and range/whole-axis rewrites, requiring
 `fullCalcOnLoad="1"`, no invented `xl/calcChain.xml`, `openpyxl` readback, and
-byte-stable no-op companions. The
+byte-stable no-op companions. Generated append-row and source-backed overwrite
+formula writes now have the same full-calculation QA lane through
+`generated_in_memory_full_calc_append_row_formula` and
+`generated_in_memory_full_calc_overwrite_formula_text`, with no-op companions
+requiring the same metadata, readback, and byte-stability checks. The
 source-audit path now keeps scanning original source XML
 for `Data!A3` / `Data!B1` while the dirty materialized formula has already
 rewritten to `Data!A4+Data!B1`; the delete-side source scan keeps that same

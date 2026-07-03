@@ -54674,6 +54674,7 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-options-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-options-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditorOptions options;
@@ -54696,10 +54697,14 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         "failed public WorksheetEditor materialization should not update last_edit_error");
     check_workbook_editor_public_clean_state(
         editor, "failed public WorksheetEditor materialization");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed public WorksheetEditor materialization should leave the source package unchanged");
 
     editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("after-options-failure")}});
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "options guard recovery save_as should leave the source package unchanged");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "after-options-failure",
         "editor should remain usable after failed public WorksheetEditor materialization");
     const auto inspect_reopened_output = [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -54746,6 +54751,8 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
     const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_output_entries == output_entries,
         "options guard recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "options guard recovery noop save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "options guard recovery noop",
         inspect_reopened_output);
 }
@@ -54758,6 +54765,7 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditorOptions options;
@@ -54787,6 +54795,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         "memory-budget materialization failure should not update last_edit_error");
     check_workbook_editor_public_clean_state(
         editor, "memory-budget materialization failure");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "memory-budget materialization failure should leave the source package unchanged");
 
     std::optional<fastxlsx::WorksheetEditor> recovered = editor.try_worksheet("Data");
     check(recovered.has_value(),
@@ -54808,6 +54818,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
             editor, *recovered, 0, "memory-budget source-load recovery overwrite");
     }
     editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "memory-budget source-load recovery save_as should leave the source package unchanged");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "after-memory-budget-failure",
@@ -54844,6 +54856,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
     const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_output_entries == output_entries,
         "memory-budget source-load recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "memory-budget source-load recovery noop save should leave the source package unchanged");
     check_reopened_default_data_overwrite_output(noop_output, "memory-budget source-load recovery noop",
         "after-memory-budget-failure");
 }
@@ -54854,6 +54868,7 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-mutation-memory-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
     const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -54906,6 +54921,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "failed memory-budget mutation should preserve sparse memory estimate");
     check(!sheet.try_cell("D4").has_value(),
         "failed memory-budget mutation should not leave the rejected cell readable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed memory-budget mutation should leave the source package unchanged");
 
     sheet.set_cell("A1", fastxlsx::CellValue::text("tiny"));
     check(!editor.last_edit_error().has_value(),
@@ -54923,6 +54940,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         editor, sheet, 0, "mutation memory-budget recovery overwrite");
 
     editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mutation memory-budget recovery save_as should leave the source package unchanged");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "tiny",
@@ -54963,6 +54982,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
     const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_output_entries == output_entries,
         "successful memory-budget recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful memory-budget recovery noop save should leave the source package unchanged");
     check_reopened_default_data_overwrite_output(noop_output, "mutation memory-budget recovery noop",
         "tiny");
 }
@@ -54975,6 +54996,7 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
     const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
@@ -55026,6 +55048,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         "failed max_cells mutation should preserve sparse memory estimate");
     check(!sheet.try_cell("D4").has_value(),
         "failed max_cells mutation should not leave the rejected cell readable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed max_cells mutation should leave the source package unchanged");
 
     sheet.set_cell("A1", fastxlsx::CellValue::text("after-max-cells-overwrite"));
     check(!editor.last_edit_error().has_value(),
@@ -55043,6 +55067,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         editor, sheet, 0, "mutation max-cells recovery overwrite");
 
     editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mutation max-cells recovery save_as should leave the source package unchanged");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "after-max-cells-overwrite",
@@ -55081,6 +55107,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
     const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_output_entries == output_entries,
         "successful max-cells recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful max-cells recovery noop save should leave the source package unchanged");
     check_reopened_default_data_overwrite_output(noop_output, "mutation max-cells recovery noop",
         "after-max-cells-overwrite");
 }

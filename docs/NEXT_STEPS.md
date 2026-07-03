@@ -2525,6 +2525,11 @@ The failed-save retry saved-reacquire no-op paths now use the same catalog
 snapshot around the final clean save after rejected outputs, covering
 source-overwrite and invalid output-path failures while keeping rollback and
 repair out of scope.
+The path-equivalent source-overwrite branch now carries the same repeat no-op
+save coverage: after the safe retry and first clean no-op output, a second
+no-op `save_as()` keeps all shared handles clean, preserves public catalog/save
+state, reopens with shifted `A3` / `C1`, and remains unchanged after the later
+post-noop `C3` save.
 The renamed full-calculation formula-audit saved-reacquire no-op paths now also
 pair their second clean save-state snapshot with a catalog snapshot after
 invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard

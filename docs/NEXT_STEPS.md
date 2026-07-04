@@ -5881,9 +5881,10 @@ unknown-attribute metadata, verifying clean `WorksheetEditor` state plus
 reads.
 The base rich sharedStrings fixture now also carries dirty save/reopen
 evidence: a later in-memory edit appends a plain shared string, preserves source
-rich-run markup bytes, leaves the source and prior no-op output unchanged, and
-fresh-reopens with flattened values through the public sparse views. This is
-not rich-text formatting preservation or broad sharedStrings migration.
+rich-run markup bytes, leaves the source and prior no-op output unchanged,
+fresh-reopens with flattened values through the public sparse views, and then
+proves a follow-up no-op `save_as()` output is byte-stable. This is not
+rich-text formatting preservation or broad sharedStrings migration.
 Prefixed source worksheet XML is now pinned for the same narrow local-name
 materialization boundary: worksheet, `sheetData`, row, cell, inlineStr wrapper,
 rich-run, formula, and value-wrapper element names may be prefixed and still

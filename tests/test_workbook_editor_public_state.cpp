@@ -51986,6 +51986,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire path-equivalent failed save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire path-equivalent failed save reopened output");
         });
 
     fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
@@ -52012,6 +52014,15 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
     check(!after_retry.try_cell("B1").has_value() &&
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire path-equivalent failed save matching reacquire after retry should keep old coordinates absent");
+    check_shift_reacquire_retry_snapshots(
+        sheet,
+        "shift reacquire path-equivalent failed save matching reacquire after retry original handle");
+    check_shift_reacquire_retry_snapshots(
+        reacquired,
+        "shift reacquire path-equivalent failed save matching reacquire after retry reacquired handle");
+    check_shift_reacquire_retry_snapshots(
+        after_retry,
+        "shift reacquire path-equivalent failed save matching reacquire after retry clean handle");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -52060,6 +52071,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire path-equivalent failed save noop save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire path-equivalent failed save noop save reopened output");
         });
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -52117,6 +52130,8 @@ void test_public_worksheet_editor_shift_reacquire_path_equivalent_failed_save_pr
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire path-equivalent failed save repeat no-op save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire path-equivalent failed save repeat no-op save reopened output");
         });
 
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-path-equivalent-failed-save"));
@@ -52341,6 +52356,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire empty-output failed save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire empty-output failed save reopened output");
         });
 
     fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
@@ -52367,6 +52384,15 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
     check(!after_retry.try_cell("B1").has_value() &&
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire empty-output failed save matching reacquire after retry should keep old coordinates absent");
+    check_shift_reacquire_retry_snapshots(
+        sheet,
+        "shift reacquire empty-output failed save matching reacquire after retry original handle");
+    check_shift_reacquire_retry_snapshots(
+        reacquired,
+        "shift reacquire empty-output failed save matching reacquire after retry reacquired handle");
+    check_shift_reacquire_retry_snapshots(
+        after_retry,
+        "shift reacquire empty-output failed save matching reacquire after retry clean handle");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -52415,6 +52441,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire empty-output failed save noop save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire empty-output failed save noop save reopened output");
         });
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -52471,6 +52499,8 @@ void test_public_worksheet_editor_shift_reacquire_empty_output_failed_save_prese
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire empty-output failed save repeat no-op save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire empty-output failed save repeat no-op save reopened output");
         });
 
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-empty-output-failed-save"));
@@ -52700,6 +52730,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire missing-parent failed save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire missing-parent failed save reopened output");
         });
 
     fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
@@ -52726,6 +52758,15 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
     check(!after_retry.try_cell("B1").has_value() &&
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire missing-parent failed save matching reacquire after retry should keep old coordinates absent");
+    check_shift_reacquire_retry_snapshots(
+        sheet,
+        "shift reacquire missing-parent failed save matching reacquire after retry original handle");
+    check_shift_reacquire_retry_snapshots(
+        reacquired,
+        "shift reacquire missing-parent failed save matching reacquire after retry reacquired handle");
+    check_shift_reacquire_retry_snapshots(
+        after_retry,
+        "shift reacquire missing-parent failed save matching reacquire after retry clean handle");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -52774,6 +52815,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire missing-parent failed save noop save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire missing-parent failed save noop save reopened output");
         });
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -52832,6 +52875,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire missing-parent failed save repeat no-op save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire missing-parent failed save repeat no-op save reopened output");
         });
 
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-missing-parent-failed-save"));
@@ -53065,6 +53110,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire file-parent failed save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire file-parent failed save reopened output");
         });
 
     fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
@@ -53091,6 +53138,15 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
     check(!after_retry.try_cell("B1").has_value() &&
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire file-parent failed save matching reacquire after retry should keep old coordinates absent");
+    check_shift_reacquire_retry_snapshots(
+        sheet,
+        "shift reacquire file-parent failed save matching reacquire after retry original handle");
+    check_shift_reacquire_retry_snapshots(
+        reacquired,
+        "shift reacquire file-parent failed save matching reacquire after retry reacquired handle");
+    check_shift_reacquire_retry_snapshots(
+        after_retry,
+        "shift reacquire file-parent failed save matching reacquire after retry clean handle");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -53139,6 +53195,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire file-parent failed save noop save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire file-parent failed save noop save reopened output");
         });
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -53198,6 +53256,8 @@ void test_public_worksheet_editor_shift_reacquire_non_directory_parent_failed_sa
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire file-parent failed save repeat no-op save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire file-parent failed save repeat no-op save reopened output");
         });
 
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-file-parent-failed-save"));

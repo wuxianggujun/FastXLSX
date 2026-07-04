@@ -2279,6 +2279,12 @@ winning, empty batches are no-ops, and any coordinate/style/budget failure
 rejects the entire batch before mutating the active materialized session. This
 is still not a dense range writer, style-preserving edit, A1 range parser, or
 large-file low-memory random-editing path.
+The full-cell batch now also has exact-memory-budget recovery coverage:
+an oversized missing-cell update fails before applying earlier entries in the
+same `set_cells()` batch, keeps sparse and pending materialized diagnostics
+unchanged, copy-original saves unchanged, and then accepts a smaller overwrite
+in the same exact-budget session. The recovery and no-op outputs reopen with
+the accepted full-cell replacement while excluding both rejected payloads.
 The value-only batch and coordinate-clear batch now use the same preflight /
 staged sparse-store hygiene: `set_cell_values()` preserves existing source
 styles while duplicate coordinates remain later-wins, and

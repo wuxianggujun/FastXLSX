@@ -13630,6 +13630,110 @@ void test_public_worksheet_editor_set_cell_values_preserves_styles_and_order()
         inspect_styled_set_cell_values_output);
 }
 
+void test_public_worksheet_editor_set_cell_values_duplicate_max_cells_accounting()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-duplicate-max-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-duplicate-max-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-duplicate-max-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 4;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    sheet.set_cell_values({
+        {fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::CellValue::text("duplicate-max-first")},
+        {fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::CellValue::text("duplicate-max-last")},
+    });
+
+    check(sheet.cell_count() == 4,
+        "set_cell_values duplicate max_cells should count one final inserted cell");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 3,
+        "set_cell_values duplicate max_cells should expand sparse bounds once");
+    const fastxlsx::CellValue inserted_c3 = sheet.get_cell("C3");
+    check(inserted_c3.kind() == fastxlsx::CellValueKind::Text &&
+            inserted_c3.text_value() == "duplicate-max-last",
+        "set_cell_values duplicate max_cells should keep later-wins payload");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "set_cell_values duplicate max_cells dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "successful set_cell_values duplicate max_cells should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_values duplicate max_cells save should leave the source package unchanged");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "set_cell_values duplicate max_cells save should refresh dirty bounds");
+    check_contains(worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>duplicate-max-last</t></is></c>)",
+        "set_cell_values duplicate max_cells save should persist later-wins payload");
+    check_not_contains(worksheet_xml, "duplicate-max-first",
+        "set_cell_values duplicate max_cells save should omit earlier duplicate payload");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "set_cell_values duplicate max_cells save should preserve untouched worksheets");
+    const auto inspect_duplicate_max_output =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "set_cell_values duplicate max_cells reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "set_cell_values duplicate max_cells reopened output should keep bounds");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1",
+                "set_cell_values duplicate max_cells reopened output should keep source A1");
+            check(reopened_sheet.get_cell("B1").number_value() == 1.0,
+                "set_cell_values duplicate max_cells reopened output should keep source B1");
+            check(reopened_sheet.get_cell("A2").text_value() == "placeholder-a2",
+                "set_cell_values duplicate max_cells reopened output should keep source A2");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "duplicate-max-last",
+                "set_cell_values duplicate max_cells reopened output should read later-wins C3");
+        };
+    check_reopened_clean_sheet_output(
+        output, "Data", "set_cell_values duplicate max_cells",
+        inspect_duplicate_max_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell_values duplicate max_cells no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "set_cell_values duplicate max_cells no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell_values duplicate max_cells no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell_values duplicate max_cells no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "set_cell_values duplicate max_cells no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell_values duplicate max_cells no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "set_cell_values duplicate max_cells no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "set_cell_values duplicate max_cells no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "set_cell_values duplicate max_cells no-op output should match materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_values duplicate max_cells no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Data", "set_cell_values duplicate max_cells no-op save",
+        inspect_duplicate_max_output);
+}
+
 void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
 {
     const std::filesystem::path source =
@@ -58004,6 +58108,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_initializer_list_batch_overloads();
             test_public_worksheet_editor_set_cell_value_style_rejection_noop_save();
             test_public_worksheet_editor_set_cell_values_preserves_styles_and_order();
+            test_public_worksheet_editor_set_cell_values_duplicate_max_cells_accounting();
             test_public_worksheet_editor_append_row_appends_after_sparse_max_row();
             test_public_worksheet_editor_append_row_noop_and_guardrails();
             test_public_worksheet_editor_set_row_replaces_sparse_row();

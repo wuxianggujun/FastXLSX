@@ -176,6 +176,13 @@ large-export progress API；small `Workbook` 的 sheet lookup、rename old-name 
 worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship repair 和
 大 worksheet 低内存 random edit —— 仍必须标明为未来 public design target。
 
+`WorksheetEditor` value-only APIs (`set_cell_value()`、`set_cell_values()`、
+`set_row_values()`、`set_column_values()`) keep the target cell's currently
+materialized source `StyleId` when overwriting an existing cell, reject
+caller-supplied non-default `StyleId` handles, and insert missing cells without a
+style. `set_cell_values()` preflights the whole batch, accepts duplicate
+coordinates, and applies later-wins ordering after validation.
+
 ### 当前能力事实源
 
 当前 public / internal / planned / non-goal 状态矩阵统一维护在

@@ -59,9 +59,13 @@
   `WorkbookEditor::try_worksheet()`、`WorksheetEditor`、`WorksheetCellReference`、
   `WorksheetCellUpdate`、`WorksheetCellSnapshot`。
 - 当前能力：`try_cell()` / `get_cell()` / `contains_cell()` / `used_range()` / sparse snapshots、
-  `set_cell()` / `set_cells()`、row/column prefix writes、value-only clears、erase APIs、
-  represented sparse row/column insert/delete shifts、strict uppercase A1 convenience overloads、
+  `set_cell()` / `set_cells()` full sparse replacements、`set_cell_value()` / `set_cell_values()` /
+  row/column value-only prefix writes that preserve existing materialized StyleId handles,
+  value-only clears、erase APIs、represented sparse row/column insert/delete shifts、
+  strict uppercase A1 convenience overloads、
   `cell_count()`、`estimated_memory_usage()` 和 dirty-session `save_as()` auto-flush。
+- `set_cell_values()` batch inputs are preflighted, allow duplicate coordinates, and apply
+  later-wins ordering while preserving the target's existing materialized source style handle.
 - Guardrail：`WorksheetEditorOptions::max_cells` 和 `memory_budget_bytes` 约束 source materialization
   与后续 sparse-store mutations。它们是 sparse-store estimate guardrails，不是进程 RSS 或 package save peak。
 - 适用边界：small-file random cell editing。该路径不支持 non-default caller-supplied style id 写入、

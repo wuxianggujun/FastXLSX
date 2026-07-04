@@ -1087,6 +1087,9 @@ projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.
 Its second no-op output now also fresh-reopens with the same represented cells,
 source values, explicit blank, inserted text, bounds, and erased A2 absence.
+It now also calls `contains_cell()` directly on the same clean saved handle
+after the initial save and both clean no-op saves, preserving the prior
+diagnostic while proving those reads do not re-dirty the materialized session.
 The handle-level read-only inspection coverage now also snapshots source names,
 planned names, and the full worksheet catalog around `used_range()`,
 `contains_cell()`, `row_cells()`, `column_cells()`, and invalid

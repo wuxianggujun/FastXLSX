@@ -8425,9 +8425,24 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
     check(sheet.estimated_memory_usage() == memory_before_invalid_reads,
         "invalid contains_cell reads should not change sparse-store memory usage");
 
+    const auto check_saved_contains_cells =
+        [&sheet](const std::string& message) {
+            check(sheet.contains_cell("A1") &&
+                    sheet.contains_cell("B3") &&
+                    sheet.contains_cell("D4") &&
+                    !sheet.contains_cell("A2"),
+                message);
+        };
+
     editor.save_as(output);
     check(editor.last_edit_error() == prior_error,
         "save_as after contains_cell inspection should preserve prior diagnostics");
+    check_saved_contains_cells(
+        "contains_cell saved session should keep represented dirty projection");
+    check(!sheet.has_pending_changes(),
+        "contains_cell saved-session reads should keep the materialized sheet clean");
+    check(editor.last_edit_error() == prior_error,
+        "contains_cell saved-session reads should preserve prior diagnostics");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "contains_cell save should leave the source package unchanged");
@@ -8500,6 +8515,12 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
         "contains_cell no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "contains_cell no-op save should leave the source package unchanged");
+    check_saved_contains_cells(
+        "contains_cell no-op saved session should keep represented dirty projection");
+    check(!sheet.has_pending_changes(),
+        "contains_cell no-op saved-session reads should keep the materialized sheet clean");
+    check(editor.last_edit_error() == prior_error,
+        "contains_cell no-op saved-session reads should preserve prior diagnostics");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -8528,6 +8549,12 @@ void test_public_worksheet_editor_contains_cell_tracks_represented_state()
         "contains_cell second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "contains_cell second no-op save should leave the source package unchanged");
+    check_saved_contains_cells(
+        "contains_cell second no-op saved session should keep represented dirty projection");
+    check(!sheet.has_pending_changes(),
+        "contains_cell second no-op saved-session reads should keep the materialized sheet clean");
+    check(editor.last_edit_error() == prior_error,
+        "contains_cell second no-op saved-session reads should preserve prior diagnostics");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "contains_cell second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

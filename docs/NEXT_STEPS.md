@@ -555,6 +555,9 @@ are pinned on both sides of the save/reopen handoff.
 The same delete-side `#REF!` formula paths now also pin global `sparse_cells()`
 row-major order for the shifted source/formula cells before save, after
 fresh-reopen, and after the later dirty formula edit.
+Their live and fresh-reopen checks now also cover `contains_cell()` for shifted
+source/formula cells, deleted old coordinates, and the later post-noop formula
+edits.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

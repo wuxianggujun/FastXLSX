@@ -1553,6 +1553,9 @@ unchanged, and the second output still reopens with only the successful value.
 The mixed public-edit diagnostic recovery path also reopens the saved output to
 verify copy-original `Data` state and replacement-only `Untouched` state after
 failed replacement, rename, and materialized mutation attempts.
+It now repeats that clean no-op save as well, preserving public summaries,
+keeping `last_edit_error()` clear, proving output entries stable, and reopening
+the second output with the same recovered worksheet split.
 Existing-cell blank overwrite after rejected blank insertions is reopened as
 well, pinning explicit blank readback without admitting the rejected target.
 That same path now repeats a second clean no-op save for both exact `max_cells`

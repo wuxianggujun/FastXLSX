@@ -517,6 +517,9 @@ formula save keeps the translated formula intact.
 The same matrix now covers `delete_columns()` with a moved `C2` formula and a
 later `D2` formula save, pinning the column-deletion side of the same translator
 and post-noop reuse behavior.
+They now repeat the clean no-op before those later delete-side formula edits
+too, proving the repeat no-op package is byte-identical, fresh-reopenable, and
+still unchanged after the post-noop save.
 Those delete-side rich formula paths now also run a second clean no-op
 `save_as()` after the post-noop edit: the saved-session diagnostics stay clean,
 no extra handoff is recorded, the output remains byte-stable, and a fresh reopen

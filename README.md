@@ -514,8 +514,10 @@ table/range metadata recalculation 或大文件低内存 random editing。
 represented cells，并把范围后的 represented cells 分别上移 / 左移。四个 API 都以
 1-based Excel row/column 坐标和 count 为输入，`count == 0` 是成功 no-op；非法坐标、
 count 越界、或 shift 会越过 Excel 行列上限时都会在 sparse store 变更前失败。
-这些 helper 只更新 materialized sparse cells 和 dirty projection 的 `<dimension>` /
-`sheetData`，不做完整 Excel row/column structural edit，不更新 formulas、
+这些 helper 只移动或删除 materialized sparse records；shifted records 保留
+`CellValue` payload 和 materialized source `StyleId`，materialized formula cells 只做窄
+A1-style reference rewrite。dirty projection 会更新 `<dimension>` / `sheetData`，
+但它们不是完整 Excel row/column structural edit，不更新未物化 worksheet formulas、
 tables、autoFilter、mergeCells、data validations、conditional formatting、hyperlinks、
 drawing/chart/VBA、defined names、relationships、sharedStrings/styles 或 calcChain。
 `set_cells()`、

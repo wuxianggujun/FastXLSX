@@ -47558,6 +47558,82 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
         "shift reacquire noop save should reuse the saved shifted state instead of reloading source");
     check(!reacquired.try_cell("A2").has_value() && !sheet.try_cell("A2").has_value(),
         "shift reacquire noop save should keep old shifted coordinates absent on both handles");
+    const auto check_saved_shift_snapshots =
+        [](fastxlsx::WorksheetEditor& snapshot_sheet, std::string_view scenario) {
+            const std::string label(scenario);
+            const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+                snapshot_sheet.sparse_cells();
+            check(all_cells.size() == 3,
+                label + " sparse_cells should keep the saved shifted sparse count");
+            if (all_cells.size() == 3) {
+                check(all_cells[0].reference.row == 1 && all_cells[0].reference.column == 1 &&
+                        all_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        all_cells[0].value.text_value() == "placeholder-a1",
+                    label + " sparse_cells should keep A1 first");
+                check(all_cells[1].reference.row == 1 && all_cells[1].reference.column == 2 &&
+                        all_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        all_cells[1].value.number_value() == 1.0,
+                    label + " sparse_cells should keep B1 second");
+                check(all_cells[2].reference.row == 3 && all_cells[2].reference.column == 1 &&
+                        all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                        all_cells[2].value.text_value() == "placeholder-a2",
+                    label + " sparse_cells should expose shifted A2 as A3");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_range =
+                snapshot_sheet.sparse_cells("A2:B3");
+            check(shifted_range.size() == 1 &&
+                    shifted_range[0].reference.row == 3 &&
+                    shifted_range[0].reference.column == 1 &&
+                    shifted_range[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    shifted_range[0].value.text_value() == "placeholder-a2",
+                label + " range sparse_cells should skip old A2 and expose shifted A3");
+
+            const std::array<fastxlsx::WorksheetCellReference, 3> requested_refs {
+                fastxlsx::WorksheetCellReference {1, 2},
+                fastxlsx::WorksheetCellReference {2, 1},
+                fastxlsx::WorksheetCellReference {3, 1},
+            };
+            const std::vector<fastxlsx::WorksheetCellSnapshot> requested_cells =
+                snapshot_sheet.sparse_cells(requested_refs);
+            check(requested_cells.size() == 2,
+                label + " requested sparse_cells should skip the old shifted coordinate");
+            if (requested_cells.size() == 2) {
+                check(requested_cells[0].reference.row == 1 &&
+                        requested_cells[0].reference.column == 2 &&
+                        requested_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        requested_cells[0].value.number_value() == 1.0,
+                    label + " requested sparse_cells should preserve B1 input order");
+                check(requested_cells[1].reference.row == 3 &&
+                        requested_cells[1].reference.column == 1 &&
+                        requested_cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        requested_cells[1].value.text_value() == "placeholder-a2",
+                    label + " requested sparse_cells should return shifted A3");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                snapshot_sheet.row_cells(3);
+            check(row_three.size() == 1 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "placeholder-a2",
+                label + " row_cells should expose the shifted row");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                snapshot_sheet.column_cells(1);
+            check(column_one.size() == 2 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == "placeholder-a1" &&
+                    column_one[1].reference.row == 3 &&
+                    column_one[1].reference.column == 1 &&
+                    column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[1].value.text_value() == "placeholder-a2",
+                label + " column_cells should keep source and shifted rows in order");
+        };
+    check_saved_shift_snapshots(sheet, "shift reacquire original clean handle");
+    check_saved_shift_snapshots(reacquired, "shift reacquire saved clean handle");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
@@ -47628,7 +47704,7 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
     check(noop_entries == first_entries,
         "shift reacquire noop output should match the first save");
     check_reopened_shift_output(noop_output, "shift reacquire noop save",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "shift reacquire noop save reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
@@ -47644,6 +47720,8 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
             check(!reopened_sheet.try_cell("C1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire noop save reopened output should omit later and old coordinates");
+            check_saved_shift_snapshots(reopened_sheet,
+                "shift reacquire noop save reopened output");
         });
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =

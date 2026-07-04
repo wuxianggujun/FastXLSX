@@ -5838,6 +5838,11 @@ The base supported-values projection now also has post-dirty no-op evidence:
 the follow-up `save_as()` output is byte-stable, the source package remains
 unchanged, and fresh reopen still sees the blank, boolean, empty-text, plain
 formula, cached-scalar fallback, and later inline edit records.
+Source `t="str"` cells now carry the same post-dirty no-op evidence: scalar
+string cells are projected as inline text, formula cells stay plain formulas
+without stale cached values, the earlier source-copy output remains unchanged,
+and fresh reopen still sees the later inline edit. This is not sharedStrings
+migration or cached formula preservation.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
 stores, stay clean until mutation, and later save through the standalone

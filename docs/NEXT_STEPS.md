@@ -360,6 +360,11 @@ directory-output saves leave the dirty planned session intact, then the safe
 retry, first no-op output, and second no-op output preserve source and prior
 package bytes while reopening the combined row/column-shifted `RenamedData`
 state cleanly.
+The baseline non-formula shift-after-rename matching-reacquire path now also
+continues past that clean state: after a second byte-stable no-op save, a later
+`D3` edit re-dirties both planned-name handles, preserves the shifted `A3` and
+`C1` cells, saves a fresh-reopenable post-noop output, and leaves the earlier
+source/first/second/no-op packages unchanged.
 The non-formula shift-after-rename option-mismatch path now mirrors that
 repeated no-op proof: after mismatched worksheet options are rejected and a
 matching reacquire applies the later column shift, the first and second no-op

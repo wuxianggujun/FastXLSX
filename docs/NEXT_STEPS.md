@@ -2119,6 +2119,11 @@ The invalid A1 range mutation path now also reads the same saved clean handle
 after the copy-original save and repeated no-op save, checking full sparse,
 bounded range, A1 range, row, and column snapshots without dirtying the
 materialized session or reviving diagnostics.
+The invalid row/column coordinate recovery path now mirrors that saved-handle
+shape after the recovered A1 overwrite: the original handle exposes full,
+bounded, A1-range, row, and column snapshots after the first save and both
+clean no-op saves, with rejected C1 still absent and materialized diagnostics
+empty.
 The row/column read-failure path now also re-runs saved-session `row_cells()` /
 `column_cells()` snapshots on the same clean handle after the copy-original save
 and repeated clean no-op save, preserving the prior diagnostic while proving

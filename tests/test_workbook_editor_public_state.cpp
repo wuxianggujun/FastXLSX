@@ -7092,7 +7092,76 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     sheet.set_cell(1, 1, fastxlsx::CellValue::text("row-column-recovered"));
     check(!editor.last_edit_error().has_value(),
         "valid row/column mutation should clear prior mutation diagnostics");
+
+    const auto check_saved_recovered_snapshots =
+        [&sheet, &editor](std::string_view prefix) {
+            const auto check_recovered_sparse_cells =
+                [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+                    std::string_view message_prefix) {
+                    check(cells.size() == 3,
+                        std::string(message_prefix) + " should expose all represented cells");
+                    check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                            cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[0].value.text_value() == "row-column-recovered",
+                        std::string(message_prefix) + " should keep recovered A1 text");
+                    check(cells[1].reference.row == 1 && cells[1].reference.column == 2 &&
+                            cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                            cells[1].value.number_value() == 1.0,
+                        std::string(message_prefix) + " should keep source B1 number");
+                    check(cells[2].reference.row == 2 && cells[2].reference.column == 1 &&
+                            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[2].value.text_value() == "placeholder-a2",
+                        std::string(message_prefix) + " should keep source A2 text");
+                };
+            check_recovered_sparse_cells(sheet.sparse_cells(),
+                std::string(prefix) + " full sparse snapshot");
+            check_recovered_sparse_cells(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}),
+                std::string(prefix) + " CellRange snapshot");
+            check_recovered_sparse_cells(sheet.sparse_cells("A1:B2"),
+                std::string(prefix) + " A1 range snapshot");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+            check(row_one.size() == 2 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "row-column-recovered" &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2 &&
+                    row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    row_one[1].value.number_value() == 1.0,
+                std::string(prefix) + " should keep recovered row-one snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                sheet.column_cells(1);
+            check(column_one.size() == 2 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == "row-column-recovered" &&
+                    column_one[1].reference.row == 2 &&
+                    column_one[1].reference.column == 1 &&
+                    column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[1].value.text_value() == "placeholder-a2",
+                std::string(prefix) + " should keep recovered column-one snapshots");
+            check(!sheet.try_cell(1, 3).has_value(),
+                std::string(prefix) + " should keep rejected C1 absent");
+            check_cell_range_equals(sheet.used_range(), 1, 1, 2, 2,
+                std::string(prefix) + " should keep recovered bounds");
+            check(!sheet.has_pending_changes(),
+                std::string(prefix) + " should keep the materialized sheet clean");
+            check(editor.pending_change_count() == 1,
+                std::string(prefix) + " should not record another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(prefix) + " should keep dirty diagnostics clear");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(prefix) + " should not queue replacement diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(prefix) + " should keep diagnostics clear");
+        };
+
     editor.save_as(output);
+    check_saved_recovered_snapshots("row/column recovery saved session");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
@@ -7150,6 +7219,7 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "row/column recovery no-op save");
+    check_saved_recovered_snapshots("row/column recovery no-op saved session");
     const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
     check(noop_entries == output_entries,
         "row/column recovery no-op output should match the first materialized output");
@@ -7179,6 +7249,7 @@ void test_public_worksheet_editor_row_column_overloads_reject_invalid_coordinate
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_second_noop,
         "row/column recovery second no-op save");
+    check_saved_recovered_snapshots("row/column recovery second no-op saved session");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
         "row/column recovery second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,

@@ -47824,6 +47824,8 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-noop-output.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-second-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reuse-post-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -47937,8 +47939,63 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
         "shift handle reuse second no-op save should leave the second output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift handle reuse second no-op save should leave the first no-op output unchanged");
-    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
         "shift handle reuse second no-op output should match the first no-op output");
+
+    sheet.set_cell("D3", fastxlsx::CellValue::text("handle-reuse-post-noop"));
+    check(sheet.has_pending_changes(),
+        "shift handle reuse post-noop edit should dirty the reused handle");
+    check(sheet.cell_count() == 4,
+        "shift handle reuse post-noop edit should add one sparse cell");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 4,
+        "shift handle reuse post-noop edit should expand bounds to D3");
+    check(sheet.get_cell("D3").text_value() == "handle-reuse-post-noop",
+        "shift handle reuse post-noop edit should expose the new dirty cell");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C1").number_value() == 1.0,
+        "shift handle reuse post-noop edit should preserve shifted source cells");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 2, "shift handle reuse post-noop edit");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes(),
+        "shift handle reuse post-noop save should clean the reused handle");
+    check(editor.pending_change_count() == 3,
+        "shift handle reuse post-noop save should record the third materialized handoff");
+    check(editor.has_pending_changes(),
+        "shift handle reuse post-noop save should retain staged materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift handle reuse post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift handle reuse post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift handle reuse post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift handle reuse post-noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "shift handle reuse post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "shift handle reuse post-noop save should leave the second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift handle reuse post-noop save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "shift handle reuse post-noop save should leave the second no-op output unchanged");
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, R"(<dimension ref="A1:D3"/>)",
+        "shift handle reuse post-noop output should expand bounds to D3");
+    check_contains(post_noop_xml, R"(<c r="D3")",
+        "shift handle reuse post-noop output should write the later D3 cell");
+    check_contains(post_noop_xml, "handle-reuse-post-noop",
+        "shift handle reuse post-noop output should write the later D3 text");
+    check_not_contains(post_noop_xml, R"(r="B1")",
+        "shift handle reuse post-noop output should keep old B1 absent");
+    check_not_contains(post_noop_xml, R"(r="A2")",
+        "shift handle reuse post-noop output should keep old A2 absent");
 
     check_reopened_shift_output(first_output, "shift handle reuse first save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
@@ -47987,6 +48044,44 @@ void test_public_worksheet_editor_shift_handle_reuse_after_save_as()
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift handle reuse second no-op output should keep old sparse coordinates absent");
+        });
+    check_reopened_shift_output(post_noop_output, "shift handle reuse post-noop output",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "shift handle reuse post-noop output should reopen with post-noop sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "shift handle reuse post-noop output should reopen with post-noop bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift handle reuse post-noop output should keep shifted B1 at C1");
+            check(reopened_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "shift handle reuse post-noop output should keep shifted A2");
+            check(reopened_sheet.get_cell("D3").text_value() == "handle-reuse-post-noop",
+                "shift handle reuse post-noop output should keep the later edit");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                reopened_sheet.row_cells(3);
+            check(row_three.size() == 2 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "placeholder-a2" &&
+                    row_three[1].reference.row == 3 &&
+                    row_three[1].reference.column == 4 &&
+                    row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[1].value.text_value() == "handle-reuse-post-noop",
+                "shift handle reuse post-noop row_cells should expose shifted row order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+                reopened_sheet.column_cells(4);
+            check(column_four.size() == 1 &&
+                    column_four[0].reference.row == 3 &&
+                    column_four[0].reference.column == 4 &&
+                    column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_four[0].value.text_value() == "handle-reuse-post-noop",
+                "shift handle reuse post-noop column_cells should expose the later edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift handle reuse post-noop output should keep old sparse coordinates absent");
         });
 }
 

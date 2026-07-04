@@ -410,6 +410,10 @@ proof as well: one borrowed `WorksheetEditor` can save a row shift, apply and
 save a later column shift, then run first and second no-op saves while source
 and prior package bytes remain unchanged and fresh readback exposes the combined
 row/column-shifted `Data` state cleanly.
+It now also continues from that clean repeated no-op state: the same borrowed
+handle can write a later `D3` cell, re-dirty the materialized `Data` session,
+save a fresh-reopenable post-noop output with shifted `A3` / `C1` plus row and
+column snapshots for the new cell, and keep all earlier packages unchanged.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

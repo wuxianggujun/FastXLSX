@@ -5770,9 +5770,12 @@ Source-order shared formula matrices now carry the same post-dirty no-op
 evidence: interleaved/latest-definition followers remain flattened as translated
 plain formulas, the no-op output is byte-stable, the source package is unchanged,
 and fresh reopen preserves the matrix projection beside later edits.
-The remaining formula-shape dirty outputs now reuse that same fresh-reopen
-readback gate for source-order shared formula matrices, Office-like 2D shared
-formula groups, and array/dataTable metadata fallbacks. This keeps lossy formula
+Office-like 2D shared formula groups now carry that no-op evidence as well:
+multiple rectangular shared formula groups keep byte-stable flattened output,
+drop stale cached values, leave the source package unchanged, and fresh reopen
+preserves the translated formula grid beside later edits.
+The remaining formula-shape dirty outputs still reuse the same fresh-reopen
+readback gate for array/dataTable metadata fallbacks. This keeps lossy formula
 projection evidence tied to sparse public state, not formula evaluation or
 calcChain rebuild.
 Source inline text failure hygiene is now pinned at the same facade: unknown XML

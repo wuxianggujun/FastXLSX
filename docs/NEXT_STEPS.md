@@ -5853,6 +5853,11 @@ no-op evidence: dirty projection fresh-reopens with the normalized sparse
 cells, the follow-up `save_as()` is byte-stable, and source plus prior
 copy-original output stay unchanged. This is not namespace repair or a promise
 to preserve cell/value element prefixes inside regenerated `sheetData`.
+Normalized source `s=0` cells now have matching post-dirty no-op evidence:
+explicit default-style attributes remain omitted after dirty projection, the
+follow-up `save_as()` output is byte-stable, the source package stays
+unchanged, and fresh reopen still sees unstyled text cells. This is not
+non-default style migration or style registry repair.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
 stores, stay clean until mutation, and later save through the standalone

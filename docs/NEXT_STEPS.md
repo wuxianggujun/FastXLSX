@@ -495,6 +495,9 @@ reuse coverage: a later `D3` formula save preserves the already translated
 `C3` formula and leaves earlier first/no-op outputs unchanged.
 The `insert_columns()` rich formula-shape path mirrors that coverage with a
 later `F2` formula save that preserves the translated `E2` formula.
+They now repeat the clean no-op before those later insert-side formula edits
+too, proving the repeat no-op package is byte-identical, fresh-reopenable, and
+still unchanged after the post-noop save.
 Those insert-side rich formula paths now also run a second clean no-op
 `save_as()` after the post-noop edit: the saved-session diagnostics stay clean,
 no extra handoff is recorded, the output remains byte-stable, and a fresh reopen

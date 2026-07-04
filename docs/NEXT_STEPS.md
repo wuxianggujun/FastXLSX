@@ -265,6 +265,9 @@ The delete-rows cross-handle path now has the same post-noop reuse coverage:
 after `Data` rows are removed and both handles are saved/no-op verified, later
 edits on both sheets save a fresh-reopenable output without mutating earlier
 outputs.
+It now repeats the clean no-op before those later delete-row edits too, proving
+the repeat no-op package is byte-identical, fresh-reopenable, and still
+unchanged after the post-noop save.
 That delete-rows cross-handle path now also runs a second clean no-op
 `save_as()` after the post-noop edit, keeping both handles clean, retaining the
 same handoff count, preserving byte-stable package entries, and fresh-reopening
@@ -272,6 +275,9 @@ both sheets with the deleted-row post-noop edits intact.
 The delete-columns cross-handle path mirrors that reuse coverage while avoiding
 old deleted coordinates: later `D1` edits on both sheets save cleanly and the
 old `D2` coordinates remain absent.
+It now repeats the clean no-op before those later delete-column edits too,
+proving the repeat no-op package is byte-identical, fresh-reopenable, and still
+unchanged after the post-noop save.
 That delete-columns cross-handle path now also runs a second clean no-op
 `save_as()` after the post-noop edit, keeping both handles clean, retaining the
 same handoff count, preserving byte-stable package entries, and fresh-reopening

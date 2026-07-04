@@ -57064,6 +57064,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-noop-second-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
@@ -57252,6 +57254,48 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         "cross-handle delete_rows Untouched noop save",
         inspect_reopened_cross_handle_delete_rows_untouched);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_rows second noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_rows second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_rows second noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_rows second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_rows second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "cross-handle delete_rows second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "cross-handle delete_rows second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "cross-handle delete_rows second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle delete_rows second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle delete_rows second noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows second noop save should leave the source package unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_rows Data second noop save",
+        inspect_reopened_cross_handle_delete_rows_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_rows Untouched second noop save",
+        inspect_reopened_cross_handle_delete_rows_untouched);
+
     data.set_cell("C3", fastxlsx::CellValue::text("post-noop-cross-handle-delete-row-data"));
     untouched.set_cell("C3", fastxlsx::CellValue::text("post-noop-cross-handle-delete-row-untouched"));
     check(data.has_pending_changes() && untouched.has_pending_changes(),
@@ -57297,6 +57341,8 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
         "cross-handle delete_rows post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "cross-handle delete_rows post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "cross-handle delete_rows post-noop save should leave the repeat no-op output unchanged");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "cross-handle delete_rows post-noop save should leave the source package unchanged");
 
@@ -57360,6 +57406,12 @@ void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state
     check_reopened_clean_sheet_output(post_noop_output, "Untouched",
         "cross-handle delete_rows Untouched post-noop save",
         inspect_reopened_cross_handle_delete_rows_post_noop_untouched);
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_rows Data second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_rows_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_rows Untouched second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_rows_untouched);
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -57410,6 +57462,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-noop-second-output.xlsx");
     const std::filesystem::path post_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-post-noop-output.xlsx");
     const std::filesystem::path post_noop_noop_output =
@@ -57600,6 +57654,48 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         "cross-handle delete_columns Untouched noop save",
         inspect_reopened_cross_handle_delete_columns_untouched);
 
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns second noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_columns second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_columns second noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_columns second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_columns second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "cross-handle delete_columns second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "cross-handle delete_columns second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "cross-handle delete_columns second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle delete_columns second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle delete_columns second noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns second noop save should leave the source package unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_columns Data second noop save",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_columns Untouched second noop save",
+        inspect_reopened_cross_handle_delete_columns_untouched);
+
     data.set_cell("D1", fastxlsx::CellValue::text("post-noop-cross-handle-delete-column-data"));
     untouched.set_cell("D1", fastxlsx::CellValue::text("post-noop-cross-handle-delete-column-untouched"));
     check(data.has_pending_changes() && untouched.has_pending_changes(),
@@ -57645,6 +57741,8 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
         "cross-handle delete_columns post-noop save should leave the first output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "cross-handle delete_columns post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "cross-handle delete_columns post-noop save should leave the repeat no-op output unchanged");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "cross-handle delete_columns post-noop save should leave the source package unchanged");
 
@@ -57708,6 +57806,12 @@ void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_st
     check_reopened_clean_sheet_output(post_noop_output, "Untouched",
         "cross-handle delete_columns Untouched post-noop save",
         inspect_reopened_cross_handle_delete_columns_post_noop_untouched);
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_columns Data second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_columns Untouched second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_columns_untouched);
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
         workbook_editor_public_catalog_snapshot(editor);

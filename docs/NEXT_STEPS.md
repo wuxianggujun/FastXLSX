@@ -5873,11 +5873,11 @@ fresh-reopens with scalar text, plain formula, and numeric sibling records.
 The later dirty projection remains byte-stable, preserves the source and prior
 no-op packages, and fresh reopen still sees the inline edit. This is not
 sharedStrings migration or cached formula preservation.
-Flattened source inline rich text now has matching post-dirty no-op evidence:
-rich runs project as plain inline text after a dirty edit, the follow-up
-`save_as()` output is byte-stable, the source package stays unchanged, and
-fresh reopen still sees the flattened text plus later edit. This is not
-rich-text formatting preservation.
+Flattened source inline rich text now has both no-op gates too: read-only
+materialization stays clean, the clean no-op output copies source package bytes
+and fresh-reopens with the flattened plain text, and the later dirty projection
+remains byte-stable while preserving the source and prior no-op packages. This
+is not rich-text formatting preservation.
 Prefixed source worksheet local-name wrappers now carry the same post-dirty
 no-op evidence: dirty projection fresh-reopens with the normalized sparse
 cells, the follow-up `save_as()` is byte-stable, and source plus prior

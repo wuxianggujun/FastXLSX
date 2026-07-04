@@ -4486,6 +4486,8 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
         artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-noop-second-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor data = editor.worksheet("Data");
@@ -4599,12 +4601,13 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_noop,
         "multi-sheet materialized retry no-op save");
-    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
         "multi-sheet materialized retry no-op output should match the safe retry output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "multi-sheet materialized retry no-op save should leave the source package unchanged");
 
-    check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet materialized retry Data",
+    const auto inspect_materialized_retry_data =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 3,
                 "multi-sheet materialized retry Data reopened output should keep sparse count");
@@ -4622,9 +4625,8 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
             check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a2.text_value() == "placeholder-a2",
                 "multi-sheet materialized retry Data reopened output should keep source A2");
-        });
-    check_reopened_clean_sheet_output(
-        noop_output, "Untouched", "multi-sheet materialized retry Untouched",
+        };
+    const auto inspect_materialized_retry_untouched =
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 2,
                 "multi-sheet materialized retry Untouched reopened output should keep sparse count");
@@ -4638,7 +4640,58 @@ void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
             check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_b1.text_value() == "multi-retry-untouched",
                 "multi-sheet materialized retry Untouched reopened output should read saved B1");
-        });
+        };
+
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "multi-sheet materialized retry Data",
+        inspect_materialized_retry_data);
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "multi-sheet materialized retry Untouched",
+        inspect_materialized_retry_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized retry second no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized retry second no-op save should not add another handoff");
+    check(editor.has_pending_changes(),
+        "multi-sheet materialized retry second no-op save should retain staged Patch handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized retry second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized retry second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized retry second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "multi-sheet materialized retry second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "multi-sheet materialized retry second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "multi-sheet materialized retry second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized retry second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "multi-sheet materialized retry second no-op Data",
+        inspect_materialized_retry_data);
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Untouched",
+        "multi-sheet materialized retry second no-op Untouched",
+        inspect_materialized_retry_untouched);
 }
 
 void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()

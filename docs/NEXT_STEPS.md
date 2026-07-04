@@ -2824,6 +2824,10 @@ pinning that subsequent edits do not corrupt already-written clean no-op files.
 The baseline multi-sheet materialized no-op path now repeats the clean no-op
 save too, keeping all live handles clean, package entries byte-stable, sources
 unchanged, and both worksheets freshly reopenable from the second no-op output.
+The matching failed-save retry path now repeats the clean no-op save as well,
+proving rejected source overwrite recovery leaves later no-op packages
+byte-stable while staged Patch handoff state and fresh two-sheet readback stay
+unchanged.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

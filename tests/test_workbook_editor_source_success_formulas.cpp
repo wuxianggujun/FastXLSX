@@ -353,7 +353,8 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         "fastxlsx-workbook-editor-public-formula-cached-result-types-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-formula-cached-result-types-output.xlsx");
-    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-formula-cached-result-types-dirty-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -365,6 +366,7 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         R"(<c r="D1" t="e"><f>NA()</f><v>#N/A</v></c>)"
         R"(</row></sheetData></worksheet>)";
     rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -429,6 +431,19 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         fastxlsx::CellRange {1, 1, 2, 4},
         expected_cells,
         "cached-result formula dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "cached-result formula post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "cached-result formula post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cached-result formula post-dirty no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "cached-result formula post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_materializes_source_shared_formulas()

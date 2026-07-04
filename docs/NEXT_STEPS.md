@@ -5879,6 +5879,10 @@ later dirty `WorksheetEditor` save rewrites `sheetData` from the sparse
 CellStore while preserving those source wrapper elements around it. This is
 wrapper preservation only, not wrapper metadata synchronization, range
 recalculation, relationship repair, or the internal sheetData Patch API.
+That wrapper-metadata dirty projection now also carries post-dirty no-op
+evidence: the follow-up `save_as()` is byte-stable, source bytes stay
+unchanged, and fresh reopen still sees the same sparse cells. This is still not
+wrapper metadata synchronization or range repair.
 Representative relationship-bearing wrapper metadata follows the same public
 dirty-projection boundary: source `<hyperlinks>` and `<tableParts>` do not
 block supported cell materialization, dirty projection preserves those worksheet

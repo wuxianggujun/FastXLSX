@@ -5915,6 +5915,11 @@ instructions while replacing comments and processing instructions inside the
 source `sheetData`. This is not comment import, processing-instruction semantic
 support, comments-part editing, broad XML trivia preservation, relationship
 repair, or a change to cell-internal comment / PI rejection.
+That comment/processing-instruction wrapper projection now also carries
+post-dirty no-op evidence: the follow-up `save_as()` is byte-stable, source
+bytes stay unchanged, and fresh reopen still sees the supported sparse cells.
+This is still not comment-part editing, processing-instruction semantics,
+broad XML trivia preservation, XML repair, or relationship repair.
 These wrapper/default-style/empty-source dirty outputs now also fresh-reopen
 through the public sparse views: normalized `s=0`, empty worksheets that acquire
 a single sparse edit, wrapper metadata, relationship-bearing metadata,

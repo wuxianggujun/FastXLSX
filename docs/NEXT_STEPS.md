@@ -5734,6 +5734,10 @@ materialized save-as projection, and empty/duplicate/attribute-bearing or
 unsupported inline/shared-string formula shapes fail cleanly without poisoning
 the editor. This is formula text import only, not formula evaluation or
 calcChain rebuild.
+Formula dirty-output fresh-reopen checks now also cover `row_cells()` and
+`column_cells()` snapshots for the reopened sparse store, keeping row/column
+views aligned with `sparse_cells()` and direct reads after materialized formula
+save-as projections.
 Source inline text failure hygiene is now pinned at the same facade: unknown XML
 entities, unsupported inline `<t>` attributes, duplicate direct inline text
 elements, and unknown inline string metadata fail cleanly without partial

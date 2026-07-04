@@ -30,6 +30,111 @@ bool formula_output_values_equal(
     return false;
 }
 
+bool formula_output_snapshot_matches(
+    const fastxlsx::WorksheetCellSnapshot& actual,
+    const ReopenedFormulaOutputCell& expected)
+{
+    return actual.reference.row == expected.row &&
+        actual.reference.column == expected.column &&
+        formula_output_values_equal(actual.value, expected.value);
+}
+
+void check_reopened_formula_row_snapshots(
+    fastxlsx::WorksheetEditor& reopened_sheet,
+    std::span<const ReopenedFormulaOutputCell> expected_cells,
+    std::string_view scenario)
+{
+    std::vector<std::uint32_t> checked_rows;
+    const std::string prefix(scenario);
+
+    for (const ReopenedFormulaOutputCell& expected : expected_cells) {
+        bool already_checked = false;
+        for (const std::uint32_t checked_row : checked_rows) {
+            if (checked_row == expected.row) {
+                already_checked = true;
+                break;
+            }
+        }
+        if (already_checked) {
+            continue;
+        }
+        checked_rows.push_back(expected.row);
+
+        std::size_t expected_count = 0;
+        for (const ReopenedFormulaOutputCell& candidate : expected_cells) {
+            if (candidate.row == expected.row) {
+                ++expected_count;
+            }
+        }
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_cells =
+            reopened_sheet.row_cells(expected.row);
+        check(row_cells.size() == expected_count,
+            prefix + " fresh reopen row_cells should expose the expected row count");
+        if (row_cells.size() != expected_count) {
+            continue;
+        }
+
+        std::size_t index = 0;
+        for (const ReopenedFormulaOutputCell& candidate : expected_cells) {
+            if (candidate.row != expected.row) {
+                continue;
+            }
+            check(formula_output_snapshot_matches(row_cells[index], candidate),
+                prefix + " fresh reopen row_cells should preserve row-major values");
+            ++index;
+        }
+    }
+}
+
+void check_reopened_formula_column_snapshots(
+    fastxlsx::WorksheetEditor& reopened_sheet,
+    std::span<const ReopenedFormulaOutputCell> expected_cells,
+    std::string_view scenario)
+{
+    std::vector<std::uint32_t> checked_columns;
+    const std::string prefix(scenario);
+
+    for (const ReopenedFormulaOutputCell& expected : expected_cells) {
+        bool already_checked = false;
+        for (const std::uint32_t checked_column : checked_columns) {
+            if (checked_column == expected.column) {
+                already_checked = true;
+                break;
+            }
+        }
+        if (already_checked) {
+            continue;
+        }
+        checked_columns.push_back(expected.column);
+
+        std::size_t expected_count = 0;
+        for (const ReopenedFormulaOutputCell& candidate : expected_cells) {
+            if (candidate.column == expected.column) {
+                ++expected_count;
+            }
+        }
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_cells =
+            reopened_sheet.column_cells(expected.column);
+        check(column_cells.size() == expected_count,
+            prefix + " fresh reopen column_cells should expose the expected column count");
+        if (column_cells.size() != expected_count) {
+            continue;
+        }
+
+        std::size_t index = 0;
+        for (const ReopenedFormulaOutputCell& candidate : expected_cells) {
+            if (candidate.column != expected.column) {
+                continue;
+            }
+            check(formula_output_snapshot_matches(column_cells[index], candidate),
+                prefix + " fresh reopen column_cells should preserve row-major values");
+            ++index;
+        }
+    }
+}
+
 void check_reopened_formula_dirty_output(
     const std::filesystem::path& output,
     const fastxlsx::CellRange& expected_range,
@@ -74,6 +179,9 @@ void check_reopened_formula_dirty_output(
                 prefix + " fresh reopen sparse_cells should preserve row-major values");
         }
     }
+
+    check_reopened_formula_row_snapshots(reopened_sheet, expected_cells, scenario);
+    check_reopened_formula_column_snapshots(reopened_sheet, expected_cells, scenario);
 
     for (const ReopenedFormulaOutputCell& expected : expected_cells) {
         const fastxlsx::CellValue actual =

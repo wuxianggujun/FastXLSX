@@ -1498,6 +1498,9 @@ dirty cells after failed-save recovery.
 The materialized-name move-owner save path is reopened too, verifying the moved
 dirty session persists while the discarded target session does not leak into the
 clean saved workbook.
+It now repeats the clean no-op save too, keeping move-owner diagnostics empty,
+preserving both source packages, and reopening both worksheets from the second
+no-op output with only the moved dirty payload.
 The `pending_worksheet_edits()` summary save path now reopens both the
 auto-flushed materialized sheet and the replacement-only sheet, pinning clean
 readback after mixed summary diagnostics.
@@ -5235,6 +5238,10 @@ the clean no-op output stay byte-stable, diagnostics stay empty, and both sheets
 reopen with the moved data and untouched source cells intact. This is
 move-ownership save hygiene only, not transaction transfer semantics, rollback,
 or moved-handle guarantees beyond the current public diagnostics contract.
+That move-ownership path now repeats the clean no-op save as well: the second
+no-op package matches the first no-op package, both source packages remain
+unchanged, public save-state/catalog snapshots stay stable, and both worksheets
+fresh-reopen with the moved dirty payload only.
 Materialized edit-summary move ownership now mirrors that save hygiene: after
 move construction and move assignment transfer the dirty `Data` summary, the
 first save clears dirty summaries and the clean no-op save preserves public
@@ -5255,6 +5262,10 @@ move assignment, the first save clears the aggregate diagnostics and drops the
 discarded target dirty payload, and the clean no-op save stays byte-stable while
 both sheets reopen unchanged. This is aggregate diagnostics hygiene only, not
 transaction transfer semantics, rollback, metadata repair, or relationship sync.
+The aggregate move-owner path now also repeats that clean no-op save, proving
+the second no-op package matches the first, aggregate diagnostics remain empty,
+both source packages are preserved, and both worksheets reopen with only the
+moved dirty payload.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

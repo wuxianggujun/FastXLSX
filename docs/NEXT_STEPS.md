@@ -571,6 +571,9 @@ rich formula-shape shifts before save, after fresh reopen, and after the later
 formula edits.
 It now mirrors those checks through A1 range `sparse_cells()` reads, covering the
 same shifted and post-noop formula cells through the range snapshot overload.
+The same rich formula-shape matrix now also exercises coordinate-batch
+`sparse_cells()` reads so stale pre-shift coordinates are skipped while shifted
+and later post-noop formula cells remain visible.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

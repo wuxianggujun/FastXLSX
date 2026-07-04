@@ -58065,6 +58065,15 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula sparse_cells should expose row-major shifted cells before save");
         check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells("A1:C3"), expected,
             "insert_rows rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 5> insert_row_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {3, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+        };
+        check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells(insert_row_requested_cells), expected,
+            "insert_rows rich formula requested sparse_cells should skip the old formula coordinate");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58103,6 +58112,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula reopened sparse_cells should expose row-major shifted cells");
                 check_insert_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C3"), expected,
                     "insert_rows rich formula reopened range sparse_cells should expose shifted cells");
+                check_insert_row_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_row_requested_cells), expected,
+                    "insert_rows rich formula reopened requested sparse_cells should skip the old coordinate");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
                     reopened_sheet.row_cells(3);
                 check(reopened_row_three.size() == 2 &&
@@ -58220,6 +58232,17 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula post-noop sparse_cells should expose both formulas before save");
         check_insert_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"), expected,
             "insert_rows rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 6> insert_row_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {3, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {3, 4},
+        };
+        check_insert_row_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(insert_row_post_noop_requested_cells), expected,
+            "insert_rows rich formula post-noop requested sparse_cells should skip the old coordinate");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "insert_rows rich formula post-noop edit");
 
@@ -58286,6 +58309,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                 check_insert_row_rich_formula_post_noop_sparse_cells(
                     reopened_sheet.sparse_cells("A1:D3"), expected,
                     "insert_rows rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_insert_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_row_post_noop_requested_cells), expected,
+                    "insert_rows rich formula post-noop reopened requested sparse_cells should skip the old coordinate");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
                     reopened_sheet.row_cells(3);
                 check(reopened_row_three.size() == 3 &&
@@ -58394,6 +58420,16 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns rich formula sparse_cells should expose row-major shifted cells before save");
         check_insert_column_rich_formula_sparse_cells(sheet.sparse_cells("A1:E2"), expected,
             "insert_columns rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 5> insert_column_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 4},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {2, 5},
+        };
+        check_insert_column_rich_formula_sparse_cells(
+            sheet.sparse_cells(insert_column_requested_cells), expected,
+            "insert_columns rich formula requested sparse_cells should skip the old formula coordinate");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58432,6 +58468,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula reopened sparse_cells should expose row-major shifted cells");
                 check_insert_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:E2"), expected,
                     "insert_columns rich formula reopened range sparse_cells should expose shifted cells");
+                check_insert_column_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_column_requested_cells), expected,
+                    "insert_columns rich formula reopened requested sparse_cells should skip the old coordinate");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
                     reopened_sheet.row_cells(2);
                 check(reopened_row_two.size() == 2 &&
@@ -58549,6 +58588,17 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns rich formula post-noop sparse_cells should expose both formulas before save");
         check_insert_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:F2"), expected,
             "insert_columns rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 6> insert_column_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 4},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {2, 5},
+            fastxlsx::WorksheetCellReference {2, 6},
+        };
+        check_insert_column_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(insert_column_post_noop_requested_cells), expected,
+            "insert_columns rich formula post-noop requested sparse_cells should skip the old coordinate");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "insert_columns rich formula post-noop edit");
 
@@ -58615,6 +58665,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                 check_insert_column_rich_formula_post_noop_sparse_cells(
                     reopened_sheet.sparse_cells("A1:F2"), expected,
                     "insert_columns rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_insert_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_column_post_noop_requested_cells), expected,
+                    "insert_columns rich formula post-noop reopened requested sparse_cells should skip the old coordinate");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
                     reopened_sheet.row_cells(2);
                 check(reopened_row_two.size() == 3 &&
@@ -58723,6 +58776,14 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula sparse_cells should expose row-major shifted cells before save");
         check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells("A1:C3"), expected,
             "delete_rows rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 4> delete_row_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {4, 3},
+            fastxlsx::WorksheetCellReference {3, 3},
+        };
+        check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells(delete_row_requested_cells), expected,
+            "delete_rows rich formula requested sparse_cells should skip deleted and old coordinates");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58761,6 +58822,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_rows rich formula reopened sparse_cells should expose row-major shifted cells");
                 check_delete_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C3"), expected,
                     "delete_rows rich formula reopened range sparse_cells should expose shifted cells");
+                check_delete_row_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_row_requested_cells), expected,
+                    "delete_rows rich formula reopened requested sparse_cells should skip deleted and old coordinates");
             };
         check_reopened_shift_output(output, "delete_rows rich formula",
             inspect_reopened_delete_row_formula);
@@ -58859,6 +58923,16 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula post-noop sparse_cells should expose both formulas before save");
         check_delete_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"), expected,
             "delete_rows rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 5> delete_row_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {4, 3},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {3, 4},
+        };
+        check_delete_row_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(delete_row_post_noop_requested_cells), expected,
+            "delete_rows rich formula post-noop requested sparse_cells should skip deleted and old coordinates");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_rows rich formula post-noop edit");
 
@@ -58926,6 +59000,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                 check_delete_row_rich_formula_post_noop_sparse_cells(
                     reopened_sheet.sparse_cells("A1:D3"), expected,
                     "delete_rows rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_delete_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_row_post_noop_requested_cells), expected,
+                    "delete_rows rich formula post-noop reopened requested sparse_cells should skip deleted and old coordinates");
             };
         check_reopened_shift_output(post_noop_output, "delete_rows rich formula post-noop save",
             inspect_reopened_delete_row_post_noop_formula);
@@ -59010,6 +59087,15 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula sparse_cells should expose row-major shifted cells before save");
         check_delete_column_rich_formula_sparse_cells(sheet.sparse_cells("A1:C2"), expected,
             "delete_columns rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 4> delete_column_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::WorksheetCellReference {2, 4},
+            fastxlsx::WorksheetCellReference {2, 3},
+        };
+        check_delete_column_rich_formula_sparse_cells(
+            sheet.sparse_cells(delete_column_requested_cells), expected,
+            "delete_columns rich formula requested sparse_cells should skip deleted and old coordinates");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -59048,6 +59134,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_columns rich formula reopened sparse_cells should expose row-major shifted cells");
                 check_delete_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C2"), expected,
                     "delete_columns rich formula reopened range sparse_cells should expose shifted cells");
+                check_delete_column_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_column_requested_cells), expected,
+                    "delete_columns rich formula reopened requested sparse_cells should skip deleted and old coordinates");
             };
         check_reopened_shift_output(output, "delete_columns rich formula",
             inspect_reopened_delete_column_formula);
@@ -59145,6 +59234,15 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula post-noop sparse_cells should expose both formulas before save");
         check_delete_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D2"), expected,
             "delete_columns rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 4> delete_column_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {2, 4},
+        };
+        check_delete_column_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(delete_column_post_noop_requested_cells), expected,
+            "delete_columns rich formula post-noop requested sparse_cells should skip deleted coordinates");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_columns rich formula post-noop edit");
 
@@ -59211,6 +59309,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                 check_delete_column_rich_formula_post_noop_sparse_cells(
                     reopened_sheet.sparse_cells("A1:D2"), expected,
                     "delete_columns rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_delete_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_column_post_noop_requested_cells), expected,
+                    "delete_columns rich formula post-noop reopened requested sparse_cells should skip deleted coordinates");
             };
         check_reopened_shift_output(post_noop_output, "delete_columns rich formula post-noop save",
             inspect_reopened_delete_column_post_noop_formula);

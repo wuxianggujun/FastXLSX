@@ -7405,6 +7405,70 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
                 std::string(prefix) + " should preserve the prior diagnostic");
         };
 
+    const auto check_saved_source_snapshots =
+        [&sheet, &editor, &prior_error, cell_count_before, memory_before](
+            std::string_view prefix) {
+            const auto check_source_cells =
+                [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+                    std::string_view message_prefix) {
+                    check(cells.size() == 3,
+                        std::string(message_prefix) + " should expose all source cells");
+                    check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                            cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[0].value.text_value() == "placeholder-a1",
+                        std::string(message_prefix) + " should keep source A1 text");
+                    check(cells[1].reference.row == 1 && cells[1].reference.column == 2 &&
+                            cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                            cells[1].value.number_value() == 1.0,
+                        std::string(message_prefix) + " should keep source B1 number");
+                    check(cells[2].reference.row == 2 && cells[2].reference.column == 1 &&
+                            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[2].value.text_value() == "placeholder-a2",
+                        std::string(message_prefix) + " should keep source A2 text");
+                };
+            check_source_cells(sheet.sparse_cells(),
+                std::string(prefix) + " full sparse snapshot");
+            check_source_cells(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}),
+                std::string(prefix) + " CellRange snapshot");
+            check_source_cells(sheet.sparse_cells("A1:B2"),
+                std::string(prefix) + " A1 range snapshot");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+            check(row_one.size() == 2 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "placeholder-a1" &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2 &&
+                    row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    row_one[1].value.number_value() == 1.0,
+                std::string(prefix) + " should keep row-one source snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                sheet.column_cells(1);
+            check(column_one.size() == 2 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == "placeholder-a1" &&
+                    column_one[1].reference.row == 2 &&
+                    column_one[1].reference.column == 1 &&
+                    column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[1].value.text_value() == "placeholder-a2",
+                std::string(prefix) + " should keep column-one source snapshots");
+            check(!sheet.has_pending_changes(),
+                std::string(prefix) + " should keep the materialized sheet clean");
+            check(!editor.has_pending_changes(),
+                std::string(prefix) + " should keep the editor clean");
+            check(editor.pending_change_count() == 0,
+                std::string(prefix) + " should not record a materialized handoff");
+            check(sheet.cell_count() == cell_count_before,
+                std::string(prefix) + " should preserve sparse cell count");
+            check(sheet.estimated_memory_usage() == memory_before,
+                std::string(prefix) + " should preserve sparse memory estimate");
+            check(editor.last_edit_error() == prior_error,
+                std::string(prefix) + " should preserve the prior diagnostic");
+        };
+
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -7414,6 +7478,7 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop, "invalid cell read no-op save");
     check_saved_cell_reads("invalid cell read saved session");
+    check_saved_source_snapshots("invalid cell read saved session");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -7452,6 +7517,7 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "invalid cell read second no-op save should leave the source package unchanged");
     check_saved_cell_reads("invalid cell read second no-op saved session");
+    check_saved_source_snapshots("invalid cell read second no-op saved session");
     check_reopened_default_data_sheet_output(noop_output, "invalid cell read second no-op");
 }
 

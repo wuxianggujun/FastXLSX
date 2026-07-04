@@ -2124,6 +2124,10 @@ shape after the recovered A1 overwrite: the original handle exposes full,
 bounded, A1-range, row, and column snapshots after the first save and both
 clean no-op saves, with rejected C1 still absent and materialized diagnostics
 empty.
+The invalid cell-read path now also adds saved-handle sparse, bounded range,
+A1-range, row, and column snapshots after its copy-original save and repeated
+no-op save, preserving the seeded prior diagnostic while proving read-only
+snapshots do not dirty the session.
 The row/column read-failure path now also re-runs saved-session `row_cells()` /
 `column_cells()` snapshots on the same clean handle after the copy-original save
 and repeated clean no-op save, preserving the prior diagnostic while proving

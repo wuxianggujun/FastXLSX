@@ -5843,6 +5843,11 @@ string cells are projected as inline text, formula cells stay plain formulas
 without stale cached values, the earlier source-copy output remains unchanged,
 and fresh reopen still sees the later inline edit. This is not sharedStrings
 migration or cached formula preservation.
+Flattened source inline rich text now has matching post-dirty no-op evidence:
+rich runs project as plain inline text after a dirty edit, the follow-up
+`save_as()` output is byte-stable, the source package stays unchanged, and
+fresh reopen still sees the flattened text plus later edit. This is not
+rich-text formatting preservation.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
 stores, stay clean until mutation, and later save through the standalone

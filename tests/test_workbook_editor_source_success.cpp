@@ -447,6 +447,8 @@ void test_public_worksheet_editor_flattens_source_inline_rich_text()
         artifact("fastxlsx-workbook-editor-public-source-inline-rich-text-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-inline-rich-text-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-inline-rich-text-dirty-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -472,6 +474,7 @@ void test_public_worksheet_editor_flattens_source_inline_rich_text()
           R"(</row></sheetData>)"
           R"(</worksheet>)";
     write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -515,6 +518,19 @@ void test_public_worksheet_editor_flattens_source_inline_rich_text()
         fastxlsx::CellRange {1, 1, 2, 2},
         expected_cells,
         "inline rich text dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "inline rich text post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "inline rich text post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "inline rich text post-dirty no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        expected_cells,
+        "inline rich text post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()

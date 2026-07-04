@@ -58988,6 +58988,66 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         [&source, &source_entries](const char* message) {
             check(fastxlsx::test::read_zip_entries(source) == source_entries, message);
         };
+    const auto check_row_ref_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells, const char* message) {
+            check(cells.size() == 2 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a2" &&
+                    cells[1].reference.row == 3 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == "#REF!+A:A+#REF!+B3",
+                message);
+        };
+    const auto check_row_ref_post_noop_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells, const char* message) {
+            check(cells.size() == 3 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a2" &&
+                    cells[1].reference.row == 3 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == "#REF!+A:A+#REF!+B3" &&
+                    cells[2].reference.row == 3 &&
+                    cells[2].reference.column == 4 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[2].value.text_value() == "C3+A1",
+                message);
+        };
+    const auto check_column_ref_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells, const char* message) {
+            check(cells.size() == 2 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[0].value.number_value() == 1.0 &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == "#REF!+#REF!+1:1+C2",
+                message);
+        };
+    const auto check_column_ref_post_noop_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells, const char* message) {
+            check(cells.size() == 3 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[0].value.number_value() == 1.0 &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == "#REF!+#REF!+1:1+C2" &&
+                    cells[2].reference.row == 1 &&
+                    cells[2].reference.column == 4 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[2].value.text_value() == "C1+A1",
+                message);
+        };
 
     {
         const std::filesystem::path output =
@@ -59033,6 +59093,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 shifted_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula_column[0].value.text_value() == "#REF!+A:A+#REF!+B3",
             "delete_rows #REF formula live column_cells should expose the shifted formula");
+        check_row_ref_sparse_cells(sheet.sparse_cells(),
+            "delete_rows #REF formula live sparse_cells should expose shifted source and formula order");
         check(!sheet.try_cell("C4").has_value(),
             "delete_rows formula #REF translation should remove the old formula coordinate");
 
@@ -59045,7 +59107,7 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             R"(<c r="C3"><f>#REF!+A:A+#REF!+B3</f></c>)",
             "delete_rows save_as should persist row-out-of-bounds formula references as #REF!");
         const auto inspect_reopened_row_ref_formula =
-            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_row_ref_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "delete_rows #REF formula reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
@@ -59078,6 +59140,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                         reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                         reopened_formula_column[0].value.text_value() == "#REF!+A:A+#REF!+B3",
                     "delete_rows #REF formula reopened column_cells should expose the shifted formula");
+                check_row_ref_sparse_cells(reopened_sheet.sparse_cells(),
+                    "delete_rows #REF formula reopened sparse_cells should expose shifted source and formula order");
                 check(!reopened_sheet.try_cell("C4").has_value(),
                     "delete_rows #REF formula reopened output should keep old coordinate absent");
             };
@@ -59191,6 +59255,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 post_noop_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula_column[0].value.text_value() == "C3+A1",
             "delete_rows #REF formula post-noop live column_cells should expose the later formula");
+        check_row_ref_post_noop_sparse_cells(sheet.sparse_cells(),
+            "delete_rows #REF formula post-noop live sparse_cells should expose formulas in sparse order");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_rows #REF formula post-noop edit");
 
@@ -59225,7 +59291,7 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_contains(post_noop_xml, R"(<c r="D3"><f>C3+A1</f></c>)",
             "delete_rows #REF formula post-noop save should write the post-noop formula");
         const auto inspect_reopened_row_ref_post_noop_formula =
-            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_row_ref_post_noop_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "delete_rows #REF formula post-noop save reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
@@ -59268,6 +59334,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                         reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                         reopened_formula_column[0].value.text_value() == "C3+A1",
                     "delete_rows #REF formula post-noop column_cells should expose the later formula");
+                check_row_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells(),
+                    "delete_rows #REF formula post-noop sparse_cells should expose formulas in sparse order");
                 check(!reopened_sheet.try_cell("C4").has_value(),
                     "delete_rows #REF formula post-noop save reopened output should keep old coordinate absent");
             };
@@ -59364,6 +59432,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 shifted_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula_column[0].value.text_value() == "#REF!+#REF!+1:1+C2",
             "delete_columns #REF formula live column_cells should expose the shifted formula");
+        check_column_ref_sparse_cells(sheet.sparse_cells(),
+            "delete_columns #REF formula live sparse_cells should expose shifted source and formula order");
         check(!sheet.try_cell("D1").has_value(),
             "delete_columns formula #REF translation should remove the old formula coordinate");
 
@@ -59376,7 +59446,7 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             R"(<c r="C1"><f>#REF!+#REF!+1:1+C2</f></c>)",
             "delete_columns save_as should persist column-out-of-bounds formula references as #REF!");
         const auto inspect_reopened_column_ref_formula =
-            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_column_ref_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "delete_columns #REF formula reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
@@ -59413,6 +59483,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                         reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                         reopened_formula_column[0].value.text_value() == "#REF!+#REF!+1:1+C2",
                     "delete_columns #REF formula reopened column_cells should expose the shifted formula");
+                check_column_ref_sparse_cells(reopened_sheet.sparse_cells(),
+                    "delete_columns #REF formula reopened sparse_cells should expose shifted source and formula order");
                 check(!reopened_sheet.try_cell("D1").has_value(),
                     "delete_columns #REF formula reopened output should keep old coordinate absent");
             };
@@ -59530,6 +59602,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                 post_noop_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula_column[0].value.text_value() == "C1+A1",
             "delete_columns #REF formula post-noop live column_cells should expose the later formula");
+        check_column_ref_post_noop_sparse_cells(sheet.sparse_cells(),
+            "delete_columns #REF formula post-noop live sparse_cells should expose formulas in sparse order");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_columns #REF formula post-noop edit");
 
@@ -59564,7 +59638,7 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_contains(post_noop_xml, R"(<c r="D1"><f>C1+A1</f></c>)",
             "delete_columns #REF formula post-noop save should write the post-noop formula");
         const auto inspect_reopened_column_ref_post_noop_formula =
-            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_column_ref_post_noop_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "delete_columns #REF formula post-noop save reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 4,
@@ -59611,6 +59685,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                         reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
                         reopened_formula_column[0].value.text_value() == "C1+A1",
                     "delete_columns #REF formula post-noop column_cells should expose the later formula");
+                check_column_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells(),
+                    "delete_columns #REF formula post-noop sparse_cells should expose formulas in sparse order");
                 check(!reopened_sheet.try_cell("B1").has_value(),
                     "delete_columns #REF formula post-noop save reopened output should keep empty intermediate column absent");
             };

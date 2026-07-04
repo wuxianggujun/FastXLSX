@@ -552,6 +552,9 @@ formula order without claiming formula evaluation or metadata synchronization.
 The live materialized checks now mirror those row/column snapshots before the
 initial save and after the later dirty formula edit, so the public sparse views
 are pinned on both sides of the save/reopen handoff.
+The same delete-side `#REF!` formula paths now also pin global `sparse_cells()`
+row-major order for the shifted source/formula cells before save, after
+fresh-reopen, and after the later dirty formula edit.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

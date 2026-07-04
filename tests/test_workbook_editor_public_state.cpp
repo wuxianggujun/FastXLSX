@@ -8631,7 +8631,49 @@ void test_public_worksheet_editor_row_and_column_cells_snapshot()
     check(!editor.last_edit_error().has_value(),
         "row_cells and column_cells reads should not update last_edit_error");
 
+    const auto check_saved_row_one =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& saved_row,
+            const std::string& message) {
+            check(saved_row.size() == 3 &&
+                    saved_row[0].reference.row == 1 &&
+                    saved_row[0].reference.column == 1 &&
+                    saved_row[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_row[0].value.text_value() == "changed-after-row-column-snapshot" &&
+                    saved_row[1].reference.row == 1 &&
+                    saved_row[1].reference.column == 2 &&
+                    saved_row[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    saved_row[1].value.number_value() == 1.0 &&
+                    saved_row[2].reference.row == 1 &&
+                    saved_row[2].reference.column == 3 &&
+                    saved_row[2].value.kind() == fastxlsx::CellValueKind::Blank,
+                message);
+        };
+    const auto check_saved_column_one =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& saved_column,
+            const std::string& message) {
+            check(saved_column.size() == 3 &&
+                    saved_column[0].reference.row == 1 &&
+                    saved_column[0].reference.column == 1 &&
+                    saved_column[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_column[0].value.text_value() == "changed-after-row-column-snapshot" &&
+                    saved_column[1].reference.row == 2 &&
+                    saved_column[1].reference.column == 1 &&
+                    saved_column[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_column[1].value.text_value() == "placeholder-a2" &&
+                    saved_column[2].reference.row == 3 &&
+                    saved_column[2].reference.column == 1 &&
+                    saved_column[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_column[2].value.text_value() == "column-new",
+                message);
+        };
+
     editor.save_as(output);
+    check_saved_row_one(sheet.row_cells(1),
+        "row_cells saved session should keep row-one snapshots after save_as");
+    check_saved_column_one(sheet.column_cells(1),
+        "column_cells saved session should keep column-one snapshots after save_as");
+    check(!sheet.has_pending_changes(),
+        "row/column saved-session reads should keep the materialized sheet clean");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "row/column snapshot save should leave the source package unchanged");
@@ -8714,6 +8756,12 @@ void test_public_worksheet_editor_row_and_column_cells_snapshot()
         "row/column snapshot no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "row/column snapshot no-op save should leave the source package unchanged");
+    check_saved_row_one(sheet.row_cells(1),
+        "row_cells no-op saved session should keep row-one snapshots");
+    check_saved_column_one(sheet.column_cells(1),
+        "column_cells no-op saved session should keep column-one snapshots");
+    check(!sheet.has_pending_changes(),
+        "row/column no-op saved-session reads should keep the materialized sheet clean");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -8742,6 +8790,12 @@ void test_public_worksheet_editor_row_and_column_cells_snapshot()
         "row/column snapshot second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "row/column snapshot second no-op save should leave the source package unchanged");
+    check_saved_row_one(sheet.row_cells(1),
+        "row_cells second no-op saved session should keep row-one snapshots");
+    check_saved_column_one(sheet.column_cells(1),
+        "column_cells second no-op saved session should keep column-one snapshots");
+    check(!sheet.has_pending_changes(),
+        "row/column second no-op saved-session reads should keep the materialized sheet clean");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "row/column snapshot second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

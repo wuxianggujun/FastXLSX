@@ -1078,6 +1078,10 @@ row/column ordering, explicit blank cells, source-backed records, later edits,
 and outside-coordinate sparse cells.
 Its second no-op output now also fresh-reopens with the same row/column
 ordering, source cells, explicit blank, later edits, bounds, and outside D4.
+It now also reads `row_cells(1)` and `column_cells(1)` directly from the clean
+saved materialized handle after the initial save and both clean no-op saves,
+pinning row/column ordering while proving those snapshot reads do not re-dirty
+the saved session.
 The `contains_cell()` inspection path now also saves and reopens the dirty
 projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.

@@ -391,6 +391,10 @@ not dirty either planned-name handle, and after the later matching reacquire
 plus column shift, repeated no-op saves preserve source and prior package bytes
 while fresh readback still exposes the combined row/column-shifted
 `RenamedData` state cleanly.
+It now also continues from that repeated no-op checkpoint: a later `D3` edit
+re-dirties both planned-name handles, saves a fresh-reopenable post-noop output
+with shifted `A3` / `C1` plus the new cell, and leaves source, first-stage,
+second-stage, and both no-op packages unchanged.
 The non-formula shift-after-rename invalid-mutation path now has matching
 evidence: rejected `set_cell()` / `erase_cell()` calls may populate diagnostics
 but do not dirty either planned-name handle or leak rejected payloads, and the

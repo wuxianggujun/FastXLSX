@@ -564,6 +564,24 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
     check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "source-order shared formula matrix should not mutate untouched source sheet bytes");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula(
+            "A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)+SUM(Sheet1!A:A)+SUM('Other Sheet'!1:1)+SUM($A:B)+SUM($1:2)")},
+        {1, 2, fastxlsx::CellValue::formula("C1+D$1+$C1+$C$1")},
+        {1, 3, fastxlsx::CellValue::formula(
+            "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(C:C)+SUM(1:1)+SUM(Sheet1!C:C)+SUM('Other Sheet'!1:1)+SUM($A:D)+SUM($1:2)")},
+        {1, 4, fastxlsx::CellValue::formula("E1+F$1+$C1+$C$1")},
+        {2, 1, fastxlsx::CellValue::formula(
+            "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(2:2)+SUM(Sheet1!A:A)+SUM('Other Sheet'!2:2)+SUM($A:B)+SUM($1:3)")},
+        {3, 1, fastxlsx::CellValue::formula("Z3+1")},
+        {3, 2, fastxlsx::CellValue::formula("AA3+1")},
+        {4, 5, fastxlsx::CellValue::text("shared-formula-matrix-edit")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 4, 5},
+        expected_cells,
+        "source-order shared formula matrix dirty output");
 }
 
 void test_public_worksheet_editor_materializes_office_like_shared_formula_shape()
@@ -654,6 +672,32 @@ void test_public_worksheet_editor_materializes_office_like_shared_formula_shape(
     check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "office-like shared formula rewrite should not mutate untouched source sheet bytes");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(1.0)},
+        {1, 2, fastxlsx::CellValue::number(2.0)},
+        {1, 3, fastxlsx::CellValue::formula("A1+B1")},
+        {1, 4, fastxlsx::CellValue::formula("B1+C1")},
+        {1, 5, fastxlsx::CellValue::formula("A1*2")},
+        {2, 1, fastxlsx::CellValue::number(10.0)},
+        {2, 2, fastxlsx::CellValue::number(20.0)},
+        {2, 3, fastxlsx::CellValue::formula("A2+B2")},
+        {2, 4, fastxlsx::CellValue::formula("B2+C2")},
+        {2, 5, fastxlsx::CellValue::text("between-shared-groups")},
+        {2, 6, fastxlsx::CellValue::formula("SUM($A2:B2)+C$1")},
+        {2, 7, fastxlsx::CellValue::formula("SUM($A2:C2)+D$1")},
+        {3, 1, fastxlsx::CellValue::number(100.0)},
+        {3, 2, fastxlsx::CellValue::number(200.0)},
+        {3, 3, fastxlsx::CellValue::formula("A3+B3")},
+        {3, 4, fastxlsx::CellValue::formula("B3+C3")},
+        {3, 6, fastxlsx::CellValue::formula("SUM($A3:B3)+C$1")},
+        {3, 7, fastxlsx::CellValue::formula("SUM($A3:C3)+D$1")},
+        {6, 8, fastxlsx::CellValue::text("office-like-shared-formula-edit")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 6, 8},
+        expected_cells,
+        "office-like shared formula dirty output");
 }
 
 void test_public_worksheet_editor_materializes_array_and_datatable_formula_metadata()
@@ -727,6 +771,18 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
         "dirty projection should drop stale array formula cached values");
     check_not_contains(output_worksheet_xml, "<v>789</v>",
         "dirty projection should drop stale dataTable formula cached values");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula("SUM(B1:C1)")},
+        {1, 2, fastxlsx::CellValue::number(456.0)},
+        {1, 3, fastxlsx::CellValue::formula("A1+1")},
+        {1, 4, fastxlsx::CellValue::number(321.0)},
+        {2, 6, fastxlsx::CellValue::text("array-datatable-edit")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 6},
+        expected_cells,
+        "array/dataTable formula dirty output");
 }
 
 } // namespace

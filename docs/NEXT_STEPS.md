@@ -5752,6 +5752,11 @@ Formula dirty-output fresh-reopen checks now also cover `row_cells()` and
 `column_cells()` snapshots for the reopened sparse store, keeping row/column
 views aligned with `sparse_cells()` and direct reads after materialized formula
 save-as projections.
+The remaining formula-shape dirty outputs now reuse that same fresh-reopen
+readback gate for source-order shared formula matrices, Office-like 2D shared
+formula groups, and array/dataTable metadata fallbacks. This keeps lossy formula
+projection evidence tied to sparse public state, not formula evaluation or
+calcChain rebuild.
 Source inline text failure hygiene is now pinned at the same facade: unknown XML
 entities, unsupported inline `<t>` attributes, duplicate direct inline text
 elements, and unknown inline string metadata fail cleanly without partial

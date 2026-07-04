@@ -334,6 +334,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
         "no-op save_as after source max-coordinate materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after source max-coordinate materialization should not mutate source package");
     check_source_max_coordinate_read_only_noop_reopened_output(
         noop_output,
         "source max-coordinate no-op output",
@@ -517,6 +519,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         "no-op save_as after source max-coordinate formula materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate formula materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after source max-coordinate formula materialization should not mutate source package");
     check_source_max_coordinate_read_only_noop_reopened_output(
         noop_output,
         "source max-coordinate formula no-op output",
@@ -731,6 +735,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         "no-op save_as after source max-coordinate shared string materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate shared string materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after source max-coordinate shared string materialization should not mutate source package");
     check_source_max_coordinate_read_only_noop_reopened_output(
         noop_output,
         "source max-coordinate shared string no-op output",
@@ -976,6 +982,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
             "no-op save_as after source max-coordinate scalar materialization should not create public edits");
         check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
             "no-op save_as after source max-coordinate scalar materialization should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "no-op save_as after source max-coordinate scalar materialization should not mutate source package");
         fastxlsx::CellValue expected_edge = fastxlsx::CellValue::blank();
         if (case_info.expected_kind == fastxlsx::CellValueKind::Number) {
             expected_edge = fastxlsx::CellValue::number(case_info.expected_number);
@@ -1196,6 +1204,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
             "no-op save_as after source max-coordinate empty inline materialization should not create public edits");
         check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
             "no-op save_as after source max-coordinate empty inline materialization should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "no-op save_as after source max-coordinate empty inline materialization should not mutate source package");
         const fastxlsx::CellValue expected_edge =
             case_info.expected_kind == fastxlsx::CellValueKind::Text
             ? fastxlsx::CellValue::text("")
@@ -1398,6 +1408,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         "no-op save_as after source max-coordinate rich shared string materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate rich shared string materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after source max-coordinate rich shared string materialization should not mutate source package");
     check_source_max_coordinate_read_only_noop_reopened_output(
         noop_output,
         "source max-coordinate rich shared string no-op output",

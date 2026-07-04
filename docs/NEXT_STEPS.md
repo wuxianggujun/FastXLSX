@@ -6186,6 +6186,9 @@ schema validation.
   empty-inline, and rich shared-string cases: the second packages are
   byte-identical to the erase outputs, source packages stay unchanged, and the
   no-op outputs fresh-reopen with the same compact `A1:B2` sparse state.
+  The corresponding read-only no-op saves now also explicitly prove the source
+  packages stay unchanged while copy-original outputs fresh-reopen at the
+  `XFD1048576` edge.
 - Current public API:
   - `Workbook`
   - `Worksheet`

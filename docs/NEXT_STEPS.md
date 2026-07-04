@@ -1528,6 +1528,9 @@ empty worksheets, and later value/appended edits.
 Public-state also reopens max-cells and memory-budget guardrail recovery
 outputs after erasing a source-backed cell to release insertion budget, verifying
 clean diagnostics plus the saved erased/inserted sparse coordinates.
+Those erased-cell budget-release recoveries now also run a second clean no-op
+`save_as()` for both max-cells and memory-budget paths, proving repeated saves
+remain byte-stable while sources and recovered sparse readback stay unchanged.
 The adjacent missing-erase guardrail clean-save paths are also reopened to
 verify the rejected target stays absent while source-backed cells remain clean.
 The formula-translation memory-budget shift failure path now also runs a second

@@ -1533,6 +1533,11 @@ verify the rejected target stays absent while source-backed cells remain clean.
 The formula-translation memory-budget shift failure path now also runs a second
 clean no-op `save_as()`, proving the copy-original output and public state stay
 stable after the rejected `insert_rows()` mutation.
+The adjacent source-load options / memory-budget guard recoveries and mutation
+max-cells / memory-budget guard recoveries now mirror that second no-op
+contract too: repeated clean saves keep package entries byte-stable, preserve
+public diagnostics, leave sources unchanged, and fresh-reopen with the recovered
+replacement values.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.

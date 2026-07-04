@@ -59804,6 +59804,8 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-options-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-options-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-options-second-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -59885,6 +59887,40 @@ void test_public_worksheet_editor_options_guard_failure_preserves_state()
         "options guard recovery noop save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data", "options guard recovery noop",
         inspect_reopened_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_second_noop =
+        editor.pending_worksheet_edits();
+    editor.save_as(second_noop_output);
+    check(editor.pending_change_count() == 1,
+        "options guard recovery second noop save should not add another public handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "options guard recovery second noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "options guard recovery second noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "options guard recovery second noop save should not leave dirty materialized memory");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "options guard recovery second noop save");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_second_noop),
+        "options guard recovery second noop save should preserve pending summaries");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "options guard recovery second noop save");
+
+    const auto second_noop_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_output_entries == noop_output_entries,
+        "options guard recovery second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "options guard recovery second noop save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "options guard recovery second noop",
+        inspect_reopened_output);
 }
 
 void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
@@ -59895,6 +59931,8 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-memory-options-second-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -59990,6 +60028,41 @@ void test_public_worksheet_editor_memory_budget_guard_failure_preserves_state()
         "memory-budget source-load recovery noop save should leave the source package unchanged");
     check_reopened_default_data_overwrite_output(noop_output, "memory-budget source-load recovery noop",
         "after-memory-budget-failure");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(recovered.has_value() && !recovered->has_pending_changes(),
+        "memory-budget source-load recovery second noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "memory-budget source-load recovery second noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "memory-budget source-load recovery second noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "memory-budget source-load recovery second noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "memory-budget source-load recovery second noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "memory-budget source-load recovery second noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "memory-budget source-load recovery second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "memory-budget source-load recovery second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "memory-budget source-load recovery second noop save");
+
+    const auto second_noop_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_output_entries == noop_output_entries,
+        "memory-budget source-load recovery second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "memory-budget source-load recovery second noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(second_noop_output,
+        "memory-budget source-load recovery second noop",
+        "after-memory-budget-failure");
 }
 
 void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()
@@ -60083,6 +60156,8 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
 
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-second-noop-output.xlsx");
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
@@ -60116,6 +60191,41 @@ void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state
         "successful memory-budget recovery noop save should leave the source package unchanged");
     check_reopened_default_data_overwrite_output(noop_output, "mutation memory-budget recovery noop",
         "tiny");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "successful memory-budget recovery second noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "successful memory-budget recovery second noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful memory-budget recovery second noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful memory-budget recovery second noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful memory-budget recovery second noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful memory-budget recovery second noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful memory-budget recovery second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "mutation memory-budget recovery second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "mutation memory-budget recovery second noop save");
+
+    const auto second_noop_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_output_entries == noop_output_entries,
+        "successful memory-budget recovery second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful memory-budget recovery second noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(second_noop_output,
+        "mutation memory-budget recovery second noop",
+        "tiny");
 }
 
 void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
@@ -60126,6 +60236,8 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-second-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -60240,6 +60352,41 @@ void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "successful max-cells recovery noop save should leave the source package unchanged");
     check_reopened_default_data_overwrite_output(noop_output, "mutation max-cells recovery noop",
+        "after-max-cells-overwrite");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "successful max-cells recovery second noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "successful max-cells recovery second noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful max-cells recovery second noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful max-cells recovery second noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful max-cells recovery second noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful max-cells recovery second noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful max-cells recovery second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "mutation max-cells recovery second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "mutation max-cells recovery second noop save");
+
+    const auto second_noop_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_output_entries == noop_output_entries,
+        "successful max-cells recovery second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful max-cells recovery second noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(second_noop_output,
+        "mutation max-cells recovery second noop",
         "after-max-cells-overwrite");
 }
 

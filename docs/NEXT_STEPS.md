@@ -5769,6 +5769,11 @@ formula text only.
 Source error cell materialization now has matching post-dirty no-op evidence:
 the no-op output remains byte-stable, the rewritten source package is unchanged,
 and fresh reopen still reads the `t="e"` error cells beside later edits.
+The same source error cell path now also has a read-only clean no-op
+`save_as()` gate before the later edit: source error cells stay clean, copy the
+source package bytes unchanged, fresh-reopen through public sparse views, and
+leave the source package untouched. This remains scalar error-cell readback and
+copy-original evidence, not error-token validation or formula evaluation.
 Source shared formula definitions/followers now also carry that no-op gate:
 the flattened plain-formula output remains byte-stable, the fixture package is
 unchanged, and fresh reopen keeps the translated follower text.

@@ -7523,7 +7523,28 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
     check(!editor.last_edit_error().has_value(),
         "invalid range sparse_cells calls should not update last_edit_error");
 
+    const auto check_saved_range_snapshots =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& saved_cells, const char* message) {
+            check(saved_cells.size() == 3 &&
+                    saved_cells[0].reference.row == 1 &&
+                    saved_cells[0].reference.column == 2 &&
+                    saved_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    saved_cells[0].value.number_value() == 2.0 &&
+                    saved_cells[1].reference.row == 3 &&
+                    saved_cells[1].reference.column == 2 &&
+                    saved_cells[1].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    saved_cells[2].reference.row == 3 &&
+                    saved_cells[2].reference.column == 3 &&
+                    saved_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_cells[2].value.text_value() == "range-new",
+                message);
+        };
+
     editor.save_as(output);
+    check_saved_range_snapshots(sheet.sparse_cells(range),
+        "range sparse_cells saved session should keep row-major in-range snapshots");
+    check(!sheet.has_pending_changes(),
+        "range sparse_cells saved-session read should keep the materialized sheet clean");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "range sparse_cells save should leave the source package unchanged");
@@ -7535,11 +7556,13 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
     check_not_contains(worksheet_xml, "placeholder-a2",
         "range sparse_cells should not revive erased source cells");
     check_reopened_clean_sheet_output(output, "Data", "sparse_cells range snapshot",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&range, &check_saved_range_snapshots](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "range sparse_cells reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
                 "range sparse_cells reopened output should expose dirty-session bounds");
+            check_saved_range_snapshots(reopened_sheet.sparse_cells(range),
+                "range sparse_cells reopened output should keep row-major in-range snapshots");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a1.text_value() == "placeholder-a1",
@@ -7591,6 +7614,10 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "range sparse_cells no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "range sparse_cells no-op save should leave the source package unchanged");
+    check_saved_range_snapshots(sheet.sparse_cells(range),
+        "range sparse_cells no-op saved session should keep row-major in-range snapshots");
+    check(!sheet.has_pending_changes(),
+        "range sparse_cells no-op saved-session read should keep the materialized sheet clean");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -7619,13 +7646,19 @@ void test_public_worksheet_editor_sparse_cells_range_snapshot()
         "range sparse_cells second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "range sparse_cells second no-op save should leave the source package unchanged");
+    check_saved_range_snapshots(sheet.sparse_cells(range),
+        "range sparse_cells second no-op saved session should keep row-major in-range snapshots");
+    check(!sheet.has_pending_changes(),
+        "range sparse_cells second no-op saved-session read should keep the materialized sheet clean");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "range sparse_cells second no-op save",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&range, &check_saved_range_snapshots](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "range sparse_cells second no-op reopen should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
                 "range sparse_cells second no-op reopen should expose dirty-session bounds");
+            check_saved_range_snapshots(reopened_sheet.sparse_cells(range),
+                "range sparse_cells second no-op reopen should keep row-major in-range snapshots");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a1.text_value() == "placeholder-a1",
@@ -7729,7 +7762,28 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
     check(!editor.last_edit_error().has_value(),
         "invalid A1 range sparse_cells calls should not update last_edit_error");
 
+    const auto check_saved_a1_range_snapshots =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& saved_cells, const char* message) {
+            check(saved_cells.size() == 3 &&
+                    saved_cells[0].reference.row == 1 &&
+                    saved_cells[0].reference.column == 2 &&
+                    saved_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    saved_cells[0].value.number_value() == 2.0 &&
+                    saved_cells[1].reference.row == 3 &&
+                    saved_cells[1].reference.column == 2 &&
+                    saved_cells[1].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    saved_cells[2].reference.row == 3 &&
+                    saved_cells[2].reference.column == 3 &&
+                    saved_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_cells[2].value.text_value() == "a1-range-new",
+                message);
+        };
+
     editor.save_as(output);
+    check_saved_a1_range_snapshots(sheet.sparse_cells("B1:C3"),
+        "A1 range sparse_cells saved session should keep row-major in-range snapshots");
+    check(!sheet.has_pending_changes(),
+        "A1 range sparse_cells saved-session read should keep the materialized sheet clean");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "A1 range sparse_cells save should leave the source package unchanged");
@@ -7741,11 +7795,13 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
     check_not_contains(worksheet_xml, "placeholder-a2",
         "A1 range sparse_cells should not revive erased source cells");
     check_reopened_clean_sheet_output(output, "Data", "sparse_cells A1 range snapshot",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&check_saved_a1_range_snapshots](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "A1 range sparse_cells reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
                 "A1 range sparse_cells reopened output should expose dirty-session bounds");
+            check_saved_a1_range_snapshots(reopened_sheet.sparse_cells("B1:C3"),
+                "A1 range sparse_cells reopened output should keep row-major in-range snapshots");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a1.text_value() == "placeholder-a1",
@@ -7797,6 +7853,10 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
         "A1 range sparse_cells no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "A1 range sparse_cells no-op save should leave the source package unchanged");
+    check_saved_a1_range_snapshots(sheet.sparse_cells("B1:C3"),
+        "A1 range sparse_cells no-op saved session should keep row-major in-range snapshots");
+    check(!sheet.has_pending_changes(),
+        "A1 range sparse_cells no-op saved-session read should keep the materialized sheet clean");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -7825,13 +7885,19 @@ void test_public_worksheet_editor_sparse_cells_a1_range_snapshot()
         "A1 range sparse_cells second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "A1 range sparse_cells second no-op save should leave the source package unchanged");
+    check_saved_a1_range_snapshots(sheet.sparse_cells("B1:C3"),
+        "A1 range sparse_cells second no-op saved session should keep row-major in-range snapshots");
+    check(!sheet.has_pending_changes(),
+        "A1 range sparse_cells second no-op saved-session read should keep the materialized sheet clean");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "A1 range sparse_cells second no-op save",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&check_saved_a1_range_snapshots](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 5,
                 "A1 range sparse_cells second no-op reopen should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
                 "A1 range sparse_cells second no-op reopen should expose dirty-session bounds");
+            check_saved_a1_range_snapshots(reopened_sheet.sparse_cells("B1:C3"),
+                "A1 range sparse_cells second no-op reopen should keep row-major in-range snapshots");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a1.text_value() == "placeholder-a1",

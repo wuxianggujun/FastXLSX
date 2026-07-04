@@ -1047,12 +1047,18 @@ survive, and erased source cells stay absent after save.
 Its second no-op output now also fresh-reopens with the same sparse count,
 bounds, source-backed A1, post-snapshot B1 edit, explicit B3 blank, in-range C3,
 outside-range D4, and erased A2 absence.
+It now also reruns the same `CellRange` snapshot against the clean saved session
+and fresh-reopened outputs, pinning row-major in-range snapshots across no-op
+saves without including outside-range cells.
 The A1-string `sparse_cells("B1:C3")` path is reopened with the same dirty
 projection checks, pinning string-range parsing and saved sparse readback
 without extending the parser boundary.
 Its second no-op output now also fresh-reopens with the same sparse count,
 bounds, source-backed A1, post-snapshot B1 edit, explicit B3 blank, in-range C3,
 outside-range D4, and erased A2 absence.
+It now mirrors the clean saved-session and fresh-reopen range snapshot checks
+through the string A1 overload, preserving the same row-major in-range order
+across no-op saves.
 The coordinate-batch `sparse_cells(span<WorksheetCellReference>)` snapshot path
 is also reopened to verify duplicates, skipped missing cells, later edits, and
 erased source cells survive saved sparse projection cleanly.

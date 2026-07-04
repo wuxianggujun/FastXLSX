@@ -5834,6 +5834,10 @@ sparse views for explicit blanks, booleans, empty text, scalar/formula fallbacks
 The checks bind saved XML projections to `used_range()`, `sparse_cells()`,
 `row_cells()`, `column_cells()`, and direct reads without expanding into
 rich-text preservation, cached formula preservation, or metadata synchronization.
+The base supported-values projection now also has post-dirty no-op evidence:
+the follow-up `save_as()` output is byte-stable, the source package remains
+unchanged, and fresh reopen still sees the blank, boolean, empty-text, plain
+formula, cached-scalar fallback, and later inline edit records.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
 stores, stay clean until mutation, and later save through the standalone

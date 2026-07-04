@@ -5774,10 +5774,13 @@ Office-like 2D shared formula groups now carry that no-op evidence as well:
 multiple rectangular shared formula groups keep byte-stable flattened output,
 drop stale cached values, leave the source package unchanged, and fresh reopen
 preserves the translated formula grid beside later edits.
-The remaining formula-shape dirty outputs still reuse the same fresh-reopen
-readback gate for array/dataTable metadata fallbacks. This keeps lossy formula
-projection evidence tied to sparse public state, not formula evaluation or
-calcChain rebuild.
+Array/dataTable metadata fallbacks now carry the same no-op evidence: formula
+text cells stay flattened as plain formulas, metadata-only followers keep their
+cached scalar fallback values, stale cached values on formula text cells stay
+omitted, the output is byte-stable, the source package is unchanged, and fresh
+reopen preserves the sparse projection beside later edits. This keeps lossy
+formula projection evidence tied to sparse public state, not formula evaluation
+or calcChain rebuild.
 Source inline text failure hygiene is now pinned at the same facade: unknown XML
 entities, unsupported inline `<t>` attributes, duplicate direct inline text
 elements, and unknown inline string metadata fail cleanly without partial

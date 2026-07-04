@@ -1,5 +1,97 @@
 #include "test_workbook_editor_source_success_common.hpp"
 
+void check_source_max_coordinate_erase_reopened_output(
+    const std::filesystem::path& output,
+    std::string_view scenario,
+    std::string_view expected_a1_text,
+    std::string_view expected_a2_text)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen");
+    check(reopened_editor.pending_materialized_worksheet_names().empty(),
+        prefix + " fresh reopen should not expose dirty materialized names");
+    check(reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " fresh reopen should not expose dirty materialized cells");
+    check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " fresh reopen should not expose dirty materialized memory");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen should materialize a clean worksheet");
+    check(reopened_sheet.cell_count() == 3,
+        prefix + " fresh reopen should keep the shrunken sparse cell count");
+
+    const std::optional<fastxlsx::CellRange> range = reopened_sheet.used_range();
+    check(range.has_value() &&
+            range->first_row == 1 &&
+            range->first_column == 1 &&
+            range->last_row == 2 &&
+            range->last_column == 2,
+        prefix + " fresh reopen should expose compact A1:B2 bounds");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        reopened_sheet.sparse_cells();
+    check(all_cells.size() == 3 &&
+            all_cells[0].reference.row == 1 &&
+            all_cells[0].reference.column == 1 &&
+            all_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            all_cells[0].value.text_value() == expected_a1_text &&
+            all_cells[1].reference.row == 1 &&
+            all_cells[1].reference.column == 2 &&
+            all_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            all_cells[1].value.number_value() == 1.0 &&
+            all_cells[2].reference.row == 2 &&
+            all_cells[2].reference.column == 1 &&
+            all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            all_cells[2].value.text_value() == expected_a2_text,
+        prefix + " fresh reopen sparse_cells should keep only A1, B1, and A2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        reopened_sheet.row_cells(1);
+    check(row_one.size() == 2 &&
+            row_one[0].reference.row == 1 &&
+            row_one[0].reference.column == 1 &&
+            row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_one[0].value.text_value() == expected_a1_text &&
+            row_one[1].reference.row == 1 &&
+            row_one[1].reference.column == 2 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            row_one[1].value.number_value() == 1.0,
+        prefix + " fresh reopen row_cells should keep compact row one");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+        reopened_sheet.column_cells(1);
+    check(column_one.size() == 2 &&
+            column_one[0].reference.row == 1 &&
+            column_one[0].reference.column == 1 &&
+            column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_one[0].value.text_value() == expected_a1_text &&
+            column_one[1].reference.row == 2 &&
+            column_one[1].reference.column == 1 &&
+            column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_one[1].value.text_value() == expected_a2_text,
+        prefix + " fresh reopen column_cells should keep compact column one");
+
+    check(!reopened_sheet.try_cell("XFD1048576").has_value(),
+        prefix + " fresh reopen should keep the erased edge absent");
+    check(reopened_sheet.row_cells(1048576).empty(),
+        prefix + " fresh reopen row_cells should keep the max row empty");
+    check(reopened_sheet.column_cells(16384).empty(),
+        prefix + " fresh reopen column_cells should keep the max column empty");
+    check(reopened_sheet
+              .sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384})
+              .empty(),
+        prefix + " fresh reopen range snapshot should keep the erased edge absent");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen readback should leave the worksheet clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen readback");
+}
+
 void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_edge()
 {
     const std::filesystem::path source =
@@ -166,6 +258,11 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
         "source max-coordinate erase output should preserve untouched sheets");
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "source-max-edge",
         "source max-coordinate erase should not mutate the source package bytes");
+    check_source_max_coordinate_erase_reopened_output(
+        erase_output,
+        "source max-coordinate erase output",
+        "source-max-a1",
+        "source-max-a2");
 }
 
 void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and_erases_edge()
@@ -330,6 +427,11 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         "source max-coordinate formula erase output should preserve untouched sheets");
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "<v>12345</v>",
         "source max-coordinate formula erase should not mutate the source package bytes");
+    check_source_max_coordinate_erase_reopened_output(
+        erase_output,
+        "source max-coordinate formula erase output",
+        "source-formula-a1",
+        "source-formula-a2");
 }
 
 void test_public_worksheet_editor_materializes_source_max_coordinate_shared_string_and_erases_edge()
@@ -526,6 +628,11 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="XFD1048576" t="s"><v>1</v></c>)",
         "source max-coordinate shared string erase should not mutate the source package bytes");
+    check_source_max_coordinate_erase_reopened_output(
+        erase_output,
+        "source max-coordinate shared string erase output",
+        "source-shared-a1",
+        "source-shared-a2");
 }
 
 void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_values_and_erases_edge()
@@ -731,6 +838,11 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
         check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
             case_info.edge_cell_xml,
             "source max-coordinate scalar erase should not mutate the source package bytes");
+        check_source_max_coordinate_erase_reopened_output(
+            erase_output,
+            "source max-coordinate scalar erase output",
+            "source-scalar-a1",
+            "source-scalar-a2");
     }
 }
 
@@ -920,6 +1032,11 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
         check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
             case_info.edge_cell_xml,
             "source max-coordinate empty inline erase should not mutate the source package bytes");
+        check_source_max_coordinate_erase_reopened_output(
+            erase_output,
+            "source max-coordinate empty inline erase output",
+            "source-empty-inline-a1",
+            "source-empty-inline-a2");
     }
 }
 
@@ -1098,6 +1215,11 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="XFD1048576" t="s"><v>1</v></c>)",
         "source max-coordinate rich shared string erase should not mutate the source package bytes");
+    check_source_max_coordinate_erase_reopened_output(
+        erase_output,
+        "source max-coordinate rich shared string erase output",
+        "source-rich-a1",
+        "source-rich-a2");
 }
 
 } // namespace

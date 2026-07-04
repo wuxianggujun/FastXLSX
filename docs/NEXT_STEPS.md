@@ -5680,6 +5680,10 @@ keep source bytes on no-op `save_as()`, and erase back to `A1:B2` while
 preserving `xl/sharedStrings.xml`. This is not rich text preservation,
 sharedStrings rebuild/writeback/index migration, relationship repair, or
 large-file random editing.
+Those source-backed max-coordinate erase projections now also fresh-reopen after
+save: inline text, formula, shared-string, scalar, empty-inline, and rich
+shared-string edge cases all reopen as clean `A1:B2` sparse stores with
+`XFD1048576` absent from A1, row, column, and range snapshots.
 Unsupported source cell shape failure hygiene is pinned as well: date-like
 cells, custom/unknown type tokens, and invalid boolean payloads fail through
 the public facade without leaving partial materialized sessions or blocking

@@ -55542,6 +55542,30 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
                 check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_c3.text_value() == "post-noop-dirty-invalid-row-recovery",
                     "dirty invalid-to-valid row shift post-noop save reopened output should keep post-noop edit");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                    reopened_sheet.row_cells(3);
+                check(row_three.size() == 2 &&
+                        row_three[0].reference.row == 3 &&
+                        row_three[0].reference.column == 1 &&
+                        row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_three[0].value.text_value() == "placeholder-a2" &&
+                        row_three[1].reference.row == 3 &&
+                        row_three[1].reference.column == 3 &&
+                        row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_three[1].value.text_value() == "post-noop-dirty-invalid-row-recovery",
+                    "dirty invalid-to-valid row shift post-noop row_cells should expose shifted row order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                    reopened_sheet.column_cells(2);
+                check(column_two.size() == 2 &&
+                        column_two[0].reference.row == 1 &&
+                        column_two[0].reference.column == 2 &&
+                        column_two[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        column_two[0].value.number_value() == 1.0 &&
+                        column_two[1].reference.row == 5 &&
+                        column_two[1].reference.column == 2 &&
+                        column_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_two[1].value.text_value() == "dirty-row-tail",
+                    "dirty invalid-to-valid row shift post-noop column_cells should expose source number and dirty tail");
                 check(!reopened_sheet.try_cell("A2").has_value() &&
                         !reopened_sheet.try_cell("B4").has_value(),
                     "dirty invalid-to-valid row shift post-noop save reopened output should keep old coordinates absent");
@@ -55773,6 +55797,30 @@ void test_public_worksheet_editor_dirty_shift_valid_after_invalid_preserves_stat
                 check(reopened_f2.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_f2.text_value() == "post-noop-dirty-invalid-column-recovery",
                     "dirty invalid-to-valid column shift post-noop save reopened output should keep post-noop edit");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                    reopened_sheet.row_cells(2);
+                check(row_two.size() == 3 &&
+                        row_two[0].reference.row == 2 &&
+                        row_two[0].reference.column == 1 &&
+                        row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[0].value.text_value() == "placeholder-a2" &&
+                        row_two[1].reference.row == 2 &&
+                        row_two[1].reference.column == 5 &&
+                        row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[1].value.text_value() == "dirty-column-tail" &&
+                        row_two[2].reference.row == 2 &&
+                        row_two[2].reference.column == 6 &&
+                        row_two[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[2].value.text_value() == "post-noop-dirty-invalid-column-recovery",
+                    "dirty invalid-to-valid column shift post-noop row_cells should expose row-two order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                    reopened_sheet.column_cells(3);
+                check(column_three.size() == 1 &&
+                        column_three[0].reference.row == 1 &&
+                        column_three[0].reference.column == 3 &&
+                        column_three[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        column_three[0].value.number_value() == 1.0,
+                    "dirty invalid-to-valid column shift post-noop column_cells should expose shifted number");
                 check(!reopened_sheet.try_cell("B1").has_value() &&
                         !reopened_sheet.try_cell("D2").has_value(),
                     "dirty invalid-to-valid column shift post-noop save reopened output should keep old coordinates absent");

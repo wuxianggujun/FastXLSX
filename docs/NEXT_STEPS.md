@@ -238,6 +238,8 @@ clean no-op save before the later `C3` / `F2` edits: the second no-op outputs
 are byte-identical to the first, keep dirty and replacement diagnostics clear,
 fresh-reopen with shifted source and dirty-tail cells, and remain unchanged
 after the post-noop saves.
+Their post-noop outputs now also fresh-reopen with row/column snapshots for the
+shifted source cell, shifted dirty tail, and later `C3` / `F2` edits.
 The row-shift cross-handle path now also carries post-noop evidence: after both
 `Data` and `Untouched` are saved and a clean no-op output is proven byte-stable,
 later edits on both materialized handles save a fresh-reopenable output while

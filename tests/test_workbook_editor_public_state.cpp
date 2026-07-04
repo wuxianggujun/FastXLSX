@@ -59644,6 +59644,8 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-memory-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-memory-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-memory-second-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -59757,6 +59759,40 @@ void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
         "shift memory guard failure noop save should leave the source package unchanged");
     check_reopened_clean_sheet_output(noop_output, "Data",
         "shift memory guard failure noop save",
+        inspect_reopened_shift_memory_guard_failure);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "shift memory guard failure second noop save should keep sheet and editor clean");
+    check(editor.pending_change_count() == 0,
+        "shift memory guard failure second noop save should not add a handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "shift memory guard failure second noop save should not expose dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "shift memory guard failure second noop save should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift memory guard failure second noop save should not expose dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "shift memory guard failure second noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift memory guard failure second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "shift memory guard failure second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "shift memory guard failure second noop save");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "shift memory guard failure second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift memory guard failure second noop save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "shift memory guard failure second noop save",
         inspect_reopened_shift_memory_guard_failure);
 }
 

@@ -1530,6 +1530,9 @@ outputs after erasing a source-backed cell to release insertion budget, verifyin
 clean diagnostics plus the saved erased/inserted sparse coordinates.
 The adjacent missing-erase guardrail clean-save paths are also reopened to
 verify the rejected target stays absent while source-backed cells remain clean.
+The formula-translation memory-budget shift failure path now also runs a second
+clean no-op `save_as()`, proving the copy-original output and public state stay
+stable after the rejected `insert_rows()` mutation.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.

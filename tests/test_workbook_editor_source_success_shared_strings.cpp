@@ -39,6 +39,47 @@ bool shared_strings_snapshot_matches(
         cell_values_equal(actual.value, expected.value);
 }
 
+std::optional<fastxlsx::CellRange> shared_strings_expected_used_range(
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells)
+{
+    if (expected_data_cells.empty()) {
+        return std::nullopt;
+    }
+
+    fastxlsx::CellRange range{
+        expected_data_cells.front().row,
+        expected_data_cells.front().column,
+        expected_data_cells.front().row,
+        expected_data_cells.front().column};
+
+    for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
+        if (expected.row < range.first_row) {
+            range.first_row = expected.row;
+        }
+        if (expected.column < range.first_column) {
+            range.first_column = expected.column;
+        }
+        if (expected.row > range.last_row) {
+            range.last_row = expected.row;
+        }
+        if (expected.column > range.last_column) {
+            range.last_column = expected.column;
+        }
+    }
+
+    return range;
+}
+
+bool shared_strings_ranges_equal(
+    const fastxlsx::CellRange& actual,
+    const fastxlsx::CellRange& expected)
+{
+    return actual.first_row == expected.first_row &&
+        actual.first_column == expected.first_column &&
+        actual.last_row == expected.last_row &&
+        actual.last_column == expected.last_column;
+}
+
 bool shared_strings_row_already_checked(
     const std::vector<std::uint32_t>& checked_rows,
     std::uint32_t row)
@@ -172,6 +213,24 @@ void check_reopened_lazy_shared_strings_dirty_output(
         prefix + " fresh reopen should materialize Data as clean");
     check(reopened_data.cell_count() == expected_data_cells.size(),
         prefix + " fresh reopen should keep the expected Data sparse count");
+
+    const std::optional<fastxlsx::CellRange> expected_used_range =
+        shared_strings_expected_used_range(expected_data_cells);
+    const std::optional<fastxlsx::CellRange> range = reopened_data.used_range();
+    check(expected_used_range.has_value() && range.has_value() &&
+            shared_strings_ranges_equal(*range, *expected_used_range),
+        prefix + " fresh reopen should expose the expected Data used range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        reopened_data.sparse_cells();
+    check(all_cells.size() == expected_data_cells.size(),
+        prefix + " fresh reopen sparse_cells should expose the expected Data cells");
+    if (all_cells.size() == expected_data_cells.size()) {
+        for (std::size_t index = 0; index < expected_data_cells.size(); ++index) {
+            check(shared_strings_snapshot_matches(all_cells[index], expected_data_cells[index]),
+                prefix + " fresh reopen sparse_cells should preserve Data order and values");
+        }
+    }
 
     for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
         const fastxlsx::CellValue actual =

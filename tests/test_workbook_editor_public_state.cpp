@@ -50881,6 +50881,107 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
     check(post_noop_cell.kind() == fastxlsx::CellValueKind::Text &&
             post_noop_cell.text_value() == "post-noop-invalid-shifts",
         "shift reacquire invalid shifts post-noop edit should be visible through the older handle");
+    const auto check_post_noop_invalid_shift_snapshots =
+        [](fastxlsx::WorksheetEditor& snapshot_sheet, std::string_view scenario) {
+            const std::string label(scenario);
+            const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+                snapshot_sheet.sparse_cells();
+            check(all_cells.size() == 4,
+                label + " sparse_cells should expose shifted and post-noop dirty cells");
+            if (all_cells.size() == 4) {
+                check(all_cells[0].reference.row == 1 && all_cells[0].reference.column == 1 &&
+                        all_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        all_cells[0].value.text_value() == "placeholder-a1",
+                    label + " sparse_cells should keep A1 first");
+                check(all_cells[1].reference.row == 1 && all_cells[1].reference.column == 2 &&
+                        all_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        all_cells[1].value.number_value() == 1.0,
+                    label + " sparse_cells should keep B1 second");
+                check(all_cells[2].reference.row == 3 && all_cells[2].reference.column == 1 &&
+                        all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                        all_cells[2].value.text_value() == "placeholder-a2",
+                    label + " sparse_cells should keep shifted A2 as A3");
+                check(all_cells[3].reference.row == 3 && all_cells[3].reference.column == 3 &&
+                        all_cells[3].value.kind() == fastxlsx::CellValueKind::Text &&
+                        all_cells[3].value.text_value() == "post-noop-invalid-shifts",
+                    label + " sparse_cells should keep post-noop C3 last");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_range =
+                snapshot_sheet.sparse_cells("A2:C3");
+            check(shifted_range.size() == 2,
+                label + " range sparse_cells should expose only shifted row-three cells");
+            if (shifted_range.size() == 2) {
+                check(shifted_range[0].reference.row == 3 &&
+                        shifted_range[0].reference.column == 1 &&
+                        shifted_range[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        shifted_range[0].value.text_value() == "placeholder-a2",
+                    label + " range sparse_cells should keep shifted A3 first");
+                check(shifted_range[1].reference.row == 3 &&
+                        shifted_range[1].reference.column == 3 &&
+                        shifted_range[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        shifted_range[1].value.text_value() == "post-noop-invalid-shifts",
+                    label + " range sparse_cells should keep post-noop C3 second");
+            }
+
+            const std::array<fastxlsx::WorksheetCellReference, 4> requested_refs {
+                fastxlsx::WorksheetCellReference {3, 3},
+                fastxlsx::WorksheetCellReference {2, 1},
+                fastxlsx::WorksheetCellReference {1, 2},
+                fastxlsx::WorksheetCellReference {3, 1},
+            };
+            const std::vector<fastxlsx::WorksheetCellSnapshot> requested_cells =
+                snapshot_sheet.sparse_cells(requested_refs);
+            check(requested_cells.size() == 3,
+                label + " requested sparse_cells should skip the old shifted coordinate");
+            if (requested_cells.size() == 3) {
+                check(requested_cells[0].reference.row == 3 &&
+                        requested_cells[0].reference.column == 3 &&
+                        requested_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        requested_cells[0].value.text_value() == "post-noop-invalid-shifts",
+                    label + " requested sparse_cells should keep post-noop C3 input order");
+                check(requested_cells[1].reference.row == 1 &&
+                        requested_cells[1].reference.column == 2 &&
+                        requested_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        requested_cells[1].value.number_value() == 1.0,
+                    label + " requested sparse_cells should keep B1 after skipped A2");
+                check(requested_cells[2].reference.row == 3 &&
+                        requested_cells[2].reference.column == 1 &&
+                        requested_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                        requested_cells[2].value.text_value() == "placeholder-a2",
+                    label + " requested sparse_cells should keep shifted A3 last");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                snapshot_sheet.row_cells(3);
+            check(row_three.size() == 2,
+                label + " row_cells should expose shifted and post-noop cells");
+            if (row_three.size() == 2) {
+                check(row_three[0].reference.row == 3 &&
+                        row_three[0].reference.column == 1 &&
+                        row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_three[0].value.text_value() == "placeholder-a2",
+                    label + " row_cells should keep shifted A3 first");
+                check(row_three[1].reference.row == 3 &&
+                        row_three[1].reference.column == 3 &&
+                        row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_three[1].value.text_value() == "post-noop-invalid-shifts",
+                    label + " row_cells should keep post-noop C3 second");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                snapshot_sheet.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 3 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "post-noop-invalid-shifts",
+                label + " column_cells should expose the post-noop C3 cell");
+        };
+    check_post_noop_invalid_shift_snapshots(
+        sheet, "shift reacquire invalid shifts post-noop older handle");
+    check_post_noop_invalid_shift_snapshots(
+        reacquired, "shift reacquire invalid shifts post-noop reacquired handle");
     check_public_state_single_data_dirty_materialized_summary(
         editor, reacquired, 1, "shift reacquire invalid shifts post-noop edit");
 
@@ -50910,7 +51011,7 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
     check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
         "shift reacquire invalid shifts post-noop save should leave the repeat no-op output unchanged");
     check_reopened_shift_output(post_noop_output, "shift reacquire invalid shifts post-noop save",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,
                 "shift reacquire invalid shifts post-noop save reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
@@ -50930,6 +51031,8 @@ void test_public_worksheet_editor_shift_reacquire_invalid_shifts_noop_save_prese
             check(!reopened_sheet.try_cell("C1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire invalid shifts post-noop save reopened output should omit later and old coordinates");
+            check_post_noop_invalid_shift_snapshots(reopened_sheet,
+                "shift reacquire invalid shifts post-noop save reopened output");
         });
 }
 

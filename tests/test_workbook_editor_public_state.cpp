@@ -58994,6 +58994,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-row-ref-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-row-ref-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-row-ref-noop-second-output.xlsx");
         const std::filesystem::path post_noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-row-ref-post-noop-output.xlsx");
         const std::filesystem::path post_noop_noop_output = artifact(
@@ -59082,6 +59084,46 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_reopened_shift_output(noop_output, "delete_rows #REF formula noop save",
             inspect_reopened_row_ref_formula);
 
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_rows #REF formula second noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "delete_rows #REF formula second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_rows #REF formula second noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "delete_rows #REF formula second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_rows #REF formula second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "delete_rows #REF formula second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "delete_rows #REF formula second noop save");
+        const auto second_noop_entries =
+            fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "delete_rows #REF formula second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete_rows #REF formula second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete_rows #REF formula second noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_rows #REF formula second noop save should leave the source package unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "delete_rows #REF formula second noop save",
+            inspect_reopened_row_ref_formula);
+
         sheet.set_cell("D3", fastxlsx::CellValue::formula("C3+A1"));
         check(sheet.has_pending_changes(),
             "delete_rows #REF formula post-noop edit should dirty the saved session");
@@ -59119,6 +59161,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_rows #REF formula post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "delete_rows #REF formula post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "delete_rows #REF formula post-noop save should leave the repeat no-op output unchanged");
         check_source_package_unchanged(
             "delete_rows #REF formula post-noop save should leave the source package unchanged");
 
@@ -59157,6 +59201,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             };
         check_reopened_shift_output(post_noop_output, "delete_rows #REF formula post-noop save",
             inspect_reopened_row_ref_post_noop_formula);
+        check_reopened_shift_output(second_noop_output,
+            "delete_rows #REF formula second noop output after post-noop save",
+            inspect_reopened_row_ref_formula);
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
             workbook_editor_public_catalog_snapshot(editor);
@@ -59202,6 +59249,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-column-ref-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-column-ref-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-column-ref-noop-second-output.xlsx");
         const std::filesystem::path post_noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-column-ref-post-noop-output.xlsx");
         const std::filesystem::path post_noop_noop_output = artifact(
@@ -59290,6 +59339,46 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_reopened_shift_output(noop_output, "delete_columns #REF formula noop save",
             inspect_reopened_column_ref_formula);
 
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_columns #REF formula second noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "delete_columns #REF formula second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_columns #REF formula second noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "delete_columns #REF formula second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_columns #REF formula second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "delete_columns #REF formula second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "delete_columns #REF formula second noop save");
+        const auto second_noop_entries =
+            fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "delete_columns #REF formula second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete_columns #REF formula second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete_columns #REF formula second noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_columns #REF formula second noop save should leave the source package unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "delete_columns #REF formula second noop save",
+            inspect_reopened_column_ref_formula);
+
         sheet.set_cell("D1", fastxlsx::CellValue::formula("C1+A1"));
         check(sheet.has_pending_changes(),
             "delete_columns #REF formula post-noop edit should dirty the saved session");
@@ -59327,6 +59416,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_columns #REF formula post-noop save should leave the first output unchanged");
         check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
             "delete_columns #REF formula post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "delete_columns #REF formula post-noop save should leave the repeat no-op output unchanged");
         check_source_package_unchanged(
             "delete_columns #REF formula post-noop save should leave the source package unchanged");
 
@@ -59365,6 +59456,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             };
         check_reopened_shift_output(post_noop_output, "delete_columns #REF formula post-noop save",
             inspect_reopened_column_ref_post_noop_formula);
+        check_reopened_shift_output(second_noop_output,
+            "delete_columns #REF formula second noop output after post-noop save",
+            inspect_reopened_column_ref_formula);
 
         const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
             workbook_editor_public_catalog_snapshot(editor);

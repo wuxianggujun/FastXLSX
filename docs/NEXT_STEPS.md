@@ -536,6 +536,9 @@ The delete-side `#REF!` formula paths now carry the same repeated no-op save
 coverage after their post-noop edits, preserving the translated `#REF!` formula,
 the later formula edit, shifted source cells, and clean diagnostics across a
 fresh reopen.
+They now repeat the clean no-op before those later `#REF!` formula edits too,
+proving the repeat no-op package is byte-identical, fresh-reopenable, and still
+unchanged after the post-noop save.
 Those delete-side `#REF!` formula post-noop saves now also assert replacement
 diagnostics stay empty at the formula-edit save point and at the following
 clean no-op save.

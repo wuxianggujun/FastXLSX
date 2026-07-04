@@ -5861,10 +5861,12 @@ sparse views for explicit blanks, booleans, empty text, scalar/formula fallbacks
 The checks bind saved XML projections to `used_range()`, `sparse_cells()`,
 `row_cells()`, `column_cells()`, and direct reads without expanding into
 rich-text preservation, cached formula preservation, or metadata synchronization.
-The base supported-values projection now also has post-dirty no-op evidence:
-the follow-up `save_as()` output is byte-stable, the source package remains
-unchanged, and fresh reopen still sees the blank, boolean, empty-text, plain
-formula, cached-scalar fallback, and later inline edit records.
+The base supported-values projection now also has both no-op gates: read-only
+materialization stays clean, the clean no-op output copies source package bytes
+and fresh-reopens with blank, boolean, empty-text, plain formula, and
+cached-scalar fallback records. The later follow-up `save_as()` output is
+byte-stable, the source and prior no-op packages remain unchanged, and fresh
+reopen still sees those records beside the later inline edit.
 Source `t="str"` cells now carry the same post-dirty no-op evidence: scalar
 string cells are projected as inline text, formula cells stay plain formulas
 without stale cached values, the earlier source-copy output remains unchanged,

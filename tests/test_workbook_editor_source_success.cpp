@@ -193,6 +193,8 @@ void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-supported-values-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-supported-values-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-supported-values-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -260,6 +262,36 @@ void test_public_worksheet_editor_materializes_source_supported_values()
         "read-only supported source value materialization should start clean");
     check(!editor.has_pending_changes(),
         "read-only supported source value materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only supported source value materialization should not queue public Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after supported source value materialization should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after supported source value materialization should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after supported source value materialization should not create public edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "no-op save_as after supported source value materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after supported source value materialization should not mutate source package");
+    const ReopenedSourceSuccessCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::blank()},
+        {1, 2, fastxlsx::CellValue::boolean(true)},
+        {1, 3, fastxlsx::CellValue::boolean(false)},
+        {1, 4, fastxlsx::CellValue::text("")},
+        {1, 5, fastxlsx::CellValue::blank()},
+        {1, 6, fastxlsx::CellValue::formula("SUM(B1:C1)")},
+        {1, 7, fastxlsx::CellValue::number(7.0)},
+        {1, 8, fastxlsx::CellValue::number(8.0)},
+    };
+    check_reopened_source_success_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 8},
+        noop_cells,
+        "supported source values no-op output");
 
     sheet.set_cell("I2", fastxlsx::CellValue::text("supported-values-new-inline"));
     editor.save_as(output);
@@ -322,6 +354,8 @@ void test_public_worksheet_editor_materializes_source_supported_values()
         "supported source values post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "supported source values post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "supported source values post-dirty no-op save should not mutate the prior no-op output");
     check_reopened_source_success_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 2, 9},

@@ -603,6 +603,9 @@ materialized diagnostics stay stable.
 The invalid-mutation no-op save in that exact-budget release path now reuses
 those saved-handle snapshots while preserving the expected invalid-reference
 diagnostic.
+The invalid-shift no-op save after the recovery output now snapshots both saved
+handles too, including the recovered `E5` row/column views and the preserved
+shift diagnostic.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.

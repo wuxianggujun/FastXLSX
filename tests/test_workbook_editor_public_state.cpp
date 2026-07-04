@@ -20937,6 +20937,72 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         fastxlsx::test::read_zip_entries(invalid_shift_output);
     check(invalid_shift_entries == invalid_mutation_recovery_entries,
         "clear_cell_values() memory-budget release invalid shifts noop save should keep recovery output entries stable");
+    const auto check_clear_all_invalid_shift_noop_saved_snapshots =
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 11,
+                std::string(prefix) + " should keep all represented sparse records");
+            if (cells.size() == 11) {
+                check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep A1 blank first");
+                check(cells[8].reference.row == 3 && cells[8].reference.column == 3 &&
+                        cells[8].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep C3 blank in row-major order");
+                check(cells[9].reference.row == 4 && cells[9].reference.column == 4 &&
+                        cells[9].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[9].value.text_value() == "clear-all-mb-release",
+                    std::string(prefix) + " should keep D4 text before E5");
+                check(cells[10].reference.row == 5 && cells[10].reference.column == 5 &&
+                        cells[10].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[10].value.text_value() ==
+                            "clear-all-invalid-mutation-recovery",
+                    std::string(prefix) + " should keep E5 text last");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_five =
+                handle.row_cells(5);
+            check(row_five.size() == 1 &&
+                    row_five[0].reference.row == 5 &&
+                    row_five[0].reference.column == 5 &&
+                    row_five[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_five[0].value.text_value() ==
+                        "clear-all-invalid-mutation-recovery",
+                std::string(prefix) + " should keep row-five E5 snapshot");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_five =
+                handle.column_cells(5);
+            check(column_five.size() == 1 &&
+                    column_five[0].reference.row == 5 &&
+                    column_five[0].reference.column == 5 &&
+                    column_five[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_five[0].value.text_value() ==
+                        "clear-all-invalid-mutation-recovery",
+                std::string(prefix) + " should keep column-five E5 snapshot");
+            check(!handle.try_cell("E6").has_value(),
+                std::string(prefix) + " should keep shifted E6 absent before recovery");
+            check_cell_range_equals(handle.used_range(), 1, 1, 5, 5,
+                std::string(prefix) + " should keep saved recovery bounds");
+            check(!handle.has_pending_changes(),
+                std::string(prefix) + " should keep the handle clean");
+            check(editor.pending_change_count() == pending_count_after_reacquire + 1,
+                std::string(prefix) + " should not add another handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                std::string(prefix) + " should keep dirty names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                std::string(prefix) + " should keep dirty cell count empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(prefix) + " should keep dirty memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(prefix) + " should keep dirty summaries empty");
+            check(editor.last_edit_error() == invalid_shift_error,
+                std::string(prefix) + " should keep diagnostics stable");
+        };
+    check_clear_all_invalid_shift_noop_saved_snapshots(
+        sheet,
+        "clear_cell_values() memory-budget release invalid shifts original saved handle");
+    check_clear_all_invalid_shift_noop_saved_snapshots(
+        reacquired,
+        "clear_cell_values() memory-budget release invalid shifts reacquired saved handle");
 
     reacquired.insert_rows(5, 1);
     check(!editor.last_edit_error().has_value(),

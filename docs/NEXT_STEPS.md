@@ -401,6 +401,10 @@ but do not dirty either planned-name handle or leak rejected payloads, and the
 later valid column shift plus repeated no-op saves preserve source and prior
 package bytes while fresh readback still exposes the combined row/column-shifted
 `RenamedData` state cleanly.
+It now also continues after that repeated no-op checkpoint: a later `D3` edit
+keeps diagnostics clear, re-dirties both planned-name handles, saves a
+fresh-reopenable post-noop output with shifted `A3` / `C1` plus the new cell,
+and still proves rejected mutation payloads never reached the saved package.
 The same-handle row/column shift reuse path now carries the repeated no-op
 proof as well: one borrowed `WorksheetEditor` can save a row shift, apply and
 save a later column shift, then run first and second no-op saves while source

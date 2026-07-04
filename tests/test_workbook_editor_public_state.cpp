@@ -30334,6 +30334,132 @@ void test_public_worksheet_editor_delete_rows_preserves_shifted_value_only_style
     check_reopened_untouched_keep_me_output(output, "delete_rows value-only style");
 }
 
+void test_public_worksheet_editor_delete_rows_preserves_shifted_clear_value_style()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-delete-rows-clear-value-style-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-rows-clear-value-style-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.clear_cell_value("D2");
+    const std::optional<fastxlsx::CellValue> cleared_d2 = sheet.try_cell("D2");
+    check(cleared_d2.has_value() &&
+            cleared_d2->kind() == fastxlsx::CellValueKind::Blank &&
+            cleared_d2->has_style() &&
+            cleared_d2->style_id().value() == styled_formula_style.value(),
+        "clear_cell_value should preserve the source style before delete_rows shifts it");
+
+    sheet.delete_rows(1, 1);
+
+    check(sheet.cell_count() == 5,
+        "delete_rows should keep cleared shifted sparse count after deleting source row one");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 4,
+        "delete_rows should refresh bounds for shifted cleared styled cells");
+    const std::optional<fastxlsx::CellValue> shifted_blank = sheet.try_cell("D1");
+    check(shifted_blank.has_value() &&
+            shifted_blank->kind() == fastxlsx::CellValueKind::Blank &&
+            shifted_blank->has_style() &&
+            shifted_blank->style_id().value() == styled_formula_style.value(),
+        "delete_rows should move cleared cells with the preserved source style id");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+            sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("A2").text_value() == "extra-c3",
+        "delete_rows cleared style should shift remaining source rows");
+    check(!sheet.try_cell("D2").has_value() && !sheet.try_cell("A3").has_value(),
+        "delete_rows cleared style should keep old coordinates absent");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one = sheet.row_cells(1);
+    check(shifted_row_one.size() == 4,
+        "delete_rows cleared row_cells should expose shifted row one");
+    check(shifted_row_one[3].reference.row == 1 &&
+            shifted_row_one[3].reference.column == 4 &&
+            shifted_row_one[3].value.kind() == fastxlsx::CellValueKind::Blank &&
+            shifted_row_one[3].value.has_style() &&
+            shifted_row_one[3].value.style_id().value() == styled_formula_style.value(),
+        "delete_rows cleared row_cells should keep the shifted style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_four =
+        sheet.column_cells(4);
+    check(shifted_column_four.size() == 1 &&
+            shifted_column_four[0].reference.row == 1 &&
+            shifted_column_four[0].reference.column == 4 &&
+            shifted_column_four[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+            shifted_column_four[0].value.has_style() &&
+            shifted_column_four[0].value.style_id().value() == styled_formula_style.value(),
+        "delete_rows cleared column_cells should keep the shifted style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_rows cleared style pre-save shift summary");
+    check(editor.pending_materialized_cell_count() == 5,
+        "delete_rows cleared style should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "delete_rows cleared style should report shifted sparse memory");
+    check(!editor.last_edit_error().has_value(),
+        "successful delete_rows cleared style shift should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows cleared style save_as should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "delete_rows cleared style save_as should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_blank =
+        std::string(R"(<c r="D1" s=")")
+        + std::to_string(styled_formula_style.value()) + R"("/>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "delete_rows cleared style save_as should project shifted bounds");
+    check_contains(worksheet_xml, styled_blank,
+        "delete_rows cleared style save_as should write shifted blank with source style id");
+    check_contains(worksheet_xml, R"(<c r="A1")",
+        "delete_rows cleared style save_as should write shifted source A2");
+    check_contains(worksheet_xml, R"(<c r="B1")",
+        "delete_rows cleared style save_as should write shifted source B2");
+    check_contains(worksheet_xml, R"(<c r="A2")",
+        "delete_rows cleared style save_as should write shifted trailing row");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "delete_rows cleared style save_as should omit the old coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "delete_rows cleared style save_as should omit the old trailing row coordinate");
+    check_not_contains(worksheet_xml, R"(<f>A1+B1</f>)",
+        "delete_rows cleared style save_as should omit the cleared source formula");
+    check_not_contains(worksheet_xml, R"(<f>#REF!+#REF!</f>)",
+        "delete_rows cleared style save_as should not resurrect the shifted formula");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "delete_rows cleared style should preserve untouched worksheets");
+
+    const auto inspect_delete_rows_cleared_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "delete_rows cleared style reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "delete_rows cleared style reopened output should expose shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Blank &&
+                    reopened_d1->has_style() &&
+                    reopened_d1->style_id().value() == styled_formula_style.value(),
+                "delete_rows cleared style reopened output should preserve shifted source style");
+            check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+                    reopened_sheet.get_cell("B1").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("A2").text_value() == "extra-c3",
+                "delete_rows cleared style reopened output should read shifted source rows");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "delete_rows cleared style reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(output, "delete_rows cleared style",
+        inspect_delete_rows_cleared_output);
+    check_reopened_untouched_keep_me_output(output, "delete_rows cleared style");
+}
+
 void test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -32190,6 +32316,276 @@ void test_public_worksheet_editor_delete_columns_preserves_shifted_source_formul
     check_reopened_shift_output(post_noop_noop_output,
         "delete_columns styled source formula post-noop noop save",
         inspect_delete_columns_styled_formula_post_noop_output);
+}
+
+void test_public_worksheet_editor_delete_columns_preserves_shifted_value_only_style()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-delete-columns-value-only-style-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-value-only-style-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell_value("D2", fastxlsx::CellValue::text("delete-column-value-only-styled"));
+    const std::optional<fastxlsx::CellValue> value_only_d2 = sheet.try_cell("D2");
+    check(value_only_d2.has_value() &&
+            value_only_d2->kind() == fastxlsx::CellValueKind::Text &&
+            value_only_d2->text_value() == "delete-column-value-only-styled" &&
+            value_only_d2->has_style() &&
+            value_only_d2->style_id().value() == styled_formula_style.value(),
+        "set_cell_value should preserve the source style before delete_columns shifts it");
+
+    sheet.delete_columns(1, 1);
+
+    check(sheet.cell_count() == 4,
+        "delete_columns should keep value-only shifted sparse count after deleting source column A");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "delete_columns should refresh bounds for shifted value-only styled cells");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("A1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "delete_columns value-only style should shift B1 to A1");
+    const std::optional<fastxlsx::CellValue> shifted_value = sheet.try_cell("C2");
+    check(shifted_value.has_value() &&
+            shifted_value->kind() == fastxlsx::CellValueKind::Text &&
+            shifted_value->text_value() == "delete-column-value-only-styled" &&
+            shifted_value->has_style() &&
+            shifted_value->style_id().value() == styled_formula_style.value(),
+        "delete_columns should move value-only cells with the preserved source style id");
+    check(sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("B2").text_value() == "row2-gap-c2",
+        "delete_columns value-only style should shift remaining source columns");
+    check(!sheet.try_cell("D2").has_value() && !sheet.try_cell("A3").has_value(),
+        "delete_columns value-only style should keep deleted and old coordinates absent");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_two = sheet.row_cells(2);
+    check(shifted_row_two.size() == 3,
+        "delete_columns value-only row_cells should expose shifted row two");
+    check(shifted_row_two[2].reference.row == 2 &&
+            shifted_row_two[2].reference.column == 3 &&
+            shifted_row_two[2].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_two[2].value.text_value() == "delete-column-value-only-styled" &&
+            shifted_row_two[2].value.has_style() &&
+            shifted_row_two[2].value.style_id().value() == styled_formula_style.value(),
+        "delete_columns value-only row_cells should keep the shifted style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_three =
+        sheet.column_cells(3);
+    check(shifted_column_three.size() == 1 &&
+            shifted_column_three[0].reference.row == 2 &&
+            shifted_column_three[0].reference.column == 3 &&
+            shifted_column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_column_three[0].value.text_value() == "delete-column-value-only-styled" &&
+            shifted_column_three[0].value.has_style() &&
+            shifted_column_three[0].value.style_id().value() == styled_formula_style.value(),
+        "delete_columns value-only column_cells should keep the shifted style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_columns value-only style pre-save shift summary");
+    check(editor.pending_materialized_cell_count() == 4,
+        "delete_columns value-only style should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "delete_columns value-only style should report shifted sparse memory");
+    check(!editor.last_edit_error().has_value(),
+        "successful delete_columns value-only style shift should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns value-only style save_as should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "delete_columns value-only style save_as should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_text =
+        std::string(R"(<c r="C2" s=")")
+        + std::to_string(styled_formula_style.value())
+        + R"(" t="inlineStr"><is><t>delete-column-value-only-styled</t></is></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "delete_columns value-only style save_as should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "delete_columns value-only style save_as should write shifted B1");
+    check_contains(worksheet_xml, R"(<c r="A2")",
+        "delete_columns value-only style save_as should write shifted B2");
+    check_contains(worksheet_xml, R"(<c r="B2")",
+        "delete_columns value-only style save_as should write shifted C2");
+    check_contains(worksheet_xml, styled_text,
+        "delete_columns value-only style save_as should write shifted text with source style id");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "delete_columns value-only style save_as should omit the old coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "delete_columns value-only style save_as should omit the deleted trailing coordinate");
+    check_not_contains(worksheet_xml, R"(<f>A1+B1</f>)",
+        "delete_columns value-only style save_as should omit the replaced source formula");
+    check_not_contains(worksheet_xml, R"(<f>#REF!+A1</f>)",
+        "delete_columns value-only style save_as should not resurrect the shifted formula");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "delete_columns value-only style should preserve untouched worksheets");
+
+    const auto inspect_delete_columns_value_only_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "delete_columns value-only style reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "delete_columns value-only style reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "delete_columns value-only style reopened output should read shifted B1");
+            const std::optional<fastxlsx::CellValue> reopened_c2 =
+                reopened_sheet.try_cell("C2");
+            check(reopened_c2.has_value() &&
+                    reopened_c2->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2->text_value() == "delete-column-value-only-styled" &&
+                    reopened_c2->has_style() &&
+                    reopened_c2->style_id().value() == styled_formula_style.value(),
+                "delete_columns value-only style reopened output should preserve shifted source style");
+            check(reopened_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+                "delete_columns value-only style reopened output should read shifted source columns");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "delete_columns value-only style reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(output, "delete_columns value-only style",
+        inspect_delete_columns_value_only_output);
+    check_reopened_untouched_keep_me_output(output, "delete_columns value-only style");
+}
+
+void test_public_worksheet_editor_delete_columns_preserves_shifted_clear_value_style()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-delete-columns-clear-value-style-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-columns-clear-value-style-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.clear_cell_value("D2");
+    const std::optional<fastxlsx::CellValue> cleared_d2 = sheet.try_cell("D2");
+    check(cleared_d2.has_value() &&
+            cleared_d2->kind() == fastxlsx::CellValueKind::Blank &&
+            cleared_d2->has_style() &&
+            cleared_d2->style_id().value() == styled_formula_style.value(),
+        "clear_cell_value should preserve the source style before delete_columns shifts it");
+
+    sheet.delete_columns(1, 1);
+
+    check(sheet.cell_count() == 4,
+        "delete_columns should keep cleared shifted sparse count after deleting source column A");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "delete_columns should refresh bounds for shifted cleared styled cells");
+    const fastxlsx::CellValue shifted_number = sheet.get_cell("A1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "delete_columns cleared style should shift B1 to A1");
+    const std::optional<fastxlsx::CellValue> shifted_blank = sheet.try_cell("C2");
+    check(shifted_blank.has_value() &&
+            shifted_blank->kind() == fastxlsx::CellValueKind::Blank &&
+            shifted_blank->has_style() &&
+            shifted_blank->style_id().value() == styled_formula_style.value(),
+        "delete_columns should move cleared cells with the preserved source style id");
+    check(sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+            sheet.get_cell("B2").text_value() == "row2-gap-c2",
+        "delete_columns cleared style should shift remaining source columns");
+    check(!sheet.try_cell("D2").has_value() && !sheet.try_cell("A3").has_value(),
+        "delete_columns cleared style should keep deleted and old coordinates absent");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_two = sheet.row_cells(2);
+    check(shifted_row_two.size() == 3,
+        "delete_columns cleared row_cells should expose shifted row two");
+    check(shifted_row_two[2].reference.row == 2 &&
+            shifted_row_two[2].reference.column == 3 &&
+            shifted_row_two[2].value.kind() == fastxlsx::CellValueKind::Blank &&
+            shifted_row_two[2].value.has_style() &&
+            shifted_row_two[2].value.style_id().value() == styled_formula_style.value(),
+        "delete_columns cleared row_cells should keep the shifted style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_three =
+        sheet.column_cells(3);
+    check(shifted_column_three.size() == 1 &&
+            shifted_column_three[0].reference.row == 2 &&
+            shifted_column_three[0].reference.column == 3 &&
+            shifted_column_three[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+            shifted_column_three[0].value.has_style() &&
+            shifted_column_three[0].value.style_id().value() == styled_formula_style.value(),
+        "delete_columns cleared column_cells should keep the shifted style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "delete_columns cleared style pre-save shift summary");
+    check(editor.pending_materialized_cell_count() == 4,
+        "delete_columns cleared style should report shifted sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "delete_columns cleared style should report shifted sparse memory");
+    check(!editor.last_edit_error().has_value(),
+        "successful delete_columns cleared style shift should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns cleared style save_as should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "delete_columns cleared style save_as should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_blank =
+        std::string(R"(<c r="C2" s=")")
+        + std::to_string(styled_formula_style.value()) + R"("/>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "delete_columns cleared style save_as should project shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="A1"><v>1</v></c>)",
+        "delete_columns cleared style save_as should write shifted B1");
+    check_contains(worksheet_xml, R"(<c r="A2")",
+        "delete_columns cleared style save_as should write shifted B2");
+    check_contains(worksheet_xml, R"(<c r="B2")",
+        "delete_columns cleared style save_as should write shifted C2");
+    check_contains(worksheet_xml, styled_blank,
+        "delete_columns cleared style save_as should write shifted blank with source style id");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "delete_columns cleared style save_as should omit the old coordinate");
+    check_not_contains(worksheet_xml, R"(r="A3")",
+        "delete_columns cleared style save_as should omit the deleted trailing coordinate");
+    check_not_contains(worksheet_xml, R"(<f>A1+B1</f>)",
+        "delete_columns cleared style save_as should omit the cleared source formula");
+    check_not_contains(worksheet_xml, R"(<f>#REF!+A1</f>)",
+        "delete_columns cleared style save_as should not resurrect the shifted formula");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "delete_columns cleared style should preserve untouched worksheets");
+
+    const auto inspect_delete_columns_cleared_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "delete_columns cleared style reopened output should keep shifted sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "delete_columns cleared style reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "delete_columns cleared style reopened output should read shifted B1");
+            const std::optional<fastxlsx::CellValue> reopened_c2 =
+                reopened_sheet.try_cell("C2");
+            check(reopened_c2.has_value() &&
+                    reopened_c2->kind() == fastxlsx::CellValueKind::Blank &&
+                    reopened_c2->has_style() &&
+                    reopened_c2->style_id().value() == styled_formula_style.value(),
+                "delete_columns cleared style reopened output should preserve shifted source style");
+            check(reopened_sheet.get_cell("A2").text_value() == "row2-gap-b2" &&
+                    reopened_sheet.get_cell("B2").text_value() == "row2-gap-c2",
+                "delete_columns cleared style reopened output should read shifted source columns");
+            check(!reopened_sheet.try_cell("D2").has_value() &&
+                    !reopened_sheet.try_cell("A3").has_value(),
+                "delete_columns cleared style reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(output, "delete_columns cleared style",
+        inspect_delete_columns_cleared_output);
+    check_reopened_untouched_keep_me_output(output, "delete_columns cleared style");
 }
 
 void test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift()
@@ -59288,11 +59684,14 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_column_ref_formula_saved_reopen_audits_skip_ref();
             test_public_worksheet_editor_delete_rows_preserves_shifted_source_formula_style();
             test_public_worksheet_editor_delete_rows_preserves_shifted_value_only_style();
+            test_public_worksheet_editor_delete_rows_preserves_shifted_clear_value_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift();
             test_public_worksheet_editor_full_calculation_preserves_delete_rows_ref_shift_failed_save_state();
             test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift();
             test_public_worksheet_editor_full_calculation_before_delete_rows_ref_shift_failed_save_preserves_state();
             test_public_worksheet_editor_delete_columns_preserves_shifted_source_formula_style();
+            test_public_worksheet_editor_delete_columns_preserves_shifted_value_only_style();
+            test_public_worksheet_editor_delete_columns_preserves_shifted_clear_value_style();
             test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_shift();
             test_public_worksheet_editor_full_calculation_preserves_delete_columns_ref_shift_failed_save_state();
             test_public_worksheet_editor_full_calculation_before_delete_columns_ref_shift();

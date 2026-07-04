@@ -56244,6 +56244,46 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "delete_columns invalid zero-count failure should not dirty the materialized worksheet");
         check(sheet.cell_count() == 3,
             "delete_columns invalid zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.insert_rows(1048577, 0);
+        }), "insert_rows should validate row upper bounds before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed insert_rows upper-bound zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "insert_rows upper-bound zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "insert_rows upper-bound zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.delete_rows(1048577, 0);
+        }), "delete_rows should validate row upper bounds before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed delete_rows upper-bound zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "delete_rows upper-bound zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "delete_rows upper-bound zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.insert_columns(16385, 0);
+        }), "insert_columns should validate column upper bounds before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed insert_columns upper-bound zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "insert_columns upper-bound zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "insert_columns upper-bound zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.delete_columns(16385, 0);
+        }), "delete_columns should validate column upper bounds before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed delete_columns upper-bound zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "delete_columns upper-bound zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "delete_columns upper-bound zero-count failure should preserve sparse cell count");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "invalid zero-count shifts should preserve source A1");
         check(sheet.get_cell("B1").number_value() == 1.0,

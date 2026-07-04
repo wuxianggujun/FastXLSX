@@ -1495,6 +1495,10 @@ diagnostic and failed-save inspections.
 The aggregate materialized cell/memory diagnostics save path now reopens both
 auto-flushed worksheets as well, covering explicit blank bounds plus source and
 dirty cells after failed-save recovery.
+Both diagnostics paths now repeat the clean no-op save too: the second no-op
+packages match the first no-op packages, dirty materialized/replacement
+diagnostics stay empty, sources remain unchanged, and both worksheets reopen
+with the same flushed sparse cells.
 The materialized-name move-owner save path is reopened too, verifying the moved
 dirty session persists while the discarded target session does not leak into the
 clean saved workbook.
@@ -5231,6 +5235,10 @@ keeps materialized/replacement diagnostics empty, emits byte-stable package
 entries, and reopens both sheets unchanged. This is diagnostics save hygiene
 only, not commit/close semantics, transaction history, metadata repair, or
 relationship sync.
+Those diagnostics-specific paths now repeat the clean no-op save as well,
+proving the second no-op package remains byte-identical to the first no-op
+package while source bytes, diagnostics, public save-state/catalog snapshots,
+and reopened worksheet readback all stay stable.
 Materialized worksheet-name move ownership now has the same follow-up no-op save
 coverage. After move construction and move assignment transfer the dirty `Data`
 session and discard the target's dirty `Untouched` session, the saved output and

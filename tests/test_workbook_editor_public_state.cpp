@@ -3702,6 +3702,8 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
         artifact("fastxlsx-workbook-editor-public-materialized-names-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-names-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-second-noop-output.xlsx");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
@@ -3847,6 +3849,46 @@ void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
         inspect_materialized_names_data);
     check_reopened_clean_sheet_output(
         noop_output, "Untouched", "pending materialized names no-op Untouched",
+        inspect_materialized_names_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "pending materialized names second no-op save should keep source handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending materialized names second no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending materialized names second no-op save should keep dirty cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending materialized names second no-op save should keep dirty memory aggregate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "pending materialized names second no-op save should keep dirty summaries empty");
+    check(editor.pending_change_count() == 2,
+        "pending materialized names second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "pending materialized names second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "pending materialized names second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "pending materialized names second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "pending materialized names second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "pending materialized names second no-op Data",
+        inspect_materialized_names_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "pending materialized names second no-op Untouched",
         inspect_materialized_names_untouched);
 }
 
@@ -4040,6 +4082,8 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
         artifact("fastxlsx-workbook-editor-public-materialized-aggregate-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-aggregate-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-second-noop-output.xlsx");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
@@ -4206,6 +4250,50 @@ void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
         inspect_materialized_aggregate_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
         "pending materialized aggregate no-op Untouched",
+        inspect_materialized_aggregate_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "pending materialized aggregate second no-op save should keep source handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending materialized aggregate second no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending materialized aggregate second no-op save should keep dirty cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending materialized aggregate second no-op save should keep dirty memory aggregate empty");
+    check(editor.pending_replacement_cell_count() == 0,
+        "pending materialized aggregate second no-op save should keep replacement cells empty");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        "pending materialized aggregate second no-op save should keep replacement memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "pending materialized aggregate second no-op save should keep dirty summaries empty");
+    check(editor.pending_change_count() == 2,
+        "pending materialized aggregate second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "pending materialized aggregate second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "pending materialized aggregate second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "pending materialized aggregate second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "pending materialized aggregate second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "pending materialized aggregate second no-op Data",
+        inspect_materialized_aggregate_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "pending materialized aggregate second no-op Untouched",
         inspect_materialized_aggregate_untouched);
 }
 

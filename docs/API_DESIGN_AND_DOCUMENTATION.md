@@ -189,6 +189,15 @@ caller-supplied non-default `StyleId` handles, and insert missing cells without 
 style. `set_cell_values()` preflights the whole batch, accepts duplicate
 coordinates, and applies later-wins ordering after validation.
 
+`WorksheetEditor` row/column shift helpers (`insert_rows()`、`delete_rows()`、
+`insert_columns()`、`delete_columns()`) are represented sparse-store transforms.
+They keep shifted `CellValue` payloads and materialized source `StyleId` handles,
+translate supported references in moved formula cells, and apply the same narrow
+structural rewrite to stationary formula cells already in the materialized store.
+They are not Excel semantic row/column operations: they do not synchronize
+tables, filters, validations, conditional formatting, drawings, defined names,
+relationships, sharedStrings/styles metadata, or calcChain.
+
 ### 当前能力事实源
 
 当前 public / internal / planned / non-goal 状态矩阵统一维护在

@@ -40,11 +40,13 @@ represented sparse row/column shift helpers，以及 `save_as()` auto-flush。
 这些 scalar reads 和 sparse / row / column snapshots 是 owning read-only views；
 same-sheet Patch guard 失败后继续读取它们只保留诊断和 no-op-save 状态，不作为
 session commit、rollback 或 guard bypass。
-这些 shift helpers 只移动或删除已物化 sparse cells；moved formula cells 只通过窄
-A1-style translator 平移自身公式文本，删除或越界引用写成 `#REF!`，并随 moved cell
-保留 source-backed `StyleId`。它们不更新未物化 worksheet formulas、defined names、
-tables、filters、validations、conditional formatting、drawings、charts、hyperlinks 或
-worksheet relationships，也不是大文件低内存随机编辑。新增更窄的
+这些 shift helpers 只移动或删除已物化 sparse cells；shifted records 会保留
+`CellValue` payload 和 materialized source `StyleId`。Moved formula cells 会通过窄
+A1-style translator 平移自身公式文本，stationary formula cells 已在 materialized store
+中时也会用同一窄 structural rewriter 更新受影响引用；删除或越界引用写成 `#REF!`。
+它们不更新未物化 worksheet formulas、defined names、tables、filters、validations、
+conditional formatting、drawings、charts、hyperlinks 或 worksheet relationships，也不是
+大文件低内存随机编辑。新增更窄的
 `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNamesAndMaterializedWorksheetFormulas`
 会在同一次 rename 中同时改 direct workbook definedName formula text 和已经载入
 WorksheetEditor session 的 formula cell 文本，并把这些 session 标脏；它不
@@ -964,7 +966,7 @@ as a preflighted later-wins batch.
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);
 auto sheet = editor.worksheet("Data");
 sheet.set_cell("A1", fastxlsx::CellValue::text("hello"));
-sheet.insert_rows(2, 1); // only shifts represented sparse cells and translates moved formula text; no metadata sync
+sheet.insert_rows(2, 1); // only shifts represented sparse cells and narrowly rewrites materialized formula text; no metadata sync
 auto cells = sheet.sparse_cells(); // owning row-major snapshot, not an iterator
 auto visible_cells = sheet.sparse_cells(fastxlsx::CellRange{1, 1, 10, 5});
 auto has_sheet_edits = sheet.has_pending_changes(); // dirty-state inspection only

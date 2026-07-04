@@ -992,6 +992,8 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
 {
     const std::filesystem::path source = write_two_sheet_source(
         "fastxlsx-workbook-editor-public-array-datatable-formula-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-array-datatable-formula-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-array-datatable-formula-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -1033,6 +1035,32 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
         "array/dataTable formula read-only materialization should start clean");
     check(!editor.has_pending_changes(),
         "array/dataTable formula read-only materialization should not dirty the workbook editor");
+    check(editor.pending_change_count() == 0,
+        "array/dataTable formula read-only materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "array/dataTable formula no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "array/dataTable formula no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "array/dataTable formula no-op save should not queue Patch edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "array/dataTable formula no-op save should copy source package bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "array/dataTable formula no-op save should not mutate the source package");
+    const ReopenedFormulaOutputCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula("SUM(B1:C1)")},
+        {1, 2, fastxlsx::CellValue::number(456.0)},
+        {1, 3, fastxlsx::CellValue::formula("A1+1")},
+        {1, 4, fastxlsx::CellValue::number(321.0)},
+    };
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 4},
+        noop_cells,
+        "array/dataTable formula no-op output");
 
     sheet.set_cell("F2", fastxlsx::CellValue::text("array-datatable-edit"));
     editor.save_as(output);
@@ -1082,6 +1110,8 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
         "array/dataTable formula post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "array/dataTable formula post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "array/dataTable formula post-dirty no-op save should not mutate the prior no-op output");
     check_reopened_formula_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 2, 6},

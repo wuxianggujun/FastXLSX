@@ -5796,10 +5796,12 @@ package bytes and fresh-reopens with both rectangular shared formula groups
 translated as plain formula text, while the later flattened output remains
 byte-stable, drops stale cached values, and preserves both source and prior
 no-op package bytes.
-Array/dataTable metadata fallbacks now carry the same no-op evidence: formula
-text cells stay flattened as plain formulas, metadata-only followers keep their
-cached scalar fallback values, stale cached values on formula text cells stay
-omitted, the output is byte-stable, the source package is unchanged, and fresh
+Array/dataTable metadata fallbacks now carry the same two no-op gates: read-only
+materialization stays clean, the clean no-op output copies source package bytes
+and fresh-reopens with formula text cells flattened as plain formulas while
+metadata-only followers keep cached scalar fallback values. The later dirty
+projection omits stale cached values on formula text cells, remains
+byte-stable, preserves both source and prior no-op package bytes, and fresh
 reopen preserves the sparse projection beside later edits. This keeps lossy
 formula projection evidence tied to sparse public state, not formula evaluation
 or calcChain rebuild.

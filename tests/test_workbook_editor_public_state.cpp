@@ -57148,6 +57148,106 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
 
     {
         const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-max-boundary-noop-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-max-boundary-noop-save-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before max-boundary shift no-ops");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before max-boundary shift no-ops");
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_max_boundary_noops =
+            workbook_editor_public_catalog_snapshot(editor);
+
+        sheet.insert_rows(1048576, 1);
+        sheet.insert_columns(16384, 1);
+        sheet.delete_rows(1048576, 1);
+        sheet.delete_columns(16384, 1);
+        check(!editor.last_edit_error().has_value(),
+            "max-boundary row/column shift no-ops should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "max-boundary row/column shift no-ops should not dirty a clean materialized worksheet");
+        check_workbook_editor_public_no_pending_state(
+            editor, "max-boundary row/column shift no-ops");
+        check(sheet.cell_count() == 3,
+            "max-boundary row/column shift no-ops should preserve sparse cell count");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "max-boundary row/column shift no-ops should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "max-boundary row/column shift no-ops should not contribute pending materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "max-boundary row/column shift no-ops should not contribute pending materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "max-boundary row/column shift no-ops");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                sheet.get_cell("B1").number_value() == 1.0 &&
+                sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "max-boundary row/column shift no-ops should preserve source-backed cells");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_max_boundary_noops,
+            "max-boundary row/column shift no-ops");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "max-boundary row/column shift no-op save should keep materialized handle clean");
+        check_workbook_editor_public_no_pending_state(
+            editor, "max-boundary row/column shift no-op save");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "max-boundary row/column shift no-op save");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save,
+            "max-boundary row/column shift no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save,
+            "max-boundary row/column shift no-op save");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "save_as after max-boundary row/column shift no-ops should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "save_as after max-boundary row/column shift no-ops should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(output, "shift max-boundary no-op");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "max-boundary row/column shift no-op save repeat should keep materialized handle clean");
+        check_workbook_editor_public_no_pending_state(
+            editor, "max-boundary row/column shift no-op save repeat");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "max-boundary row/column shift no-op save repeat");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "max-boundary row/column shift no-op save repeat");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "max-boundary row/column shift no-op save repeat");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "max-boundary row/column shift no-op save repeat should still copy source entries");
+        check(noop_entries == output_entries,
+            "max-boundary row/column shift no-op save repeat should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "max-boundary row/column shift no-op save repeat should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(
+            noop_output, "shift max-boundary no-op save repeat");
+    }
+
+    {
+        const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-invalid-noop-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-worksheet-shift-invalid-noop-save-output.xlsx");

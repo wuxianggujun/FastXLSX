@@ -381,6 +381,10 @@ lookups keep the saved planned session clean, and after the later matching
 reacquire plus column shift, the first and second no-op outputs preserve source
 and prior package bytes while fresh readback still exposes the combined
 row/column-shifted `RenamedData` state cleanly.
+It now also mirrors the option-mismatch post-noop reuse check: a later `D3`
+edit after the repeated no-op save re-dirties the shared planned-name handles,
+saves a fresh-reopenable output with shifted `A3` / `C1` plus the new `D3`, and
+leaves source, first-stage, second-stage, and both no-op packages unchanged.
 The non-formula shift-after-rename invalid-read path now follows the same
 pattern: rejected scalar, A1, range, row-snapshot, and column-snapshot reads do
 not dirty either planned-name handle, and after the later matching reacquire

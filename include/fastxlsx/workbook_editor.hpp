@@ -966,7 +966,8 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The first
     /// argument is a 1-based Excel row number and `row_count` is a count, not an
     /// inclusive end row. `row_count == 0` is a successful no-op after
-    /// validating `first_row`. For positive counts, represented cells in
+    /// validating `first_row`; it clears prior public edit diagnostics and does
+    /// not dirty the session. For positive counts, represented cells in
     /// `[first_row, first_row + row_count - 1]` are removed and represented
     /// cells below that range move up by `row_count`.
     ///
@@ -991,7 +992,8 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The
     /// insertion point is a 1-based Excel column number and `column_count` is a
     /// count. `column_count == 0` is a successful no-op after validating
-    /// `first_column`. For positive counts, every represented sparse cell with
+    /// `first_column`; it clears prior public edit diagnostics and does not
+    /// dirty the session. For positive counts, every represented sparse cell with
     /// `column >= first_column` is moved right by `column_count`. If no
     /// represented cell is at or right of the insertion point, the call is a
     /// successful no-op because this slice has no column metadata model.
@@ -1021,7 +1023,8 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The first
     /// argument is a 1-based Excel column number and `column_count` is a count.
     /// `column_count == 0` is a successful no-op after validating
-    /// `first_column`. For positive counts, represented cells in
+    /// `first_column`; it clears prior public edit diagnostics and does not
+    /// dirty the session. For positive counts, represented cells in
     /// `[first_column, first_column + column_count - 1]` are removed and
     /// represented cells to the right move left by `column_count`.
     ///

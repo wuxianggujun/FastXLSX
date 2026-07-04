@@ -13489,6 +13489,8 @@ void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
             "set_row_values should preserve represented cells outside the written prefix");
         check(sheet.has_pending_changes(),
             "set_row_values should dirty the materialized worksheet when values change");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "set_row_values dirty summary");
         check(!editor.last_edit_error().has_value(),
             "successful set_row_values should keep diagnostics clear");
 
@@ -14412,6 +14414,8 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
             "set_column_values should preserve represented cells outside the written prefix");
         check(sheet.has_pending_changes(),
             "set_column_values should dirty the materialized worksheet when values change");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "set_column_values dirty summary");
         check(!editor.last_edit_error().has_value(),
             "successful set_column_values should keep diagnostics clear");
 

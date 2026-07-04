@@ -5867,11 +5867,12 @@ and fresh-reopens with blank, boolean, empty-text, plain formula, and
 cached-scalar fallback records. The later follow-up `save_as()` output is
 byte-stable, the source and prior no-op packages remain unchanged, and fresh
 reopen still sees those records beside the later inline edit.
-Source `t="str"` cells now carry the same post-dirty no-op evidence: scalar
-string cells are projected as inline text, formula cells stay plain formulas
-without stale cached values, the earlier source-copy output remains unchanged,
-and fresh reopen still sees the later inline edit. This is not sharedStrings
-migration or cached formula preservation.
+Source `t="str"` cells now carry both no-op gates: read-only materialization
+stays clean, the clean no-op output copies source package bytes and
+fresh-reopens with scalar text, plain formula, and numeric sibling records.
+The later dirty projection remains byte-stable, preserves the source and prior
+no-op packages, and fresh reopen still sees the inline edit. This is not
+sharedStrings migration or cached formula preservation.
 Flattened source inline rich text now has matching post-dirty no-op evidence:
 rich runs project as plain inline text after a dirty edit, the follow-up
 `save_as()` output is byte-stable, the source package stays unchanged, and

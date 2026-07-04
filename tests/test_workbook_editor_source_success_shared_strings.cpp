@@ -720,6 +720,7 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         rewrite_package_entry_as_stored(
             source, "xl/_rels/workbook.xml.rels", updated_workbook_rels);
     }
+    const auto rewritten_source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -759,8 +760,28 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
     check(editor.pending_change_count() == 0,
         "read-only source sharedStrings materialization should not queue Patch edits");
 
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-output.xlsx");
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source sharedStrings materialization should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source sharedStrings materialization should keep WorkbookEditor clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == rewritten_source_entries,
+        "no-op save_as after source sharedStrings materialization should copy rewritten source entries");
+    const ReopenedLazySharedStringsCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("shared-a")},
+        {1, 2, fastxlsx::CellValue::text("A&B <C>")},
+        {2, 1, fastxlsx::CellValue::text("shared-a")},
+    };
+    check_reopened_shared_strings_output(
+        noop_output,
+        noop_cells,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        "source sharedStrings no-op output");
+
     sheet.set_cell("C3", fastxlsx::CellValue::text("new-inline"));
     editor.save_as(output);
 

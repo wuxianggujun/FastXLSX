@@ -414,6 +414,12 @@ It now also continues from that clean repeated no-op state: the same borrowed
 handle can write a later `D3` cell, re-dirty the materialized `Data` session,
 save a fresh-reopenable post-noop output with shifted `A3` / `C1` plus row and
 column snapshots for the new cell, and keep all earlier packages unchanged.
+The reacquired row/column shift reuse path now mirrors that post-noop
+continuation: after saving a row shift, reacquiring the clean session, applying
+and saving a later column shift, and running repeated clean no-op saves, a later
+`D3` edit re-dirties both shared handles, saves a fresh-reopenable output with
+shifted `A3` / `C1` plus row/column snapshots for the new cell, and leaves
+source, first-stage, second-stage, and both no-op packages unchanged.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

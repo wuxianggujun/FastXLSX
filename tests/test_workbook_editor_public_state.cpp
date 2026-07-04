@@ -55062,6 +55062,30 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
                 check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_c3.text_value() == "post-noop-invalid-row-recovery",
                     "invalid-to-valid row shift post-noop save reopened output should keep post-noop edit");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                    reopened_sheet.row_cells(3);
+                check(row_three.size() == 2 &&
+                        row_three[0].reference.row == 3 &&
+                        row_three[0].reference.column == 1 &&
+                        row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_three[0].value.text_value() == "placeholder-a2" &&
+                        row_three[1].reference.row == 3 &&
+                        row_three[1].reference.column == 3 &&
+                        row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_three[1].value.text_value() == "post-noop-invalid-row-recovery",
+                    "invalid-to-valid row shift post-noop row_cells should expose shifted row order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                    reopened_sheet.column_cells(1);
+                check(column_one.size() == 2 &&
+                        column_one[0].reference.row == 1 &&
+                        column_one[0].reference.column == 1 &&
+                        column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[0].value.text_value() == "placeholder-a1" &&
+                        column_one[1].reference.row == 3 &&
+                        column_one[1].reference.column == 1 &&
+                        column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[1].value.text_value() == "placeholder-a2",
+                    "invalid-to-valid row shift post-noop column_cells should expose shifted source row");
                 check(!reopened_sheet.try_cell("A2").has_value(),
                     "invalid-to-valid row shift post-noop save reopened output should keep old A2 absent");
             });
@@ -55269,6 +55293,26 @@ void test_public_worksheet_editor_shift_valid_after_invalid_preserves_state()
                 check(reopened_d2.kind() == fastxlsx::CellValueKind::Text &&
                         reopened_d2.text_value() == "post-noop-invalid-column-recovery",
                     "invalid-to-valid column shift post-noop save reopened output should keep post-noop edit");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                    reopened_sheet.row_cells(2);
+                check(row_two.size() == 2 &&
+                        row_two[0].reference.row == 2 &&
+                        row_two[0].reference.column == 1 &&
+                        row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[0].value.text_value() == "placeholder-a2" &&
+                        row_two[1].reference.row == 2 &&
+                        row_two[1].reference.column == 4 &&
+                        row_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[1].value.text_value() == "post-noop-invalid-column-recovery",
+                    "invalid-to-valid column shift post-noop row_cells should expose row-two order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                    reopened_sheet.column_cells(3);
+                check(column_three.size() == 1 &&
+                        column_three[0].reference.row == 1 &&
+                        column_three[0].reference.column == 3 &&
+                        column_three[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        column_three[0].value.number_value() == 1.0,
+                    "invalid-to-valid column shift post-noop column_cells should expose shifted number");
                 check(!reopened_sheet.try_cell("B1").has_value(),
                     "invalid-to-valid column shift post-noop save reopened output should keep old B1 absent");
             });

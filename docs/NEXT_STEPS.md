@@ -223,6 +223,8 @@ save before the later `C3` / `D2` edits: the second no-op outputs are
 byte-identical to the first, keep dirty and replacement diagnostics clear,
 fresh-reopen with the shifted `A3` / `C1` state, and remain unchanged after the
 post-noop saves.
+Their post-noop outputs now also fresh-reopen with row/column snapshots for the
+shifted source cell plus the later `C3` / `D2` edits.
 The dirty invalid-to-valid row-shift recovery path now carries that post-noop
 evidence for already-dirty sessions too: invalid shifts preserve the dirty tail,
 the valid recovery save/no-op output remains reusable, and a later `C3` edit

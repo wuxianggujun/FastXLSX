@@ -5890,6 +5890,12 @@ XML references, and the source worksheet `.rels` plus linked table part stay as
 opaque preserved package artifacts. This is not hyperlink/table semantic
 editing, relationship pruning/repair, table range repair, or the internal
 sheetData Patch API.
+That relationship-bearing dirty projection now also carries post-dirty no-op
+evidence: the follow-up `save_as()` is byte-stable, source worksheet
+relationships and linked table artifacts stay as opaque preserved bytes, and
+fresh reopen still sees the supported sparse cells. This is still not hyperlink
+or table semantic editing, relationship repair, relationship pruning, or table
+range repair.
 Representative range/reference wrapper metadata is now pinned on the same
 path: source `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
 `<ignoredErrors>`, `<pageMargins>`, and `<pageSetup>` do not block supported

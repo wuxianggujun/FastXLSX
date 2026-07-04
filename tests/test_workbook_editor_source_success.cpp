@@ -1026,6 +1026,8 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
         artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-dirty-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -1117,6 +1119,19 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
         fastxlsx::CellRange {1, 1, 3, 3},
         expected_cells,
         "relationship wrapper dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "relationship wrapper post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "relationship wrapper post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "relationship wrapper post-dirty no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        expected_cells,
+        "relationship wrapper post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_sheet_data_flush()

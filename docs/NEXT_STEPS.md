@@ -5879,6 +5879,11 @@ inconsistent count /
 unknown-attribute metadata, verifying clean `WorksheetEditor` state plus
 `used_range()`, `sparse_cells()`, `row_cells()`, `column_cells()`, and direct
 reads.
+The base source sharedStrings fixture now also proves dirty-save stability: an
+in-memory edit appends to the existing string table, the dirty output
+fresh-reopens through public sparse views, a follow-up no-op `save_as()` is
+byte-stable, and the source / prior no-op packages remain unchanged. This is
+not broad sharedStrings migration, schema repair, or in-place save.
 The base rich sharedStrings fixture now also carries dirty save/reopen
 evidence: a later in-memory edit appends a plain shared string, preserves source
 rich-run markup bytes, leaves the source and prior no-op output unchanged,

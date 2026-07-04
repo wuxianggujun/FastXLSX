@@ -7242,6 +7242,33 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
     check(editor.last_edit_error() == prior_error,
         "final sparse snapshot after invalid reads should preserve prior diagnostic");
 
+    const auto check_saved_cell_reads =
+        [&sheet, &editor, &prior_error](std::string_view prefix) {
+            const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+            check(a1.has_value() &&
+                    a1->kind() == fastxlsx::CellValueKind::Text &&
+                    a1->text_value() == "placeholder-a1",
+                std::string(prefix) + " should read source-backed A1 through try_cell");
+            const fastxlsx::CellValue b1 = sheet.get_cell(1, 2);
+            check(b1.kind() == fastxlsx::CellValueKind::Number &&
+                    b1.number_value() == 1.0,
+                std::string(prefix) + " should read source-backed B1 through get_cell");
+            const fastxlsx::CellValue a2 = sheet.get_cell("A2");
+            check(a2.kind() == fastxlsx::CellValueKind::Text &&
+                    a2.text_value() == "placeholder-a2",
+                std::string(prefix) + " should read source-backed A2 through A1 get_cell");
+            check(!sheet.try_cell("D4").has_value(),
+                std::string(prefix) + " should keep missing D4 absent through try_cell");
+            check(!sheet.has_pending_changes(),
+                std::string(prefix) + " should keep the materialized sheet clean");
+            check(!editor.has_pending_changes(),
+                std::string(prefix) + " should keep the editor clean");
+            check(editor.pending_change_count() == 0,
+                std::string(prefix) + " should not record a materialized handoff");
+            check(editor.last_edit_error() == prior_error,
+                std::string(prefix) + " should preserve the prior diagnostic");
+        };
+
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -7250,6 +7277,7 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
         "no-op save_as after invalid cell reads should preserve the prior diagnostic");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop, "invalid cell read no-op save");
+    check_saved_cell_reads("invalid cell read saved session");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -7287,6 +7315,7 @@ void test_public_worksheet_editor_invalid_cell_reads_preserve_prior_diagnostic()
         "invalid cell read second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "invalid cell read second no-op save should leave the source package unchanged");
+    check_saved_cell_reads("invalid cell read second no-op saved session");
     check_reopened_default_data_sheet_output(noop_output, "invalid cell read second no-op");
 }
 

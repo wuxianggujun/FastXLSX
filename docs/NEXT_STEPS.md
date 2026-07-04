@@ -1104,6 +1104,10 @@ these inspections do not mutate workbook catalog views.
 The base cell-read invalid paths now use the same catalog snapshot for A1 and
 row/column `try_cell()` / `get_cell()` failures, including the helper that runs
 after a prior mutation diagnostic.
+They now also re-run direct saved-session `try_cell()` / `get_cell()` reads
+after the copy-original save and repeated clean no-op save, preserving the prior
+diagnostic while proving valid source-backed reads and missing-cell `try_cell()`
+do not re-dirty the materialized worksheet.
 The non-renamed shift reacquire failure paths now mirror the renamed-session
 coverage by preserving source names, planned names, and worksheet catalog
 entries across option mismatch, missing-query, invalid-read, and

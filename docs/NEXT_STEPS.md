@@ -5823,31 +5823,37 @@ bypass, or wrapper metadata preservation.
 Source wrapper metadata projection behavior is pinned as well: worksheet-level
 `sheetPr`, `dimension`, `sheetViews`, `sheetFormatPr`, `cols`, and `autoFilter`
 beside supported cells do not block read-only public materialization, but a
-later dirty `WorksheetEditor` save writes the standalone sparse CellStore
-projection and drops those source wrapper elements. This is not wrapper
-metadata preservation, synchronization, range recalculation, relationship
-repair, or the internal sheetData Patch preservation path.
+later dirty `WorksheetEditor` save rewrites `sheetData` from the sparse
+CellStore while preserving those source wrapper elements around it. This is
+wrapper preservation only, not wrapper metadata synchronization, range
+recalculation, relationship repair, or the internal sheetData Patch API.
 Representative relationship-bearing wrapper metadata follows the same public
 dirty-projection boundary: source `<hyperlinks>` and `<tableParts>` do not
-block supported cell materialization, dirty projection drops those worksheet
+block supported cell materialization, dirty projection preserves those worksheet
 XML references, and the source worksheet `.rels` plus linked table part stay as
 opaque preserved package artifacts. This is not hyperlink/table semantic
 editing, relationship pruning/repair, table range repair, or the internal
-sheetData Patch preservation path.
+sheetData Patch API.
 Representative range/reference wrapper metadata is now pinned on the same
 path: source `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
 `<ignoredErrors>`, `<pageMargins>`, and `<pageSetup>` do not block supported
-text/number/boolean materialization, but dirty `WorksheetEditor` save drops
-them through the standalone sparse CellStore projection. This is not merged-cell
-editing, validation/conditional-formatting import, page setup preservation,
-range recalculation, metadata synchronization, or the internal sheetData Patch
-preservation path.
+text/number/boolean materialization, and dirty `WorksheetEditor` save preserves
+them around the regenerated sparse `sheetData`. This is not merged-cell
+editing, validation/conditional-formatting import, page setup synchronization,
+range recalculation, metadata repair, or the internal sheetData Patch API.
 Source comments and processing instructions outside cells now have the same
 projection-boundary coverage: they do not block supported cell materialization,
-but dirty `WorksheetEditor` save drops them through the standalone sparse
-CellStore projection. This is not comment import, processing-instruction
-preservation, comments-part editing, XML trivia preservation, relationship
+dirty `WorksheetEditor` save preserves wrapper-level comments / processing
+instructions while replacing comments and processing instructions inside the
+source `sheetData`. This is not comment import, processing-instruction semantic
+support, comments-part editing, broad XML trivia preservation, relationship
 repair, or a change to cell-internal comment / PI rejection.
+These wrapper/default-style/empty-source dirty outputs now also fresh-reopen
+through the public sparse views: normalized `s=0`, empty worksheets that acquire
+a single sparse edit, wrapper metadata, relationship-bearing metadata,
+range/reference metadata, and comments/processing-instruction wrappers all
+verify `used_range()`, `sparse_cells()`, `row_cells()`, `column_cells()`, and
+direct reads after `save_as()`.
 Clean read-only materialized sessions are pinned as no-op save state too:
 opening a `WorksheetEditor`, reading source shared string cells, and leaving the
 sheet clean does not queue pending edits or dirty materialized names, and

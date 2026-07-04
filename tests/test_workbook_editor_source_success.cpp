@@ -723,6 +723,18 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
         "dirty projection should not serialize the normalized single-quoted default style attribute");
     check_not_contains(worksheet_xml, R"(s = "0")",
         "dirty projection should not serialize the normalized whitespace-around-equals default style attribute");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("loadable-before-style")},
+        {1, 2, fastxlsx::CellValue::text("explicit-default-source-style")},
+        {1, 3, fastxlsx::CellValue::text("single-quoted-default-source-style")},
+        {1, 4, fastxlsx::CellValue::text("spaced-default-source-style")},
+        {1, 5, fastxlsx::CellValue::text("dirty-default-style-trigger")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 1, 5},
+        expected_cells,
+        "default style dirty output");
 }
 
 void test_public_worksheet_editor_materializes_empty_source_worksheets()
@@ -790,6 +802,14 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
                 "empty source worksheet materialization should not revive original placeholder cells");
             check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-empty-source",
                 "empty source worksheet materialization should preserve untouched sheets");
+            const ReopenedSourceSuccessCell expected_cells[] = {
+                {2, 2, fastxlsx::CellValue::text(inserted_text)},
+            };
+            check_reopened_source_success_dirty_output(
+                output,
+                fastxlsx::CellRange {2, 2, 2, 2},
+                expected_cells,
+                std::string("empty source ") + std::string(tag) + " dirty output");
         };
 
     expect_empty_source_worksheet_materialization(
@@ -871,6 +891,15 @@ void test_public_worksheet_editor_preserves_source_wrapper_metadata_on_dirty_she
         "dirty materialized sheetData flush should preserve source autoFilter metadata");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-wrapper-metadata",
         "dirty source wrapper metadata flush should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("source-wrapper")},
+        {2, 2, fastxlsx::CellValue::text("wrapper-new-inline")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        expected_cells,
+        "wrapper metadata dirty output");
 }
 
 void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_without_pruning()
@@ -958,6 +987,18 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"),
         "keep-relationship-wrapper",
         "dirty relationship wrapper flush should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("Name")},
+        {1, 2, fastxlsx::CellValue::text("Value")},
+        {2, 1, fastxlsx::CellValue::text("source-link-row")},
+        {2, 2, fastxlsx::CellValue::number(7.0)},
+        {3, 3, fastxlsx::CellValue::text("relationship-wrapper-new")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        expected_cells,
+        "relationship wrapper dirty output");
 }
 
 void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_sheet_data_flush()
@@ -1059,6 +1100,17 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
         "dirty range wrapper flush should preserve source pageSetup metadata");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-range-wrapper",
         "dirty range wrapper flush should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("range-wrapper-source")},
+        {1, 2, fastxlsx::CellValue::number(3.0)},
+        {2, 1, fastxlsx::CellValue::boolean(true)},
+        {3, 3, fastxlsx::CellValue::text("range-wrapper-new")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        expected_cells,
+        "range wrapper dirty output");
 }
 
 void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processing_instructions_on_dirty_sheet_data_flush()
@@ -1141,6 +1193,15 @@ void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processi
         "dirty materialized sheetData flush should replace trailing source sheetData comments");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-comments-pi",
         "dirty source comment/PI flush should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("source-comments-pi")},
+        {2, 2, fastxlsx::CellValue::text("comments-pi-new-inline")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        expected_cells,
+        "comments and processing instructions dirty output");
 }
 
 void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_copy_original()

@@ -5790,10 +5790,12 @@ materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with interleaved/latest-definition followers translated as
 plain formula text, while the later dirty projection remains byte-stable and
 preserves both source and prior no-op package bytes.
-Office-like 2D shared formula groups now carry that no-op evidence as well:
-multiple rectangular shared formula groups keep byte-stable flattened output,
-drop stale cached values, leave the source package unchanged, and fresh reopen
-preserves the translated formula grid beside later edits.
+Office-like 2D shared formula groups now carry both no-op gates as well:
+read-only materialization stays clean, the clean no-op output copies source
+package bytes and fresh-reopens with both rectangular shared formula groups
+translated as plain formula text, while the later flattened output remains
+byte-stable, drops stale cached values, and preserves both source and prior
+no-op package bytes.
 Array/dataTable metadata fallbacks now carry the same no-op evidence: formula
 text cells stay flattened as plain formulas, metadata-only followers keep their
 cached scalar fallback values, stale cached values on formula text cells stay

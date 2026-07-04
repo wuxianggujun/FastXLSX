@@ -22758,6 +22758,110 @@ void check_reopened_shift_output(
         prefix + " reopened readback should keep last_edit_error empty");
 }
 
+void check_shift_reacquire_retry_snapshots(
+    fastxlsx::WorksheetEditor& snapshot_sheet,
+    std::string_view scenario)
+{
+    const std::string label(scenario);
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        snapshot_sheet.sparse_cells();
+    check(all_cells.size() == 3,
+        label + " sparse_cells should expose the combined shifted sparse count");
+    if (all_cells.size() == 3) {
+        check(all_cells[0].reference.row == 1 && all_cells[0].reference.column == 1 &&
+                all_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                all_cells[0].value.text_value() == "placeholder-a1",
+            label + " sparse_cells should keep A1 first");
+        check(all_cells[1].reference.row == 1 && all_cells[1].reference.column == 3 &&
+                all_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                all_cells[1].value.number_value() == 1.0,
+            label + " sparse_cells should expose shifted B1 as C1");
+        check(all_cells[2].reference.row == 3 && all_cells[2].reference.column == 1 &&
+                all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                all_cells[2].value.text_value() == "placeholder-a2",
+            label + " sparse_cells should expose shifted A2 as A3");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_range =
+        snapshot_sheet.sparse_cells("A1:C3");
+    check(shifted_range.size() == 3,
+        label + " range sparse_cells should expose all combined shifted cells");
+    if (shifted_range.size() == 3) {
+        check(shifted_range[0].reference.row == 1 &&
+                shifted_range[0].reference.column == 1 &&
+                shifted_range[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                shifted_range[0].value.text_value() == "placeholder-a1",
+            label + " range sparse_cells should keep A1 first");
+        check(shifted_range[1].reference.row == 1 &&
+                shifted_range[1].reference.column == 3 &&
+                shifted_range[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_range[1].value.number_value() == 1.0,
+            label + " range sparse_cells should keep shifted C1 second");
+        check(shifted_range[2].reference.row == 3 &&
+                shifted_range[2].reference.column == 1 &&
+                shifted_range[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                shifted_range[2].value.text_value() == "placeholder-a2",
+            label + " range sparse_cells should keep shifted A3 third");
+    }
+
+    const std::array<fastxlsx::WorksheetCellReference, 4> requested_refs {
+        fastxlsx::WorksheetCellReference {1, 3},
+        fastxlsx::WorksheetCellReference {1, 2},
+        fastxlsx::WorksheetCellReference {3, 1},
+        fastxlsx::WorksheetCellReference {2, 1},
+    };
+    const std::vector<fastxlsx::WorksheetCellSnapshot> requested_cells =
+        snapshot_sheet.sparse_cells(requested_refs);
+    check(requested_cells.size() == 2,
+        label + " requested sparse_cells should skip old shifted coordinates");
+    if (requested_cells.size() == 2) {
+        check(requested_cells[0].reference.row == 1 &&
+                requested_cells[0].reference.column == 3 &&
+                requested_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                requested_cells[0].value.number_value() == 1.0,
+            label + " requested sparse_cells should keep shifted C1 input order");
+        check(requested_cells[1].reference.row == 3 &&
+                requested_cells[1].reference.column == 1 &&
+                requested_cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                requested_cells[1].value.text_value() == "placeholder-a2",
+            label + " requested sparse_cells should keep shifted A3 after skipped cells");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        snapshot_sheet.row_cells(1);
+    check(row_one.size() == 2,
+        label + " row_cells should expose shifted row-one cells");
+    if (row_one.size() == 2) {
+        check(row_one[0].reference.row == 1 &&
+                row_one[0].reference.column == 1 &&
+                row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                row_one[0].value.text_value() == "placeholder-a1",
+            label + " row_cells should keep A1 first");
+        check(row_one[1].reference.row == 1 &&
+                row_one[1].reference.column == 3 &&
+                row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                row_one[1].value.number_value() == 1.0,
+            label + " row_cells should keep shifted C1 second");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+        snapshot_sheet.column_cells(1);
+    check(column_one.size() == 2,
+        label + " column_cells should expose source and row-shifted cells");
+    if (column_one.size() == 2) {
+        check(column_one[0].reference.row == 1 &&
+                column_one[0].reference.column == 1 &&
+                column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_one[0].value.text_value() == "placeholder-a1",
+            label + " column_cells should keep A1 first");
+        check(column_one[1].reference.row == 3 &&
+                column_one[1].reference.column == 1 &&
+                column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_one[1].value.text_value() == "placeholder-a2",
+            label + " column_cells should keep shifted A3 second");
+    }
+}
+
 void check_reopened_untouched_keep_me_output(
     const std::filesystem::path& output,
     std::string_view scenario)
@@ -51667,112 +51771,11 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
     check(!after_retry.try_cell("B1").has_value() &&
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire after retry noop save matching reacquire should keep old coordinates absent");
-    const auto check_after_retry_snapshots =
-        [](fastxlsx::WorksheetEditor& snapshot_sheet, std::string_view scenario) {
-            const std::string label(scenario);
-            const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
-                snapshot_sheet.sparse_cells();
-            check(all_cells.size() == 3,
-                label + " sparse_cells should expose the combined shifted sparse count");
-            if (all_cells.size() == 3) {
-                check(all_cells[0].reference.row == 1 && all_cells[0].reference.column == 1 &&
-                        all_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
-                        all_cells[0].value.text_value() == "placeholder-a1",
-                    label + " sparse_cells should keep A1 first");
-                check(all_cells[1].reference.row == 1 && all_cells[1].reference.column == 3 &&
-                        all_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
-                        all_cells[1].value.number_value() == 1.0,
-                    label + " sparse_cells should expose shifted B1 as C1");
-                check(all_cells[2].reference.row == 3 && all_cells[2].reference.column == 1 &&
-                        all_cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
-                        all_cells[2].value.text_value() == "placeholder-a2",
-                    label + " sparse_cells should expose shifted A2 as A3");
-            }
-
-            const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_range =
-                snapshot_sheet.sparse_cells("A1:C3");
-            check(shifted_range.size() == 3,
-                label + " range sparse_cells should expose all combined shifted cells");
-            if (shifted_range.size() == 3) {
-                check(shifted_range[0].reference.row == 1 &&
-                        shifted_range[0].reference.column == 1 &&
-                        shifted_range[0].value.kind() == fastxlsx::CellValueKind::Text &&
-                        shifted_range[0].value.text_value() == "placeholder-a1",
-                    label + " range sparse_cells should keep A1 first");
-                check(shifted_range[1].reference.row == 1 &&
-                        shifted_range[1].reference.column == 3 &&
-                        shifted_range[1].value.kind() == fastxlsx::CellValueKind::Number &&
-                        shifted_range[1].value.number_value() == 1.0,
-                    label + " range sparse_cells should keep shifted C1 second");
-                check(shifted_range[2].reference.row == 3 &&
-                        shifted_range[2].reference.column == 1 &&
-                        shifted_range[2].value.kind() == fastxlsx::CellValueKind::Text &&
-                        shifted_range[2].value.text_value() == "placeholder-a2",
-                    label + " range sparse_cells should keep shifted A3 third");
-            }
-
-            const std::array<fastxlsx::WorksheetCellReference, 4> requested_refs {
-                fastxlsx::WorksheetCellReference {1, 3},
-                fastxlsx::WorksheetCellReference {1, 2},
-                fastxlsx::WorksheetCellReference {3, 1},
-                fastxlsx::WorksheetCellReference {2, 1},
-            };
-            const std::vector<fastxlsx::WorksheetCellSnapshot> requested_cells =
-                snapshot_sheet.sparse_cells(requested_refs);
-            check(requested_cells.size() == 2,
-                label + " requested sparse_cells should skip old shifted coordinates");
-            if (requested_cells.size() == 2) {
-                check(requested_cells[0].reference.row == 1 &&
-                        requested_cells[0].reference.column == 3 &&
-                        requested_cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
-                        requested_cells[0].value.number_value() == 1.0,
-                    label + " requested sparse_cells should keep shifted C1 input order");
-                check(requested_cells[1].reference.row == 3 &&
-                        requested_cells[1].reference.column == 1 &&
-                        requested_cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
-                        requested_cells[1].value.text_value() == "placeholder-a2",
-                    label + " requested sparse_cells should keep shifted A3 after skipped cells");
-            }
-
-            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
-                snapshot_sheet.row_cells(1);
-            check(row_one.size() == 2,
-                label + " row_cells should expose shifted row-one cells");
-            if (row_one.size() == 2) {
-                check(row_one[0].reference.row == 1 &&
-                        row_one[0].reference.column == 1 &&
-                        row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
-                        row_one[0].value.text_value() == "placeholder-a1",
-                    label + " row_cells should keep A1 first");
-                check(row_one[1].reference.row == 1 &&
-                        row_one[1].reference.column == 3 &&
-                        row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
-                        row_one[1].value.number_value() == 1.0,
-                    label + " row_cells should keep shifted C1 second");
-            }
-
-            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
-                snapshot_sheet.column_cells(1);
-            check(column_one.size() == 2,
-                label + " column_cells should expose source and row-shifted cells");
-            if (column_one.size() == 2) {
-                check(column_one[0].reference.row == 1 &&
-                        column_one[0].reference.column == 1 &&
-                        column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
-                        column_one[0].value.text_value() == "placeholder-a1",
-                    label + " column_cells should keep A1 first");
-                check(column_one[1].reference.row == 3 &&
-                        column_one[1].reference.column == 1 &&
-                        column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
-                        column_one[1].value.text_value() == "placeholder-a2",
-                    label + " column_cells should keep shifted A3 second");
-            }
-        };
-    check_after_retry_snapshots(
+    check_shift_reacquire_retry_snapshots(
         sheet, "shift reacquire after retry noop save original handle");
-    check_after_retry_snapshots(
+    check_shift_reacquire_retry_snapshots(
         reacquired, "shift reacquire after retry noop save reacquired handle");
-    check_after_retry_snapshots(
+    check_shift_reacquire_retry_snapshots(
         after_retry, "shift reacquire after retry noop save clean reacquire");
 
     const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
@@ -51826,7 +51829,7 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire after retry noop save reopened output should keep old coordinates absent");
-            check_after_retry_snapshots(reopened_sheet,
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
                 "shift reacquire after retry noop save reopened output");
         });
 }
@@ -53427,6 +53430,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire directory-output failed save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire directory-output failed save reopened output");
         });
 
     fastxlsx::WorksheetEditor after_retry = editor.worksheet("Data");
@@ -53453,6 +53458,15 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
     check(!after_retry.try_cell("B1").has_value() &&
             !after_retry.try_cell("A2").has_value(),
         "shift reacquire directory-output failed save matching reacquire after retry should keep old coordinates absent");
+    check_shift_reacquire_retry_snapshots(
+        sheet,
+        "shift reacquire directory-output failed save matching reacquire after retry original handle");
+    check_shift_reacquire_retry_snapshots(
+        reacquired,
+        "shift reacquire directory-output failed save matching reacquire after retry reacquired handle");
+    check_shift_reacquire_retry_snapshots(
+        after_retry,
+        "shift reacquire directory-output failed save matching reacquire after retry clean handle");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -53504,6 +53518,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire directory-output failed save noop save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire directory-output failed save noop save reopened output");
         });
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
@@ -53564,6 +53580,8 @@ void test_public_worksheet_editor_shift_reacquire_existing_directory_failed_save
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire directory-output failed save repeat no-op save reopened output should keep old coordinates absent");
+            check_shift_reacquire_retry_snapshots(reopened_sheet,
+                "shift reacquire directory-output failed save repeat no-op save reopened output");
         });
 
     after_retry.set_cell("C3", fastxlsx::CellValue::text("post-noop-directory-output-failed-save"));

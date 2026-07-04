@@ -57835,6 +57835,46 @@ void test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session(
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_nonzero_noops,
         "dirty nonzero row/column shift no-ops");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a3", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "dirty shift no-op setup should seed diagnostics before max-boundary no-ops");
+    check(editor.last_edit_error().has_value(),
+        "dirty shift no-op setup should expose the max-boundary seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_max_boundary_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    sheet.insert_rows(1048576, 1);
+    sheet.insert_columns(16384, 1);
+    sheet.delete_rows(1048576, 1);
+    sheet.delete_columns(16384, 1);
+    check(!editor.last_edit_error().has_value(),
+        "dirty max-boundary row/column shift no-ops should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty max-boundary row/column shift no-ops should preserve dirty state");
+    check(sheet.cell_count() == dirty_count,
+        "dirty max-boundary row/column shift no-ops should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "dirty max-boundary row/column shift no-ops should preserve memory estimate");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty max-boundary row/column shift no-ops should preserve dirty sheet names");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty max-boundary row/column shift no-ops should preserve aggregate dirty count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty max-boundary row/column shift no-ops should preserve aggregate dirty memory");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+        "dirty max-boundary row/column shift no-ops should preserve source and dirty cells");
+    check(!sheet.try_cell("A1048576").has_value() &&
+            !sheet.try_cell("XFD1").has_value(),
+        "dirty max-boundary row/column shift no-ops should not synthesize edge cells");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_max_boundary_noops,
+        "dirty max-boundary row/column shift no-ops");
+
     check_public_state_single_data_dirty_materialized_summary(
         editor, sheet, 0, "dirty row/column shift no-ops pre-save summary");
 

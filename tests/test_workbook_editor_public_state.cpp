@@ -57637,6 +57637,191 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
     }
 }
 
+void test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-worksheet-shift-dirty-noops-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-dirty-noops-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-dirty-noops-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("dirty-shift-noop-tail"));
+    const std::size_t dirty_count = sheet.cell_count();
+    const std::size_t dirty_memory = sheet.estimated_memory_usage();
+    check(dirty_count == 4,
+        "dirty shift no-op setup should add one represented sparse cell");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty shift no-op setup should mark the materialized session dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty shift no-op setup should report Data as dirty");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty shift no-op setup should report the dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty shift no-op setup should report the dirty sparse memory");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "dirty shift no-op setup should seed diagnostics before zero-count no-ops");
+    check(editor.last_edit_error().has_value(),
+        "dirty shift no-op setup should expose the seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_zero_count_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    sheet.insert_rows(2, 0);
+    sheet.delete_rows(2, 0);
+    sheet.insert_columns(2, 0);
+    sheet.delete_columns(2, 0);
+    check(!editor.last_edit_error().has_value(),
+        "dirty zero-count row/column shift no-ops should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty zero-count row/column shift no-ops should preserve dirty state");
+    check(sheet.cell_count() == dirty_count,
+        "dirty zero-count row/column shift no-ops should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "dirty zero-count row/column shift no-ops should preserve memory estimate");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty zero-count row/column shift no-ops should preserve dirty sheet names");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty zero-count row/column shift no-ops should preserve aggregate dirty count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty zero-count row/column shift no-ops should preserve aggregate dirty memory");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+        "dirty zero-count row/column shift no-ops should preserve source and dirty cells");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_zero_count_noops,
+        "dirty zero-count row/column shift no-ops");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a2", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "dirty shift no-op setup should seed diagnostics before nonzero no-ops");
+    check(editor.last_edit_error().has_value(),
+        "dirty shift no-op setup should expose the second seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_nonzero_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    sheet.insert_rows(10, 1);
+    sheet.delete_rows(10, 1);
+    sheet.insert_columns(10, 1);
+    sheet.delete_columns(10, 1);
+    check(!editor.last_edit_error().has_value(),
+        "dirty nonzero row/column shift no-ops should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty nonzero row/column shift no-ops should preserve dirty state");
+    check(sheet.cell_count() == dirty_count,
+        "dirty nonzero row/column shift no-ops should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "dirty nonzero row/column shift no-ops should preserve memory estimate");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty nonzero row/column shift no-ops should preserve dirty sheet names");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty nonzero row/column shift no-ops should preserve aggregate dirty count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty nonzero row/column shift no-ops should preserve aggregate dirty memory");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+        "dirty nonzero row/column shift no-ops should preserve source and dirty cells");
+    check(!sheet.try_cell("D3").has_value() && !sheet.try_cell("C4").has_value(),
+        "dirty nonzero row/column shift no-ops should not synthesize shifted cells");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_nonzero_noops,
+        "dirty nonzero row/column shift no-ops");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "dirty row/column shift no-ops pre-save summary");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "dirty row/column shift no-op save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "dirty row/column shift no-op save_as should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "dirty row/column shift no-op save_as should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "dirty row/column shift no-op save_as");
+    check(!editor.last_edit_error().has_value(),
+        "dirty row/column shift no-op save_as should keep diagnostics clear");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty row/column shift no-op save_as should leave the source package unchanged");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "dirty row/column shift no-op save_as should project unshifted dirty bounds");
+    check_contains(worksheet_xml, "placeholder-a1",
+        "dirty row/column shift no-op save_as should preserve source text");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "dirty row/column shift no-op save_as should preserve source number");
+    check_contains(worksheet_xml, "placeholder-a2",
+        "dirty row/column shift no-op save_as should preserve source row two");
+    check_contains(worksheet_xml, R"(<c r="C3" t="inlineStr"><is><t>dirty-shift-noop-tail</t></is></c>)",
+        "dirty row/column shift no-op save_as should persist the dirty cell");
+    check_not_contains(worksheet_xml, R"(r="D3")",
+        "dirty row/column shift no-op save_as should not shift the dirty column");
+    check_not_contains(worksheet_xml, R"(r="C4")",
+        "dirty row/column shift no-op save_as should not shift the dirty row");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "dirty row/column shift no-op save_as should preserve untouched worksheets");
+
+    const auto inspect_dirty_noop_output = [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        check(reopened_sheet.cell_count() == 4,
+            "dirty row/column shift no-op reopened output should keep sparse count");
+        check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+            "dirty row/column shift no-op reopened output should expose unshifted bounds");
+        check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                reopened_sheet.get_cell("B1").number_value() == 1.0 &&
+                reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                reopened_sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+            "dirty row/column shift no-op reopened output should preserve source and dirty cells");
+        check(!reopened_sheet.try_cell("D3").has_value() &&
+                !reopened_sheet.try_cell("C4").has_value(),
+            "dirty row/column shift no-op reopened output should keep shifted coordinates absent");
+    };
+    check_reopened_shift_output(output, "dirty row/column shift no-op",
+        inspect_dirty_noop_output);
+    check_reopened_untouched_keep_me_output(output, "dirty row/column shift no-op");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "dirty row/column shift no-op second save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "dirty row/column shift no-op second save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "dirty row/column shift no-op second save should keep dirty diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "dirty row/column shift no-op second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "dirty row/column shift no-op second save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "dirty row/column shift no-op second output should match the first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty row/column shift no-op second save should leave the source package unchanged");
+    check_reopened_shift_output(noop_output,
+        "dirty row/column shift no-op second save",
+        inspect_dirty_noop_output);
+}
+
 void test_public_worksheet_editor_shift_memory_guard_failure_preserves_state()
 {
     const std::filesystem::path source =
@@ -59796,6 +59981,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
             test_public_worksheet_editor_shift_formula_out_of_bounds_references();
             test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_state();
+            test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session();
             test_public_worksheet_editor_shift_memory_guard_failure_preserves_state();
             test_public_worksheet_editor_options_guard_failure_preserves_state();
             test_public_worksheet_editor_memory_budget_guard_failure_preserves_state();

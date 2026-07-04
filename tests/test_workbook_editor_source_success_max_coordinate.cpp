@@ -92,6 +92,51 @@ void check_source_max_coordinate_erase_reopened_output(
         reopened_editor, prefix + " fresh reopen readback");
 }
 
+void check_source_max_coordinate_erase_noop_save(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    const std::filesystem::path& noop_output,
+    const std::map<std::string, std::string>& erase_entries,
+    const std::filesystem::path& source,
+    const std::map<std::string, std::string>& source_entries,
+    std::string_view scenario,
+    std::string_view expected_a1_text,
+    std::string_view expected_a2_text)
+{
+    const std::string prefix(scenario);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        prefix + " no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        prefix + " no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " no-op save should keep dirty materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        prefix + " no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, prefix + " no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, prefix + " no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == erase_entries,
+        prefix + " no-op output should match the erase output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        prefix + " no-op save should leave the source package unchanged");
+    check_source_max_coordinate_erase_reopened_output(
+        noop_output,
+        prefix + " no-op output",
+        expected_a1_text,
+        expected_a2_text);
+}
+
 void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_edge()
 {
     const std::filesystem::path source =
@@ -100,6 +145,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-noop-output.xlsx");
     const std::filesystem::path erase_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-erase-output.xlsx");
+    const std::filesystem::path erase_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-erase-noop-output.xlsx");
 
     std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
     check(entries.find("xl/sharedStrings.xml") == entries.end(),
@@ -263,6 +310,16 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
         "source max-coordinate erase output",
         "source-max-a1",
         "source-max-a2");
+    check_source_max_coordinate_erase_noop_save(
+        editor,
+        sheet,
+        erase_noop_output,
+        erase_entries,
+        source,
+        source_entries,
+        "source max-coordinate erase",
+        "source-max-a1",
+        "source-max-a2");
 }
 
 void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and_erases_edge()
@@ -273,6 +330,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-noop-output.xlsx");
     const std::filesystem::path erase_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-erase-output.xlsx");
+    const std::filesystem::path erase_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-erase-noop-output.xlsx");
 
     std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
     entries.at("xl/worksheets/sheet1.xml") =
@@ -432,6 +491,16 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         "source max-coordinate formula erase output",
         "source-formula-a1",
         "source-formula-a2");
+    check_source_max_coordinate_erase_noop_save(
+        editor,
+        sheet,
+        erase_noop_output,
+        erase_entries,
+        source,
+        source_entries,
+        "source max-coordinate formula erase",
+        "source-formula-a1",
+        "source-formula-a2");
 }
 
 void test_public_worksheet_editor_materializes_source_max_coordinate_shared_string_and_erases_edge()
@@ -442,6 +511,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-noop-output.xlsx");
     const std::filesystem::path erase_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-erase-output.xlsx");
+    const std::filesystem::path erase_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-erase-noop-output.xlsx");
 
     {
         fastxlsx::WorkbookWriterOptions writer_options;
@@ -633,6 +704,16 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         "source max-coordinate shared string erase output",
         "source-shared-a1",
         "source-shared-a2");
+    check_source_max_coordinate_erase_noop_save(
+        editor,
+        sheet,
+        erase_noop_output,
+        erase_entries,
+        source,
+        source_entries,
+        "source max-coordinate shared string erase",
+        "source-shared-a1",
+        "source-shared-a2");
 }
 
 void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_values_and_erases_edge()
@@ -677,6 +758,9 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
         const std::filesystem::path erase_output = artifact(
             "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
             + std::string(case_info.name) + "-erase-output.xlsx");
+        const std::filesystem::path erase_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
+            + std::string(case_info.name) + "-erase-noop-output.xlsx");
 
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
@@ -843,6 +927,16 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
             "source max-coordinate scalar erase output",
             "source-scalar-a1",
             "source-scalar-a2");
+        check_source_max_coordinate_erase_noop_save(
+            editor,
+            sheet,
+            erase_noop_output,
+            erase_entries,
+            source,
+            source_entries,
+            "source max-coordinate scalar erase",
+            "source-scalar-a1",
+            "source-scalar-a2");
     }
 }
 
@@ -876,6 +970,9 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
         const std::filesystem::path erase_output = artifact(
             "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
             + std::string(case_info.name) + "-erase-output.xlsx");
+        const std::filesystem::path erase_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
+            + std::string(case_info.name) + "-erase-noop-output.xlsx");
 
         {
             fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
@@ -1037,6 +1134,16 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
             "source max-coordinate empty inline erase output",
             "source-empty-inline-a1",
             "source-empty-inline-a2");
+        check_source_max_coordinate_erase_noop_save(
+            editor,
+            sheet,
+            erase_noop_output,
+            erase_entries,
+            source,
+            source_entries,
+            "source max-coordinate empty inline erase",
+            "source-empty-inline-a1",
+            "source-empty-inline-a2");
     }
 }
 
@@ -1048,6 +1155,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-noop-output.xlsx");
     const std::filesystem::path erase_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-output.xlsx");
+    const std::filesystem::path erase_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-noop-output.xlsx");
 
     {
         fastxlsx::WorkbookWriterOptions options;
@@ -1218,6 +1327,16 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
     check_source_max_coordinate_erase_reopened_output(
         erase_output,
         "source max-coordinate rich shared string erase output",
+        "source-rich-a1",
+        "source-rich-a2");
+    check_source_max_coordinate_erase_noop_save(
+        editor,
+        sheet,
+        erase_noop_output,
+        erase_entries,
+        source,
+        source_entries,
+        "source max-coordinate rich shared string erase",
         "source-rich-a1",
         "source-rich-a2");
 }

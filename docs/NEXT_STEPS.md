@@ -5708,6 +5708,10 @@ Those source-backed max-coordinate erase projections now also fresh-reopen after
 save: inline text, formula, shared-string, scalar, empty-inline, and rich
 shared-string edge cases all reopen as clean `A1:B2` sparse stores with
 `XFD1048576` absent from A1, row, column, and range snapshots.
+They now also repeat a clean no-op `save_as()` after each erase projection:
+the no-op packages are byte-identical to the erase outputs, source bytes stay
+unchanged, public save/catalog snapshots stay stable, and the no-op outputs
+fresh-reopen through the same clean `A1:B2` sparse-store checks.
 Unsupported source cell shape failure hygiene is pinned as well: date-like
 cells, custom/unknown type tokens, and invalid boolean payloads fail through
 the public facade without leaving partial materialized sessions or blocking
@@ -5990,6 +5994,11 @@ schema validation.
   as inline strings. This is not rich text preservation, sharedStrings rebuild,
   writeback, index migration, relationship repair, source reload, or large-file
   random editing.
+- Source-backed max-coordinate erase outputs now also carry follow-up clean
+  no-op save coverage across inline text, formula, shared-string, scalar,
+  empty-inline, and rich shared-string cases: the second packages are
+  byte-identical to the erase outputs, source packages stay unchanged, and the
+  no-op outputs fresh-reopen with the same compact `A1:B2` sparse state.
 - Current public API:
   - `Workbook`
   - `Worksheet`

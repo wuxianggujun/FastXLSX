@@ -5779,6 +5779,8 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         artifact("fastxlsx-workbook-editor-public-materialized-summary-move-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-materialized-summary-move-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-move-second-noop-output.xlsx");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
@@ -5921,6 +5923,46 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         inspect_materialized_summary_move_data);
     check_reopened_clean_sheet_output(noop_output, "Untouched",
         "materialized summary move no-op Untouched",
+        inspect_materialized_summary_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(second_noop_output);
+    check(target.pending_worksheet_edits().empty(),
+        "summary move-assigned second no-op save should keep dirty summaries empty");
+    check(target.pending_materialized_worksheet_names().empty(),
+        "summary move-assigned second no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "summary move-assigned second no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "summary move-assigned second no-op save should keep dirty memory aggregate empty");
+    check(target.pending_change_count() == 1,
+        "summary move-assigned second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "summary move-assigned second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_second_noop,
+        "summary move-assigned second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_second_noop,
+        "summary move-assigned second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "summary move-assigned second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "summary move-assigned second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "summary move-assigned second no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "materialized summary move second no-op Data",
+        inspect_materialized_summary_move_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "materialized summary move second no-op Untouched",
         inspect_materialized_summary_move_untouched);
 }
 

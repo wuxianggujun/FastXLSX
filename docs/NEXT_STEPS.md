@@ -1507,6 +1507,9 @@ from the second output.
 The materialized-summary move-owner path now saves and reopens the assigned
 editor output, confirming summary ownership transfer persists while discarded
 target materialized edits stay absent.
+It now repeats a second clean no-op save too, keeping materialized diagnostics
+empty, preserving both source packages, and reopening the assigned output again
+with only the moved dirty payload.
 The A1 single-cell overload save path is reopened to verify inserted D4 text,
 source-backed cells, refreshed bounds, and erased A2 after save.
 The `get_cell()` / `try_cell()` explicit-blank path now saves and reopens D4,

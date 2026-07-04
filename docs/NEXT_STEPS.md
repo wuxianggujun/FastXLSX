@@ -1533,6 +1533,9 @@ Those erased-cell budget-release recoveries now also run a second clean no-op
 remain byte-stable while sources and recovered sparse readback stay unchanged.
 The adjacent missing-erase guardrail clean-save paths are also reopened to
 verify the rejected target stays absent while source-backed cells remain clean.
+They now repeat the clean no-op save as well, covering both max-cells and
+memory-budget missing-erase recovery while keeping public state, source entries,
+and reopened copy-original readback stable.
 The formula-translation memory-budget shift failure path now also runs a second
 clean no-op `save_as()`, proving the copy-original output and public state stay
 stable after the rejected `insert_rows()` mutation.

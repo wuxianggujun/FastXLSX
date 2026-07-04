@@ -609,6 +609,9 @@ shift diagnostic.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic.
+The same-sheet guard recovery save now snapshots both saved handles after the
+accepted `E7` write, pinning the `E6`/`E7` column view, clean diagnostics, and
+stable materialized counters.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.

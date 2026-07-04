@@ -9968,6 +9968,42 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
     check(sheet.estimated_memory_usage() == memory_before,
         "row_cells and column_cells read failures should preserve sparse memory estimate");
 
+    const auto check_saved_row_column_snapshots =
+        [&sheet, &editor, &prior_error](std::string_view prefix) {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+            check(row_one.size() == 2 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "placeholder-a1" &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2 &&
+                    row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    row_one[1].value.number_value() == 1.0,
+                std::string(prefix) + " should keep row-one source snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one = sheet.column_cells(1);
+            check(column_one.size() == 2 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == "placeholder-a1" &&
+                    column_one[1].reference.row == 2 &&
+                    column_one[1].reference.column == 1 &&
+                    column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[1].value.text_value() == "placeholder-a2",
+                std::string(prefix) + " should keep column-one source snapshots");
+            check(sheet.row_cells(10).empty() && sheet.column_cells(10).empty(),
+                std::string(prefix) + " should keep missing row/column snapshots empty");
+            check(!sheet.has_pending_changes(),
+                std::string(prefix) + " should keep the materialized sheet clean");
+            check(!editor.has_pending_changes(),
+                std::string(prefix) + " should keep the editor clean");
+            check(editor.pending_change_count() == 0,
+                std::string(prefix) + " should not record a materialized handoff");
+            check(editor.last_edit_error() == prior_error,
+                std::string(prefix) + " should preserve the prior diagnostic");
+        };
+
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
 
@@ -9976,6 +10012,7 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
         "no-op save_as after row/column read failures should preserve the prior diagnostic");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop, "row/column read failure no-op save");
+    check_saved_row_column_snapshots("row/column read failure saved session");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -10013,6 +10050,7 @@ void test_public_worksheet_editor_row_and_column_cells_invalid_reads_preserve_di
         "row/column read failure second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "row/column read failure second no-op save should leave the source package unchanged");
+    check_saved_row_column_snapshots("row/column read failure second no-op saved session");
     check_reopened_default_data_sheet_output(noop_output, "row/column read failure second no-op");
 }
 

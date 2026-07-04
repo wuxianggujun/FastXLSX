@@ -2115,6 +2115,11 @@ sheet remains readable after failed or non-mutating shift attempts.
 The no-op invalid A1 range, invalid cell read, row/column read failure, and
 sparse range read failure save outputs are also reopened to verify copy-original
 Data state stays readable after non-mutating diagnostics.
+The row/column read-failure path now also re-runs saved-session `row_cells()` /
+`column_cells()` snapshots on the same clean handle after the copy-original save
+and repeated clean no-op save, preserving the prior diagnostic while proving
+source row/column ordering and missing row/column snapshots do not re-dirty the
+materialized worksheet.
 The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level

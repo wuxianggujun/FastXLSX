@@ -5936,18 +5936,17 @@ package bytes stay unchanged, and fresh reopen still sees the supported sparse
 cells. This is not merged-cell editing, validation/conditional-formatting
 import, page setup synchronization, range recalculation, metadata repair,
 relationship repair, or semantic range-object editing.
-Source comments and processing instructions outside cells now have the same
-projection-boundary coverage: they do not block supported cell materialization,
-dirty `WorksheetEditor` save preserves wrapper-level comments / processing
-instructions while replacing comments and processing instructions inside the
-source `sheetData`. This is not comment import, processing-instruction semantic
-support, comments-part editing, broad XML trivia preservation, relationship
-repair, or a change to cell-internal comment / PI rejection.
-That comment/processing-instruction wrapper projection now also carries
-post-dirty no-op evidence: the follow-up `save_as()` is byte-stable, source
-bytes stay unchanged, and fresh reopen still sees the supported sparse cells.
-This is still not comment-part editing, processing-instruction semantics,
-broad XML trivia preservation, XML repair, or relationship repair.
+Source comments and processing instructions outside cells now have both no-op
+gates too: they do not block supported cell materialization, the clean no-op
+output copies source package bytes and fresh-reopens with the supported sparse
+cell, and dirty `WorksheetEditor` save preserves wrapper-level comments /
+processing instructions while replacing comments and processing instructions
+inside the source `sheetData`. The follow-up `save_as()` is byte-stable, source
+plus prior no-op package bytes stay unchanged, and fresh reopen still sees the
+supported sparse cells. This is not comment import, processing-instruction
+semantic support, comments-part editing, broad XML trivia preservation, XML
+repair, relationship repair, or a change to cell-internal comment / PI
+rejection.
 These wrapper/default-style/empty-source dirty outputs now also fresh-reopen
 through the public sparse views: normalized `s=0`, empty worksheets that acquire
 a single sparse edit, wrapper metadata, relationship-bearing metadata,

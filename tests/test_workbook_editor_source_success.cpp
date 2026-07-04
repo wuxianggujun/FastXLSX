@@ -1535,6 +1535,8 @@ void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processi
         artifact("fastxlsx-workbook-editor-public-source-comments-pi-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-comments-pi-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-comments-pi-noop-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-comments-pi-dirty-noop-output.xlsx");
     {
@@ -1580,6 +1582,27 @@ void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processi
         "read-only source comment/PI materialization should not dirty WorkbookEditor");
     check(editor.pending_change_count() == 0,
         "read-only source comment/PI materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "source comment/PI no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "source comment/PI no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "source comment/PI no-op save should not create public edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "source comment/PI no-op save should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source comment/PI no-op save should not mutate the source package");
+    const ReopenedSourceSuccessCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("source-comments-pi")},
+    };
+    check_reopened_source_success_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 1},
+        noop_cells,
+        "source comment/PI no-op output");
 
     sheet.set_cell("B2", fastxlsx::CellValue::text("comments-pi-new-inline"));
     editor.save_as(output);
@@ -1629,6 +1652,8 @@ void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processi
         "comment/PI wrapper post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "comment/PI wrapper post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "comment/PI wrapper post-dirty no-op save should not mutate the earlier source-copy output");
     check_reopened_source_success_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 2, 2},

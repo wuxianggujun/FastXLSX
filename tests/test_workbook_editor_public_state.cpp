@@ -57906,6 +57906,24 @@ void test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session(
     check(!sheet.try_cell("A1048576").has_value() &&
             !sheet.try_cell("XFD1").has_value(),
         "dirty max-boundary row/column shift no-ops should not synthesize edge cells");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> dirty_noop_row_three =
+        sheet.row_cells(3);
+    check(dirty_noop_row_three.size() == 1 &&
+            dirty_noop_row_three[0].reference.row == 3 &&
+            dirty_noop_row_three[0].reference.column == 3 &&
+            dirty_noop_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            dirty_noop_row_three[0].value.text_value() == "dirty-shift-noop-tail",
+        "dirty row_cells after shift no-ops should expose only the unshifted dirty cell");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> dirty_noop_column_three =
+        sheet.column_cells(3);
+    check(dirty_noop_column_three.size() == 1 &&
+            dirty_noop_column_three[0].reference.row == 3 &&
+            dirty_noop_column_three[0].reference.column == 3 &&
+            dirty_noop_column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            dirty_noop_column_three[0].value.text_value() == "dirty-shift-noop-tail",
+        "dirty column_cells after shift no-ops should expose only the unshifted dirty cell");
+    check(sheet.row_cells(4).empty() && sheet.column_cells(4).empty(),
+        "dirty row/column snapshot reads after shift no-ops should not synthesize shifted coordinates");
     check_workbook_editor_public_catalog_preserved(
         editor,
         catalog_before_max_boundary_noops,
@@ -57963,6 +57981,25 @@ void test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session(
         check(!reopened_sheet.try_cell("D3").has_value() &&
                 !reopened_sheet.try_cell("C4").has_value(),
             "dirty row/column shift no-op reopened output should keep shifted coordinates absent");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+            reopened_sheet.row_cells(3);
+        check(reopened_row_three.size() == 1 &&
+                reopened_row_three[0].reference.row == 3 &&
+                reopened_row_three[0].reference.column == 3 &&
+                reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                reopened_row_three[0].value.text_value() == "dirty-shift-noop-tail",
+            "dirty row/column shift no-op reopened row_cells should expose only the unshifted dirty cell");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+            reopened_sheet.column_cells(3);
+        check(reopened_column_three.size() == 1 &&
+                reopened_column_three[0].reference.row == 3 &&
+                reopened_column_three[0].reference.column == 3 &&
+                reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                reopened_column_three[0].value.text_value() == "dirty-shift-noop-tail",
+            "dirty row/column shift no-op reopened column_cells should expose only the unshifted dirty cell");
+        check(reopened_sheet.row_cells(4).empty() &&
+                reopened_sheet.column_cells(4).empty(),
+            "dirty row/column shift no-op reopened snapshots should keep shifted coordinates absent");
     };
     check_reopened_shift_output(output, "dirty row/column shift no-op",
         inspect_dirty_noop_output);

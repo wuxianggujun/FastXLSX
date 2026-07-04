@@ -275,6 +275,28 @@ void check_reopened_lazy_shared_strings_dirty_output(
         prefix + " Shared failure should not expose dirty materialized cells");
     check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
         prefix + " Shared failure should not expose dirty materialized memory");
+    check(reopened_data.cell_count() == expected_data_cells.size(),
+        prefix + " Shared failure should keep Data sparse count stable");
+    const std::optional<fastxlsx::CellRange> failure_range =
+        reopened_data.used_range();
+    check(expected_used_range.has_value() && failure_range.has_value() &&
+            shared_strings_ranges_equal(*failure_range, *expected_used_range),
+        prefix + " Shared failure should keep Data used range stable");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> failure_cells =
+        reopened_data.sparse_cells();
+    check(failure_cells.size() == expected_data_cells.size(),
+        prefix + " Shared failure should keep Data sparse_cells count stable");
+    if (failure_cells.size() == expected_data_cells.size()) {
+        for (std::size_t index = 0; index < expected_data_cells.size(); ++index) {
+            check(shared_strings_snapshot_matches(
+                      failure_cells[index], expected_data_cells[index]),
+                prefix + " Shared failure should keep Data sparse_cells values stable");
+        }
+    }
+    check_reopened_shared_strings_row_snapshots(
+        reopened_data, expected_data_cells, scenario);
+    check_reopened_shared_strings_column_snapshots(
+        reopened_data, expected_data_cells, scenario);
 }
 
 void check_reopened_shared_strings_dirty_output(

@@ -3695,6 +3695,9 @@ original sharedStrings diagnostic. It now also checks the reopened `used_range()
 and `sparse_cells()` snapshot for that usable sheet, keeping the lazy failure
 boundary aligned with the legal sharedStrings dirty-output readback without
 adding repair or migration behavior.
+The same helper now rechecks those `Data` sparse views after the later `Shared`
+worksheet materialization failure, proving that the bad sharedStrings metadata
+diagnostic does not pollute the already-open clean worksheet handle.
 Representative legal sharedStrings dirty-save outputs now fresh-reopen through
 the same public facade as clean `WorksheetEditor` state too: ordinary source
 shared string indexes with appended text, legal XML declarations, prefixed

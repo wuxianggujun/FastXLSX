@@ -5763,6 +5763,9 @@ formula text only.
 Source error cell materialization now has matching post-dirty no-op evidence:
 the no-op output remains byte-stable, the rewritten source package is unchanged,
 and fresh reopen still reads the `t="e"` error cells beside later edits.
+Source shared formula definitions/followers now also carry that no-op gate:
+the flattened plain-formula output remains byte-stable, the fixture package is
+unchanged, and fresh reopen keeps the translated follower text.
 The remaining formula-shape dirty outputs now reuse that same fresh-reopen
 readback gate for source-order shared formula matrices, Office-like 2D shared
 formula groups, and array/dataTable metadata fallbacks. This keeps lossy formula

@@ -254,6 +254,9 @@ the post-noop edits intact.
 The column-shift cross-handle path mirrors that post-noop evidence with later
 edits on both `Data` and `Untouched`, preserving the shifted dirty columns and
 leaving earlier first/no-op outputs unchanged.
+It now repeats the clean no-op before those later column edits too, proving the
+repeat no-op package is byte-identical, fresh-reopenable, and still unchanged
+after the post-noop save.
 That column-shift cross-handle path now also runs the same second clean no-op
 `save_as()` after the post-noop edit, keeping both handles clean, retaining the
 same handoff count, preserving byte-stable package entries, and fresh-reopening

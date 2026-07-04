@@ -2284,6 +2284,13 @@ staged sparse-store hygiene: `set_cell_values()` preserves existing source
 styles while duplicate coordinates remain later-wins, and
 `clear_cell_values(span<WorksheetCellReference>)` clears only represented
 coordinates without synthesizing missing cells.
+`set_cell_values()` now also has exact-memory-budget batch recovery evidence:
+an oversized missing-cell update rejects the whole value-only batch before
+applying earlier batch entries, preserves sparse counts/memory and pending
+materialized diagnostics, keeps the rejected target absent, and leaves a
+copy-original save unchanged. A later smaller overwrite in the same exact-budget
+session clears the diagnostic, saves/reopens cleanly, and keeps the failed early
+overwrite plus rejected payload out of both recovery and no-op outputs.
 The sparse batch mutation APIs also have small literal-batch convenience
 overloads: `set_cells(initializer_list<WorksheetCellUpdate>)`,
 `set_cell_values(initializer_list<WorksheetCellUpdate>)`,

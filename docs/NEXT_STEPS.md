@@ -5890,15 +5890,15 @@ and fresh-reopens with unstyled text cells, and explicit default-style
 attributes remain omitted after the later dirty projection. The follow-up
 `save_as()` output is byte-stable, and source plus prior no-op packages stay
 unchanged. This is not non-default style migration or style registry repair.
-Empty source worksheet materialization is pinned as well: worksheets with no
-`sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
-stores, stay clean until mutation, and later save through the standalone
-CellStore worksheet projection. This does not imply XML repair, source wrapper
-metadata preservation, same-sheet Patch bypass, or large-file random editing.
-Those empty-source dirty projections now also have post-dirty no-op evidence:
-the follow-up `save_as()` output is byte-stable, the source package stays
-unchanged, and fresh reopen still sees only the inserted sparse cell. This is
-not clean-session commit semantics or wrapper metadata repair.
+Empty source worksheet materialization now has both no-op gates as well:
+worksheets with no `sheetData` and worksheets with self-closing `<sheetData/>`
+load as empty sparse stores, stay clean, and the clean no-op output copies
+source package bytes while fresh-reopening as empty. Later dirty projections
+still save through the standalone CellStore worksheet projection, the follow-up
+`save_as()` output is byte-stable, source plus prior no-op packages stay
+unchanged, and fresh reopen still sees only the inserted sparse cell. This does
+not imply XML repair, clean-session commit semantics, source wrapper metadata
+preservation, same-sheet Patch bypass, or large-file random editing.
 Worksheet root and `sheetData` boundary failure hygiene is pinned too: markup
 before the worksheet root, duplicate `sheetData`, duplicate worksheet roots, and
 trailing text fail cleanly without partial sessions. This is strict validation,

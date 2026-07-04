@@ -977,6 +977,9 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
                 std::string("fastxlsx-workbook-editor-public-empty-source-")
                 + std::string(tag) + "-source.xlsx";
             const std::filesystem::path source = write_source(source_name);
+            const std::filesystem::path noop_output = artifact(
+                std::string("fastxlsx-workbook-editor-public-empty-source-")
+                + std::string(tag) + "-noop-output.xlsx");
             const std::filesystem::path output = artifact(
                 std::string("fastxlsx-workbook-editor-public-empty-source-")
                 + std::string(tag) + "-output.xlsx");
@@ -1003,6 +1006,47 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
                 "read-only empty source worksheet materialization should start clean");
             check(!editor.has_pending_changes(),
                 "read-only empty source worksheet materialization should not dirty WorkbookEditor");
+            check(editor.pending_change_count() == 0,
+                "read-only empty source worksheet materialization should not queue public Patch edits");
+
+            editor.save_as(noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " no-op save should keep Data clean");
+            check(!editor.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " no-op save should keep WorkbookEditor clean");
+            check(editor.pending_change_count() == 0,
+                std::string("empty source ") + std::string(tag)
+                    + " no-op save should not create public edits");
+            const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+            check(noop_entries == source_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " no-op save should copy source entries");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " no-op save should not mutate the source package");
+            fastxlsx::WorkbookEditor noop_editor = fastxlsx::WorkbookEditor::open(noop_output);
+            fastxlsx::WorksheetEditor noop_sheet = noop_editor.worksheet("Data");
+            check_workbook_editor_public_clean_state(
+                noop_editor, std::string("empty source ") + std::string(tag) + " no-op fresh reopen");
+            check(!noop_sheet.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " no-op fresh reopen should materialize a clean worksheet");
+            check(noop_sheet.cell_count() == 0,
+                std::string("empty source ") + std::string(tag)
+                    + " no-op fresh reopen should stay empty");
+            check(!noop_sheet.used_range().has_value(),
+                std::string("empty source ") + std::string(tag)
+                    + " no-op fresh reopen should expose no used range");
+            check(noop_sheet.sparse_cells().empty(),
+                std::string("empty source ") + std::string(tag)
+                    + " no-op fresh reopen should expose no sparse cells");
+            check(!noop_sheet.try_cell("A1").has_value(),
+                std::string("empty source ") + std::string(tag)
+                    + " no-op fresh reopen should not invent A1");
+            check_workbook_editor_public_clean_state(
+                noop_editor, std::string("empty source ") + std::string(tag) + " no-op fresh reopen reads");
 
             const std::string inserted_text =
                 std::string("empty-source-materialized-") + std::string(tag);
@@ -1040,6 +1084,9 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
             check(fastxlsx::test::read_zip_entries(source) == source_entries,
                 std::string("empty source ") + std::string(tag)
                     + " post-dirty no-op save should not mutate the source package");
+            check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-dirty no-op save should not mutate the earlier source-copy output");
             check_reopened_source_success_dirty_output(
                 dirty_noop_output,
                 fastxlsx::CellRange {2, 2, 2, 2},

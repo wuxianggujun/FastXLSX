@@ -5780,9 +5780,11 @@ The same source error cell path now also has a read-only clean no-op
 source package bytes unchanged, fresh-reopen through public sparse views, and
 leave the source package untouched. This remains scalar error-cell readback and
 copy-original evidence, not error-token validation or formula evaluation.
-Source shared formula definitions/followers now also carry that no-op gate:
-the flattened plain-formula output remains byte-stable, the fixture package is
-unchanged, and fresh reopen keeps the translated follower text.
+Source shared formula definitions/followers now carry both no-op gates:
+read-only materialization stays clean, the clean no-op output copies source
+package bytes and fresh-reopens with translated follower text, while the later
+flattened plain-formula output remains byte-stable and preserves both source and
+prior no-op package bytes.
 Source-order shared formula matrices now carry the same post-dirty no-op
 evidence: interleaved/latest-definition followers remain flattened as translated
 plain formulas, the no-op output is byte-stable, the source package is unchanged,

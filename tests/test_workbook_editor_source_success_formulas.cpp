@@ -553,6 +553,8 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
 {
     const std::filesystem::path source = write_two_sheet_source(
         "fastxlsx-workbook-editor-public-source-shared-formula-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-shared-formula-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-shared-formula-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -590,6 +592,32 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         "source shared formula read-only materialization should start clean");
     check(!editor.has_pending_changes(),
         "source shared formula read-only materialization should not dirty the workbook editor");
+    check(editor.pending_change_count() == 0,
+        "source shared formula read-only materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "source shared formula no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "source shared formula no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "source shared formula no-op save should not queue Patch edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "source shared formula no-op save should copy source package bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source shared formula no-op save should not mutate the source package");
+    const ReopenedFormulaOutputCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula(
+            R"(A1+B$1+$A1+$A$1+SUM(A1:B1)&"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1])")},
+        {2, 2, fastxlsx::CellValue::formula(
+            R"(B2+C$1+$A2+$A$1+SUM(B2:C2)&"A1"+'Other Sheet'!B2+[Book.xlsx]Sheet1!B2+Table1[A1])")},
+    };
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        noop_cells,
+        "shared formula no-op output");
 
     sheet.set_cell("C3", fastxlsx::CellValue::text("shared-formula-new-inline"));
     editor.save_as(output);
@@ -634,6 +662,8 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         "source shared formula post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "source shared formula post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "source shared formula post-dirty no-op save should not mutate the prior no-op output");
     check_reopened_formula_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 3, 3},

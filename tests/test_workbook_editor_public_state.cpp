@@ -46357,6 +46357,8 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-noop-output.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-second-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-after-rename-options-post-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -46567,11 +46569,122 @@ void test_public_worksheet_editor_shift_after_rename_option_mismatch_preserves_p
         "renamed shift option mismatch second no-op save should leave the second output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "renamed shift option mismatch second no-op save should leave the first no-op output unchanged");
-    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
         "renamed shift option mismatch second no-op output should match the first no-op output");
     check_reopened_renamed_shift_noop_output(
         second_noop_output,
         "renamed shift option mismatch second no-op output");
+
+    reacquired.set_cell("D3", fastxlsx::CellValue::text("option-mismatch-post-noop-renamed"));
+    const std::size_t post_noop_memory = reacquired.estimated_memory_usage();
+    check(sheet.has_pending_changes() && reacquired.has_pending_changes(),
+        "renamed shift option mismatch post-noop edit should dirty both planned-name handles");
+    check(editor.pending_change_count() == 3,
+        "renamed shift option mismatch post-noop edit should not count dirty state as a saved handoff");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"RenamedData"},
+        "renamed shift option mismatch post-noop edit should report RenamedData dirty once");
+    check(editor.pending_materialized_cell_count() == 4,
+        "renamed shift option mismatch post-noop edit should add one sparse cell");
+    check(editor.estimated_pending_materialized_memory_usage() == post_noop_memory,
+        "renamed shift option mismatch post-noop edit should report the dirty memory");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift option mismatch post-noop edit should keep diagnostics clear");
+    check(sheet.get_cell("D3").text_value() == "option-mismatch-post-noop-renamed" &&
+            reacquired.get_cell("D3").text_value() == "option-mismatch-post-noop-renamed",
+        "renamed shift option mismatch post-noop edit should be visible through both handles");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("C1").number_value() == 1.0,
+        "renamed shift option mismatch post-noop edit should preserve shifted source cells");
+    check_public_state_renamed_dirty_materialized_summary_memory(
+        editor,
+        sheet,
+        reacquired,
+        4,
+        post_noop_memory,
+        "renamed shift option mismatch post-noop edit");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "renamed shift option mismatch post-noop save should clean both planned-name handles");
+    check(editor.pending_change_count() == 4,
+        "renamed shift option mismatch post-noop save should record the third materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "renamed shift option mismatch post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "renamed shift option mismatch post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "renamed shift option mismatch post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "renamed shift option mismatch post-noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "renamed shift option mismatch post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "renamed shift option mismatch post-noop save should leave the second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "renamed shift option mismatch post-noop save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "renamed shift option mismatch post-noop save should leave the second no-op output unchanged");
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_workbook_xml = post_noop_entries.at("xl/workbook.xml");
+    const std::string post_noop_worksheet_xml =
+        post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_workbook_xml, R"(name="RenamedData")",
+        "renamed shift option mismatch post-noop output should keep the planned catalog name");
+    check_not_contains(post_noop_workbook_xml, R"(name="Data")",
+        "renamed shift option mismatch post-noop output should omit the source catalog name");
+    check_contains(post_noop_worksheet_xml, R"(<dimension ref="A1:D3"/>)",
+        "renamed shift option mismatch post-noop output should expand bounds to D3");
+    check_contains(post_noop_worksheet_xml, R"(<c r="D3")",
+        "renamed shift option mismatch post-noop output should write the later D3 cell");
+    check_contains(post_noop_worksheet_xml, "option-mismatch-post-noop-renamed",
+        "renamed shift option mismatch post-noop output should write the later D3 text");
+    check_not_contains(post_noop_worksheet_xml, R"(r="B1")",
+        "renamed shift option mismatch post-noop output should keep old B1 absent");
+    check_not_contains(post_noop_worksheet_xml, R"(r="A2")",
+        "renamed shift option mismatch post-noop output should keep old A2 absent");
+    check_reopened_clean_sheet_output(
+        post_noop_output, "RenamedData",
+        "renamed shift option mismatch post-noop output",
+        [](fastxlsx::WorksheetEditor& post_noop_sheet) {
+            check(post_noop_sheet.cell_count() == 4,
+                "renamed shift option mismatch post-noop output should keep sparse count");
+            check_cell_range_equals(post_noop_sheet.used_range(), 1, 1, 3, 4,
+                "renamed shift option mismatch post-noop output should expose post-noop bounds");
+            check(post_noop_sheet.get_cell("C1").number_value() == 1.0,
+                "renamed shift option mismatch post-noop output should read shifted B1");
+            check(post_noop_sheet.get_cell("A3").text_value() == "placeholder-a2",
+                "renamed shift option mismatch post-noop output should read shifted A2");
+            check(post_noop_sheet.get_cell("D3").text_value() == "option-mismatch-post-noop-renamed",
+                "renamed shift option mismatch post-noop output should read the later D3 edit");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                post_noop_sheet.row_cells(3);
+            check(row_three.size() == 2 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "placeholder-a2" &&
+                    row_three[1].reference.row == 3 &&
+                    row_three[1].reference.column == 4 &&
+                    row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[1].value.text_value() == "option-mismatch-post-noop-renamed",
+                "renamed shift option mismatch post-noop row_cells should expose shifted row order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+                post_noop_sheet.column_cells(4);
+            check(column_four.size() == 1 &&
+                    column_four[0].reference.row == 3 &&
+                    column_four[0].reference.column == 4 &&
+                    column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_four[0].value.text_value() == "option-mismatch-post-noop-renamed",
+                "renamed shift option mismatch post-noop column_cells should expose the later edit");
+            check(!post_noop_sheet.try_cell("B1").has_value() &&
+                    !post_noop_sheet.try_cell("A2").has_value(),
+                "renamed shift option mismatch post-noop output should keep old coordinates absent");
+        });
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(second_output);
     check(reopened.has_worksheet("RenamedData") && !reopened.has_worksheet("Data"),

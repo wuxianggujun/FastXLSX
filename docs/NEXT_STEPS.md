@@ -371,6 +371,10 @@ matching reacquire applies the later column shift, the first and second no-op
 outputs preserve source, first-stage, second-stage, and prior no-op package
 bytes while fresh readback still exposes the combined row/column-shifted
 `RenamedData` state cleanly.
+It now also continues from that repeated no-op checkpoint: a later `D3` edit
+clears no diagnostics, re-dirties the shared planned-name handles with aligned
+renamed materialized summaries, saves a fresh-reopenable post-noop output, and
+keeps source, first-stage, second-stage, and both no-op packages unchanged.
 The non-formula shift-after-rename missing-query path now carries the same
 repeated no-op evidence: rejected missing planned-name and old source-name
 lookups keep the saved planned session clean, and after the later matching

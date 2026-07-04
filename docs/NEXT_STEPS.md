@@ -426,6 +426,13 @@ clean reacquire, and a clean no-op save, a later `D3` edit re-dirties all shared
 handles, saves a fresh-reopenable output with shifted `A3` / `C1` plus
 row/column snapshots for the new cell, and leaves the source, safe retry, and
 no-op packages byte-stable.
+The failed-save retry + later delete path now has the same continuation after
+its third clean no-op checkpoint: after exact source-overwrite rejection, safe
+retry, clean reacquire, deleting the shifted source row, and writing a clean
+no-op output, a later `D1` edit re-dirties all shared handles, saves a
+fresh-reopenable output with shifted `C1` plus row/column snapshots for the new
+cell, and leaves source, first-stage, safe-retry, delete-stage, and no-op
+packages unchanged.
 The reverse-order full-calculation `insert_rows()` and `insert_columns()`
 success paths now also mirror the repeated no-op readback coverage: each queues
 `request_full_calculation()` before materialization, flushes the shifted sparse

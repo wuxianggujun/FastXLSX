@@ -13503,7 +13503,9 @@ void test_public_worksheet_editor_set_cell_values_preserves_styles_and_order()
 
     sheet.set_cell_values({
         {fastxlsx::WorksheetCellReference {1, 1},
-            fastxlsx::CellValue::text("styled-batch-value")},
+            fastxlsx::CellValue::text("styled-batch-first")},
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::number(2.5)},
         {fastxlsx::WorksheetCellReference {1, 3},
             fastxlsx::CellValue::text("batch-first")},
         {fastxlsx::WorksheetCellReference {1, 3},
@@ -13517,11 +13519,11 @@ void test_public_worksheet_editor_set_cell_values_preserves_styles_and_order()
     check_cell_range_equals(sheet.used_range(), 1, 1, 2, 4,
         "set_cell_values should expand sparse bounds for inserted cells");
     const fastxlsx::CellValue styled_a1 = sheet.get_cell("A1");
-    check(styled_a1.kind() == fastxlsx::CellValueKind::Text &&
-            styled_a1.text_value() == "styled-batch-value" &&
+    check(styled_a1.kind() == fastxlsx::CellValueKind::Number &&
+            styled_a1.number_value() == 2.5 &&
             styled_a1.has_style() &&
             styled_a1.style_id().value() == non_default_style.value(),
-        "set_cell_values should preserve source style ids on overwritten targets");
+        "set_cell_values should preserve source style ids on duplicate overwritten targets");
     check(sheet.get_cell("B1").text_value() == "styled-tail",
         "set_cell_values should leave non-target source cells untouched");
     const fastxlsx::CellValue duplicate_c1 = sheet.get_cell("C1");
@@ -13548,11 +13550,13 @@ void test_public_worksheet_editor_set_cell_values_preserves_styles_and_order()
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
         "set_cell_values should refresh the dirty worksheet dimension");
-    const std::string styled_text =
+    const std::string styled_number =
         R"(<c r="A1" s=")" + std::to_string(non_default_style.value())
-        + R"(" t="inlineStr"><is><t>styled-batch-value</t></is></c>)";
-    check_contains(worksheet_xml, styled_text,
+        + R"("><v>2.5</v></c>)";
+    check_contains(worksheet_xml, styled_number,
         "set_cell_values should persist value-only edits with the source style id");
+    check_not_contains(worksheet_xml, "styled-batch-first",
+        "set_cell_values should omit earlier duplicate styled-target payloads");
     check_contains(worksheet_xml, "styled-tail",
         "set_cell_values should persist untouched source cells");
     check_contains(worksheet_xml, R"(<c r="C1"><f>A1</f></c>)",
@@ -13570,8 +13574,8 @@ void test_public_worksheet_editor_set_cell_values_preserves_styles_and_order()
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
                 "styled set_cell_values reopened output should keep sparse bounds");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
-            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
-                    reopened_a1.text_value() == "styled-batch-value" &&
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 2.5 &&
                     reopened_a1.has_style() &&
                     reopened_a1.style_id().value() == non_default_style.value(),
                 "styled set_cell_values reopened output should preserve source style id");

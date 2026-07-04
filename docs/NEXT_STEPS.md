@@ -5915,19 +5915,16 @@ source plus prior no-op package bytes stay unchanged, and fresh reopen still
 sees the same sparse cells. This is wrapper preservation only, not wrapper
 metadata synchronization, range recalculation, relationship repair, or the
 internal sheetData Patch API.
-Representative relationship-bearing wrapper metadata follows the same public
-dirty-projection boundary: source `<hyperlinks>` and `<tableParts>` do not
-block supported cell materialization, dirty projection preserves those worksheet
-XML references, and the source worksheet `.rels` plus linked table part stay as
-opaque preserved package artifacts. This is not hyperlink/table semantic
-editing, relationship pruning/repair, table range repair, or the internal
-sheetData Patch API.
-That relationship-bearing dirty projection now also carries post-dirty no-op
-evidence: the follow-up `save_as()` is byte-stable, source worksheet
-relationships and linked table artifacts stay as opaque preserved bytes, and
-fresh reopen still sees the supported sparse cells. This is still not hyperlink
-or table semantic editing, relationship repair, relationship pruning, or table
-range repair.
+Representative relationship-bearing wrapper metadata now follows the same
+two-gate no-op boundary: source `<hyperlinks>` and `<tableParts>` do not block
+supported cell materialization, the clean no-op output copies source package
+bytes and fresh-reopens with the supported sparse cells, dirty projection
+preserves those worksheet XML references, and the source worksheet `.rels` plus
+linked table part stay as opaque preserved package artifacts. The follow-up
+`save_as()` is byte-stable, source plus prior no-op package bytes stay
+unchanged, and fresh reopen still sees the supported sparse cells. This is not
+hyperlink/table semantic editing, relationship pruning/repair, table range
+repair, or the internal sheetData Patch API.
 Representative range/reference wrapper metadata is now pinned on the same
 path: source `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
 `<ignoredErrors>`, `<pageMargins>`, and `<pageSetup>` do not block supported

@@ -1230,6 +1230,8 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-relationship-wrapper-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -1278,6 +1280,34 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
         "WorksheetEditor should materialize source numbers beside relationship wrapper metadata");
     check(!sheet.has_pending_changes(),
         "relationship wrapper metadata materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "relationship wrapper metadata materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "relationship wrapper metadata materialization should not queue public Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "relationship wrapper no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "relationship wrapper no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "relationship wrapper no-op save should not create public edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "relationship wrapper no-op save should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "relationship wrapper no-op save should not mutate the source package");
+    const ReopenedSourceSuccessCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("Name")},
+        {1, 2, fastxlsx::CellValue::text("Value")},
+        {2, 1, fastxlsx::CellValue::text("source-link-row")},
+        {2, 2, fastxlsx::CellValue::number(7.0)},
+    };
+    check_reopened_source_success_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        noop_cells,
+        "relationship wrapper no-op output");
 
     sheet.set_cell("C3", fastxlsx::CellValue::text("relationship-wrapper-new"));
     editor.save_as(output);
@@ -1333,6 +1363,8 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
         "relationship wrapper post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "relationship wrapper post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "relationship wrapper post-dirty no-op save should not mutate the earlier source-copy output");
     check_reopened_source_success_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 3, 3},

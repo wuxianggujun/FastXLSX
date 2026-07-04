@@ -47562,6 +47562,42 @@ void test_public_worksheet_editor_shift_reacquire_noop_save_preserves_saved_sess
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
 
+    check(threw_fastxlsx_error([&] {
+        reacquired.set_cell("a3", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "shift reacquire max-boundary no-ops should seed diagnostics first");
+    check(editor.last_edit_error().has_value(),
+        "shift reacquire max-boundary no-ops should expose the seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_boundary_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    reacquired.insert_rows(1048576, 1);
+    reacquired.insert_columns(16384, 1);
+    reacquired.delete_rows(1048576, 1);
+    reacquired.delete_columns(16384, 1);
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire max-boundary no-ops should clear prior diagnostics");
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "shift reacquire max-boundary no-ops should keep both handles clean");
+    check(editor.pending_change_count() == 1,
+        "shift reacquire max-boundary no-ops should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire max-boundary no-ops should keep dirty materialized diagnostics clear");
+    check(sheet.cell_count() == 3 && reacquired.cell_count() == 3,
+        "shift reacquire max-boundary no-ops should preserve saved sparse count");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("A3").text_value() == "placeholder-a2",
+        "shift reacquire max-boundary no-ops should preserve the saved shifted row");
+    check(!sheet.try_cell("A1048576").has_value() &&
+            !reacquired.try_cell("XFD1").has_value(),
+        "shift reacquire max-boundary no-ops should not synthesize edge cells");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_boundary_noops,
+        "shift reacquire max-boundary no-ops");
+
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =

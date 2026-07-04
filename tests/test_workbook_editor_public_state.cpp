@@ -8241,9 +8241,20 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_empty_used_range,
         "empty used_range inspection after failed mutation");
 
+    const auto check_saved_empty_used_range =
+        [&sheet](const std::string& message) {
+            check(!sheet.used_range().has_value(), message);
+        };
+
     editor.save_as(output);
     check(editor.last_edit_error() == empty_prior_error,
         "save_as after used_range inspection should preserve prior diagnostics");
+    check_saved_empty_used_range(
+        "used_range saved session should keep empty sparse bounds after save_as");
+    check(!sheet.has_pending_changes(),
+        "used_range saved-session read should keep the materialized sheet clean");
+    check(editor.last_edit_error() == empty_prior_error,
+        "used_range saved-session read should preserve prior diagnostics");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "used_range save should leave the source package unchanged");
@@ -8299,6 +8310,12 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
         "used_range no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "used_range no-op save should leave the source package unchanged");
+    check_saved_empty_used_range(
+        "used_range no-op saved session should keep empty sparse bounds");
+    check(!sheet.has_pending_changes(),
+        "used_range no-op saved-session read should keep the materialized sheet clean");
+    check(editor.last_edit_error() == empty_prior_error,
+        "used_range no-op saved-session read should preserve prior diagnostics");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -8327,6 +8344,12 @@ void test_public_worksheet_editor_used_range_tracks_sparse_bounds()
         "used_range second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "used_range second no-op save should leave the source package unchanged");
+    check_saved_empty_used_range(
+        "used_range second no-op saved session should keep empty sparse bounds");
+    check(!sheet.has_pending_changes(),
+        "used_range second no-op saved-session read should keep the materialized sheet clean");
+    check(editor.last_edit_error() == empty_prior_error,
+        "used_range second no-op saved-session read should preserve prior diagnostics");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "used_range second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

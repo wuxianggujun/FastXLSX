@@ -1073,6 +1073,9 @@ clean readback for a saved worksheet whose sparse cells were fully erased after
 diagnostic-preserving reads.
 Its second no-op output now also fresh-reopens as an empty sparse worksheet with
 no used range and erased A1/B1/A2 absent.
+It now also calls `used_range()` directly on the same clean saved handle after
+the initial save and both clean no-op saves, preserving the prior diagnostic and
+proving those bounds reads do not re-dirty the materialized session.
 The `row_cells()` / `column_cells()` snapshot path is reopened to verify saved
 row/column ordering, explicit blank cells, source-backed records, later edits,
 and outside-coordinate sparse cells.

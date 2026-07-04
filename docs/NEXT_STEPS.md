@@ -2279,6 +2279,10 @@ winning, empty batches are no-ops, and any coordinate/style/budget failure
 rejects the entire batch before mutating the active materialized session. This
 is still not a dense range writer, style-preserving edit, A1 range parser, or
 large-file low-memory random-editing path.
+Its duplicate-coordinate accounting is now pinned under `max_cells`: repeating
+the same missing coordinate inside one `set_cells()` batch counts as one final
+inserted sparse record, keeps the later full-cell payload, saves/reopens with
+that formula cell, and leaves the earlier duplicate payload absent.
 The full-cell batch now also has exact-memory-budget recovery coverage:
 an oversized missing-cell update fails before applying earlier entries in the
 same `set_cells()` batch, keeps sparse and pending materialized diagnostics

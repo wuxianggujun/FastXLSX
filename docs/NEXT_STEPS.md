@@ -5701,23 +5701,26 @@ formula, generating cached results, or repairing row metadata.
 Fresh source-backed max-coordinate materialization is pinned as well: a source
 worksheet that already contains an inline-string `XFD1048576` record
 materializes that edge cell cleanly, a read-only no-op `save_as()` still copies
-source entries byte-for-byte, and `erase_cell("XFD1048576")` removes the
-source-backed edge record so the next dirty projection shrinks to `A1:B2`
-without dense allocation, source reload, tombstones, wrapper preservation, or
-row metadata repair.
+source entries byte-for-byte, the clean no-op output fresh-reopens with the
+edge cell present through A1, row, column, and range snapshots, and
+`erase_cell("XFD1048576")` removes the source-backed edge record so the next
+dirty projection shrinks to `A1:B2` without dense allocation, source reload,
+tombstones, wrapper preservation, or row metadata repair.
 The same edge is now pinned for empty inline-string source shapes: `t="inlineStr"`
 with an empty `<t></t>` materializes as empty text, `t="inlineStr"` with
 `<is/>` and no text materializes as blank, no-op `save_as()` keeps copy-original
-bytes, and erasing either `XFD1048576` record shrinks dirty projection to
-`A1:B2`. This is not rich text preservation, inline/scalar coercion, XML repair,
-source reload, or large-file random editing.
+bytes, clean no-op outputs fresh-reopen with the edge record still present, and
+erasing either `XFD1048576` record shrinks dirty projection to `A1:B2`. This is
+not rich text preservation, inline/scalar coercion, XML repair, source reload,
+or large-file random editing.
 Workbook sharedStrings rich text is pinned at the same edge too: a source
 `XFD1048576` `t="s"` record can point at simple rich `<r><t>...</t></r>` runs,
 materialize as flattened plain text, ignore phonetic/extension metadata text,
-keep source bytes on no-op `save_as()`, and erase back to `A1:B2` while
-preserving `xl/sharedStrings.xml`. This is not rich text preservation,
-sharedStrings rebuild/writeback/index migration, relationship repair, or
-large-file random editing.
+keep source bytes on no-op `save_as()`, fresh-reopen the no-op output with the
+flattened edge text, and erase back to `A1:B2` while preserving
+`xl/sharedStrings.xml`. This is not rich text preservation, sharedStrings
+rebuild/writeback/index migration, relationship repair, or large-file random
+editing.
 Those source-backed max-coordinate erase projections now also fresh-reopen after
 save: inline text, formula, shared-string, scalar, empty-inline, and rich
 shared-string edge cases all reopen as clean `A1:B2` sparse stores with

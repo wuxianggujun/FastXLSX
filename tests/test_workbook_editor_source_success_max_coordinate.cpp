@@ -1,5 +1,111 @@
 #include "test_workbook_editor_source_success_common.hpp"
 
+bool source_max_coordinate_values_equal(
+    const fastxlsx::CellValue& actual,
+    const fastxlsx::CellValue& expected)
+{
+    if (actual.kind() != expected.kind()) {
+        return false;
+    }
+
+    switch (expected.kind()) {
+    case fastxlsx::CellValueKind::Blank:
+        return true;
+    case fastxlsx::CellValueKind::Number:
+        return actual.number_value() == expected.number_value();
+    case fastxlsx::CellValueKind::Boolean:
+        return actual.boolean_value() == expected.boolean_value();
+    case fastxlsx::CellValueKind::Text:
+    case fastxlsx::CellValueKind::Formula:
+    case fastxlsx::CellValueKind::Error:
+        return actual.text_value() == expected.text_value();
+    }
+
+    return false;
+}
+
+bool source_max_coordinate_snapshot_matches(
+    const fastxlsx::WorksheetCellSnapshot& actual,
+    const fastxlsx::CellValue& expected)
+{
+    return actual.reference.row == 1048576 &&
+        actual.reference.column == 16384 &&
+        source_max_coordinate_values_equal(actual.value, expected);
+}
+
+void check_source_max_coordinate_read_only_noop_reopened_output(
+    const std::filesystem::path& output,
+    std::string_view scenario,
+    const fastxlsx::CellValue& expected_edge)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen");
+    check(reopened_editor.pending_materialized_worksheet_names().empty(),
+        prefix + " fresh reopen should not expose dirty materialized names");
+    check(reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " fresh reopen should not expose dirty materialized cells");
+    check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " fresh reopen should not expose dirty materialized memory");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen should materialize a clean worksheet");
+    check(reopened_sheet.cell_count() == 4,
+        prefix + " fresh reopen should keep the source sparse cell count");
+
+    const std::optional<fastxlsx::CellRange> range = reopened_sheet.used_range();
+    check(range.has_value() &&
+            range->first_row == 1 &&
+            range->first_column == 1 &&
+            range->last_row == 1048576 &&
+            range->last_column == 16384,
+        prefix + " fresh reopen should expose A1:XFD1048576 bounds");
+
+    const fastxlsx::CellValue by_position = reopened_sheet.get_cell(1048576, 16384);
+    const fastxlsx::CellValue by_a1 = reopened_sheet.get_cell("XFD1048576");
+    check(source_max_coordinate_values_equal(by_position, expected_edge),
+        prefix + " fresh reopen should read the edge through row/column overloads");
+    check(source_max_coordinate_values_equal(by_a1, expected_edge),
+        prefix + " fresh reopen should read the edge through A1 overloads");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+        reopened_sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+    check(edge_cells.size() == 1,
+        prefix + " fresh reopen edge range should expose one sparse record");
+    if (edge_cells.size() == 1) {
+        check(source_max_coordinate_snapshot_matches(edge_cells[0], expected_edge),
+            prefix + " fresh reopen edge range should preserve coordinates and value");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> max_row =
+        reopened_sheet.row_cells(1048576);
+    check(max_row.size() == 1,
+        prefix + " fresh reopen max row should expose only the edge record");
+    if (max_row.size() == 1) {
+        check(source_max_coordinate_snapshot_matches(max_row[0], expected_edge),
+            prefix + " fresh reopen max row should preserve the edge value");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> max_column =
+        reopened_sheet.column_cells(16384);
+    check(max_column.size() == 1,
+        prefix + " fresh reopen max column should expose only the edge record");
+    if (max_column.size() == 1) {
+        check(source_max_coordinate_snapshot_matches(max_column[0], expected_edge),
+            prefix + " fresh reopen max column should preserve the edge value");
+    }
+
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen readback should leave the worksheet clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen readback");
+}
+
 void check_source_max_coordinate_erase_reopened_output(
     const std::filesystem::path& output,
     std::string_view scenario,
@@ -228,6 +334,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
         "no-op save_as after source max-coordinate materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate materialization should copy source entries");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        noop_output,
+        "source max-coordinate no-op output",
+        fastxlsx::CellValue::text("source-max-edge"));
 
     sheet.erase_cell("XFD1048576");
     check(!editor.last_edit_error().has_value(),
@@ -407,6 +517,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         "no-op save_as after source max-coordinate formula materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate formula materialization should copy source entries");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        noop_output,
+        "source max-coordinate formula no-op output",
+        fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<source-edge>")"));
 
     sheet.erase_cell("XFD1048576");
     check(!editor.last_edit_error().has_value(),
@@ -617,6 +731,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         "no-op save_as after source max-coordinate shared string materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate shared string materialization should copy source entries");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        noop_output,
+        "source max-coordinate shared string no-op output",
+        fastxlsx::CellValue::text("source-shared-edge & <max>"));
 
     sheet.erase_cell("XFD1048576");
     check(!editor.last_edit_error().has_value(),
@@ -858,6 +976,17 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
             "no-op save_as after source max-coordinate scalar materialization should not create public edits");
         check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
             "no-op save_as after source max-coordinate scalar materialization should copy source entries");
+        fastxlsx::CellValue expected_edge = fastxlsx::CellValue::blank();
+        if (case_info.expected_kind == fastxlsx::CellValueKind::Number) {
+            expected_edge = fastxlsx::CellValue::number(case_info.expected_number);
+        } else if (case_info.expected_kind == fastxlsx::CellValueKind::Boolean) {
+            expected_edge = fastxlsx::CellValue::boolean(case_info.expected_boolean);
+        }
+        check_source_max_coordinate_read_only_noop_reopened_output(
+            noop_output,
+            std::string("source max-coordinate scalar ") + std::string(case_info.name)
+                + " no-op output",
+            expected_edge);
 
         sheet.erase_cell("XFD1048576");
         check(!editor.last_edit_error().has_value(),
@@ -1067,6 +1196,15 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
             "no-op save_as after source max-coordinate empty inline materialization should not create public edits");
         check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
             "no-op save_as after source max-coordinate empty inline materialization should copy source entries");
+        const fastxlsx::CellValue expected_edge =
+            case_info.expected_kind == fastxlsx::CellValueKind::Text
+            ? fastxlsx::CellValue::text("")
+            : fastxlsx::CellValue::blank();
+        check_source_max_coordinate_read_only_noop_reopened_output(
+            noop_output,
+            std::string("source max-coordinate empty inline ") + std::string(case_info.name)
+                + " no-op output",
+            expected_edge);
 
         sheet.erase_cell("XFD1048576");
         check(!editor.last_edit_error().has_value(),
@@ -1260,6 +1398,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         "no-op save_as after source max-coordinate rich shared string materialization should not create public edits");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after source max-coordinate rich shared string materialization should copy source entries");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        noop_output,
+        "source max-coordinate rich shared string no-op output",
+        fastxlsx::CellValue::text("rich-A&B <edge>"));
 
     sheet.erase_cell("XFD1048576");
     check(!editor.last_edit_error().has_value(),

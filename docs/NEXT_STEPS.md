@@ -2621,6 +2621,8 @@ The empty-output failed-save branch now mirrors that repeat no-op boundary: the
 safe retry remains reusable after rejecting an empty output path, the first and
 second clean no-op packages stay byte-identical, and the later post-noop `C3`
 save leaves both no-op outputs plus the retry output unchanged.
+That empty-output post-noop save now also fresh-reopens with row/column snapshots
+for shifted `A3`, shifted `C1`, and the later `C3` edit.
 The remaining invalid output-path failed-save branches now mirror that repeat
 no-op boundary too: missing-parent, non-directory-parent, and existing-directory
 outputs preserve their rejected target state, reopen the second no-op output

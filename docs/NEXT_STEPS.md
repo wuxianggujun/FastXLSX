@@ -5894,6 +5894,11 @@ The same post-dirty no-op evidence now covers prefixed sharedStrings and
 views, follow-up no-op `save_as()` outputs are byte-stable, and source/no-op
 packages remain unchanged. This is still not namespace repair, rich-text
 formatting preservation, or broad sharedStrings migration.
+The same save/reopen stability evidence now also covers wrong-namespace
+local-name materialization and inconsistent count / unknown-attribute
+sharedStrings metadata. Dirty outputs remain byte-stable across a follow-up
+no-op `save_as()` and fresh-reopen through public sparse views. This is not
+namespace URI validation, schema/count repair, or sharedStrings migration.
 Prefixed source worksheet XML is now pinned for the same narrow local-name
 materialization boundary: worksheet, `sheetData`, row, cell, inlineStr wrapper,
 rich-run, formula, and value-wrapper element names may be prefixed and still

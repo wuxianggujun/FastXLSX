@@ -558,6 +558,9 @@ fresh-reopen, and after the later dirty formula edit.
 Their live and fresh-reopen checks now also cover `contains_cell()` for shifted
 source/formula cells, deleted old coordinates, and the later post-noop formula
 edits.
+The rich formula-shape matrix now has matching `contains_cell()` checks for
+row/column insert/delete outputs and post-noop formula edits, pinning represented
+cell presence without expanding into formula evaluation or metadata sync.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

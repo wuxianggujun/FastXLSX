@@ -57898,6 +57898,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows should translate supported moved formula reference shapes");
         check(!sheet.try_cell("C2").has_value(),
             "insert_rows rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("A3") && sheet.contains_cell("C3") &&
+                !sheet.contains_cell("C2"),
+            "insert_rows rich formula contains_cell should expose shifted source/formula cells");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -57929,6 +57932,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula reopened output should read shifted source rows");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_rows rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A3") && reopened_sheet.contains_cell("C3") &&
+                        !reopened_sheet.contains_cell("C2"),
+                    "insert_rows rich formula reopened contains_cell should expose shifted source/formula cells");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
                     reopened_sheet.row_cells(3);
                 check(reopened_row_three.size() == 2 &&
@@ -58039,6 +58045,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula.text_value() == "C3+A3",
             "insert_rows rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("A3") && sheet.contains_cell("C3") &&
+                sheet.contains_cell("D3") && !sheet.contains_cell("C2"),
+            "insert_rows rich formula post-noop contains_cell should expose both formulas");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "insert_rows rich formula post-noop edit");
 
@@ -58097,6 +58106,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula post-noop save reopened output should keep shifted source rows");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_rows rich formula post-noop save reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A3") && reopened_sheet.contains_cell("C3") &&
+                        reopened_sheet.contains_cell("D3") && !reopened_sheet.contains_cell("C2"),
+                    "insert_rows rich formula post-noop reopened contains_cell should expose both formulas");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
                     reopened_sheet.row_cells(3);
                 check(reopened_row_three.size() == 3 &&
@@ -58198,6 +58210,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns should translate supported moved formula reference shapes");
         check(!sheet.try_cell("C2").has_value(),
             "insert_columns rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("D1") && sheet.contains_cell("E2") &&
+                !sheet.contains_cell("C2"),
+            "insert_columns rich formula contains_cell should expose shifted source/formula cells");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58229,6 +58244,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula reopened output should read shifted source columns");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_columns rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("D1") && reopened_sheet.contains_cell("E2") &&
+                        !reopened_sheet.contains_cell("C2"),
+                    "insert_columns rich formula reopened contains_cell should expose shifted source/formula cells");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
                     reopened_sheet.row_cells(2);
                 check(reopened_row_two.size() == 2 &&
@@ -58339,6 +58357,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula.text_value() == "E2+D1",
             "insert_columns rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("D1") && sheet.contains_cell("E2") &&
+                sheet.contains_cell("F2") && !sheet.contains_cell("C2"),
+            "insert_columns rich formula post-noop contains_cell should expose both formulas");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "insert_columns rich formula post-noop edit");
 
@@ -58397,6 +58418,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula post-noop save reopened output should keep shifted source columns");
                 check(!reopened_sheet.try_cell("C2").has_value(),
                     "insert_columns rich formula post-noop save reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("D1") && reopened_sheet.contains_cell("E2") &&
+                        reopened_sheet.contains_cell("F2") && !reopened_sheet.contains_cell("C2"),
+                    "insert_columns rich formula post-noop reopened contains_cell should expose both formulas");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
                     reopened_sheet.row_cells(2);
                 check(reopened_row_two.size() == 3 &&
@@ -58498,6 +58522,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows should translate supported moved formula reference shapes");
         check(!sheet.try_cell("C4").has_value(),
             "delete_rows rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
+                !sheet.contains_cell("B1") && !sheet.contains_cell("C4"),
+            "delete_rows rich formula contains_cell should expose shifted source/formula cells");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58529,6 +58556,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_rows rich formula reopened output should read shifted source rows");
                 check(!reopened_sheet.try_cell("C4").has_value(),
                     "delete_rows rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
+                        !reopened_sheet.contains_cell("B1") && !reopened_sheet.contains_cell("C4"),
+                    "delete_rows rich formula reopened contains_cell should expose shifted source/formula cells");
             };
         check_reopened_shift_output(output, "delete_rows rich formula",
             inspect_reopened_delete_row_formula);
@@ -58619,6 +58649,10 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula.text_value() == "C3+A1",
             "delete_rows rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
+                sheet.contains_cell("D3") && !sheet.contains_cell("B1") &&
+                !sheet.contains_cell("C4"),
+            "delete_rows rich formula post-noop contains_cell should expose both formulas");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_rows rich formula post-noop edit");
 
@@ -58677,6 +58711,10 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_rows rich formula post-noop save reopened output should keep shifted source rows");
                 check(!reopened_sheet.try_cell("C4").has_value(),
                     "delete_rows rich formula post-noop save reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
+                        reopened_sheet.contains_cell("D3") && !reopened_sheet.contains_cell("B1") &&
+                        !reopened_sheet.contains_cell("C4"),
+                    "delete_rows rich formula post-noop reopened contains_cell should expose both formulas");
             };
         check_reopened_shift_output(post_noop_output, "delete_rows rich formula post-noop save",
             inspect_reopened_delete_row_post_noop_formula);
@@ -58754,6 +58792,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns should translate supported moved formula reference shapes");
         check(!sheet.try_cell("D2").has_value(),
             "delete_columns rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C2") &&
+                !sheet.contains_cell("B2") && !sheet.contains_cell("D2"),
+            "delete_columns rich formula contains_cell should expose shifted source/formula cells");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58785,6 +58826,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_columns rich formula reopened output should read shifted source columns");
                 check(!reopened_sheet.try_cell("D2").has_value(),
                     "delete_columns rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C2") &&
+                        !reopened_sheet.contains_cell("B2") && !reopened_sheet.contains_cell("D2"),
+                    "delete_columns rich formula reopened contains_cell should expose shifted source/formula cells");
             };
         check_reopened_shift_output(output, "delete_columns rich formula",
             inspect_reopened_delete_column_formula);
@@ -58875,6 +58919,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
         check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula.text_value() == "C2+A1",
             "delete_columns rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C2") &&
+                sheet.contains_cell("D2") && !sheet.contains_cell("B2"),
+            "delete_columns rich formula post-noop contains_cell should expose both formulas");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_columns rich formula post-noop edit");
 
@@ -58933,6 +58980,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_columns rich formula post-noop save reopened output should keep shifted source columns");
                 check(!reopened_sheet.try_cell("B2").has_value(),
                     "delete_columns rich formula post-noop save reopened output should keep empty intermediate column absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C2") &&
+                        reopened_sheet.contains_cell("D2") && !reopened_sheet.contains_cell("B2"),
+                    "delete_columns rich formula post-noop reopened contains_cell should expose both formulas");
             };
         check_reopened_shift_output(post_noop_output, "delete_columns rich formula post-noop save",
             inspect_reopened_delete_column_post_noop_formula);

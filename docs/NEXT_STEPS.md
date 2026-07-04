@@ -5903,6 +5903,11 @@ text/number/boolean materialization, and dirty `WorksheetEditor` save preserves
 them around the regenerated sparse `sheetData`. This is not merged-cell
 editing, validation/conditional-formatting import, page setup synchronization,
 range recalculation, metadata repair, or the internal sheetData Patch API.
+That range/reference dirty projection now also carries post-dirty no-op
+evidence: the follow-up `save_as()` is byte-stable, source bytes stay
+unchanged, and fresh reopen still sees the supported sparse cells. This is
+still not range recalculation, metadata synchronization, relationship repair,
+or semantic range-object editing.
 Source comments and processing instructions outside cells now have the same
 projection-boundary coverage: they do not block supported cell materialization,
 dirty `WorksheetEditor` save preserves wrapper-level comments / processing

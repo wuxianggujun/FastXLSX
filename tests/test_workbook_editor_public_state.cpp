@@ -13734,6 +13734,157 @@ void test_public_worksheet_editor_set_cell_values_duplicate_max_cells_accounting
         inspect_duplicate_max_output);
 }
 
+void test_public_worksheet_editor_set_cell_values_memory_budget_failure_preserves_state()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-memory-source.xlsx");
+    const std::filesystem::path failure_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-memory-failure-output.xlsx");
+    const std::filesystem::path recovery_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-memory-recovery-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-memory-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+    const std::size_t baseline_count = sizing_sheet.cell_count();
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_memory_budget;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    const std::string rejected_text =
+        std::string("set-cell-values-memory-rejected-") + std::string(512, 'x');
+
+    bool failed = false;
+    try {
+        sheet.set_cell_values({
+            {fastxlsx::WorksheetCellReference {1, 1},
+                fastxlsx::CellValue::text("batch-memory-overwrite")},
+            {fastxlsx::WorksheetCellReference {4, 4},
+                fastxlsx::CellValue::text(rejected_text)},
+        });
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "set_cell_values batch should expose memory budget diagnostics");
+    }
+    check(failed,
+        "set_cell_values should reject a batch that exceeds memory_budget_bytes");
+    check(editor.last_edit_error().has_value(),
+        "failed set_cell_values memory-budget batch should update last_edit_error");
+    check_contains(*editor.last_edit_error(), "CellStore memory_budget_bytes guardrail exceeded",
+        "last_edit_error should retain the set_cell_values memory-budget diagnostic");
+    check(!sheet.has_pending_changes(),
+        "failed set_cell_values memory-budget batch should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "failed set_cell_values memory-budget batch should not dirty the editor");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed set_cell_values memory-budget batch");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed set_cell_values memory-budget batch should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed set_cell_values memory-budget batch should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed set_cell_values memory-budget batch should not expose dirty materialized memory");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "failed set_cell_values memory-budget batch");
+    check(sheet.cell_count() == baseline_count,
+        "failed set_cell_values memory-budget batch should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "failed set_cell_values memory-budget batch should preserve sparse memory estimate");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+        "failed set_cell_values memory-budget batch should not apply earlier batch updates");
+    check(!sheet.try_cell("D4").has_value(),
+        "failed set_cell_values memory-budget batch should keep rejected target absent");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed set_cell_values memory-budget batch should leave the source package unchanged");
+    const std::optional<std::string> memory_error = editor.last_edit_error();
+
+    editor.save_as(failure_output);
+    check(editor.last_edit_error() == memory_error,
+        "save_as after failed set_cell_values memory-budget batch should preserve diagnostics");
+    const auto failure_entries = fastxlsx::test::read_zip_entries(failure_output);
+    check(failure_entries == source_entries,
+        "save_as after failed set_cell_values memory-budget batch should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "save_as after failed set_cell_values memory-budget batch should leave the source package unchanged");
+    check_reopened_default_data_sheet_output(
+        failure_output, "set_cell_values memory-budget failure");
+
+    sheet.set_cell_values({
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("mb-a1")},
+    });
+    check(!editor.last_edit_error().has_value(),
+        "successful set_cell_values after memory-budget failure should clear diagnostics");
+    check(sheet.has_pending_changes(),
+        "successful set_cell_values after memory-budget failure should dirty the materialized session");
+    check(sheet.cell_count() == baseline_count,
+        "successful set_cell_values recovery should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() <= exact_memory_budget,
+        "successful set_cell_values recovery should stay within the configured memory budget");
+    check(sheet.get_cell("A1").text_value() == "mb-a1",
+        "successful set_cell_values recovery should apply the in-budget payload");
+    check(!sheet.try_cell("D4").has_value(),
+        "successful set_cell_values recovery should keep the rejected target absent");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "set_cell_values memory-budget recovery dirty summary");
+
+    editor.save_as(recovery_output);
+    const auto recovery_entries = fastxlsx::test::read_zip_entries(recovery_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_values memory-budget recovery save should leave the source package unchanged");
+    const std::string worksheet_xml = recovery_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "mb-a1",
+        "set_cell_values memory-budget recovery save should persist the recovery value");
+    check_not_contains(worksheet_xml, "batch-memory-overwrite",
+        "set_cell_values memory-budget recovery save should omit failed early batch updates");
+    check_not_contains(worksheet_xml, "set-cell-values-memory-rejected",
+        "set_cell_values memory-budget recovery save should omit rejected batch payloads");
+    check_contains(recovery_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "set_cell_values memory-budget recovery save should preserve untouched worksheets");
+    check_reopened_default_data_overwrite_output(
+        recovery_output, "set_cell_values memory-budget recovery", "mb-a1");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell_values memory-budget recovery no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "set_cell_values memory-budget recovery no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell_values memory-budget recovery no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell_values memory-budget recovery no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "set_cell_values memory-budget recovery no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell_values memory-budget recovery no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "set_cell_values memory-budget recovery no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "set_cell_values memory-budget recovery no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == recovery_entries,
+        "set_cell_values memory-budget recovery no-op output should match recovery output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_values memory-budget recovery no-op save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(
+        noop_output, "set_cell_values memory-budget recovery no-op save", "mb-a1");
+}
+
 void test_public_worksheet_editor_set_row_values_preserves_styles_and_tail()
 {
     const std::filesystem::path source =
@@ -58109,6 +58260,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_set_cell_value_style_rejection_noop_save();
             test_public_worksheet_editor_set_cell_values_preserves_styles_and_order();
             test_public_worksheet_editor_set_cell_values_duplicate_max_cells_accounting();
+            test_public_worksheet_editor_set_cell_values_memory_budget_failure_preserves_state();
             test_public_worksheet_editor_append_row_appends_after_sparse_max_row();
             test_public_worksheet_editor_append_row_noop_and_guardrails();
             test_public_worksheet_editor_set_row_replaces_sparse_row();

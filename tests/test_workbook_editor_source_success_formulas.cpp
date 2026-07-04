@@ -1,5 +1,93 @@
 #include "test_workbook_editor_source_success_common.hpp"
 
+struct ReopenedFormulaOutputCell {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+    fastxlsx::CellValue value;
+};
+
+bool formula_output_values_equal(
+    const fastxlsx::CellValue& actual,
+    const fastxlsx::CellValue& expected)
+{
+    if (actual.kind() != expected.kind()) {
+        return false;
+    }
+
+    switch (expected.kind()) {
+    case fastxlsx::CellValueKind::Blank:
+        return true;
+    case fastxlsx::CellValueKind::Number:
+        return actual.number_value() == expected.number_value();
+    case fastxlsx::CellValueKind::Boolean:
+        return actual.boolean_value() == expected.boolean_value();
+    case fastxlsx::CellValueKind::Text:
+    case fastxlsx::CellValueKind::Formula:
+    case fastxlsx::CellValueKind::Error:
+        return actual.text_value() == expected.text_value();
+    }
+
+    return false;
+}
+
+void check_reopened_formula_dirty_output(
+    const std::filesystem::path& output,
+    const fastxlsx::CellRange& expected_range,
+    std::span<const ReopenedFormulaOutputCell> expected_cells,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen");
+    check(reopened_editor.pending_materialized_worksheet_names().empty(),
+        prefix + " fresh reopen should not expose dirty materialized names");
+    check(reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " fresh reopen should not expose dirty materialized cells");
+    check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " fresh reopen should not expose dirty materialized memory");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen should materialize a clean worksheet");
+    check(reopened_sheet.cell_count() == expected_cells.size(),
+        prefix + " fresh reopen should preserve the expected sparse cell count");
+
+    const std::optional<fastxlsx::CellRange> actual_range = reopened_sheet.used_range();
+    check(actual_range.has_value() &&
+            actual_range->first_row == expected_range.first_row &&
+            actual_range->first_column == expected_range.first_column &&
+            actual_range->last_row == expected_range.last_row &&
+            actual_range->last_column == expected_range.last_column,
+        prefix + " fresh reopen should expose the expected used range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> actual_cells =
+        reopened_sheet.sparse_cells();
+    check(actual_cells.size() == expected_cells.size(),
+        prefix + " fresh reopen sparse_cells should expose the expected cell count");
+    if (actual_cells.size() == expected_cells.size()) {
+        for (std::size_t index = 0; index < expected_cells.size(); ++index) {
+            const ReopenedFormulaOutputCell& expected = expected_cells[index];
+            check(actual_cells[index].reference.row == expected.row &&
+                    actual_cells[index].reference.column == expected.column &&
+                    formula_output_values_equal(actual_cells[index].value, expected.value),
+                prefix + " fresh reopen sparse_cells should preserve row-major values");
+        }
+    }
+
+    for (const ReopenedFormulaOutputCell& expected : expected_cells) {
+        const fastxlsx::CellValue actual =
+            reopened_sheet.get_cell(expected.row, expected.column);
+        check(formula_output_values_equal(actual, expected.value),
+            prefix + " fresh reopen should read each expected cell directly");
+    }
+
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen reads should leave the worksheet clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen reads");
+}
+
 void test_public_worksheet_editor_materializes_source_formulas()
 {
     const std::filesystem::path source =
@@ -55,6 +143,17 @@ void test_public_worksheet_editor_materializes_source_formulas()
     check_contains(worksheet_xml,
         R"(<c r="D2" t="inlineStr"><is><t>formula-new-inline</t></is></c>)",
         "flushed WorksheetEditor source formula sheet should include later text edits");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(2.0)},
+        {1, 2, fastxlsx::CellValue::number(3.0)},
+        {1, 3, fastxlsx::CellValue::formula("SUM(A1:B1)&\"<ok>\"")},
+        {2, 4, fastxlsx::CellValue::text("formula-new-inline")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "source formula dirty output");
 }
 
 void test_public_worksheet_editor_materializes_source_error_cells()
@@ -112,6 +211,17 @@ void test_public_worksheet_editor_materializes_source_error_cells()
     check(output_entries.at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "dirty source error projection should preserve untouched sheets");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::error("#VALUE!")},
+        {1, 2, fastxlsx::CellValue::error("#DIV/0!")},
+        {1, 3, fastxlsx::CellValue::error("#N/A")},
+        {2, 4, fastxlsx::CellValue::text("after-source-error")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "source error cell dirty output");
 }
 
 void test_public_worksheet_editor_ignores_formula_cached_result_types()
@@ -184,6 +294,18 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
     check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "formula cached-result rewrite should not mutate untouched source sheet bytes");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula("A2+1")},
+        {1, 2, fastxlsx::CellValue::formula("TEXT(A1,\"@\")")},
+        {1, 3, fastxlsx::CellValue::formula("A1>0")},
+        {1, 4, fastxlsx::CellValue::formula("NA()")},
+        {2, 4, fastxlsx::CellValue::text("cached-result-types-edit")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "cached-result formula dirty output");
 }
 
 void test_public_worksheet_editor_materializes_source_shared_formulas()
@@ -249,6 +371,18 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
     check(fastxlsx::test::read_zip_entries(source).at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "source shared formula rewrite should not mutate untouched source sheet bytes");
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula(
+            R"(A1+B$1+$A1+$A$1+SUM(A1:B1)&"A1"+'Other Sheet'!A1+[Book.xlsx]Sheet1!A1+Table1[A1])")},
+        {2, 2, fastxlsx::CellValue::formula(
+            R"(B2+C$1+$A2+$A$1+SUM(B2:C2)&"A1"+'Other Sheet'!B2+[Book.xlsx]Sheet1!B2+Table1[A1])")},
+        {3, 3, fastxlsx::CellValue::text("shared-formula-new-inline")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        expected_cells,
+        "shared formula dirty output");
 }
 
 void test_public_worksheet_editor_materializes_source_order_shared_formula_matrix()

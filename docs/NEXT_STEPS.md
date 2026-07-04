@@ -2951,6 +2951,14 @@ present. The narrow scanner/translator now lives in internal
 reference translation; this is a reusable foundation for later dependency
 graphing, sheet-rename formula sync, and calcChain policy work, not an
 in-process formula evaluator.
+The representative source-formula dirty-save outputs now also fresh-reopen
+through the public `WorkbookEditor` facade: ordinary formulas with stale cached
+values, source error cells, cached-result type variants, and source-order shared
+formula followers reopen as clean sparse `WorksheetEditor` state with formula
+text / error tokens / later inline edits intact and dirty diagnostics clear.
+This is saved-output readback only; it is not formula evaluation, cached-value
+generation, broad parser coverage, shared formula metadata preservation, or
+calcChain rebuild.
 The public editor now exposes the first narrow read-only dependency diagnostic
 on top of that scanner: `WorkbookEditor::formula_reference_audits()` scans only
 already-materialized `WorksheetEditor` sessions, reports sheet-qualified

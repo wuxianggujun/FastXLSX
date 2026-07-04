@@ -5885,6 +5885,10 @@ rich-run markup bytes, leaves the source and prior no-op output unchanged,
 fresh-reopens with flattened values through the public sparse views, and then
 proves a follow-up no-op `save_as()` output is byte-stable. This is not
 rich-text formatting preservation or broad sharedStrings migration.
+The legal XML declaration sharedStrings cases now carry the same post-dirty
+no-op evidence: dirty output reopens through public sparse views, the follow-up
+no-op `save_as()` is byte-stable, and source/no-op packages remain unchanged.
+This is not XML declaration repair or broad sharedStrings migration.
 Prefixed source worksheet XML is now pinned for the same narrow local-name
 materialization boundary: worksheet, `sheetData`, row, cell, inlineStr wrapper,
 rich-run, formula, and value-wrapper element names may be prefixed and still

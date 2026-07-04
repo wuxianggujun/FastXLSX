@@ -5752,6 +5752,12 @@ Formula dirty-output fresh-reopen checks now also cover `row_cells()` and
 `column_cells()` snapshots for the reopened sparse store, keeping row/column
 views aligned with `sparse_cells()` and direct reads after materialized formula
 save-as projections.
+The base source formula read-only path now also has a clean no-op `save_as()`
+gate: materializing formula text and ignoring the stale cached value keeps the
+session clean, copies source package bytes unchanged, fresh-reopens through
+public sparse views, and leaves the source package untouched. This is still
+formula-text readback/copy-original evidence, not formula evaluation, cached
+value preservation, or calcChain rebuild.
 The base source formula dirty-save path now also has post-dirty no-op evidence:
 the later no-op `save_as()` output is byte-stable, the source fixture remains
 unchanged, and fresh reopen still reads formula text without stale cached values.

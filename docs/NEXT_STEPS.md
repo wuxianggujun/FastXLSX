@@ -549,6 +549,9 @@ the final clean no-op save while prior outputs stay byte-stable.
 Their fresh-reopen checks now also snapshot row/column views before and after
 the later formula edits, pinning shifted `#REF!` formula order and post-noop
 formula order without claiming formula evaluation or metadata synchronization.
+The live materialized checks now mirror those row/column snapshots before the
+initial save and after the later dirty formula edit, so the public sparse views
+are pinned on both sides of the save/reopen handoff.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

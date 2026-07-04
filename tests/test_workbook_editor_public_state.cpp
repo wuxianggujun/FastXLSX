@@ -59017,6 +59017,22 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "#REF!+A:A+#REF!+B3",
             "delete_rows should translate row-out-of-bounds formula references to #REF!");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_three =
+            sheet.row_cells(3);
+        check(shifted_row_three.size() == 1 &&
+                shifted_row_three[0].reference.row == 3 &&
+                shifted_row_three[0].reference.column == 3 &&
+                shifted_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_row_three[0].value.text_value() == "#REF!+A:A+#REF!+B3",
+            "delete_rows #REF formula live row_cells should expose the shifted formula row");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_formula_column =
+            sheet.column_cells(3);
+        check(shifted_formula_column.size() == 1 &&
+                shifted_formula_column[0].reference.row == 3 &&
+                shifted_formula_column[0].reference.column == 3 &&
+                shifted_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula_column[0].value.text_value() == "#REF!+A:A+#REF!+B3",
+            "delete_rows #REF formula live column_cells should expose the shifted formula");
         check(!sheet.try_cell("C4").has_value(),
             "delete_rows formula #REF translation should remove the old formula coordinate");
 
@@ -59155,6 +59171,26 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula.text_value() == "C3+A1",
             "delete_rows #REF formula post-noop edit should expose the new formula before save");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> post_noop_row_three =
+            sheet.row_cells(3);
+        check(post_noop_row_three.size() == 2 &&
+                post_noop_row_three[0].reference.row == 3 &&
+                post_noop_row_three[0].reference.column == 3 &&
+                post_noop_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_row_three[0].value.text_value() == "#REF!+A:A+#REF!+B3" &&
+                post_noop_row_three[1].reference.row == 3 &&
+                post_noop_row_three[1].reference.column == 4 &&
+                post_noop_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_row_three[1].value.text_value() == "C3+A1",
+            "delete_rows #REF formula post-noop live row_cells should expose formulas in sparse order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> post_noop_formula_column =
+            sheet.column_cells(4);
+        check(post_noop_formula_column.size() == 1 &&
+                post_noop_formula_column[0].reference.row == 3 &&
+                post_noop_formula_column[0].reference.column == 4 &&
+                post_noop_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula_column[0].value.text_value() == "C3+A1",
+            "delete_rows #REF formula post-noop live column_cells should expose the later formula");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_rows #REF formula post-noop edit");
 
@@ -59308,6 +59344,26 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 shifted_formula.text_value() == "#REF!+#REF!+1:1+C2",
             "delete_columns should translate column-out-of-bounds formula references to #REF!");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one =
+            sheet.row_cells(1);
+        check(shifted_row_one.size() == 2 &&
+                shifted_row_one[0].reference.row == 1 &&
+                shifted_row_one[0].reference.column == 1 &&
+                shifted_row_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                shifted_row_one[0].value.number_value() == 1.0 &&
+                shifted_row_one[1].reference.row == 1 &&
+                shifted_row_one[1].reference.column == 3 &&
+                shifted_row_one[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_row_one[1].value.text_value() == "#REF!+#REF!+1:1+C2",
+            "delete_columns #REF formula live row_cells should expose shifted source and formula order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_formula_column =
+            sheet.column_cells(3);
+        check(shifted_formula_column.size() == 1 &&
+                shifted_formula_column[0].reference.row == 1 &&
+                shifted_formula_column[0].reference.column == 3 &&
+                shifted_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula_column[0].value.text_value() == "#REF!+#REF!+1:1+C2",
+            "delete_columns #REF formula live column_cells should expose the shifted formula");
         check(!sheet.try_cell("D1").has_value(),
             "delete_columns formula #REF translation should remove the old formula coordinate");
 
@@ -59450,6 +59506,30 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
                 post_noop_formula.text_value() == "C1+A1",
             "delete_columns #REF formula post-noop edit should expose the new formula before save");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> post_noop_row_one =
+            sheet.row_cells(1);
+        check(post_noop_row_one.size() == 3 &&
+                post_noop_row_one[0].reference.row == 1 &&
+                post_noop_row_one[0].reference.column == 1 &&
+                post_noop_row_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                post_noop_row_one[0].value.number_value() == 1.0 &&
+                post_noop_row_one[1].reference.row == 1 &&
+                post_noop_row_one[1].reference.column == 3 &&
+                post_noop_row_one[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_row_one[1].value.text_value() == "#REF!+#REF!+1:1+C2" &&
+                post_noop_row_one[2].reference.row == 1 &&
+                post_noop_row_one[2].reference.column == 4 &&
+                post_noop_row_one[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_row_one[2].value.text_value() == "C1+A1",
+            "delete_columns #REF formula post-noop live row_cells should expose formulas in sparse order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> post_noop_formula_column =
+            sheet.column_cells(4);
+        check(post_noop_formula_column.size() == 1 &&
+                post_noop_formula_column[0].reference.row == 1 &&
+                post_noop_formula_column[0].reference.column == 4 &&
+                post_noop_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula_column[0].value.text_value() == "C1+A1",
+            "delete_columns #REF formula post-noop live column_cells should expose the later formula");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_columns #REF formula post-noop edit");
 

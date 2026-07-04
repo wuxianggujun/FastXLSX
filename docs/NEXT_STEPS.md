@@ -1547,6 +1547,9 @@ replacement values.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.
+It now repeats that recovered clean no-op save too, proving the replacement
+diagnostic stays clear, package entries remain stable, source bytes are
+unchanged, and the second output still reopens with only the successful value.
 The mixed public-edit diagnostic recovery path also reopens the saved output to
 verify copy-original `Data` state and replacement-only `Untouched` state after
 failed replacement, rename, and materialized mutation attempts.

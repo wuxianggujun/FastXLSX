@@ -61653,6 +61653,8 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
         artifact("fastxlsx-workbook-editor-public-worksheet-last-error-replace-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-last-error-replace-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-last-error-replace-second-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -61807,6 +61809,42 @@ void test_public_worksheet_editor_last_edit_error_replaces_failed_mutation_diagn
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "last-error replacement noop save should leave the source package unchanged");
     check_reopened_last_error_recovery_output(noop_output, options);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "last-error replacement second noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "last-error replacement second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "last-error replacement second noop save should not expose dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "last-error replacement second noop save should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "last-error replacement second noop save should not expose dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "last-error replacement second noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "last-error replacement second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "last-error replacement second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "last-error replacement second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "last-error replacement second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "last-error replacement second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "last-error replacement second noop save should leave the source package unchanged");
+    check_reopened_last_error_recovery_output(second_noop_output, options);
 }
 
 void test_public_workbook_editor_last_edit_error_replaces_mixed_edit_diagnostics()

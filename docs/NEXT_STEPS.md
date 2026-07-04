@@ -5766,6 +5766,12 @@ Cached-result formula variants now carry the same post-dirty no-op check:
 numeric/string/boolean/error cached `<v>` values are still omitted from the
 byte-stable no-op output, the source package is unchanged, and fresh reopen reads
 formula text only.
+Those cached-result formula variants now also have a read-only clean no-op
+`save_as()` gate before the later edit: materialization stays clean, source
+bytes are copied unchanged, the no-op output fresh-reopens through public sparse
+views as formula text only, and stale cached values remain source-only until a
+dirty projection omits them. This is not cached value preservation, formula
+evaluation, or calcChain rebuild.
 Source error cell materialization now has matching post-dirty no-op evidence:
 the no-op output remains byte-stable, the rewritten source package is unchanged,
 and fresh reopen still reads the `t="e"` error cells beside later edits.

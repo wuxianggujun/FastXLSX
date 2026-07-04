@@ -596,6 +596,10 @@ empty.
 The `clear_cell_values()` memory-budget release saved-session path now extends
 that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
 no-op saves.
+The invalid-read no-op save in that exact-budget release path now also snapshots
+both the original and matching-option reacquired handles: full sparse ordering,
+row-one blanks, column-one blanks, saved `D4`, missing `E5`, and clean
+materialized diagnostics stay stable.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.

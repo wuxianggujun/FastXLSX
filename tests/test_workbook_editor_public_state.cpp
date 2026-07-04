@@ -20373,6 +20373,69 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         "clear_cell_values() memory-budget release matching-option reacquire should not dirty summaries");
 
     const std::size_t pending_count_after_reacquire = editor.pending_change_count();
+    const auto check_clear_all_release_saved_snapshots =
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 10,
+                std::string(prefix) + " should keep all represented sparse records");
+            if (cells.size() == 10) {
+                check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep A1 blank first");
+                check(cells[8].reference.row == 3 && cells[8].reference.column == 3 &&
+                        cells[8].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep C3 blank in row-major order");
+                check(cells[9].reference.row == 4 && cells[9].reference.column == 4 &&
+                        cells[9].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[9].value.text_value() == "clear-all-mb-release",
+                    std::string(prefix) + " should keep D4 text last");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                handle.row_cells(1);
+            check(row_one.size() == 3 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2 &&
+                    row_one[1].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    row_one[2].reference.row == 1 &&
+                    row_one[2].reference.column == 3 &&
+                    row_one[2].value.kind() == fastxlsx::CellValueKind::Blank,
+                std::string(prefix) + " should keep row-one blank snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                handle.column_cells(1);
+            check(column_one.size() == 3 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    column_one[1].reference.row == 2 &&
+                    column_one[1].reference.column == 1 &&
+                    column_one[1].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    column_one[2].reference.row == 3 &&
+                    column_one[2].reference.column == 1 &&
+                    column_one[2].value.kind() == fastxlsx::CellValueKind::Blank,
+                std::string(prefix) + " should keep column-one blank snapshots");
+            check(!handle.try_cell("E5").has_value(),
+                std::string(prefix) + " should keep missing E5 absent");
+            check_cell_range_equals(handle.used_range(), 1, 1, 4, 4,
+                std::string(prefix) + " should keep saved bounds");
+            check(!handle.has_pending_changes(),
+                std::string(prefix) + " should keep the handle clean");
+            check(editor.pending_change_count() == pending_count_after_reacquire,
+                std::string(prefix) + " should not add a materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                std::string(prefix) + " should keep dirty names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                std::string(prefix) + " should keep dirty cell count empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(prefix) + " should keep dirty memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(prefix) + " should keep dirty summaries empty");
+            check(!editor.last_edit_error().has_value(),
+                std::string(prefix) + " should keep diagnostics clear");
+        };
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
     editor.save_as(noop_output);
@@ -20622,6 +20685,12 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         fastxlsx::test::read_zip_entries(invalid_read_output);
     check(invalid_read_entries == output_entries,
         "clear_cell_values() memory-budget release invalid reads noop save should keep output entries stable");
+    check_clear_all_release_saved_snapshots(
+        sheet,
+        "clear_cell_values() memory-budget release invalid reads original saved handle");
+    check_clear_all_release_saved_snapshots(
+        reacquired,
+        "clear_cell_values() memory-budget release invalid reads reacquired saved handle");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_mutations =
         workbook_editor_public_catalog_snapshot(editor);

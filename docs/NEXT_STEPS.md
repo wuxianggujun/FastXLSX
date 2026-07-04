@@ -5904,17 +5904,17 @@ before the worksheet root, duplicate `sheetData`, duplicate worksheet roots, and
 trailing text fail cleanly without partial sessions. This is strict validation,
 not XML repair, duplicate merge, tolerant root recovery, same-sheet Patch
 bypass, or wrapper metadata preservation.
-Source wrapper metadata projection behavior is pinned as well: worksheet-level
-`sheetPr`, `dimension`, `sheetViews`, `sheetFormatPr`, `cols`, and `autoFilter`
-beside supported cells do not block read-only public materialization, but a
-later dirty `WorksheetEditor` save rewrites `sheetData` from the sparse
-CellStore while preserving those source wrapper elements around it. This is
-wrapper preservation only, not wrapper metadata synchronization, range
-recalculation, relationship repair, or the internal sheetData Patch API.
-That wrapper-metadata dirty projection now also carries post-dirty no-op
-evidence: the follow-up `save_as()` is byte-stable, source bytes stay
-unchanged, and fresh reopen still sees the same sparse cells. This is still not
-wrapper metadata synchronization or range repair.
+Source wrapper metadata projection behavior now has both no-op gates:
+worksheet-level `sheetPr`, `dimension`, `sheetViews`, `sheetFormatPr`, `cols`,
+and `autoFilter` beside supported cells do not block read-only public
+materialization, the clean no-op output copies source package bytes, and fresh
+reopen still sees the source sparse cell. A later dirty `WorksheetEditor` save
+rewrites `sheetData` from the sparse CellStore while preserving those source
+wrapper elements around it. The follow-up `save_as()` remains byte-stable,
+source plus prior no-op package bytes stay unchanged, and fresh reopen still
+sees the same sparse cells. This is wrapper preservation only, not wrapper
+metadata synchronization, range recalculation, relationship repair, or the
+internal sheetData Patch API.
 Representative relationship-bearing wrapper metadata follows the same public
 dirty-projection boundary: source `<hyperlinks>` and `<tableParts>` do not
 block supported cell materialization, dirty projection preserves those worksheet

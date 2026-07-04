@@ -561,6 +561,9 @@ edits.
 The rich formula-shape matrix now has matching `contains_cell()` checks for
 row/column insert/delete outputs and post-noop formula edits, pinning represented
 cell presence without expanding into formula evaluation or metadata sync.
+The same matrix now pins global `sparse_cells()` row-major snapshots for those
+rich formula-shape shifts before save, after fresh reopen, and after the later
+formula edits.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

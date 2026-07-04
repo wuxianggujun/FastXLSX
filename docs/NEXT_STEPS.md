@@ -564,6 +564,8 @@ cell presence without expanding into formula evaluation or metadata sync.
 The same matrix now pins global `sparse_cells()` row-major snapshots for those
 rich formula-shape shifts before save, after fresh reopen, and after the later
 formula edits.
+It now mirrors those checks through A1 range `sparse_cells()` reads, covering the
+same shifted and post-noop formula cells through the range snapshot overload.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

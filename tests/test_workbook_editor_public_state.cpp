@@ -58063,6 +58063,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula contains_cell should expose shifted source/formula cells");
         check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
             "insert_rows rich formula sparse_cells should expose row-major shifted cells before save");
+        check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells("A1:C3"), expected,
+            "insert_rows rich formula range sparse_cells should expose shifted cells before save");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58099,6 +58101,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula reopened contains_cell should expose shifted source/formula cells");
                 check_insert_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "insert_rows rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_insert_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C3"), expected,
+                    "insert_rows rich formula reopened range sparse_cells should expose shifted cells");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
                     reopened_sheet.row_cells(3);
                 check(reopened_row_three.size() == 2 &&
@@ -58214,6 +58218,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_rows rich formula post-noop contains_cell should expose both formulas");
         check_insert_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
             "insert_rows rich formula post-noop sparse_cells should expose both formulas before save");
+        check_insert_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"), expected,
+            "insert_rows rich formula post-noop range sparse_cells should expose both formulas before save");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "insert_rows rich formula post-noop edit");
 
@@ -58277,6 +58283,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_rows rich formula post-noop reopened contains_cell should expose both formulas");
                 check_insert_row_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "insert_rows rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_insert_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:D3"), expected,
+                    "insert_rows rich formula post-noop reopened range sparse_cells should expose both formulas");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
                     reopened_sheet.row_cells(3);
                 check(reopened_row_three.size() == 3 &&
@@ -58383,6 +58392,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns rich formula contains_cell should expose shifted source/formula cells");
         check_insert_column_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
             "insert_columns rich formula sparse_cells should expose row-major shifted cells before save");
+        check_insert_column_rich_formula_sparse_cells(sheet.sparse_cells("A1:E2"), expected,
+            "insert_columns rich formula range sparse_cells should expose shifted cells before save");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58419,6 +58430,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula reopened contains_cell should expose shifted source/formula cells");
                 check_insert_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "insert_columns rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_insert_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:E2"), expected,
+                    "insert_columns rich formula reopened range sparse_cells should expose shifted cells");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
                     reopened_sheet.row_cells(2);
                 check(reopened_row_two.size() == 2 &&
@@ -58534,6 +58547,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "insert_columns rich formula post-noop contains_cell should expose both formulas");
         check_insert_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
             "insert_columns rich formula post-noop sparse_cells should expose both formulas before save");
+        check_insert_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:F2"), expected,
+            "insert_columns rich formula post-noop range sparse_cells should expose both formulas before save");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "insert_columns rich formula post-noop edit");
 
@@ -58597,6 +58612,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "insert_columns rich formula post-noop reopened contains_cell should expose both formulas");
                 check_insert_column_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "insert_columns rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_insert_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:F2"), expected,
+                    "insert_columns rich formula post-noop reopened range sparse_cells should expose both formulas");
                 const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
                     reopened_sheet.row_cells(2);
                 check(reopened_row_two.size() == 3 &&
@@ -58703,6 +58721,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula contains_cell should expose shifted source/formula cells");
         check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
             "delete_rows rich formula sparse_cells should expose row-major shifted cells before save");
+        check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells("A1:C3"), expected,
+            "delete_rows rich formula range sparse_cells should expose shifted cells before save");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -58739,6 +58759,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_rows rich formula reopened contains_cell should expose shifted source/formula cells");
                 check_delete_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "delete_rows rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_delete_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C3"), expected,
+                    "delete_rows rich formula reopened range sparse_cells should expose shifted cells");
             };
         check_reopened_shift_output(output, "delete_rows rich formula",
             inspect_reopened_delete_row_formula);
@@ -58835,6 +58857,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_rows rich formula post-noop contains_cell should expose both formulas");
         check_delete_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
             "delete_rows rich formula post-noop sparse_cells should expose both formulas before save");
+        check_delete_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"), expected,
+            "delete_rows rich formula post-noop range sparse_cells should expose both formulas before save");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_rows rich formula post-noop edit");
 
@@ -58899,6 +58923,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_rows rich formula post-noop reopened contains_cell should expose both formulas");
                 check_delete_row_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "delete_rows rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_delete_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:D3"), expected,
+                    "delete_rows rich formula post-noop reopened range sparse_cells should expose both formulas");
             };
         check_reopened_shift_output(post_noop_output, "delete_rows rich formula post-noop save",
             inspect_reopened_delete_row_post_noop_formula);
@@ -58981,6 +59008,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula contains_cell should expose shifted source/formula cells");
         check_delete_column_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
             "delete_columns rich formula sparse_cells should expose row-major shifted cells before save");
+        check_delete_column_rich_formula_sparse_cells(sheet.sparse_cells("A1:C2"), expected,
+            "delete_columns rich formula range sparse_cells should expose shifted cells before save");
 
         editor.save_as(output);
         const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -59017,6 +59046,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_columns rich formula reopened contains_cell should expose shifted source/formula cells");
                 check_delete_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "delete_columns rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_delete_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C2"), expected,
+                    "delete_columns rich formula reopened range sparse_cells should expose shifted cells");
             };
         check_reopened_shift_output(output, "delete_columns rich formula",
             inspect_reopened_delete_column_formula);
@@ -59112,6 +59143,8 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
             "delete_columns rich formula post-noop contains_cell should expose both formulas");
         check_delete_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
             "delete_columns rich formula post-noop sparse_cells should expose both formulas before save");
+        check_delete_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D2"), expected,
+            "delete_columns rich formula post-noop range sparse_cells should expose both formulas before save");
         check_public_state_single_data_dirty_materialized_summary(
             editor, sheet, 1, "delete_columns rich formula post-noop edit");
 
@@ -59175,6 +59208,9 @@ void test_public_worksheet_editor_shift_formula_translates_supported_reference_s
                     "delete_columns rich formula post-noop reopened contains_cell should expose both formulas");
                 check_delete_column_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
                     "delete_columns rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_delete_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:D2"), expected,
+                    "delete_columns rich formula post-noop reopened range sparse_cells should expose both formulas");
             };
         check_reopened_shift_output(post_noop_output, "delete_columns rich formula post-noop save",
             inspect_reopened_delete_column_post_noop_formula);

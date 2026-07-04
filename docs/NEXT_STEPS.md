@@ -546,6 +546,9 @@ Those delete-side `#REF!` formula paths now also snapshot the source package
 before row/column deletion and require it to remain unchanged after the initial
 translated `#REF!` save, the clean no-op save, the later formula-edit save, and
 the final clean no-op save while prior outputs stay byte-stable.
+Their fresh-reopen checks now also snapshot row/column views before and after
+the later formula edits, pinning shifted `#REF!` formula order and post-noop
+formula order without claiming formula evaluation or metadata synchronization.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

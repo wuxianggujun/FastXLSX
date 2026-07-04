@@ -299,7 +299,7 @@ void check_reopened_lazy_shared_strings_dirty_output(
         reopened_data, expected_data_cells, scenario);
 }
 
-void check_reopened_shared_strings_dirty_output(
+void check_reopened_shared_strings_output(
     const std::filesystem::path& output,
     std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
     const fastxlsx::CellRange& expected_used_range,
@@ -359,6 +359,16 @@ void check_reopened_shared_strings_dirty_output(
         prefix + " fresh reopen readback should leave Data clean");
     check_workbook_editor_public_clean_state(
         reopened_editor, prefix + " fresh reopen readback");
+}
+
+void check_reopened_shared_strings_dirty_output(
+    const std::filesystem::path& output,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    const fastxlsx::CellRange& expected_used_range,
+    std::string_view scenario)
+{
+    check_reopened_shared_strings_output(
+        output, expected_data_cells, expected_used_range, scenario);
 }
 
 void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells()
@@ -999,6 +1009,15 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
     editor.save_as(noop_output);
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after prefixed sharedStrings materialization should copy source entries");
+    const ReopenedLazySharedStringsCell prefixed_noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-A&B")},
+        {1, 2, fastxlsx::CellValue::text("rich- tail ")},
+    };
+    check_reopened_shared_strings_output(
+        noop_output,
+        prefixed_noop_cells,
+        fastxlsx::CellRange {1, 1, 1, 2},
+        "prefixed sharedStrings no-op output");
 
     sheet.set_cell("C1", fastxlsx::CellValue::text("prefixed-shared-dirty"));
     editor.save_as(dirty_output);
@@ -1109,6 +1128,16 @@ void test_public_worksheet_editor_materializes_local_names_without_namespace_val
     editor.save_as(noop_output);
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after wrong-namespace local-name materialization should copy source entries");
+    const ReopenedLazySharedStringsCell wrong_namespace_noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("wrong-ns-shared")},
+        {1, 2, fastxlsx::CellValue::text("wrong-ns-inline")},
+        {1, 3, fastxlsx::CellValue::text("wrong-rich-tail")},
+    };
+    check_reopened_shared_strings_output(
+        noop_output,
+        wrong_namespace_noop_cells,
+        fastxlsx::CellRange {1, 1, 1, 3},
+        "wrong-namespace local-name no-op output");
 
     sheet.set_cell("D1", fastxlsx::CellValue::text("wrong-ns-dirty"));
     editor.save_as(dirty_output);
@@ -1204,6 +1233,15 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
         "no-op save_as after sharedStrings xml:space materialization should keep editor clean");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after sharedStrings xml:space materialization should copy source entries");
+    const ReopenedLazySharedStringsCell xml_space_noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("  plain & space  ")},
+        {1, 2, fastxlsx::CellValue::text("  rich & B tail  ")},
+    };
+    check_reopened_shared_strings_output(
+        noop_output,
+        xml_space_noop_cells,
+        fastxlsx::CellRange {1, 1, 1, 2},
+        "source sharedStrings xml:space no-op output");
 
     sheet.set_cell("C1", fastxlsx::CellValue::text("dirty-space-trigger"));
     editor.save_as(dirty_output);
@@ -1300,6 +1338,15 @@ void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unkno
         "no-op save_as after sharedStrings count/attribute materialization should keep editor clean");
     check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
         "no-op save_as after sharedStrings count/attribute materialization should copy source entries");
+    const ReopenedLazySharedStringsCell metadata_noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("first-meta")},
+        {1, 2, fastxlsx::CellValue::text("second-meta")},
+    };
+    check_reopened_shared_strings_output(
+        noop_output,
+        metadata_noop_cells,
+        fastxlsx::CellRange {1, 1, 1, 2},
+        "source sharedStrings count metadata no-op output");
 
     sheet.set_cell("C1", fastxlsx::CellValue::text("after-metadata"));
     editor.save_as(dirty_output);

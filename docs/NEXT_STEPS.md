@@ -5870,6 +5870,11 @@ are matched by local-name for public `WorksheetEditor` materialization, no-op
 copy-original save, dirty inline projection, and source sharedStrings byte
 preservation. This is not namespace URI validation, namespace repair, schema
 validation, sharedStrings migration/writeback, or rich text preservation.
+The sharedStrings no-op copy-original outputs now also fresh-reopen through the
+public sparse views for prefixed local-names, deliberately wrong namespace URIs,
+`xml:space` whitespace, and inconsistent count / unknown-attribute metadata,
+verifying clean `WorksheetEditor` state plus `used_range()`, `sparse_cells()`,
+`row_cells()`, `column_cells()`, and direct reads.
 Prefixed source worksheet XML is now pinned for the same narrow local-name
 materialization boundary: worksheet, `sheetData`, row, cell, inlineStr wrapper,
 rich-run, formula, and value-wrapper element names may be prefixed and still

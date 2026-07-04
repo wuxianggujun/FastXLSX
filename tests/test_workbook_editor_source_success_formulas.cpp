@@ -559,7 +559,8 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         "fastxlsx-workbook-editor-public-source-shared-formula-matrix-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-shared-formula-matrix-output.xlsx");
-    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::filesystem::path dirty_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-shared-formula-matrix-dirty-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -576,6 +577,7 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         R"(</sheetData>)"
         R"(</worksheet>)";
     rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -642,6 +644,19 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         fastxlsx::CellRange {1, 1, 4, 5},
         expected_cells,
         "source-order shared formula matrix dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source-order shared formula matrix post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source-order shared formula matrix post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source-order shared formula matrix post-dirty no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 4, 5},
+        expected_cells,
+        "source-order shared formula matrix post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_materializes_office_like_shared_formula_shape()

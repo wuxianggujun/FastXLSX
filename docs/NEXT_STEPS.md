@@ -3688,6 +3688,15 @@ with the original missing-target / duplicate-relationship / malformed-XML /
 wrong-content-type sharedStrings diagnostic. This is saved-output readback and
 failure-state hygiene only; it is not sharedStrings repair, pruning, migration,
 writeback, or source relationship/content-type repair.
+Representative legal sharedStrings dirty-save outputs now fresh-reopen through
+the same public facade as clean `WorksheetEditor` state too: ordinary source
+shared string indexes with appended text, legal XML declarations, prefixed
+sharedStrings, local-name-only namespace edge cases, `xml:space` rich/plain
+strings, and inconsistent count / unknown-attribute metadata all read back with
+the expected sparse snapshots and direct cell values. This remains saved-output
+readback coverage only; it is not sharedStrings index migration, metadata
+repair, full XML namespace validation, pruning, or broad sharedStrings
+writeback.
 P8.552 strengthens the existing public image media-part replacement diagnostic:
 `WorkbookEditor::replace_image()` failures now include the public API name, the
 requested target media part, and either the file path or memory byte count before

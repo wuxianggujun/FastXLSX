@@ -96,6 +96,64 @@ void check_reopened_lazy_shared_strings_dirty_output(
         prefix + " Shared failure should not expose dirty materialized memory");
 }
 
+void check_reopened_shared_strings_dirty_output(
+    const std::filesystem::path& output,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    const fastxlsx::CellRange& expected_used_range,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data");
+
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen");
+    check(reopened_editor.pending_materialized_worksheet_names().empty(),
+        prefix + " fresh reopen should not expose dirty materialized names");
+    check(reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " fresh reopen should not expose dirty materialized cells");
+    check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " fresh reopen should not expose dirty materialized memory");
+    check(!reopened_data.has_pending_changes(),
+        prefix + " fresh reopen should materialize Data as clean");
+    check(reopened_data.cell_count() == expected_data_cells.size(),
+        prefix + " fresh reopen should keep the expected sparse count");
+
+    const std::optional<fastxlsx::CellRange> range = reopened_data.used_range();
+    check(range.has_value() &&
+            range->first_row == expected_used_range.first_row &&
+            range->first_column == expected_used_range.first_column &&
+            range->last_row == expected_used_range.last_row &&
+            range->last_column == expected_used_range.last_column,
+        prefix + " fresh reopen should expose the expected used range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        reopened_data.sparse_cells();
+    check(all_cells.size() == expected_data_cells.size(),
+        prefix + " fresh reopen sparse_cells should expose the expected cells");
+    if (all_cells.size() == expected_data_cells.size()) {
+        for (std::size_t index = 0; index < expected_data_cells.size(); ++index) {
+            const ReopenedLazySharedStringsCell& expected = expected_data_cells[index];
+            check(all_cells[index].reference.row == expected.row &&
+                    all_cells[index].reference.column == expected.column &&
+                    cell_values_equal(all_cells[index].value, expected.value),
+                prefix + " fresh reopen sparse_cells should preserve cell order and values");
+        }
+    }
+
+    for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
+        const fastxlsx::CellValue actual =
+            reopened_data.get_cell(expected.row, expected.column);
+        check(cell_values_equal(actual, expected.value),
+            prefix + " fresh reopen should read the expected cell value directly");
+    }
+
+    check(!reopened_data.has_pending_changes(),
+        prefix + " fresh reopen readback should leave Data clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen readback");
+}
+
 void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells()
 {
     const std::filesystem::path source =
@@ -514,6 +572,17 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         "WorksheetEditor sharedStrings append should advance the conservative count metadata");
     check_contains(shared_strings_after, R"(uniqueCount="4")",
         "WorksheetEditor sharedStrings append should advance uniqueCount metadata");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("shared-a")},
+        {1, 2, fastxlsx::CellValue::text("A&B <C>")},
+        {2, 1, fastxlsx::CellValue::text("shared-a")},
+        {3, 3, fastxlsx::CellValue::text("new-inline")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        "source sharedStrings dirty output");
 }
 
 void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()
@@ -606,6 +675,15 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
                 == source_entries.at("xl/worksheets/sheet2.xml"),
             std::string(test_case.name)
                 + " dirty projection should preserve untouched sheet bytes");
+        const ReopenedLazySharedStringsCell expected_cells[] = {
+            {1, 1, fastxlsx::CellValue::text(std::string(test_case.expected_text))},
+            {2, 2, fastxlsx::CellValue::text("legal-declaration-new-inline")},
+        };
+        check_reopened_shared_strings_dirty_output(
+            output,
+            expected_cells,
+            fastxlsx::CellRange {1, 1, 2, 2},
+            std::string(test_case.name) + " legal declaration dirty output");
     }
 }
 
@@ -741,6 +819,16 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
     check(output_entries.at("xl/worksheets/sheet2.xml") ==
             source_entries.at("xl/worksheets/sheet2.xml"),
         "dirty prefixed sharedStrings projection should preserve untouched sheets");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-A&B")},
+        {1, 2, fastxlsx::CellValue::text("rich- tail ")},
+        {1, 3, fastxlsx::CellValue::text("prefixed-shared-dirty")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 1, 3},
+        "prefixed sharedStrings dirty output");
 }
 
 void test_public_worksheet_editor_materializes_local_names_without_namespace_validation()
@@ -848,6 +936,17 @@ void test_public_worksheet_editor_materializes_local_names_without_namespace_val
     check(output_entries.at("xl/worksheets/sheet2.xml") ==
             source_entries.at("xl/worksheets/sheet2.xml"),
         "dirty wrong-namespace projection should preserve untouched sheets");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("wrong-ns-shared")},
+        {1, 2, fastxlsx::CellValue::text("wrong-ns-inline")},
+        {1, 3, fastxlsx::CellValue::text("wrong-rich-tail")},
+        {1, 4, fastxlsx::CellValue::text("wrong-ns-dirty")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 1, 4},
+        "wrong-namespace local-name dirty output");
 }
 
 void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_and_projects_inline()
@@ -923,6 +1022,16 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
         "dirty projection should update sharedStrings xml:space uniqueCount metadata");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "source sharedStrings xml:space projection should not mutate the source package");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("  plain & space  ")},
+        {1, 2, fastxlsx::CellValue::text("  rich & B tail  ")},
+        {1, 3, fastxlsx::CellValue::text("dirty-space-trigger")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 1, 3},
+        "source sharedStrings xml:space dirty output");
 }
 
 void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes()
@@ -1006,6 +1115,16 @@ void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unkno
         "dirty projection should preserve source sharedStrings bytes with inconsistent metadata");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "source sharedStrings count/attribute projection should not mutate the source package");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("first-meta")},
+        {1, 2, fastxlsx::CellValue::text("second-meta")},
+        {1, 3, fastxlsx::CellValue::text("after-metadata")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 1, 3},
+        "source sharedStrings count metadata dirty output");
 }
 
 } // namespace

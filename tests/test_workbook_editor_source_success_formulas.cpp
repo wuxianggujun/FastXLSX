@@ -202,6 +202,8 @@ void test_public_worksheet_editor_materializes_source_formulas()
         artifact("fastxlsx-workbook-editor-public-source-formula-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-formula-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-formula-dirty-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -262,6 +264,19 @@ void test_public_worksheet_editor_materializes_source_formulas()
         fastxlsx::CellRange {1, 1, 2, 4},
         expected_cells,
         "source formula dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source formula post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source formula post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == entries,
+        "source formula post-dirty no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "source formula post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_materializes_source_error_cells()

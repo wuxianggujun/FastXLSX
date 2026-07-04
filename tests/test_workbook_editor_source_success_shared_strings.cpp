@@ -953,6 +953,8 @@ void test_public_worksheet_editor_flattens_rich_source_shared_strings()
         artifact("fastxlsx-workbook-editor-public-rich-sharedstrings-source.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-rich-sharedstrings-noop-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-rich-sharedstrings-dirty-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1007,6 +1009,43 @@ void test_public_worksheet_editor_flattens_rich_source_shared_strings()
         noop_cells,
         fastxlsx::CellRange {1, 1, 1, 2},
         "rich sharedStrings no-op output");
+
+    sheet.set_cell("C2", fastxlsx::CellValue::text("rich-shared-dirty"));
+    editor.save_as(dirty_output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="s"><v>0</v></c>)",
+        "dirty projection should preserve flattened rich sharedStrings via source index");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="s"><v>1</v></c>)",
+        "dirty projection should preserve plain sharedStrings beside rich text via source index");
+    check_contains(worksheet_xml,
+        R"(<c r="C2" t="s"><v>2</v></c>)",
+        "dirty projection should append edits after flattened rich sharedStrings");
+    const std::string shared_strings_after = output_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_after,
+        R"(<si><t>rich-shared-dirty</t></si></sst>)",
+        "dirty projection should append new text while preserving rich sharedStrings markup");
+    check_contains(shared_strings_after, R"(count="3")",
+        "dirty projection should update rich sharedStrings count metadata");
+    check_contains(shared_strings_after, R"(uniqueCount="3")",
+        "dirty projection should update rich sharedStrings uniqueCount metadata");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "rich sharedStrings dirty projection should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "rich sharedStrings dirty projection should not mutate the prior no-op output");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("rich-A&B")},
+        {1, 2, fastxlsx::CellValue::text("plain")},
+        {2, 3, fastxlsx::CellValue::text("rich-shared-dirty")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        "rich sharedStrings dirty output");
 }
 
 void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()

@@ -2115,6 +2115,10 @@ sheet remains readable after failed or non-mutating shift attempts.
 The no-op invalid A1 range, invalid cell read, row/column read failure, and
 sparse range read failure save outputs are also reopened to verify copy-original
 Data state stays readable after non-mutating diagnostics.
+The invalid A1 range mutation path now also reads the same saved clean handle
+after the copy-original save and repeated no-op save, checking full sparse,
+bounded range, A1 range, row, and column snapshots without dirtying the
+materialized session or reviving diagnostics.
 The row/column read-failure path now also re-runs saved-session `row_cells()` /
 `column_cells()` snapshots on the same clean handle after the copy-original save
 and repeated clean no-op save, preserving the prior diagnostic while proving

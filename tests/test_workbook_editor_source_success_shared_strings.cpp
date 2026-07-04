@@ -762,6 +762,8 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
 
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-second-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -771,7 +773,8 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         "no-op save_as after source sharedStrings materialization should keep Data clean");
     check(!editor.has_pending_changes(),
         "no-op save_as after source sharedStrings materialization should keep WorkbookEditor clean");
-    check(fastxlsx::test::read_zip_entries(noop_output) == rewritten_source_entries,
+    const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_output_entries == rewritten_source_entries,
         "no-op save_as after source sharedStrings materialization should copy rewritten source entries");
     const ReopenedLazySharedStringsCell noop_cells[] = {
         {1, 1, fastxlsx::CellValue::text("shared-a")},
@@ -783,6 +786,28 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         noop_cells,
         fastxlsx::CellRange {1, 1, 2, 2},
         "source sharedStrings no-op output");
+
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "second no-op save_as after source sharedStrings materialization should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "second no-op save_as after source sharedStrings materialization should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "second no-op save_as after source sharedStrings materialization should not queue Patch edits");
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_output_entries,
+        "second no-op save_as after source sharedStrings materialization should keep output byte-stable");
+    check(second_noop_entries == rewritten_source_entries,
+        "second no-op save_as after source sharedStrings materialization should keep source-copy bytes");
+    check(fastxlsx::test::read_zip_entries(source) == rewritten_source_entries,
+        "second no-op save_as after source sharedStrings materialization should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_output_entries,
+        "second no-op save_as after source sharedStrings materialization should not mutate the first no-op output");
+    check_reopened_shared_strings_output(
+        second_noop_output,
+        noop_cells,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        "source sharedStrings second no-op output");
 
     sheet.set_cell("C3", fastxlsx::CellValue::text("new-inline"));
     editor.save_as(output);
@@ -833,6 +858,8 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         "source sharedStrings post-dirty no-op save should not mutate the source package");
     check(fastxlsx::test::read_zip_entries(noop_output) == rewritten_source_entries,
         "source sharedStrings post-dirty no-op save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "source sharedStrings post-dirty no-op save should not mutate the second no-op output");
     check_reopened_shared_strings_dirty_output(
         dirty_noop_output,
         expected_cells,

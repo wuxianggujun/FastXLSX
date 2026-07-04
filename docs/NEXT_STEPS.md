@@ -5957,6 +5957,12 @@ inconsistent count /
 unknown-attribute metadata, verifying clean `WorksheetEditor` state plus
 `used_range()`, `sparse_cells()`, `row_cells()`, `column_cells()`, and direct
 reads.
+The base source sharedStrings read-only path now also repeats a second clean
+no-op `save_as()` in the same session: first and second no-op packages match
+the rewritten source bytes, source and first output remain unchanged, and the
+second output fresh-reopens through the same public sparse views. This is still
+copy-original/readback evidence, not sharedStrings migration/writeback or
+in-place save.
 The base source sharedStrings fixture now also proves dirty-save stability: an
 in-memory edit appends to the existing string table, the dirty output
 fresh-reopens through public sparse views, a follow-up no-op `save_as()` is

@@ -20374,7 +20374,9 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
 
     const std::size_t pending_count_after_reacquire = editor.pending_change_count();
     const auto check_clear_all_release_saved_snapshots =
-        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix,
+            const std::optional<std::string>& expected_last_edit_error =
+                std::nullopt) {
             const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
                 handle.sparse_cells();
             check(cells.size() == 10,
@@ -20433,8 +20435,8 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
                 std::string(prefix) + " should keep dirty memory empty");
             check(editor.pending_worksheet_edits().empty(),
                 std::string(prefix) + " should keep dirty summaries empty");
-            check(!editor.last_edit_error().has_value(),
-                std::string(prefix) + " should keep diagnostics clear");
+            check(editor.last_edit_error() == expected_last_edit_error,
+                std::string(prefix) + " should keep diagnostics stable");
         };
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
@@ -20794,6 +20796,14 @@ void test_public_worksheet_editor_clear_all_memory_budget_release()
         invalid_mutation_entries.at("xl/worksheets/sheet1.xml");
     check_not_contains(invalid_mutation_xml, "clear-all-invalid-mutation",
         "clear_cell_values() memory-budget release invalid mutations should not leak rejected payloads");
+    check_clear_all_release_saved_snapshots(
+        sheet,
+        "clear_cell_values() memory-budget release invalid mutations original saved handle",
+        invalid_mutation_error);
+    check_clear_all_release_saved_snapshots(
+        reacquired,
+        "clear_cell_values() memory-budget release invalid mutations reacquired saved handle",
+        invalid_mutation_error);
 
     sheet.set_cell(5, 5,
         fastxlsx::CellValue::text("clear-all-invalid-mutation-recovery"));

@@ -1501,6 +1501,9 @@ clean saved workbook.
 The `pending_worksheet_edits()` summary save path now reopens both the
 auto-flushed materialized sheet and the replacement-only sheet, pinning clean
 readback after mixed summary diagnostics.
+It now repeats the clean no-op save too, preserving the retained replacement
+summary, keeping materialized diagnostics empty, and reopening both worksheets
+from the second output.
 The materialized-summary move-owner path now saves and reopens the assigned
 editor output, confirming summary ownership transfer persists while discarded
 target materialized edits stay absent.

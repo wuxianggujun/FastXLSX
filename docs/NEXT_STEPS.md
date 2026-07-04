@@ -2631,6 +2631,9 @@ after the later post-noop `C3` save.
 The missing-parent post-noop save now also fresh-reopens with row/column
 snapshots for shifted `A3`, shifted `C1`, and the later `C3` edit while keeping
 the rejected output path absent.
+The non-directory-parent and existing-directory post-noop saves now carry the
+same final reopen row/column snapshots and keep their safe retry packages
+byte-stable while preserving the rejected file/directory targets.
 The renamed full-calculation formula-audit saved-reacquire no-op paths now also
 pair their second clean save-state snapshot with a catalog snapshot after
 invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard

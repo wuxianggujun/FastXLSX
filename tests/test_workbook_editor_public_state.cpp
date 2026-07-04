@@ -52471,6 +52471,8 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-noop-retry-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-noop-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-reacquire-after-retry-noop-post-noop-output.xlsx");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
@@ -52622,6 +52624,107 @@ void test_public_worksheet_editor_shift_reacquire_after_failed_save_retry_noop_s
                 "shift reacquire after retry noop save reopened output should keep old coordinates absent");
             check_shift_reacquire_retry_snapshots(reopened_sheet,
                 "shift reacquire after retry noop save reopened output");
+        });
+
+    after_retry.set_cell("D3", fastxlsx::CellValue::text("post-noop-after-retry"));
+    check(after_retry.has_pending_changes() && sheet.has_pending_changes() &&
+            reacquired.has_pending_changes(),
+        "shift reacquire after retry noop post-noop edit should dirty all shared handles");
+    check(sheet.cell_count() == 4 &&
+            reacquired.cell_count() == 4 &&
+            after_retry.cell_count() == 4,
+        "shift reacquire after retry noop post-noop edit should add one sparse cell on all handles");
+    check_cell_range_equals(after_retry.used_range(), 1, 1, 3, 4,
+        "shift reacquire after retry noop post-noop edit should expand bounds to D3");
+    check(sheet.get_cell("D3").text_value() == "post-noop-after-retry" &&
+            reacquired.get_cell("D3").text_value() == "post-noop-after-retry" &&
+            after_retry.get_cell("D3").text_value() == "post-noop-after-retry",
+        "shift reacquire after retry noop post-noop edit should be visible through all handles");
+    check(sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            reacquired.get_cell("C1").number_value() == 1.0 &&
+            after_retry.get_cell("C1").number_value() == 1.0,
+        "shift reacquire after retry noop post-noop edit should preserve shifted source cells");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, after_retry, 2, "shift reacquire after retry noop post-noop edit");
+
+    editor.save_as(post_noop_output);
+    check(!after_retry.has_pending_changes() && !sheet.has_pending_changes() &&
+            !reacquired.has_pending_changes(),
+        "shift reacquire after retry noop post-noop save should clean all shared handles");
+    check(editor.pending_change_count() == 3,
+        "shift reacquire after retry noop post-noop save should record the third handoff");
+    check(editor.has_pending_changes(),
+        "shift reacquire after retry noop post-noop save should retain staged materialized handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "shift reacquire after retry noop post-noop save should clear dirty diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "shift reacquire after retry noop post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "shift reacquire after retry noop post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift reacquire after retry noop post-noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
+        "shift reacquire after retry noop post-noop save should leave the safe retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "shift reacquire after retry noop post-noop save should leave the no-op output unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_xml, R"(<dimension ref="A1:D3"/>)",
+        "shift reacquire after retry noop post-noop output should expand bounds to D3");
+    check_contains(post_noop_xml, R"(<c r="D3")",
+        "shift reacquire after retry noop post-noop output should write the later D3 cell");
+    check_contains(post_noop_xml, "post-noop-after-retry",
+        "shift reacquire after retry noop post-noop output should write the later D3 text");
+    check_not_contains(post_noop_xml, R"(r="B1")",
+        "shift reacquire after retry noop post-noop output should keep old B1 absent");
+    check_not_contains(post_noop_xml, R"(r="A2")",
+        "shift reacquire after retry noop post-noop output should keep old A2 absent");
+    check_reopened_shift_output(post_noop_output, "shift reacquire after retry noop post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "shift reacquire after retry noop post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "shift reacquire after retry noop post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "shift reacquire after retry noop post-noop save reopened output should read shifted B1");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "shift reacquire after retry noop post-noop save reopened output should keep shifted A2");
+            const fastxlsx::CellValue reopened_d3 = reopened_sheet.get_cell("D3");
+            check(reopened_d3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d3.text_value() == "post-noop-after-retry",
+                "shift reacquire after retry noop post-noop save reopened output should keep post-noop edit");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                reopened_sheet.row_cells(3);
+            check(row_three.size() == 2 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "placeholder-a2" &&
+                    row_three[1].reference.row == 3 &&
+                    row_three[1].reference.column == 4 &&
+                    row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[1].value.text_value() == "post-noop-after-retry",
+                "shift reacquire after retry noop post-noop row_cells should expose shifted row order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+                reopened_sheet.column_cells(4);
+            check(column_four.size() == 1 &&
+                    column_four[0].reference.row == 3 &&
+                    column_four[0].reference.column == 4 &&
+                    column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_four[0].value.text_value() == "post-noop-after-retry",
+                "shift reacquire after retry noop post-noop column_cells should expose the later edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value(),
+                "shift reacquire after retry noop post-noop save reopened output should keep old coordinates absent");
         });
 }
 

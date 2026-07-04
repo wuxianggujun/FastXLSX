@@ -806,6 +806,8 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-default-style-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-default-style-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-default-style-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -868,6 +870,32 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
         "source s=0 materialization should start as a clean read-only session");
     check(!editor.has_pending_changes(),
         "source s=0 materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "source s=0 materialization should not queue public Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source s=0 materialization should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source s=0 materialization should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after source s=0 materialization should not create public edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "no-op save_as after source s=0 materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after source s=0 materialization should not mutate source package");
+    const ReopenedSourceSuccessCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("loadable-before-style")},
+        {1, 2, fastxlsx::CellValue::text("explicit-default-source-style")},
+        {1, 3, fastxlsx::CellValue::text("single-quoted-default-source-style")},
+        {1, 4, fastxlsx::CellValue::text("spaced-default-source-style")},
+    };
+    check_reopened_source_success_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 4},
+        noop_cells,
+        "default style no-op output");
 
     sheet.set_cell("E1", fastxlsx::CellValue::text("dirty-default-style-trigger"));
     editor.save_as(output);
@@ -915,6 +943,8 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
         "default style post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "default style post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "default style post-dirty no-op save should not mutate the earlier source-copy output");
     check_reopened_source_success_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 1, 5},

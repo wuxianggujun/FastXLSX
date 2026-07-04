@@ -5884,11 +5884,12 @@ package bytes and fresh-reopens with normalized sparse cells, and the later
 dirty projection remains byte-stable while preserving source plus prior
 copy-original output. This is not namespace repair or a promise to preserve
 cell/value element prefixes inside regenerated `sheetData`.
-Normalized source `s=0` cells now have matching post-dirty no-op evidence:
-explicit default-style attributes remain omitted after dirty projection, the
-follow-up `save_as()` output is byte-stable, the source package stays
-unchanged, and fresh reopen still sees unstyled text cells. This is not
-non-default style migration or style registry repair.
+Normalized source `s=0` cells now have both no-op gates: read-only
+materialization stays clean, the clean no-op output copies source package bytes
+and fresh-reopens with unstyled text cells, and explicit default-style
+attributes remain omitted after the later dirty projection. The follow-up
+`save_as()` output is byte-stable, and source plus prior no-op packages stay
+unchanged. This is not non-default style migration or style registry repair.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
 stores, stay clean until mutation, and later save through the standalone

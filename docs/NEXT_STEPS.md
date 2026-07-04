@@ -3688,6 +3688,10 @@ with the original missing-target / duplicate-relationship / malformed-XML /
 wrong-content-type sharedStrings diagnostic. This is saved-output readback and
 failure-state hygiene only; it is not sharedStrings repair, pruning, migration,
 writeback, or source relationship/content-type repair.
+The lazy dirty-output readback now also pins reopened `column_cells()`
+snapshots beside the existing represented-row readback, so the usable `Data`
+sheet remains sparse-view consistent even when another sheet still carries the
+original sharedStrings diagnostic.
 Representative legal sharedStrings dirty-save outputs now fresh-reopen through
 the same public facade as clean `WorksheetEditor` state too: ordinary source
 shared string indexes with appended text, legal XML declarations, prefixed

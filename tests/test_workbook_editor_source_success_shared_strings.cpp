@@ -193,6 +193,8 @@ void check_reopened_lazy_shared_strings_dirty_output(
                 prefix + " fresh reopen row_cells should preserve Data cell order");
         }
     }
+    check_reopened_shared_strings_column_snapshots(
+        reopened_data, expected_data_cells, scenario);
 
     bool shared_failed = false;
     try {

@@ -25508,6 +25508,146 @@ void test_public_worksheet_editor_insert_columns_preserves_shifted_source_formul
         inspect_insert_columns_styled_post_noop_output);
 }
 
+void test_public_worksheet_editor_insert_columns_preserves_shifted_value_only_style()
+{
+    fastxlsx::StyleId styled_formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-public-worksheet-insert-columns-value-only-style-source.xlsx",
+            styled_formula_style);
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-insert-columns-value-only-style-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell_value("D2", fastxlsx::CellValue::text("column-value-only-styled"));
+    const std::optional<fastxlsx::CellValue> value_only_d2 = sheet.try_cell("D2");
+    check(value_only_d2.has_value() &&
+            value_only_d2->kind() == fastxlsx::CellValueKind::Text &&
+            value_only_d2->text_value() == "column-value-only-styled" &&
+            value_only_d2->has_style() &&
+            value_only_d2->style_id().value() == styled_formula_style.value(),
+        "set_cell_value should preserve the source style before insert_columns shifts it");
+
+    sheet.insert_columns(2, 2);
+
+    check(sheet.cell_count() == 7,
+        "insert_columns should keep value-only shifted sparse count stable");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 3, 6,
+        "insert_columns should refresh bounds for shifted value-only styled cells");
+    const std::optional<fastxlsx::CellValue> shifted_value = sheet.try_cell("F2");
+    check(shifted_value.has_value() &&
+            shifted_value->kind() == fastxlsx::CellValueKind::Text &&
+            shifted_value->text_value() == "column-value-only-styled" &&
+            shifted_value->has_style() &&
+            shifted_value->style_id().value() == styled_formula_style.value(),
+        "insert_columns should move value-only cells with the preserved source style id");
+    check(!sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("C2").has_value(),
+        "insert_columns should leave inserted sparse columns empty");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_two = sheet.row_cells(2);
+    check(shifted_row_two.size() == 4,
+        "insert_columns value-only row_cells should expose the shifted source row");
+    check(shifted_row_two[3].reference.row == 2 &&
+            shifted_row_two[3].reference.column == 6 &&
+            shifted_row_two[3].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_row_two[3].value.text_value() == "column-value-only-styled" &&
+            shifted_row_two[3].value.has_style() &&
+            shifted_row_two[3].value.style_id().value() == styled_formula_style.value(),
+        "insert_columns value-only row_cells should keep the shifted style id");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_six =
+        sheet.column_cells(6);
+    check(shifted_column_six.size() == 1 &&
+            shifted_column_six[0].reference.row == 2 &&
+            shifted_column_six[0].reference.column == 6 &&
+            shifted_column_six[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            shifted_column_six[0].value.text_value() == "column-value-only-styled" &&
+            shifted_column_six[0].value.has_style() &&
+            shifted_column_six[0].value.style_id().value() == styled_formula_style.value(),
+        "insert_columns value-only column_cells should keep the shifted style id");
+    const std::size_t shifted_memory_usage = sheet.estimated_memory_usage();
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "insert_columns value-only style pre-save shift summary");
+    check(editor.pending_materialized_cell_count() == 7,
+        "insert_columns value-only style should keep aggregate materialized cell count stable");
+    check(editor.estimated_pending_materialized_memory_usage() == shifted_memory_usage,
+        "insert_columns value-only style should keep aggregate materialized memory stable");
+    check(!editor.last_edit_error().has_value(),
+        "successful insert_columns value-only style shift should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns value-only style save_as should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "insert_columns value-only style save_as should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_text =
+        R"(<c r="F2" s=")" + std::to_string(styled_formula_style.value())
+        + R"(" t="inlineStr"><is><t>column-value-only-styled</t></is></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:F3"/>)",
+        "insert_columns value-only style save_as should project shifted bounds");
+    check_contains(worksheet_xml, styled_text,
+        "insert_columns value-only style save_as should write shifted text with source style id");
+    check_contains(worksheet_xml, R"(<c r="D1"><v>1</v></c>)",
+        "insert_columns value-only style save_as should keep shifted source number");
+    check_contains(worksheet_xml, R"(<c r="D2" t="inlineStr"><is><t>row2-gap-b2</t></is></c>)",
+        "insert_columns value-only style save_as should keep shifted source B2");
+    check_contains(worksheet_xml, R"(<c r="E2" t="inlineStr"><is><t>row2-gap-c2</t></is></c>)",
+        "insert_columns value-only style save_as should keep shifted source C2");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "insert_columns value-only style save_as should omit inserted B1");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "insert_columns value-only style save_as should omit inserted C2");
+    check_not_contains(worksheet_xml, R"(<f>A1+B1</f>)",
+        "insert_columns value-only style save_as should omit the source formula");
+    check_not_contains(worksheet_xml, R"(<f>C1+D1</f>)",
+        "insert_columns value-only style save_as should not resurrect the shifted formula");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "insert_columns value-only style should preserve untouched worksheets");
+    const auto inspect_value_only_shift_output =
+        [styled_formula_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 7,
+                "insert_columns value-only style reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 6,
+                "insert_columns value-only style reopened output should keep shifted bounds");
+            const std::optional<fastxlsx::CellValue> reopened_f2 =
+                reopened_sheet.try_cell("F2");
+            check(reopened_f2.has_value() &&
+                    reopened_f2->kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_f2->text_value() == "column-value-only-styled" &&
+                    reopened_f2->has_style() &&
+                    reopened_f2->style_id().value() == styled_formula_style.value(),
+                "insert_columns value-only style reopened output should preserve shifted source style");
+            const std::optional<fastxlsx::CellValue> reopened_d1 =
+                reopened_sheet.try_cell("D1");
+            check(reopened_d1.has_value() &&
+                    reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_d1->number_value() == 1.0,
+                "insert_columns value-only style reopened output should keep shifted source number");
+            const std::optional<fastxlsx::CellValue> reopened_d2 =
+                reopened_sheet.try_cell("D2");
+            const std::optional<fastxlsx::CellValue> reopened_e2 =
+                reopened_sheet.try_cell("E2");
+            check(reopened_d2.has_value() &&
+                    reopened_d2->text_value() == "row2-gap-b2" &&
+                    reopened_e2.has_value() &&
+                    reopened_e2->text_value() == "row2-gap-c2",
+                "insert_columns value-only style reopened output should keep shifted source cells");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("B2").has_value() &&
+                    !reopened_sheet.try_cell("C2").has_value(),
+                "insert_columns value-only style reopened output should keep inserted coordinates absent");
+        };
+    check_reopened_shift_output(output, "insert_columns value-only style",
+        inspect_value_only_shift_output);
+    check_reopened_untouched_keep_me_output(output, "insert_columns value-only style");
+}
+
 void test_public_worksheet_editor_full_calculation_preserves_insert_columns_styled_formula_shift()
 {
     fastxlsx::StyleId styled_formula_style;
@@ -58851,6 +58991,7 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_delete_rows_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_shifts_sparse_records();
             test_public_worksheet_editor_insert_columns_preserves_shifted_source_formula_style();
+            test_public_worksheet_editor_insert_columns_preserves_shifted_value_only_style();
             test_public_worksheet_editor_full_calculation_preserves_insert_columns_styled_formula_shift();
             test_public_worksheet_editor_full_calculation_preserves_insert_columns_styled_formula_failed_save_state();
             test_public_worksheet_editor_full_calculation_before_insert_columns_styled_formula_shift();

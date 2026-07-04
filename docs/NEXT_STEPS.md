@@ -5925,18 +5925,17 @@ linked table part stay as opaque preserved package artifacts. The follow-up
 unchanged, and fresh reopen still sees the supported sparse cells. This is not
 hyperlink/table semantic editing, relationship pruning/repair, table range
 repair, or the internal sheetData Patch API.
-Representative range/reference wrapper metadata is now pinned on the same
-path: source `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
+Representative range/reference wrapper metadata now has both no-op gates too:
+source `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
 `<ignoredErrors>`, `<pageMargins>`, and `<pageSetup>` do not block supported
-text/number/boolean materialization, and dirty `WorksheetEditor` save preserves
-them around the regenerated sparse `sheetData`. This is not merged-cell
-editing, validation/conditional-formatting import, page setup synchronization,
-range recalculation, metadata repair, or the internal sheetData Patch API.
-That range/reference dirty projection now also carries post-dirty no-op
-evidence: the follow-up `save_as()` is byte-stable, source bytes stay
-unchanged, and fresh reopen still sees the supported sparse cells. This is
-still not range recalculation, metadata synchronization, relationship repair,
-or semantic range-object editing.
+text/number/boolean materialization, the clean no-op output copies source
+package bytes and fresh-reopens with the supported sparse cells, and dirty
+`WorksheetEditor` save preserves them around the regenerated sparse
+`sheetData`. The follow-up `save_as()` is byte-stable, source plus prior no-op
+package bytes stay unchanged, and fresh reopen still sees the supported sparse
+cells. This is not merged-cell editing, validation/conditional-formatting
+import, page setup synchronization, range recalculation, metadata repair,
+relationship repair, or semantic range-object editing.
 Source comments and processing instructions outside cells now have the same
 projection-boundary coverage: they do not block supported cell materialization,
 dirty `WorksheetEditor` save preserves wrapper-level comments / processing

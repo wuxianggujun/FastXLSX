@@ -1376,6 +1376,8 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-source-range-wrapper-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-range-wrapper-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-range-wrapper-output.xlsx");
     const std::filesystem::path dirty_noop_output =
@@ -1440,6 +1442,31 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
         "range wrapper metadata materialization should start clean");
     check(!editor.has_pending_changes(),
         "range wrapper metadata materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "range wrapper metadata materialization should not queue public Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "range wrapper no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "range wrapper no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "range wrapper no-op save should not create public edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "range wrapper no-op save should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range wrapper no-op save should not mutate the source package");
+    const ReopenedSourceSuccessCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("range-wrapper-source")},
+        {1, 2, fastxlsx::CellValue::number(3.0)},
+        {2, 1, fastxlsx::CellValue::boolean(true)},
+    };
+    check_reopened_source_success_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        noop_cells,
+        "range wrapper no-op output");
 
     sheet.set_cell("C3", fastxlsx::CellValue::text("range-wrapper-new"));
     editor.save_as(output);
@@ -1493,6 +1520,8 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
         "range wrapper post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "range wrapper post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "range wrapper post-dirty no-op save should not mutate the earlier source-copy output");
     check_reopened_source_success_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 3, 3},

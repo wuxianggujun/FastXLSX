@@ -5878,11 +5878,12 @@ materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with the flattened plain text, and the later dirty projection
 remains byte-stable while preserving the source and prior no-op packages. This
 is not rich-text formatting preservation.
-Prefixed source worksheet local-name wrappers now carry the same post-dirty
-no-op evidence: dirty projection fresh-reopens with the normalized sparse
-cells, the follow-up `save_as()` is byte-stable, and source plus prior
-copy-original output stay unchanged. This is not namespace repair or a promise
-to preserve cell/value element prefixes inside regenerated `sheetData`.
+Prefixed source worksheet local-name wrappers now carry both no-op gates:
+read-only materialization stays clean, the clean no-op output copies source
+package bytes and fresh-reopens with normalized sparse cells, and the later
+dirty projection remains byte-stable while preserving source plus prior
+copy-original output. This is not namespace repair or a promise to preserve
+cell/value element prefixes inside regenerated `sheetData`.
 Normalized source `s=0` cells now have matching post-dirty no-op evidence:
 explicit default-style attributes remain omitted after dirty projection, the
 follow-up `save_as()` output is byte-stable, the source package stays

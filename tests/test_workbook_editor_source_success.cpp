@@ -697,10 +697,34 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
         "prefixed inline materialization should start clean");
     check(!editor.has_pending_changes(),
         "prefixed inline materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "prefixed inline materialization should not queue public Patch edits");
 
     editor.save_as(noop_output);
-    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after prefixed inline materialization should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after prefixed inline materialization should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after prefixed inline materialization should not create public edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
         "no-op save_as after prefixed inline materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after prefixed inline materialization should not mutate source package");
+    const ReopenedSourceSuccessCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-inline")},
+        {1, 2, fastxlsx::CellValue::text(" spaced ")},
+        {1, 3, fastxlsx::CellValue::text("rich-tail")},
+        {2, 1, fastxlsx::CellValue::number(42.0)},
+        {2, 2, fastxlsx::CellValue::boolean(true)},
+        {2, 3, fastxlsx::CellValue::formula("SUM(A2:A2)")},
+    };
+    check_reopened_source_success_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        noop_cells,
+        "prefixed inline no-op output");
 
     sheet.set_cell("D2", fastxlsx::CellValue::text("prefixed-inline-dirty"));
     editor.save_as(dirty_output);
@@ -769,7 +793,7 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
         "prefixed inline post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "prefixed inline post-dirty no-op save should not mutate the source package");
-    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "prefixed inline post-dirty no-op save should not mutate the earlier source-copy output");
     check_reopened_source_success_dirty_output(
         dirty_noop_output,

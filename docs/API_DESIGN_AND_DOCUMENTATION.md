@@ -130,7 +130,7 @@ sheet 入口      add_worksheet           add_worksheet / remove_worksheet / ins
 `CellStore` / `CellRecord` 已有 internal detail 首片，且已有 internal `<sheetData>`
 payload emission helper。`WorkbookEditor` 现已落地首个 public Patch 切片
 （`include/fastxlsx/workbook_editor.hpp`、`src/workbook_editor.cpp`、
-`tests/test_workbook_editor.cpp`，CTest family `fastxlsx.workbook_editor.*`）：已覆盖
+`tests/test_workbook_editor_*.cpp` shards，CTest family `fastxlsx.workbook_editor.*`）：已覆盖
 `open()`、`worksheet_names()` / `has_worksheet()` sheet inspection、按 sheet name
 做整表 `<sheetData>` 替换的 `replace_sheet_data(rows)`、窄 sheet-catalog 改名的
 `rename_sheet(old_name, new_name)`、targeted Patch 的 `replace_cells()` /
@@ -626,7 +626,7 @@ XML repair。
 calcChain remove / `fullCalcOnLoad`、relationship/content-type audit 和
 unknown/unmodified part preservation 路径。这个 helper 已有首个 public facade：
 `WorkbookEditor`（`include/fastxlsx/workbook_editor.hpp` / `src/workbook_editor.cpp` /
-`tests/test_workbook_editor.cpp`，CTest family `fastxlsx.workbook_editor.*`）。public facade 把
+`tests/test_workbook_editor_*.cpp` shards，CTest family `fastxlsx.workbook_editor.*`）。public facade 把
 caller 的 `CellValue` 行投影为 standalone `<sheetData>` 后委托上述 by-name helper，
 只暴露 `open()` / `worksheet_names()` / `has_worksheet()` /
 `source_worksheet_names()` / `has_source_worksheet()` / `replace_sheet_data()` /

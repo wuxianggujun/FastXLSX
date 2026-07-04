@@ -197,7 +197,7 @@ FastXLSX
 │   ├── test_package_editor.cpp
 │   ├── test_package_reader.cpp
 │   ├── test_streaming_writer.cpp
-│   ├── test_workbook_editor.cpp
+│   ├── test_workbook_editor_*.cpp
 │   ├── test_worksheet_event_reader.cpp
 │   └── test_worksheet_transformer.cpp
 └── CMakeLists.txt

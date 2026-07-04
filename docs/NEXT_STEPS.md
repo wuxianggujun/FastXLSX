@@ -555,6 +555,8 @@ are pinned on both sides of the save/reopen handoff.
 The same delete-side `#REF!` formula paths now also pin global `sparse_cells()`
 row-major order for the shifted source/formula cells before save, after
 fresh-reopen, and after the later dirty formula edit.
+They now mirror those checks through A1 range `sparse_cells()` reads for the
+same shifted and post-noop `#REF!` formula snapshots.
 Their live and fresh-reopen checks now also cover `contains_cell()` for shifted
 source/formula cells, deleted old coordinates, and the later post-noop formula
 edits.

@@ -59373,6 +59373,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_rows #REF formula live column_cells should expose the shifted formula");
         check_row_ref_sparse_cells(sheet.sparse_cells(),
             "delete_rows #REF formula live sparse_cells should expose shifted source and formula order");
+        check_row_ref_sparse_cells(sheet.sparse_cells("A1:C3"),
+            "delete_rows #REF formula live range sparse_cells should expose shifted source and formula order");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
                 !sheet.contains_cell("C4"),
             "delete_rows #REF formula live contains_cell should match shifted represented state");
@@ -59423,6 +59425,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_rows #REF formula reopened column_cells should expose the shifted formula");
                 check_row_ref_sparse_cells(reopened_sheet.sparse_cells(),
                     "delete_rows #REF formula reopened sparse_cells should expose shifted source and formula order");
+                check_row_ref_sparse_cells(reopened_sheet.sparse_cells("A1:C3"),
+                    "delete_rows #REF formula reopened range sparse_cells should expose shifted source and formula order");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
                         !reopened_sheet.contains_cell("C4"),
                     "delete_rows #REF formula reopened contains_cell should match shifted represented state");
@@ -59541,6 +59545,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_rows #REF formula post-noop live column_cells should expose the later formula");
         check_row_ref_post_noop_sparse_cells(sheet.sparse_cells(),
             "delete_rows #REF formula post-noop live sparse_cells should expose formulas in sparse order");
+        check_row_ref_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"),
+            "delete_rows #REF formula post-noop live range sparse_cells should expose formulas in sparse order");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
                 sheet.contains_cell("D3") && !sheet.contains_cell("C4"),
             "delete_rows #REF formula post-noop live contains_cell should match edited represented state");
@@ -59623,6 +59629,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_rows #REF formula post-noop column_cells should expose the later formula");
                 check_row_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells(),
                     "delete_rows #REF formula post-noop sparse_cells should expose formulas in sparse order");
+                check_row_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells("A1:D3"),
+                    "delete_rows #REF formula post-noop range sparse_cells should expose formulas in sparse order");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
                         reopened_sheet.contains_cell("D3") && !reopened_sheet.contains_cell("C4"),
                     "delete_rows #REF formula post-noop contains_cell should match edited represented state");
@@ -59724,6 +59732,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_columns #REF formula live column_cells should expose the shifted formula");
         check_column_ref_sparse_cells(sheet.sparse_cells(),
             "delete_columns #REF formula live sparse_cells should expose shifted source and formula order");
+        check_column_ref_sparse_cells(sheet.sparse_cells("A1:C1"),
+            "delete_columns #REF formula live range sparse_cells should expose shifted source and formula order");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C1") &&
                 !sheet.contains_cell("B1") && !sheet.contains_cell("D1"),
             "delete_columns #REF formula live contains_cell should match shifted represented state");
@@ -59778,6 +59788,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_columns #REF formula reopened column_cells should expose the shifted formula");
                 check_column_ref_sparse_cells(reopened_sheet.sparse_cells(),
                     "delete_columns #REF formula reopened sparse_cells should expose shifted source and formula order");
+                check_column_ref_sparse_cells(reopened_sheet.sparse_cells("A1:C1"),
+                    "delete_columns #REF formula reopened range sparse_cells should expose shifted source and formula order");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C1") &&
                         !reopened_sheet.contains_cell("B1") && !reopened_sheet.contains_cell("D1"),
                     "delete_columns #REF formula reopened contains_cell should match shifted represented state");
@@ -59900,6 +59912,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_columns #REF formula post-noop live column_cells should expose the later formula");
         check_column_ref_post_noop_sparse_cells(sheet.sparse_cells(),
             "delete_columns #REF formula post-noop live sparse_cells should expose formulas in sparse order");
+        check_column_ref_post_noop_sparse_cells(sheet.sparse_cells("A1:D1"),
+            "delete_columns #REF formula post-noop live range sparse_cells should expose formulas in sparse order");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C1") &&
                 sheet.contains_cell("D1") && !sheet.contains_cell("B1"),
             "delete_columns #REF formula post-noop live contains_cell should match edited represented state");
@@ -59986,6 +60000,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_columns #REF formula post-noop column_cells should expose the later formula");
                 check_column_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells(),
                     "delete_columns #REF formula post-noop sparse_cells should expose formulas in sparse order");
+                check_column_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells("A1:D1"),
+                    "delete_columns #REF formula post-noop range sparse_cells should expose formulas in sparse order");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C1") &&
                         reopened_sheet.contains_cell("D1") && !reopened_sheet.contains_cell("B1"),
                     "delete_columns #REF formula post-noop contains_cell should match edited represented state");

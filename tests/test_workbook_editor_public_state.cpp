@@ -22169,6 +22169,73 @@ void test_public_worksheet_editor_clear_all_memory_budget_release_rename_summary
     check_not_contains(second_worksheet_xml, R"(<v>1</v>)",
         "clear_cell_values() memory-budget renamed summary second save should omit cleared B1 number");
 
+    const auto check_renamed_clear_all_second_save_saved_snapshots =
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+            check(handle.cell_count() == 5,
+                std::string(prefix) + " should keep the saved sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 5,
+                std::string(prefix) + " should keep all represented sparse records");
+            if (cells.size() == 5) {
+                check(cells[0].reference.row == 1 && cells[0].reference.column == 1 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep cleared A1 first");
+                check(cells[1].reference.row == 1 && cells[1].reference.column == 2 &&
+                        cells[1].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep cleared B1 second");
+                check(cells[2].reference.row == 2 && cells[2].reference.column == 1 &&
+                        cells[2].value.kind() == fastxlsx::CellValueKind::Blank,
+                    std::string(prefix) + " should keep cleared A2 before saved inserts");
+                check(cells[3].reference.row == 4 && cells[3].reference.column == 4 &&
+                        cells[3].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[3].value.text_value() == "clear-all-renamed-mb-release",
+                    std::string(prefix) + " should keep saved D4 before E5");
+                check(cells[4].reference.row == 5 && cells[4].reference.column == 5 &&
+                        cells[4].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[4].value.text_value() ==
+                            "clear-all-renamed-summary-reacquire",
+                    std::string(prefix) + " should keep saved E5 last");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                handle.row_cells(1);
+            check(row_one.size() == 2 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2 &&
+                    row_one[1].value.kind() == fastxlsx::CellValueKind::Blank,
+                std::string(prefix) + " should keep cleared row-one snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_five =
+                handle.column_cells(5);
+            check(column_five.size() == 1 &&
+                    column_five[0].reference.row == 5 &&
+                    column_five[0].reference.column == 5 &&
+                    column_five[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_five[0].value.text_value() ==
+                        "clear-all-renamed-summary-reacquire",
+                std::string(prefix) + " should keep the E5 column snapshot");
+            check(!handle.try_cell("C3").has_value(),
+                std::string(prefix) + " should keep unrelated C3 absent");
+            check_cell_range_equals(handle.used_range(), 1, 1, 5, 5,
+                std::string(prefix) + " should keep second-save bounds");
+            check(!handle.has_pending_changes(),
+                std::string(prefix) + " should keep the handle clean");
+            check(editor.pending_change_count() == 3,
+                std::string(prefix) + " should not add another handoff");
+            check(!editor.last_edit_error().has_value(),
+                std::string(prefix) + " should keep diagnostics clear");
+            check_renamed_clear_all_clean_materialized_diagnostics(prefix);
+            check_renamed_clear_all_summary(false, 0, prefix);
+        };
+    check_renamed_clear_all_second_save_saved_snapshots(
+        sheet,
+        "clear_cell_values() memory-budget renamed summary second save original saved handle");
+    check_renamed_clear_all_second_save_saved_snapshots(
+        reacquired,
+        "clear_cell_values() memory-budget renamed summary second save reacquired saved handle");
+
     check_reopened_clean_sheet_output(second_output, "RenamedClearAll",
         "clear_cell_values() memory-budget renamed summary",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

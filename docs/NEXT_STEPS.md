@@ -612,6 +612,9 @@ and the preserved guard diagnostic.
 The same-sheet guard recovery save now snapshots both saved handles after the
 accepted `E7` write, pinning the `E6`/`E7` column view, clean diagnostics, and
 stable materialized counters.
+The renamed-summary path now also snapshots both saved handles after its later
+`E5` recovery save, pinning the cleared row-one blanks, `E5` column view, and
+clean rename/materialized summaries.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.

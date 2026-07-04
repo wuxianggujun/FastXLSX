@@ -1059,6 +1059,9 @@ erased source cells survive saved sparse projection cleanly.
 Its second no-op output now also fresh-reopens with the same sparse count,
 `A1:D4` bounds, post-snapshot A1 edit, source-backed B1, explicit B3 blank,
 inserted D4, and erased A2 absence.
+It now also reuses the original coordinate batch against the clean saved session
+and fresh-reopened outputs, preserving input order and duplicates while skipping
+the erased coordinate across no-op saves.
 The `used_range()` dirty/empty inspection path is reopened as well, pinning
 clean readback for a saved worksheet whose sparse cells were fully erased after
 diagnostic-preserving reads.

@@ -7945,7 +7945,36 @@ void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
     check(sheet.estimated_memory_usage() == memory_before_invalid_reads,
         "invalid sparse_cells(batch) calls should not change sparse-store memory usage");
 
+    const auto check_saved_batch_snapshots =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells, const char* message) {
+            check(cells.size() == 5 &&
+                    cells[0].reference.row == 4 &&
+                    cells[0].reference.column == 4 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "batch-new" &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 2 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0 &&
+                    cells[2].reference.row == 3 &&
+                    cells[2].reference.column == 2 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    cells[3].reference.row == 1 &&
+                    cells[3].reference.column == 1 &&
+                    cells[3].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[3].value.text_value() == "changed-after-batch-snapshot" &&
+                    cells[4].reference.row == 1 &&
+                    cells[4].reference.column == 1 &&
+                    cells[4].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[4].value.text_value() == "changed-after-batch-snapshot",
+                message);
+        };
+
     editor.save_as(output);
+    check_saved_batch_snapshots(sheet.sparse_cells(batch),
+        "sparse_cells(batch) saved session should keep requested order and duplicates");
+    check(!sheet.has_pending_changes(),
+        "sparse_cells(batch) saved-session read should keep the materialized sheet clean");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "batch sparse_cells save should leave the source package unchanged");
@@ -7958,11 +7987,13 @@ void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
         "sparse_cells(batch) reads should not revive erased source cells");
 
     check_reopened_clean_sheet_output(output, "Data", "sparse_cells coordinate batch snapshot",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&batch, &check_saved_batch_snapshots](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,
                 "batch sparse_cells reopened output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
                 "batch sparse_cells reopened output should expose dirty-session bounds");
+            check_saved_batch_snapshots(reopened_sheet.sparse_cells(batch),
+                "batch sparse_cells reopened output should keep requested order and duplicates");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a1.text_value() == "changed-after-batch-snapshot",
@@ -8010,6 +8041,10 @@ void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
         "batch sparse_cells no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "batch sparse_cells no-op save should leave the source package unchanged");
+    check_saved_batch_snapshots(sheet.sparse_cells(batch),
+        "sparse_cells(batch) no-op saved session should keep requested order and duplicates");
+    check(!sheet.has_pending_changes(),
+        "sparse_cells(batch) no-op saved-session read should keep the materialized sheet clean");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -8038,13 +8073,19 @@ void test_public_worksheet_editor_sparse_cells_coordinate_batch_snapshot()
         "batch sparse_cells second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "batch sparse_cells second no-op save should leave the source package unchanged");
+    check_saved_batch_snapshots(sheet.sparse_cells(batch),
+        "sparse_cells(batch) second no-op saved session should keep requested order and duplicates");
+    check(!sheet.has_pending_changes(),
+        "sparse_cells(batch) second no-op saved-session read should keep the materialized sheet clean");
     check_reopened_clean_sheet_output(
         second_noop_output, "Data", "sparse_cells coordinate batch second no-op save",
-        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        [&batch, &check_saved_batch_snapshots](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 4,
                 "batch sparse_cells second no-op output should keep sparse count");
             check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 4, 4,
                 "batch sparse_cells second no-op output should expose dirty-session bounds");
+            check_saved_batch_snapshots(reopened_sheet.sparse_cells(batch),
+                "batch sparse_cells second no-op output should keep requested order and duplicates");
             const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
             check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_a1.text_value() == "changed-after-batch-snapshot",

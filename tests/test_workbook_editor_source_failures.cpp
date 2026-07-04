@@ -2094,6 +2094,56 @@ void test_public_worksheet_editor_failed_materialization_keeps_noop_save_as_copy
         "no-op save_as after failed materialization should preserve rejected source worksheet bytes");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
         "no-op save_as after failed materialization should preserve untouched sheets");
+
+    fastxlsx::WorkbookEditor copied_editor = fastxlsx::WorkbookEditor::open(output);
+    check(copied_editor.has_worksheet("Data"),
+        "copy-original output after failed materialization should preserve planned catalog");
+    check(copied_editor.has_source_worksheet("Data"),
+        "copy-original output after failed materialization should preserve source catalog");
+    const std::vector<std::string> copied_source_names =
+        copied_editor.source_worksheet_names();
+    const std::vector<std::string> copied_planned_names =
+        copied_editor.worksheet_names();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> copied_catalog =
+        copied_editor.worksheet_catalog();
+
+    bool copied_try_failed = false;
+    try {
+        (void)copied_editor.try_worksheet("Data");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        copied_try_failed = true;
+        check_contains(error.what(), "invalid style id reference",
+            "copy-original output try_worksheet should preserve materialization diagnostic");
+    }
+    check(copied_try_failed,
+        "copy-original output try_worksheet should still reject the invalid source style id");
+    check_public_materialization_failure_clean_state(
+        copied_editor,
+        copied_source_names,
+        copied_planned_names,
+        copied_catalog,
+        "failed materialization no-op copied output",
+        "try_worksheet failure",
+        "Untouched");
+
+    bool copied_worksheet_failed = false;
+    try {
+        (void)copied_editor.worksheet("Data");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        copied_worksheet_failed = true;
+        check_contains(error.what(), "invalid style id reference",
+            "copy-original output worksheet should preserve materialization diagnostic");
+    }
+    check(copied_worksheet_failed,
+        "copy-original output worksheet should still reject the invalid source style id");
+    check_public_materialization_failure_clean_state(
+        copied_editor,
+        copied_source_names,
+        copied_planned_names,
+        copied_catalog,
+        "failed materialization no-op copied output",
+        "worksheet failure",
+        "Untouched");
 }
 
 void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()

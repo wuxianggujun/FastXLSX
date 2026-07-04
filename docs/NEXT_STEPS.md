@@ -5716,6 +5716,10 @@ Unsupported source cell shape failure hygiene is pinned as well: date-like
 cells, custom/unknown type tokens, and invalid boolean payloads fail through
 the public facade without leaving partial materialized sessions or blocking
 later Patch edits.
+The invalid source style-id materialization failure no-op save path now also
+fresh-reopens the copy-original output: workbook/source catalogs remain visible,
+the same materialization diagnostic is preserved, and the failed reads leave no
+partial in-memory session state.
 Malformed source worksheet XML now has the same public facade hygiene coverage:
 missing closing worksheet root fails cleanly without partial materialized state.
 The same malformed worksheet still blocks same-sheet Patch preflight, so

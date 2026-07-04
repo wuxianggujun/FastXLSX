@@ -56204,6 +56204,52 @@ void test_public_worksheet_editor_row_column_shift_noop_and_invalid_preserve_sta
             "delete_columns invalid-count failure should not dirty the materialized worksheet");
         check(sheet.get_cell("A1").text_value() == "placeholder-a1",
             "delete_columns invalid-count failure should preserve source cells");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.insert_rows(0, 0);
+        }), "insert_rows should validate invalid row numbers before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed insert_rows invalid zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "insert_rows invalid zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "insert_rows invalid zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.delete_rows(0, 0);
+        }), "delete_rows should validate invalid row numbers before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed delete_rows invalid zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "delete_rows invalid zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "delete_rows invalid zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.insert_columns(0, 0);
+        }), "insert_columns should validate invalid column numbers before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed insert_columns invalid zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "insert_columns invalid zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "insert_columns invalid zero-count failure should preserve sparse cell count");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.delete_columns(0, 0);
+        }), "delete_columns should validate invalid column numbers before zero-count no-op");
+        check(editor.last_edit_error().has_value(),
+            "failed delete_columns invalid zero-count mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "delete_columns invalid zero-count failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "delete_columns invalid zero-count failure should preserve sparse cell count");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "invalid zero-count shifts should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "invalid zero-count shifts should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "invalid zero-count shifts should preserve source A2");
         check_workbook_editor_public_no_pending_state(
             editor, "shift validation failures");
         check(editor.pending_materialized_worksheet_names().empty(),

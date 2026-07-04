@@ -58,10 +58,18 @@
 - 当前入口：`WorksheetEditorOptions`、`WorkbookEditor::worksheet()`、
   `WorkbookEditor::try_worksheet()`、`WorksheetEditor`、`WorksheetCellReference`、
   `WorksheetCellUpdate`、`WorksheetCellSnapshot`。
-- 当前能力：`try_cell()` / `get_cell()` / `contains_cell()` / `used_range()` / sparse snapshots、
-  `set_cell()` / `set_cells()` full sparse replacements、`set_cell_value()` / `set_cell_values()` /
-  row/column value-only prefix writes that preserve existing materialized StyleId handles,
-  value-only clears、erase APIs、represented sparse row/column insert/delete shifts、
+- 当前能力：`try_cell()` / `get_cell()` / `contains_cell()` / `used_range()`、
+  `sparse_cells()` / `row_cells()` / `column_cells()` owning snapshots、
+  `set_cell()` / `set_cells()` full sparse replacements、`append_row()`、
+  `set_row()` / `set_column()` represented sparse row/column replacement、
+  `set_cell_value()` / `set_cell_values()` / `set_row_values()` /
+  `set_column_values()` value-only writes that preserve existing materialized StyleId handles,
+  `clear_cell_value()` / `clear_cell_values()` / `clear_row()` /
+  `clear_rows()` / `clear_column()` / `clear_columns()` value clears、
+  `erase_cell()` / `erase_cells()` / `erase_row()` / `erase_rows()` /
+  `erase_column()` / `erase_columns()` sparse record removal、
+  `insert_rows()` / `delete_rows()` / `insert_columns()` / `delete_columns()`
+  represented sparse row/column shifts、
   strict uppercase A1 convenience overloads、
   `cell_count()`、`estimated_memory_usage()` 和 dirty-session `save_as()` auto-flush。
 - `set_cell_values()` batch inputs are preflighted, allow duplicate coordinates, and apply

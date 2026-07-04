@@ -1,5 +1,101 @@
 #include "test_workbook_editor_source_success_common.hpp"
 
+struct ReopenedLazySharedStringsCell {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+    fastxlsx::CellValue value;
+};
+
+bool cell_values_equal(
+    const fastxlsx::CellValue& actual,
+    const fastxlsx::CellValue& expected)
+{
+    if (actual.kind() != expected.kind()) {
+        return false;
+    }
+
+    switch (expected.kind()) {
+    case fastxlsx::CellValueKind::Blank:
+        return true;
+    case fastxlsx::CellValueKind::Number:
+        return actual.number_value() == expected.number_value();
+    case fastxlsx::CellValueKind::Boolean:
+        return actual.boolean_value() == expected.boolean_value();
+    case fastxlsx::CellValueKind::Text:
+    case fastxlsx::CellValueKind::Formula:
+    case fastxlsx::CellValueKind::Error:
+        return actual.text_value() == expected.text_value();
+    }
+
+    return false;
+}
+
+void check_reopened_lazy_shared_strings_dirty_output(
+    const std::filesystem::path& output,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    std::string_view expected_shared_failure,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data");
+
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen");
+    check(reopened_editor.pending_materialized_worksheet_names().empty(),
+        prefix + " fresh reopen should not expose dirty materialized names");
+    check(reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " fresh reopen should not expose dirty materialized cells");
+    check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " fresh reopen should not expose dirty materialized memory");
+    check(!reopened_data.has_pending_changes(),
+        prefix + " fresh reopen should materialize Data as clean");
+    check(reopened_data.cell_count() == expected_data_cells.size(),
+        prefix + " fresh reopen should keep the expected Data sparse count");
+
+    for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
+        const fastxlsx::CellValue actual =
+            reopened_data.get_cell(expected.row, expected.column);
+        check(cell_values_equal(actual, expected.value),
+            prefix + " fresh reopen should read the expected Data cell value");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        reopened_data.row_cells(1);
+    check(row_one.size() == expected_data_cells.size(),
+        prefix + " fresh reopen row_cells should expose the represented Data row");
+    if (row_one.size() == expected_data_cells.size()) {
+        for (std::size_t index = 0; index < expected_data_cells.size(); ++index) {
+            const ReopenedLazySharedStringsCell& expected = expected_data_cells[index];
+            check(row_one[index].reference.row == expected.row &&
+                    row_one[index].reference.column == expected.column &&
+                    cell_values_equal(row_one[index].value, expected.value),
+                prefix + " fresh reopen row_cells should preserve Data cell order");
+        }
+    }
+
+    bool shared_failed = false;
+    try {
+        (void)reopened_editor.worksheet("Shared");
+    } catch (const fastxlsx::FastXlsxError& error) {
+        shared_failed = true;
+        check_contains(error.what(), expected_shared_failure,
+            prefix + " fresh reopen Shared should keep the original sharedStrings diagnostic");
+    }
+    check(shared_failed,
+        prefix + " fresh reopen Shared should still fail on referenced bad sharedStrings metadata");
+    check(!reopened_data.has_pending_changes(),
+        prefix + " Shared failure should leave Data clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " Shared failure");
+    check(reopened_editor.pending_materialized_worksheet_names().empty(),
+        prefix + " Shared failure should not expose dirty materialized names");
+    check(reopened_editor.pending_materialized_cell_count() == 0,
+        prefix + " Shared failure should not expose dirty materialized cells");
+    check(reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " Shared failure should not expose dirty materialized memory");
+}
+
 void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells()
 {
     const std::filesystem::path source =
@@ -76,6 +172,17 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
         "dirty lazy sharedStrings projection should not repair the stale workbook relationship");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "lazy sharedStrings materialization should not mutate the source package");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(2.0)},
+        {1, 2, fastxlsx::CellValue::boolean(true)},
+        {1, 3, fastxlsx::CellValue::formula("A1+1")},
+        {1, 4, fastxlsx::CellValue::text("inline-after-lazy-sharedStrings")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        "workbook sharedStrings relationship targets an unknown package part",
+        "lazy missing sharedStrings target dirty output");
 
     check_public_worksheet_materialization_failure_hygiene(
         source,
@@ -138,6 +245,15 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="B1" t="inlineStr"><is><t>after-duplicate-rel-lazy-load</t></is></c>)",
         "dirty lazy duplicate-rel projection should still write new text as inlineStr");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(7.0)},
+        {1, 2, fastxlsx::CellValue::text("after-duplicate-rel-lazy-load")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "lazy duplicate sharedStrings relationship dirty output");
 
     check_public_worksheet_materialization_failure_hygiene(
         source,
@@ -196,6 +312,15 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
         "dirty lazy malformed-xml projection should still write new text as inlineStr");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "lazy malformed sharedStrings XML materialization should not mutate the source package");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(11.0)},
+        {1, 2, fastxlsx::CellValue::text("after-malformed-xml-lazy-load")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        "CellStore sharedStrings loader root is missing an sst element",
+        "lazy malformed sharedStrings XML dirty output");
 
     check_public_worksheet_materialization_failure_hygiene(
         source,
@@ -261,6 +386,15 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
         "dirty lazy wrong-content-type projection should still write new text as inlineStr");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "lazy wrong sharedStrings content type materialization should not mutate the source package");
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(13.0)},
+        {1, 2, fastxlsx::CellValue::text("after-wrong-content-type-lazy-load")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_output,
+        expected_cells,
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "lazy wrong sharedStrings content type dirty output");
 
     check_public_worksheet_materialization_failure_hygiene(
         source,

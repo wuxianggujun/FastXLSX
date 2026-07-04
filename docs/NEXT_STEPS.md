@@ -3673,6 +3673,13 @@ diagnostic/test-helper hygiene only, not content type repair, relationship
 repair/pruning, target repair, sharedStrings synthesis/rebuild/writeback,
 pruning/index migration, source reload, source mutation, commit, undo, rollback,
 or public API.
+Those lazy sharedStrings dirty-save outputs now also fresh-reopen through the
+public `WorkbookEditor` facade: `Data` materializes cleanly with the preserved
+non-`t="s"` source cells plus the new inline edit, while `Shared` still fails
+with the original missing-target / duplicate-relationship / malformed-XML /
+wrong-content-type sharedStrings diagnostic. This is saved-output readback and
+failure-state hygiene only; it is not sharedStrings repair, pruning, migration,
+writeback, or source relationship/content-type repair.
 P8.552 strengthens the existing public image media-part replacement diagnostic:
 `WorkbookEditor::replace_image()` failures now include the public API name, the
 requested target media part, and either the file path or memory byte count before

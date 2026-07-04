@@ -1096,6 +1096,8 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
         artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-noop-output.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-dirty-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1201,6 +1203,21 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
         expected_cells,
         fastxlsx::CellRange {1, 1, 1, 3},
         "prefixed sharedStrings dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "prefixed sharedStrings post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "prefixed sharedStrings post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "prefixed sharedStrings post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "prefixed sharedStrings post-dirty no-op save should not mutate the prior no-op output");
+    check_reopened_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 1, 3},
+        "prefixed sharedStrings post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_materializes_local_names_without_namespace_validation()
@@ -1339,6 +1356,8 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
         artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-noop-output.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-dirty-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1423,6 +1442,21 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
         expected_cells,
         fastxlsx::CellRange {1, 1, 1, 3},
         "source sharedStrings xml:space dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings xml:space post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source sharedStrings xml:space post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source sharedStrings xml:space post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "source sharedStrings xml:space post-dirty no-op save should not mutate the prior no-op output");
+    check_reopened_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 1, 3},
+        "source sharedStrings xml:space post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes()

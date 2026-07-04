@@ -5889,6 +5889,11 @@ The legal XML declaration sharedStrings cases now carry the same post-dirty
 no-op evidence: dirty output reopens through public sparse views, the follow-up
 no-op `save_as()` is byte-stable, and source/no-op packages remain unchanged.
 This is not XML declaration repair or broad sharedStrings migration.
+The same post-dirty no-op evidence now covers prefixed sharedStrings and
+`xml:space` sharedStrings: dirty outputs fresh-reopen through public sparse
+views, follow-up no-op `save_as()` outputs are byte-stable, and source/no-op
+packages remain unchanged. This is still not namespace repair, rich-text
+formatting preservation, or broad sharedStrings migration.
 Prefixed source worksheet XML is now pinned for the same narrow local-name
 materialization boundary: worksheet, `sheetData`, row, cell, inlineStr wrapper,
 rich-run, formula, and value-wrapper element names may be prefixed and still

@@ -5936,6 +5936,12 @@ verify source shared string values, `used_range()`, `row_cells()`,
 `column_cells()`, direct reads, and clean state. This is not clean-session
 commit semantics, in-place save, transaction snapshot, sharedStrings migration,
 or relationship repair.
+That clean read-only copy-original path now also repeats a second no-op
+`save_as()` in the same session: the second output is byte-identical to the
+first output and source package, source and first output remain unchanged, and
+fresh reopen still sees the same sparse cells. This is still not clean-session
+commit semantics, in-place save, transaction history, or sharedStrings
+migration.
 Prefixed source sharedStrings are now pinned on the same read-only
 materialization path: `sst` / `si` / `t` / `r` element names may be prefixed and
 are matched by local-name for public `WorksheetEditor` materialization, no-op

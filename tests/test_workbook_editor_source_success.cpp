@@ -1375,6 +1375,8 @@ void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_c
         artifact("fastxlsx-workbook-editor-public-readonly-materialized-noop-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-readonly-materialized-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-readonly-materialized-second-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1461,6 +1463,30 @@ void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_c
         fastxlsx::CellRange {1, 1, 1, 2},
         expected_cells,
         "read-only materialized no-op output");
+
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "second no-op save_as after read-only materialization should keep the sheet clean");
+    check(!editor.has_pending_changes(),
+        "second no-op save_as after read-only materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "second no-op save_as after read-only materialization should not create public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second no-op save_as after read-only materialization should not expose dirty names");
+    const auto second_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_output_entries == output_entries,
+        "second no-op save_as after read-only materialization should keep output byte-stable");
+    check(second_output_entries == source_entries,
+        "second no-op save_as after read-only materialization should keep source-copy bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "second no-op save_as after read-only materialization should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "second no-op save_as after read-only materialization should not mutate the first output");
+    check_reopened_source_success_dirty_output(
+        second_noop_output,
+        fastxlsx::CellRange {1, 1, 1, 2},
+        expected_cells,
+        "read-only materialized second no-op output");
 }
 
 } // namespace

@@ -30,6 +30,126 @@ bool cell_values_equal(
     return false;
 }
 
+bool shared_strings_snapshot_matches(
+    const fastxlsx::WorksheetCellSnapshot& actual,
+    const ReopenedLazySharedStringsCell& expected)
+{
+    return actual.reference.row == expected.row &&
+        actual.reference.column == expected.column &&
+        cell_values_equal(actual.value, expected.value);
+}
+
+bool shared_strings_row_already_checked(
+    const std::vector<std::uint32_t>& checked_rows,
+    std::uint32_t row)
+{
+    for (const std::uint32_t checked_row : checked_rows) {
+        if (checked_row == row) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool shared_strings_column_already_checked(
+    const std::vector<std::uint32_t>& checked_columns,
+    std::uint32_t column)
+{
+    for (const std::uint32_t checked_column : checked_columns) {
+        if (checked_column == column) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void check_reopened_shared_strings_row_snapshots(
+    fastxlsx::WorksheetEditor& reopened_data,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    std::vector<std::uint32_t> checked_rows;
+
+    for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
+        if (shared_strings_row_already_checked(checked_rows, expected.row)) {
+            continue;
+        }
+
+        checked_rows.push_back(expected.row);
+        std::size_t expected_count = 0;
+        for (const ReopenedLazySharedStringsCell& candidate : expected_data_cells) {
+            if (candidate.row == expected.row) {
+                ++expected_count;
+            }
+        }
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_cells =
+            reopened_data.row_cells(expected.row);
+        check(row_cells.size() == expected_count,
+            prefix + " fresh reopen row_cells should expose the expected row count");
+        if (row_cells.size() != expected_count) {
+            continue;
+        }
+
+        std::size_t row_index = 0;
+        for (const ReopenedLazySharedStringsCell& candidate : expected_data_cells) {
+            if (candidate.row != expected.row) {
+                continue;
+            }
+
+            check(shared_strings_snapshot_matches(row_cells[row_index], candidate),
+                prefix + " fresh reopen row_cells should preserve row-major values");
+            ++row_index;
+        }
+    }
+}
+
+void check_reopened_shared_strings_column_snapshots(
+    fastxlsx::WorksheetEditor& reopened_data,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    std::vector<std::uint32_t> checked_columns;
+
+    for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
+        if (shared_strings_column_already_checked(
+                checked_columns, expected.column)) {
+            continue;
+        }
+
+        checked_columns.push_back(expected.column);
+        std::size_t expected_count = 0;
+        for (const ReopenedLazySharedStringsCell& candidate : expected_data_cells) {
+            if (candidate.column == expected.column) {
+                ++expected_count;
+            }
+        }
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_cells =
+            reopened_data.column_cells(expected.column);
+        check(column_cells.size() == expected_count,
+            prefix + " fresh reopen column_cells should expose the expected column count");
+        if (column_cells.size() != expected_count) {
+            continue;
+        }
+
+        std::size_t column_index = 0;
+        for (const ReopenedLazySharedStringsCell& candidate : expected_data_cells) {
+            if (candidate.column != expected.column) {
+                continue;
+            }
+
+            check(shared_strings_snapshot_matches(column_cells[column_index], candidate),
+                prefix + " fresh reopen column_cells should preserve column-major values");
+            ++column_index;
+        }
+    }
+}
+
 void check_reopened_lazy_shared_strings_dirty_output(
     const std::filesystem::path& output,
     std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
@@ -140,6 +260,10 @@ void check_reopened_shared_strings_dirty_output(
                 prefix + " fresh reopen sparse_cells should preserve cell order and values");
         }
     }
+    check_reopened_shared_strings_row_snapshots(
+        reopened_data, expected_data_cells, scenario);
+    check_reopened_shared_strings_column_snapshots(
+        reopened_data, expected_data_cells, scenario);
 
     for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
         const fastxlsx::CellValue actual =

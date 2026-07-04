@@ -3697,6 +3697,10 @@ the expected sparse snapshots and direct cell values. This remains saved-output
 readback coverage only; it is not sharedStrings index migration, metadata
 repair, full XML namespace validation, pruning, or broad sharedStrings
 writeback.
+The same legal sharedStrings dirty-output readback now also covers reopened
+`row_cells()` and `column_cells()` snapshots, keeping row/column sparse views
+aligned with `sparse_cells()` and direct cell reads without changing the
+sharedStrings migration or repair boundary.
 P8.552 strengthens the existing public image media-part replacement diagnostic:
 `WorkbookEditor::replace_image()` failures now include the public API name, the
 requested target media part, and either the file path or memory byte count before

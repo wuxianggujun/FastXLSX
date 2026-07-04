@@ -5872,8 +5872,9 @@ preservation. This is not namespace URI validation, namespace repair, schema
 validation, sharedStrings migration/writeback, or rich text preservation.
 The sharedStrings no-op copy-original outputs now also fresh-reopen through the
 public sparse views for source sharedStrings with legal prolog trivia and
-`./sharedStrings.xml` relationship targets, prefixed local-names, deliberately
-wrong namespace URIs, `xml:space` whitespace, and inconsistent count /
+legal XML declaration variants, `./sharedStrings.xml` relationship targets,
+prefixed local-names, deliberately wrong namespace URIs, `xml:space`
+whitespace, and inconsistent count /
 unknown-attribute metadata, verifying clean `WorksheetEditor` state plus
 `used_range()`, `sparse_cells()`, `row_cells()`, `column_cells()`, and direct
 reads.

@@ -844,6 +844,9 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
         const std::filesystem::path source = artifact(
             "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
             + std::string(test_case.name) + "-source.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
+            + std::string(test_case.name) + "-noop-output.xlsx");
         const std::filesystem::path output = artifact(
             "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
             + std::string(test_case.name) + "-output.xlsx");
@@ -885,6 +888,25 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
         check(editor.pending_change_count() == 0,
             std::string(test_case.name)
                 + " legal declaration materialization should not queue Patch edits");
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration no-op save should keep Data clean");
+        check(!editor.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration no-op save should keep WorkbookEditor clean");
+        check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+            std::string(test_case.name)
+                + " legal declaration no-op save should copy source entries");
+        const ReopenedLazySharedStringsCell noop_cells[] = {
+            {1, 1, fastxlsx::CellValue::text(std::string(test_case.expected_text))},
+        };
+        check_reopened_shared_strings_output(
+            noop_output,
+            noop_cells,
+            fastxlsx::CellRange {1, 1, 1, 1},
+            std::string(test_case.name) + " legal declaration no-op output");
 
         sheet.set_cell("B2", fastxlsx::CellValue::text("legal-declaration-new-inline"));
         editor.save_as(output);

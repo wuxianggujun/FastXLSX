@@ -951,6 +951,8 @@ void test_public_worksheet_editor_flattens_rich_source_shared_strings()
 {
     const std::filesystem::path source =
         artifact("fastxlsx-workbook-editor-public-rich-sharedstrings-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-rich-sharedstrings-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -969,6 +971,7 @@ void test_public_worksheet_editor_flattens_rich_source_shared_strings()
         R"(<si><t>plain</t></si>)"
         R"(</sst>)";
     rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", rich_shared_strings);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -983,6 +986,27 @@ void test_public_worksheet_editor_flattens_rich_source_shared_strings()
         "WorksheetEditor should still materialize plain shared string items beside rich text");
     check(!sheet.has_pending_changes(),
         "rich sharedStrings read-only materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "rich sharedStrings read-only materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "rich sharedStrings read-only materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "rich sharedStrings no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "rich sharedStrings no-op save should keep WorkbookEditor clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "rich sharedStrings no-op save should copy source entries");
+    const ReopenedLazySharedStringsCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("rich-A&B")},
+        {1, 2, fastxlsx::CellValue::text("plain")},
+    };
+    check_reopened_shared_strings_output(
+        noop_output,
+        noop_cells,
+        fastxlsx::CellRange {1, 1, 1, 2},
+        "rich sharedStrings no-op output");
 }
 
 void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()

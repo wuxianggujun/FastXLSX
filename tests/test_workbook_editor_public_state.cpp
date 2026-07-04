@@ -10106,6 +10106,26 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
         check_contains(*prior_error, "WorksheetEditor cell coordinate is invalid",
             "prior diagnostic should be the seeded invalid coordinate failure");
     }
+    const auto check_source_range_snapshots =
+        [&sheet, &editor, &prior_error, &cell_count_before, &memory_before, &check_source_snapshot](
+            std::string_view prefix) {
+            check_source_snapshot(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}),
+                std::string(prefix) + " CellRange snapshot");
+            check_source_snapshot(sheet.sparse_cells("A1:B2"),
+                std::string(prefix) + " A1 range snapshot");
+            check(!sheet.has_pending_changes(),
+                std::string(prefix) + " should keep the materialized sheet clean");
+            check(!editor.has_pending_changes(),
+                std::string(prefix) + " should keep the editor clean");
+            check(editor.pending_change_count() == 0,
+                std::string(prefix) + " should not record a materialized handoff");
+            check(sheet.cell_count() == cell_count_before,
+                std::string(prefix) + " should preserve sparse cell count");
+            check(sheet.estimated_memory_usage() == memory_before,
+                std::string(prefix) + " should preserve sparse memory estimate");
+            check(editor.last_edit_error() == prior_error,
+                std::string(prefix) + " should preserve the prior diagnostic");
+        };
     const WorkbookEditorPublicCatalogSnapshot catalog_before_invalid_sparse_reads =
         workbook_editor_public_catalog_snapshot(editor);
 
@@ -10166,6 +10186,7 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
     check_workbook_editor_public_catalog_preserved(editor, catalog_before_invalid_sparse_reads,
         "invalid range sparse_cells reads");
     check_source_snapshot(cells_after, "post-invalid-range sparse snapshot");
+    check_source_range_snapshots("post-invalid-range valid sparse range reads");
 
     const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
         workbook_editor_public_save_state_snapshot(editor);
@@ -10175,6 +10196,7 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
         "no-op save_as after invalid range reads should preserve the prior diagnostic");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop, "invalid sparse range read no-op save");
+    check_source_range_snapshots("invalid sparse range read saved session");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(output_entries == source_entries,
@@ -10208,6 +10230,7 @@ void test_public_worksheet_editor_sparse_cells_invalid_range_preserves_prior_dia
     check_workbook_editor_public_catalog_preserved(
         editor, catalog_before_second_noop,
         "invalid sparse range read second no-op save");
+    check_source_range_snapshots("invalid sparse range read second no-op saved session");
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "invalid sparse range read second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,

@@ -2120,6 +2120,10 @@ The row/column read-failure path now also re-runs saved-session `row_cells()` /
 and repeated clean no-op save, preserving the prior diagnostic while proving
 source row/column ordering and missing row/column snapshots do not re-dirty the
 materialized worksheet.
+The sparse range read-failure path now mirrors that saved-handle check with
+bounded `CellRange` and A1-string `sparse_cells()` snapshots after the
+copy-original save and repeated clean no-op save, preserving the prior
+diagnostic and source sparse ordering without queuing materialized changes.
 The benchmark tool
 `fastxlsx_bench_workbook_editor` now includes `patch-replace` and
 `patch-upsert` scenarios for public facade performance smoke; the lower-level

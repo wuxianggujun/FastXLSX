@@ -5785,10 +5785,11 @@ read-only materialization stays clean, the clean no-op output copies source
 package bytes and fresh-reopens with translated follower text, while the later
 flattened plain-formula output remains byte-stable and preserves both source and
 prior no-op package bytes.
-Source-order shared formula matrices now carry the same post-dirty no-op
-evidence: interleaved/latest-definition followers remain flattened as translated
-plain formulas, the no-op output is byte-stable, the source package is unchanged,
-and fresh reopen preserves the matrix projection beside later edits.
+Source-order shared formula matrices now carry both no-op gates too: read-only
+materialization stays clean, the clean no-op output copies source package bytes
+and fresh-reopens with interleaved/latest-definition followers translated as
+plain formula text, while the later dirty projection remains byte-stable and
+preserves both source and prior no-op package bytes.
 Office-like 2D shared formula groups now carry that no-op evidence as well:
 multiple rectangular shared formula groups keep byte-stable flattened output,
 drop stale cached values, leave the source package unchanged, and fresh reopen

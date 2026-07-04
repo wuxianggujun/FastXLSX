@@ -675,6 +675,8 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
 {
     const std::filesystem::path source = write_two_sheet_source(
         "fastxlsx-workbook-editor-public-source-shared-formula-matrix-source.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-shared-formula-matrix-noop-output.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-shared-formula-matrix-output.xlsx");
     const std::filesystem::path dirty_noop_output = artifact(
@@ -721,6 +723,38 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         "source-order shared formula read-only materialization should start clean");
     check(!editor.has_pending_changes(),
         "source-order shared formula read-only materialization should not dirty the workbook editor");
+    check(editor.pending_change_count() == 0,
+        "source-order shared formula read-only materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "source-order shared formula matrix no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "source-order shared formula matrix no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "source-order shared formula matrix no-op save should not queue Patch edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "source-order shared formula matrix no-op save should copy source package bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source-order shared formula matrix no-op save should not mutate the source package");
+    const ReopenedFormulaOutputCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula(
+            "A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)+SUM(Sheet1!A:A)+SUM('Other Sheet'!1:1)+SUM($A:B)+SUM($1:2)")},
+        {1, 2, fastxlsx::CellValue::formula("C1+D$1+$C1+$C$1")},
+        {1, 3, fastxlsx::CellValue::formula(
+            "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(C:C)+SUM(1:1)+SUM(Sheet1!C:C)+SUM('Other Sheet'!1:1)+SUM($A:D)+SUM($1:2)")},
+        {1, 4, fastxlsx::CellValue::formula("E1+F$1+$C1+$C$1")},
+        {2, 1, fastxlsx::CellValue::formula(
+            "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(2:2)+SUM(Sheet1!A:A)+SUM('Other Sheet'!2:2)+SUM($A:B)+SUM($1:3)")},
+        {3, 1, fastxlsx::CellValue::formula("Z3+1")},
+        {3, 2, fastxlsx::CellValue::formula("AA3+1")},
+    };
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 3, 4},
+        noop_cells,
+        "source-order shared formula matrix no-op output");
 
     sheet.set_cell("E4", fastxlsx::CellValue::text("shared-formula-matrix-edit"));
     editor.save_as(output);
@@ -770,6 +804,8 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         "source-order shared formula matrix post-dirty no-op save should keep output byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "source-order shared formula matrix post-dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "source-order shared formula matrix post-dirty no-op save should not mutate the prior no-op output");
     check_reopened_formula_dirty_output(
         dirty_noop_output,
         fastxlsx::CellRange {1, 1, 4, 5},

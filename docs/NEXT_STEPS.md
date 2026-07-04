@@ -2628,6 +2628,9 @@ no-op boundary too: missing-parent, non-directory-parent, and existing-directory
 outputs preserve their rejected target state, reopen the second no-op output
 with shifted `A3` / `C1`, and keep the retry plus both no-op outputs unchanged
 after the later post-noop `C3` save.
+The missing-parent post-noop save now also fresh-reopens with row/column
+snapshots for shifted `A3`, shifted `C1`, and the later `C3` edit while keeping
+the rejected output path absent.
 The renamed full-calculation formula-audit saved-reacquire no-op paths now also
 pair their second clean save-state snapshot with a catalog snapshot after
 invalid mutation/read/shift, missing-query, option-mismatch, and same-sheet guard

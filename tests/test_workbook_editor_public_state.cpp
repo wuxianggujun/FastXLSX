@@ -53981,6 +53981,8 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
         "shift reacquire missing-parent failed save post-noop save should leave the source unchanged");
     check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
         "shift reacquire missing-parent failed save post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "shift reacquire missing-parent failed save post-noop save should leave the safe retry output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
         "shift reacquire missing-parent failed save post-noop save should leave the prior no-op output unchanged");
     check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
@@ -54008,6 +54010,30 @@ void test_public_worksheet_editor_shift_reacquire_missing_parent_failed_save_pre
             check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
                     reopened_c3.text_value() == "post-noop-missing-parent-failed-save",
                 "shift reacquire missing-parent failed save post-noop save reopened output should keep post-noop edit");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                reopened_sheet.row_cells(3);
+            check(row_three.size() == 2 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "placeholder-a2" &&
+                    row_three[1].reference.row == 3 &&
+                    row_three[1].reference.column == 3 &&
+                    row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[1].value.text_value() == "post-noop-missing-parent-failed-save",
+                "shift reacquire missing-parent failed save post-noop row_cells should expose row-three order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                reopened_sheet.column_cells(3);
+            check(column_three.size() == 2 &&
+                    column_three[0].reference.row == 1 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    column_three[0].value.number_value() == 1.0 &&
+                    column_three[1].reference.row == 3 &&
+                    column_three[1].reference.column == 3 &&
+                    column_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[1].value.text_value() == "post-noop-missing-parent-failed-save",
+                "shift reacquire missing-parent failed save post-noop column_cells should expose shifted number and later edit");
             check(!reopened_sheet.try_cell("B1").has_value() &&
                     !reopened_sheet.try_cell("A2").has_value(),
                 "shift reacquire missing-parent failed save post-noop save reopened output should keep old coordinates absent");

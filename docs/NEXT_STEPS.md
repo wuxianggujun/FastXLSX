@@ -5863,6 +5863,10 @@ Empty source worksheet materialization is pinned as well: worksheets with no
 stores, stay clean until mutation, and later save through the standalone
 CellStore worksheet projection. This does not imply XML repair, source wrapper
 metadata preservation, same-sheet Patch bypass, or large-file random editing.
+Those empty-source dirty projections now also have post-dirty no-op evidence:
+the follow-up `save_as()` output is byte-stable, the source package stays
+unchanged, and fresh reopen still sees only the inserted sparse cell. This is
+not clean-session commit semantics or wrapper metadata repair.
 Worksheet root and `sheetData` boundary failure hygiene is pinned too: markup
 before the worksheet root, duplicate `sheetData`, duplicate worksheet roots, and
 trailing text fail cleanly without partial sessions. This is strict validation,

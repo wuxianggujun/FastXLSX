@@ -176,6 +176,12 @@ large-export progress API；small `Workbook` 的 sheet lookup、rename old-name 
 worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship repair 和
 大 worksheet 低内存 random edit —— 仍必须标明为未来 public design target。
 
+`WorksheetEditor::set_cells()` is the full-cell sparse batch counterpart to
+`set_cell()`: it preflights the whole batch, accepts duplicate coordinates with
+later-wins ordering, rejects caller-supplied non-default `StyleId` handles, drops
+prior source style handles on overwritten cells, and rejects guardrail failures
+before mutating the active sparse store.
+
 `WorksheetEditor` value-only APIs (`set_cell_value()`、`set_cell_values()`、
 `set_row_values()`、`set_column_values()`) keep the target cell's currently
 materialized source `StyleId` when overwriting an existing cell, reject

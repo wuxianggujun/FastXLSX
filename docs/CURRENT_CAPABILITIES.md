@@ -72,8 +72,11 @@
   represented sparse row/column shifts、
   strict uppercase A1 convenience overloads、
   `cell_count()`、`estimated_memory_usage()` 和 dirty-session `save_as()` auto-flush。
-- `set_cell_values()` batch inputs are preflighted, allow duplicate coordinates, and apply
-  later-wins ordering while preserving the target's existing materialized source style handle.
+- `set_cells()` and `set_cell_values()` batch inputs are preflighted, allow duplicate
+  coordinates, and apply later-wins ordering. `set_cells()` is full sparse replacement and
+  drops prior source style handles on overwritten cells; `set_cell_values()` is value-only and
+  preserves the target's existing materialized source style handle. Guardrail checks reject the
+  whole batch before mutation, and duplicate missing coordinates count as one final sparse target.
 - Guardrail：`WorksheetEditorOptions::max_cells` 和 `memory_budget_bytes` 约束 source materialization
   与后续 sparse-store mutations。它们是 sparse-store estimate guardrails，不是进程 RSS 或 package save peak。
 - 适用边界：small-file random cell editing。该路径不支持 non-default caller-supplied style id 写入、

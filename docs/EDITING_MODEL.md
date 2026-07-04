@@ -947,6 +947,12 @@ sheet catalog 改名和 `save_as()`，并已有 small-file `WorksheetEditor` 随
 helpers，不是完整 Excel structural edit。尚未暴露 document properties editing、
 完整 row/column metadata/range/formula/table/drawing 同步、semantic metadata sync 等更宽能力。
 
+Full-cell batch edits (`set_cells()`) are sparse replacements over the
+materialized store. They accept duplicate coordinates as a preflighted
+later-wins batch, reject caller-supplied non-default `StyleId` handles, drop
+prior source styles on overwritten cells, and fail before mutation when
+guardrails are exceeded.
+
 Value-only edits (`set_cell_value()`、`set_cell_values()`、`set_row_values()`、
 `set_column_values()`) are existing-workbook style-preserving writes over the
 materialized sparse store. They preserve an existing target cell's source

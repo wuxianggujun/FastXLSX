@@ -1,5 +1,194 @@
 #include "test_workbook_editor_source_success_common.hpp"
 
+struct ReopenedSourceSuccessCell {
+    std::uint32_t row = 0;
+    std::uint32_t column = 0;
+    fastxlsx::CellValue value;
+};
+
+bool source_success_values_equal(
+    const fastxlsx::CellValue& actual,
+    const fastxlsx::CellValue& expected)
+{
+    if (actual.kind() != expected.kind()) {
+        return false;
+    }
+
+    switch (expected.kind()) {
+    case fastxlsx::CellValueKind::Blank:
+        return true;
+    case fastxlsx::CellValueKind::Number:
+        return actual.number_value() == expected.number_value();
+    case fastxlsx::CellValueKind::Boolean:
+        return actual.boolean_value() == expected.boolean_value();
+    case fastxlsx::CellValueKind::Text:
+    case fastxlsx::CellValueKind::Formula:
+    case fastxlsx::CellValueKind::Error:
+        return actual.text_value() == expected.text_value();
+    }
+
+    return false;
+}
+
+bool source_success_snapshot_matches(
+    const fastxlsx::WorksheetCellSnapshot& actual,
+    const ReopenedSourceSuccessCell& expected)
+{
+    return actual.reference.row == expected.row &&
+        actual.reference.column == expected.column &&
+        source_success_values_equal(actual.value, expected.value);
+}
+
+void check_reopened_source_success_row_snapshots(
+    fastxlsx::WorksheetEditor& reopened_sheet,
+    std::span<const ReopenedSourceSuccessCell> expected_cells,
+    std::string_view scenario)
+{
+    std::vector<std::uint32_t> checked_rows;
+    const std::string prefix(scenario);
+
+    for (const ReopenedSourceSuccessCell& expected : expected_cells) {
+        bool already_checked = false;
+        for (const std::uint32_t checked_row : checked_rows) {
+            if (checked_row == expected.row) {
+                already_checked = true;
+                break;
+            }
+        }
+        if (already_checked) {
+            continue;
+        }
+        checked_rows.push_back(expected.row);
+
+        std::size_t expected_count = 0;
+        for (const ReopenedSourceSuccessCell& candidate : expected_cells) {
+            if (candidate.row == expected.row) {
+                ++expected_count;
+            }
+        }
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_cells =
+            reopened_sheet.row_cells(expected.row);
+        check(row_cells.size() == expected_count,
+            prefix + " fresh reopen row_cells should expose the expected row count");
+        if (row_cells.size() != expected_count) {
+            continue;
+        }
+
+        std::size_t index = 0;
+        for (const ReopenedSourceSuccessCell& candidate : expected_cells) {
+            if (candidate.row != expected.row) {
+                continue;
+            }
+            check(source_success_snapshot_matches(row_cells[index], candidate),
+                prefix + " fresh reopen row_cells should preserve row-major values");
+            ++index;
+        }
+    }
+}
+
+void check_reopened_source_success_column_snapshots(
+    fastxlsx::WorksheetEditor& reopened_sheet,
+    std::span<const ReopenedSourceSuccessCell> expected_cells,
+    std::string_view scenario)
+{
+    std::vector<std::uint32_t> checked_columns;
+    const std::string prefix(scenario);
+
+    for (const ReopenedSourceSuccessCell& expected : expected_cells) {
+        bool already_checked = false;
+        for (const std::uint32_t checked_column : checked_columns) {
+            if (checked_column == expected.column) {
+                already_checked = true;
+                break;
+            }
+        }
+        if (already_checked) {
+            continue;
+        }
+        checked_columns.push_back(expected.column);
+
+        std::size_t expected_count = 0;
+        for (const ReopenedSourceSuccessCell& candidate : expected_cells) {
+            if (candidate.column == expected.column) {
+                ++expected_count;
+            }
+        }
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_cells =
+            reopened_sheet.column_cells(expected.column);
+        check(column_cells.size() == expected_count,
+            prefix + " fresh reopen column_cells should expose the expected column count");
+        if (column_cells.size() != expected_count) {
+            continue;
+        }
+
+        std::size_t index = 0;
+        for (const ReopenedSourceSuccessCell& candidate : expected_cells) {
+            if (candidate.column != expected.column) {
+                continue;
+            }
+            check(source_success_snapshot_matches(column_cells[index], candidate),
+                prefix + " fresh reopen column_cells should preserve row-major values");
+            ++index;
+        }
+    }
+}
+
+void check_reopened_source_success_dirty_output(
+    const std::filesystem::path& output,
+    const fastxlsx::CellRange& expected_range,
+    std::span<const ReopenedSourceSuccessCell> expected_cells,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen");
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen should materialize a clean worksheet");
+    check(reopened_sheet.cell_count() == expected_cells.size(),
+        prefix + " fresh reopen should preserve the expected sparse cell count");
+
+    const std::optional<fastxlsx::CellRange> actual_range = reopened_sheet.used_range();
+    check(actual_range.has_value() &&
+            actual_range->first_row == expected_range.first_row &&
+            actual_range->first_column == expected_range.first_column &&
+            actual_range->last_row == expected_range.last_row &&
+            actual_range->last_column == expected_range.last_column,
+        prefix + " fresh reopen should expose the expected used range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> actual_cells =
+        reopened_sheet.sparse_cells();
+    check(actual_cells.size() == expected_cells.size(),
+        prefix + " fresh reopen sparse_cells should expose the expected cell count");
+    if (actual_cells.size() == expected_cells.size()) {
+        for (std::size_t index = 0; index < expected_cells.size(); ++index) {
+            check(source_success_snapshot_matches(actual_cells[index], expected_cells[index]),
+                prefix + " fresh reopen sparse_cells should preserve row-major values");
+        }
+    }
+
+    check_reopened_source_success_row_snapshots(
+        reopened_sheet, expected_cells, scenario);
+    check_reopened_source_success_column_snapshots(
+        reopened_sheet, expected_cells, scenario);
+
+    for (const ReopenedSourceSuccessCell& expected : expected_cells) {
+        const fastxlsx::CellValue actual =
+            reopened_sheet.get_cell(expected.row, expected.column);
+        check(source_success_values_equal(actual, expected.value),
+            prefix + " fresh reopen should read each expected cell directly");
+    }
+
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " fresh reopen reads should leave the worksheet clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " fresh reopen reads");
+}
+
 void test_public_worksheet_editor_materializes_source_supported_values()
 {
     const std::filesystem::path source =
@@ -106,6 +295,22 @@ void test_public_worksheet_editor_materializes_source_supported_values()
     check_not_contains(output_entries.at("[Content_Types].xml"),
         "spreadsheetml.sharedStrings+xml",
         "dirty supported source value projection should not create a sharedStrings content type");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::blank()},
+        {1, 2, fastxlsx::CellValue::boolean(true)},
+        {1, 3, fastxlsx::CellValue::boolean(false)},
+        {1, 4, fastxlsx::CellValue::text("")},
+        {1, 5, fastxlsx::CellValue::blank()},
+        {1, 6, fastxlsx::CellValue::formula("SUM(B1:C1)")},
+        {1, 7, fastxlsx::CellValue::number(7.0)},
+        {1, 8, fastxlsx::CellValue::number(8.0)},
+        {2, 9, fastxlsx::CellValue::text("supported-values-new-inline")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 9},
+        expected_cells,
+        "supported source values dirty output");
 }
 
 void test_public_worksheet_editor_materializes_source_scalar_string_cells()
@@ -190,6 +395,17 @@ void test_public_worksheet_editor_materializes_source_scalar_string_cells()
         "dirty source t=str projection should not create a sharedStrings part");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-string-type",
         "dirty source t=str projection should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("plain & <text>")},
+        {1, 2, fastxlsx::CellValue::formula("TEXT(C1,\"@\")&\"!\"")},
+        {1, 3, fastxlsx::CellValue::number(7.0)},
+        {2, 4, fastxlsx::CellValue::text("string-type-new-inline")},
+    };
+    check_reopened_source_success_dirty_output(
+        dirty_output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "source t=str dirty output");
 }
 
 void test_public_worksheet_editor_flattens_source_inline_rich_text()
@@ -257,6 +473,15 @@ void test_public_worksheet_editor_flattens_source_inline_rich_text()
         "dirty projection should not keep ignored inline extension text");
     check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-inline-rich",
         "dirty inline rich text projection should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("rich-A&B kept ")},
+        {2, 2, fastxlsx::CellValue::text("inline-rich-new")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 2},
+        expected_cells,
+        "inline rich text dirty output");
 }
 
 void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
@@ -391,6 +616,20 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
     check(output_entries.at("xl/worksheets/sheet2.xml")
             == source_entries.at("xl/worksheets/sheet2.xml"),
         "dirty prefixed inline projection should preserve untouched sheets");
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-inline")},
+        {1, 2, fastxlsx::CellValue::text(" spaced ")},
+        {1, 3, fastxlsx::CellValue::text("rich-tail")},
+        {2, 1, fastxlsx::CellValue::number(42.0)},
+        {2, 2, fastxlsx::CellValue::boolean(true)},
+        {2, 3, fastxlsx::CellValue::formula("SUM(A2:A2)")},
+        {2, 4, fastxlsx::CellValue::text("prefixed-inline-dirty")},
+    };
+    check_reopened_source_success_dirty_output(
+        dirty_output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "prefixed inline dirty output");
 }
 
 void test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled()

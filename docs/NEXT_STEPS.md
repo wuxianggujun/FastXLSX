@@ -5803,7 +5803,13 @@ source cells and inline-string cells without text become explicit blank records,
 `t="b"` source cells become booleans, and empty inline text remains
 `CellValue::text("")`. This documents the current supported-value floor without
 implying date support, error-token validation, rich-text preservation, style/sharedStrings
-migration, cached formula preservation, or metadata synchronization.
+migration, or metadata synchronization.
+Those supported-value dirty projections now also fresh-reopen through the public
+sparse views for explicit blanks, booleans, empty text, scalar/formula fallbacks,
+`t="str"` cells, flattened inline rich text, and prefixed local-name wrappers.
+The checks bind saved XML projections to `used_range()`, `sparse_cells()`,
+`row_cells()`, `column_cells()`, and direct reads without expanding into
+rich-text preservation, cached formula preservation, or metadata synchronization.
 Empty source worksheet materialization is pinned as well: worksheets with no
 `sheetData` and worksheets with self-closing `<sheetData/>` load as empty sparse
 stores, stay clean until mutation, and later save through the standalone

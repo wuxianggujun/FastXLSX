@@ -285,6 +285,8 @@ void test_public_worksheet_editor_materializes_source_error_cells()
         write_two_sheet_source("fastxlsx-workbook-editor-public-source-error-cells-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-source-error-cells-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-error-cells-dirty-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -345,6 +347,19 @@ void test_public_worksheet_editor_materializes_source_error_cells()
         fastxlsx::CellRange {1, 1, 2, 4},
         expected_cells,
         "source error cell dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source error cell post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source error cell post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source error cell post-dirty no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        expected_cells,
+        "source error cell post-dirty no-op output");
 }
 
 void test_public_worksheet_editor_ignores_formula_cached_result_types()

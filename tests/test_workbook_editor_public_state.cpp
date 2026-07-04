@@ -7340,7 +7340,34 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
     check(!editor.last_edit_error().has_value(),
         "sparse_cells read should not update last_edit_error");
 
+    const auto check_saved_sparse_snapshots =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& saved_cells, const char* message) {
+            check(saved_cells.size() == 4 &&
+                    saved_cells[0].reference.row == 1 &&
+                    saved_cells[0].reference.column == 1 &&
+                    saved_cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_cells[0].value.text_value() == "changed-after-snapshot" &&
+                    saved_cells[1].reference.row == 1 &&
+                    saved_cells[1].reference.column == 2 &&
+                    saved_cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    saved_cells[1].value.number_value() == 1.0 &&
+                    saved_cells[2].reference.row == 3 &&
+                    saved_cells[2].reference.column == 2 &&
+                    saved_cells[2].value.kind() == fastxlsx::CellValueKind::Blank &&
+                    saved_cells[3].reference.row == 4 &&
+                    saved_cells[3].reference.column == 4 &&
+                    saved_cells[3].value.kind() == fastxlsx::CellValueKind::Text &&
+                    saved_cells[3].value.text_value() == "snapshot-new",
+                message);
+        };
+
     editor.save_as(output);
+    check_saved_sparse_snapshots(sheet.sparse_cells(),
+        "sparse_cells saved session should keep row-major full sparse snapshots");
+    check(!sheet.has_pending_changes(),
+        "sparse_cells saved-session read should keep the materialized sheet clean");
+    check(!editor.last_edit_error().has_value(),
+        "sparse_cells saved-session read should keep diagnostics clear");
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "sparse_cells snapshot save should leave the source package unchanged");
@@ -7404,6 +7431,12 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
         "sparse_cells snapshot no-op output should match the first materialized output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "sparse_cells snapshot no-op save should leave the source package unchanged");
+    check_saved_sparse_snapshots(sheet.sparse_cells(),
+        "sparse_cells no-op saved session should keep row-major full sparse snapshots");
+    check(!sheet.has_pending_changes(),
+        "sparse_cells no-op saved-session read should keep the materialized sheet clean");
+    check(!editor.last_edit_error().has_value(),
+        "sparse_cells no-op saved-session read should keep diagnostics clear");
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -7432,6 +7465,12 @@ void test_public_worksheet_editor_sparse_cells_snapshot()
         "sparse_cells snapshot second no-op output should match the first no-op output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "sparse_cells snapshot second no-op save should leave the source package unchanged");
+    check_saved_sparse_snapshots(sheet.sparse_cells(),
+        "sparse_cells second no-op saved session should keep row-major full sparse snapshots");
+    check(!sheet.has_pending_changes(),
+        "sparse_cells second no-op saved-session read should keep the materialized sheet clean");
+    check(!editor.last_edit_error().has_value(),
+        "sparse_cells second no-op saved-session read should keep diagnostics clear");
     check_reopened_clean_sheet_output(second_noop_output, "Data",
         "sparse_cells snapshot second no-op save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {

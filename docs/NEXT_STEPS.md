@@ -1041,6 +1041,9 @@ source-backed, blank, inserted, and erased sparse cells cleanly.
 Its second no-op output also fresh-reopens with the same sparse count, bounds,
 post-snapshot A1 edit, source-backed B1, explicit B3 blank, inserted D4, and
 erased A2 absence.
+It now also calls full `sparse_cells()` directly on the same clean saved handle
+after the initial save and both clean no-op saves, pinning row-major full sparse
+snapshots while proving those reads do not re-dirty the materialized session.
 The bounded `sparse_cells(range)` snapshot path is also reopened to verify
 range-limited owning snapshots do not block later edits, outside-range cells
 survive, and erased source cells stay absent after save.

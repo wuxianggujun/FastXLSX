@@ -6277,6 +6277,8 @@ void test_public_worksheet_editor_a1_range_mutations_sparse_semantics()
     sheet.erase_cells("B2:C2");
     check(!editor.last_edit_error().has_value(),
         "missing-only A1 range erase should be a successful no-op");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "A1 range mutation dirty summary");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -9469,6 +9471,8 @@ void test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as()
         "public WorksheetEditor erase_cell should remove the sparse record");
     check(sheet.cell_count() == 2,
         "public WorksheetEditor erase_cell should update sparse cell count");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "erase_cell dirty summary");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -9615,6 +9619,8 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
         "public WorksheetEditor range erase should dirty the materialized sheet");
     check(editor.has_pending_changes(),
         "public WorksheetEditor range erase should dirty the owning editor");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "range erase dirty summary");
 
     editor.save_as(first_output);
     check(!sheet.has_pending_changes(),

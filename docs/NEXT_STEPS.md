@@ -2828,6 +2828,9 @@ The matching failed-save retry path now repeats the clean no-op save as well,
 proving rejected source overwrite recovery leaves later no-op packages
 byte-stable while staged Patch handoff state and fresh two-sheet readback stay
 unchanged.
+The multi-sheet retry reopen/modify/no-op loop now repeats its clean no-op save
+before the later third-stage edits too, proving both no-op packages remain
+readable and byte-stable after subsequent materialized edits are flushed.
 The matching invalid-mutation and missing-query styled-session paths now carry
 the same clean/dirty/reopened materialized memory checks through their recovery
 shifts.

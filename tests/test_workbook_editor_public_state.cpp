@@ -59375,6 +59375,13 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_rows #REF formula live sparse_cells should expose shifted source and formula order");
         check_row_ref_sparse_cells(sheet.sparse_cells("A1:C3"),
             "delete_rows #REF formula live range sparse_cells should expose shifted source and formula order");
+        const std::array<fastxlsx::WorksheetCellReference, 3> row_ref_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {4, 3},
+            fastxlsx::WorksheetCellReference {3, 3},
+        };
+        check_row_ref_sparse_cells(sheet.sparse_cells(row_ref_requested_cells),
+            "delete_rows #REF formula live requested sparse_cells should skip the old formula coordinate");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
                 !sheet.contains_cell("C4"),
             "delete_rows #REF formula live contains_cell should match shifted represented state");
@@ -59390,7 +59397,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             R"(<c r="C3"><f>#REF!+A:A+#REF!+B3</f></c>)",
             "delete_rows save_as should persist row-out-of-bounds formula references as #REF!");
         const auto inspect_reopened_row_ref_formula =
-            [&check_row_ref_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_row_ref_sparse_cells, &row_ref_requested_cells](
+                fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "delete_rows #REF formula reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
@@ -59427,6 +59435,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_rows #REF formula reopened sparse_cells should expose shifted source and formula order");
                 check_row_ref_sparse_cells(reopened_sheet.sparse_cells("A1:C3"),
                     "delete_rows #REF formula reopened range sparse_cells should expose shifted source and formula order");
+                check_row_ref_sparse_cells(reopened_sheet.sparse_cells(row_ref_requested_cells),
+                    "delete_rows #REF formula reopened requested sparse_cells should skip the old formula coordinate");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
                         !reopened_sheet.contains_cell("C4"),
                     "delete_rows #REF formula reopened contains_cell should match shifted represented state");
@@ -59547,6 +59557,14 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_rows #REF formula post-noop live sparse_cells should expose formulas in sparse order");
         check_row_ref_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"),
             "delete_rows #REF formula post-noop live range sparse_cells should expose formulas in sparse order");
+        const std::array<fastxlsx::WorksheetCellReference, 4> row_ref_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {4, 3},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {3, 4},
+        };
+        check_row_ref_post_noop_sparse_cells(sheet.sparse_cells(row_ref_post_noop_requested_cells),
+            "delete_rows #REF formula post-noop live requested sparse_cells should skip the old formula coordinate");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
                 sheet.contains_cell("D3") && !sheet.contains_cell("C4"),
             "delete_rows #REF formula post-noop live contains_cell should match edited represented state");
@@ -59584,7 +59602,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_contains(post_noop_xml, R"(<c r="D3"><f>C3+A1</f></c>)",
             "delete_rows #REF formula post-noop save should write the post-noop formula");
         const auto inspect_reopened_row_ref_post_noop_formula =
-            [&check_row_ref_post_noop_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_row_ref_post_noop_sparse_cells, &row_ref_post_noop_requested_cells](
+                fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "delete_rows #REF formula post-noop save reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
@@ -59631,6 +59650,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_rows #REF formula post-noop sparse_cells should expose formulas in sparse order");
                 check_row_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells("A1:D3"),
                     "delete_rows #REF formula post-noop range sparse_cells should expose formulas in sparse order");
+                check_row_ref_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(row_ref_post_noop_requested_cells),
+                    "delete_rows #REF formula post-noop requested sparse_cells should skip the old formula coordinate");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
                         reopened_sheet.contains_cell("D3") && !reopened_sheet.contains_cell("C4"),
                     "delete_rows #REF formula post-noop contains_cell should match edited represented state");
@@ -59734,6 +59756,13 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_columns #REF formula live sparse_cells should expose shifted source and formula order");
         check_column_ref_sparse_cells(sheet.sparse_cells("A1:C1"),
             "delete_columns #REF formula live range sparse_cells should expose shifted source and formula order");
+        const std::array<fastxlsx::WorksheetCellReference, 3> column_ref_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 4},
+            fastxlsx::WorksheetCellReference {1, 3},
+        };
+        check_column_ref_sparse_cells(sheet.sparse_cells(column_ref_requested_cells),
+            "delete_columns #REF formula live requested sparse_cells should skip the old formula coordinate");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C1") &&
                 !sheet.contains_cell("B1") && !sheet.contains_cell("D1"),
             "delete_columns #REF formula live contains_cell should match shifted represented state");
@@ -59749,7 +59778,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             R"(<c r="C1"><f>#REF!+#REF!+1:1+C2</f></c>)",
             "delete_columns save_as should persist column-out-of-bounds formula references as #REF!");
         const auto inspect_reopened_column_ref_formula =
-            [&check_column_ref_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_column_ref_sparse_cells, &column_ref_requested_cells](
+                fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 2,
                     "delete_columns #REF formula reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
@@ -59790,6 +59820,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_columns #REF formula reopened sparse_cells should expose shifted source and formula order");
                 check_column_ref_sparse_cells(reopened_sheet.sparse_cells("A1:C1"),
                     "delete_columns #REF formula reopened range sparse_cells should expose shifted source and formula order");
+                check_column_ref_sparse_cells(reopened_sheet.sparse_cells(column_ref_requested_cells),
+                    "delete_columns #REF formula reopened requested sparse_cells should skip the old formula coordinate");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C1") &&
                         !reopened_sheet.contains_cell("B1") && !reopened_sheet.contains_cell("D1"),
                     "delete_columns #REF formula reopened contains_cell should match shifted represented state");
@@ -59914,6 +59946,14 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
             "delete_columns #REF formula post-noop live sparse_cells should expose formulas in sparse order");
         check_column_ref_post_noop_sparse_cells(sheet.sparse_cells("A1:D1"),
             "delete_columns #REF formula post-noop live range sparse_cells should expose formulas in sparse order");
+        const std::array<fastxlsx::WorksheetCellReference, 4> column_ref_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {1, 3},
+            fastxlsx::WorksheetCellReference {1, 4},
+        };
+        check_column_ref_post_noop_sparse_cells(sheet.sparse_cells(column_ref_post_noop_requested_cells),
+            "delete_columns #REF formula post-noop live requested sparse_cells should skip the deleted column");
         check(sheet.contains_cell("A1") && sheet.contains_cell("C1") &&
                 sheet.contains_cell("D1") && !sheet.contains_cell("B1"),
             "delete_columns #REF formula post-noop live contains_cell should match edited represented state");
@@ -59951,7 +59991,8 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
         check_contains(post_noop_xml, R"(<c r="D1"><f>C1+A1</f></c>)",
             "delete_columns #REF formula post-noop save should write the post-noop formula");
         const auto inspect_reopened_column_ref_post_noop_formula =
-            [&check_column_ref_post_noop_sparse_cells](fastxlsx::WorksheetEditor& reopened_sheet) {
+            [&check_column_ref_post_noop_sparse_cells, &column_ref_post_noop_requested_cells](
+                fastxlsx::WorksheetEditor& reopened_sheet) {
                 check(reopened_sheet.cell_count() == 3,
                     "delete_columns #REF formula post-noop save reopened output should keep sparse count");
                 check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 4,
@@ -60002,6 +60043,9 @@ void test_public_worksheet_editor_shift_formula_out_of_bounds_references()
                     "delete_columns #REF formula post-noop sparse_cells should expose formulas in sparse order");
                 check_column_ref_post_noop_sparse_cells(reopened_sheet.sparse_cells("A1:D1"),
                     "delete_columns #REF formula post-noop range sparse_cells should expose formulas in sparse order");
+                check_column_ref_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(column_ref_post_noop_requested_cells),
+                    "delete_columns #REF formula post-noop requested sparse_cells should skip the deleted column");
                 check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C1") &&
                         reopened_sheet.contains_cell("D1") && !reopened_sheet.contains_cell("B1"),
                     "delete_columns #REF formula post-noop contains_cell should match edited represented state");

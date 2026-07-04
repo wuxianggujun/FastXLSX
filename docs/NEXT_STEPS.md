@@ -557,6 +557,9 @@ row-major order for the shifted source/formula cells before save, after
 fresh-reopen, and after the later dirty formula edit.
 They now mirror those checks through A1 range `sparse_cells()` reads for the
 same shifted and post-noop `#REF!` formula snapshots.
+They now also exercise coordinate-batch `sparse_cells()` reads with stale
+pre-shift coordinates skipped while the shifted and post-noop formula cells stay
+visible.
 Their live and fresh-reopen checks now also cover `contains_cell()` for shifted
 source/formula cells, deleted old coordinates, and the later post-noop formula
 edits.

@@ -1286,6 +1286,16 @@ void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_c
         "no-op save_as after read-only materialization should preserve source shared string indexes");
     check_not_contains(worksheet_xml, R"(t="inlineStr")",
         "no-op save_as after read-only materialization should not flush inline-string projection");
+
+    const ReopenedSourceSuccessCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("noop-shared-a")},
+        {1, 2, fastxlsx::CellValue::text("noop-shared-b")},
+    };
+    check_reopened_source_success_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 1, 2},
+        expected_cells,
+        "read-only materialized no-op output");
 }
 
 } // namespace

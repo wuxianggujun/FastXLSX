@@ -5858,9 +5858,12 @@ Clean read-only materialized sessions are pinned as no-op save state too:
 opening a `WorksheetEditor`, reading source shared string cells, and leaving the
 sheet clean does not queue pending edits or dirty materialized names, and
 `WorkbookEditor::save_as()` keeps the source package copy-original roundtrip
-instead of flushing the standalone sparse worksheet projection. This is not
-clean-session commit semantics, in-place save, transaction snapshot,
-sharedStrings migration, or relationship repair.
+instead of flushing the standalone sparse worksheet projection. The copy-original
+output now also fresh-reopens through public `WorksheetEditor` sparse views to
+verify source shared string values, `used_range()`, `row_cells()`,
+`column_cells()`, direct reads, and clean state. This is not clean-session
+commit semantics, in-place save, transaction snapshot, sharedStrings migration,
+or relationship repair.
 Prefixed source sharedStrings are now pinned on the same read-only
 materialization path: `sst` / `si` / `t` / `r` element names may be prefixed and
 are matched by local-name for public `WorksheetEditor` materialization, no-op

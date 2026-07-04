@@ -1083,14 +1083,16 @@ void check_public_state_renamed_insert_formula_saved_reacquire_audit(
         editor, prefix + " post-save reacquire source scan");
 }
 
-void check_public_state_single_data_dirty_materialized_summary(
+void check_public_state_single_named_dirty_materialized_summary(
     const fastxlsx::WorkbookEditor& editor,
     const fastxlsx::WorksheetEditor& sheet,
+    std::string_view worksheet_name,
     std::size_t expected_pending_change_count,
     std::string_view scenario,
     const std::optional<std::string>& expected_last_edit_error = std::nullopt)
 {
     const std::string prefix = std::string(scenario);
+    const std::string expected_name = std::string(worksheet_name);
     const std::size_t expected_cell_count = sheet.cell_count();
     const std::size_t expected_memory_usage = sheet.estimated_memory_usage();
 
@@ -1102,8 +1104,8 @@ void check_public_state_single_data_dirty_materialized_summary(
         prefix + " should expose the expected last_edit_error state");
     check_workbook_editor_no_replacement_diagnostics(
         editor, prefix + " should not expose replacement diagnostics");
-    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
-        prefix + " should expose Data as the dirty materialized worksheet");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{expected_name},
+        prefix + " should expose the expected dirty materialized worksheet");
     check(editor.pending_materialized_cell_count() == expected_cell_count,
         prefix + " should expose the dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == expected_memory_usage,
@@ -1115,10 +1117,10 @@ void check_public_state_single_data_dirty_materialized_summary(
         prefix + " should expose one dirty materialized summary");
     if (summaries.size() == 1) {
         const auto& summary = summaries[0];
-        check(summary.source_name == "Data" &&
-                summary.planned_name == "Data" &&
+        check(summary.source_name == expected_name &&
+                summary.planned_name == expected_name &&
                 !summary.renamed,
-            prefix + " summary should identify Data without rename state");
+            prefix + " summary should identify the worksheet without rename state");
         check(!summary.sheet_data_replaced &&
                 !summary.targeted_cells_replaced &&
                 summary.replacement_cell_count == 0 &&
@@ -1129,6 +1131,18 @@ void check_public_state_single_data_dirty_materialized_summary(
                 summary.estimated_materialized_memory_usage == expected_memory_usage,
             prefix + " summary should match the dirty materialized state");
     }
+}
+
+void check_public_state_single_data_dirty_materialized_summary(
+    const fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditor& sheet,
+    std::size_t expected_pending_change_count,
+    std::string_view scenario,
+    const std::optional<std::string>& expected_last_edit_error = std::nullopt)
+{
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Data", expected_pending_change_count, scenario,
+        expected_last_edit_error);
 }
 
 void check_public_state_renamed_dirty_materialized_summary_memory(
@@ -8707,6 +8721,8 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style clear should dirty the materialized sheet");
     check(editor.pending_materialized_cell_count() == 3,
         "snapshot source-style clear should keep aggregate materialized count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "snapshot source-style clear dirty summary");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -8804,6 +8820,9 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style post-noop edit should dirty the saved handle");
     check(editor.pending_materialized_cell_count() == 3,
         "snapshot source-style post-noop edit should keep aggregate materialized count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 1,
+        "snapshot source-style post-noop edit dirty summary");
 
     editor.save_as(post_noop_output);
     check(!sheet.has_pending_changes(),
@@ -8900,6 +8919,9 @@ void test_public_worksheet_editor_snapshots_preserve_source_style_handles()
         "snapshot source-style reopened post-noop edit should dirty the reopened handle");
     check(reopened_editor.pending_materialized_cell_count() == 3,
         "snapshot source-style reopened post-noop edit should keep aggregate materialized count");
+    check_public_state_single_named_dirty_materialized_summary(
+        reopened_editor, reopened_sheet, "Styled", 0,
+        "snapshot source-style reopened post-noop edit dirty summary");
 
     reopened_editor.save_as(reopened_post_noop_output);
     check(!reopened_sheet.has_pending_changes(),

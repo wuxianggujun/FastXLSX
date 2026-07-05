@@ -2645,6 +2645,8 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-output.xlsx");
     const std::filesystem::path recovered_output = artifact(
         "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-output.xlsx");
+    const std::filesystem::path recovered_noop_output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-noop-output.xlsx");
     const std::string target_name = "RenamedDataLongerSheetName01";
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -2756,6 +2758,48 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "successful retry output should persist the recovered rewritten formula");
     check_not_contains(recovered_formula_sheet_xml, target_name,
         "successful retry formula output should not leak the rejected long rename");
+    check(!formula_sheet.has_pending_changes(),
+        "successful retry save_as should clean the recovered formula session");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful retry save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful retry save_as should clear dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful retry save_as should clear dirty materialized memory");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_retry =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_retry = editor.pending_worksheet_edits();
+
+    editor.save_as(recovered_noop_output);
+    const auto recovered_noop_entries =
+        fastxlsx::test::read_zip_entries(recovered_noop_output);
+    check(recovered_noop_entries == recovered_entries,
+        "successful retry clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "successful retry no-op save_as should keep the formula session clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful retry no-op save_as should keep materialized diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_retry,
+        "successful retry after formula rewrite guard no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_retry),
+        "successful retry no-op save_as should preserve pending summaries");
+
+    fastxlsx::WorkbookEditor reopened_noop =
+        fastxlsx::WorkbookEditor::open(recovered_noop_output);
+    check(reopened_noop.has_worksheet("R") && !reopened_noop.has_worksheet("Data"),
+        "reopened recovered no-op output should expose the short recovered catalog");
+    const fastxlsx::CellValue reopened_noop_formula =
+        reopened_noop.worksheet("Formula").get_cell("A1");
+    check(reopened_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_formula.text_value().find("'R'!A1") != std::string::npos,
+        "reopened recovered no-op output should expose the rewritten formula");
+    check(reopened_noop_formula.text_value().find(target_name) == std::string::npos,
+        "reopened recovered no-op output should not leak the rejected long rename");
 }
 
 

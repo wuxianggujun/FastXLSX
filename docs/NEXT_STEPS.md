@@ -4923,6 +4923,10 @@ now proves the diagnostic is cleared, the materialized formula is rewritten, and
 the rejected target name does not leak into the recovered workbook. This is
 failure/retry state hygiene only; it is not broader formula rewrite semantics,
 formula evaluation, dependency graphing, or calcChain rebuild.
+That recovery branch now also has the matching clean no-op handoff: after the
+short-name retry save clears materialized diagnostics, a follow-up `save_as()`
+is byte-stable, preserves public save-state/edit summaries, and fresh-reopens
+with the recovered formula without leaking the rejected long target.
 P8.678 broadens that success-side diagnostic hygiene from the guard recovery
 case to the representative explicit formula rewrite paths. The definedName-only,
 materialized worksheet formula, combined definedName + materialized formula,

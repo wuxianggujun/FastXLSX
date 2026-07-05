@@ -4129,6 +4129,10 @@ no-op gate in the dedicated formula-rewrite test target: after the first
 `save_as()` flushes the rewritten formula session, dirty materialized
 diagnostics return to zero, a second `save_as()` writes byte-identical package
 entries, and the no-op output fresh-reopens with the rewritten formula text.
+The combined definedName + materialized worksheet formula policy now has the
+same gate, proving the small workbook metadata rewrite and dirty
+`WorksheetEditor` auto-flush settle into a byte-stable clean no-op output
+together.
 The guardrail path is now covered as well: if that opt-in materialized formula
 rewrite would exceed the existing `WorksheetEditorOptions::memory_budget_bytes`
 budget, the public `rename_sheet()` call fails before catalog/package mutation,

@@ -1695,6 +1695,9 @@ shrunk bounds.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.
+Those exact `max_cells` row/column erase no-op paths now also pin saved-handle
+sparse, row, and column snapshots for erased source absence, preserved
+non-target cells, recovery cells, and clean diagnostics.
 The same row/column erase paths now cover exact `memory_budget_bytes` release:
 an oversized insertion fails first, the erase clears that diagnostic and lowers
 the sparse memory estimate, then a smaller insertion saves/reopens without

@@ -3,6 +3,7 @@
 #include "image_test_bytes.hpp"
 #include "zip_test_utils.hpp"
 
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -222,6 +223,132 @@ void test_streaming_writer_number_format_styles()
         "styled formula cell mismatch");
     check(worksheet_xml.find("s=\"0\"") == std::string::npos,
         "default style should not be serialized as s=\"0\"");
+}
+
+void test_streaming_writer_date_time_helpers_and_presets()
+{
+    const auto leap_day = std::chrono::year_month_day {
+        std::chrono::year {2024}, std::chrono::month {2}, std::chrono::day {29}};
+    const auto invalid_day = std::chrono::year_month_day {
+        std::chrono::year {2024}, std::chrono::month {2}, std::chrono::day {30}};
+
+    check(fastxlsx::date_time::excel_1900_date_serial(
+              {std::chrono::year {1900}, std::chrono::month {1}, std::chrono::day {1}})
+            == 1.0,
+        "Excel 1900 date serial should start at 1 for 1900-01-01");
+    check(fastxlsx::date_time::excel_1900_date_serial(
+              {std::chrono::year {1900}, std::chrono::month {2}, std::chrono::day {28}})
+            == 59.0,
+        "Excel 1900 date serial should map 1900-02-28 to 59");
+    check(fastxlsx::date_time::excel_1900_date_serial(
+              {std::chrono::year {1900}, std::chrono::month {3}, std::chrono::day {1}})
+            == 61.0,
+        "Excel 1900 date serial should preserve the serial-60 compatibility gap");
+    check(fastxlsx::date_time::excel_1900_date_serial(leap_day) == 45351.0,
+        "Excel 1900 date serial mismatch for 2024-02-29");
+    check(fastxlsx::date_time::excel_1900_time_fraction(std::chrono::hours {12}) == 0.5,
+        "Excel time fraction mismatch for noon");
+    check(fastxlsx::date_time::excel_1900_date_time_serial(
+              leap_day, std::chrono::hours {12})
+            == 45351.5,
+        "Excel date-time serial mismatch for 2024-02-29 noon");
+
+    check_fastxlsx_error(
+        [invalid_day] { static_cast<void>(fastxlsx::date_time::excel_1900_date_serial(invalid_day)); },
+        "date helper should reject invalid Gregorian dates");
+    check_fastxlsx_error(
+        [] {
+            static_cast<void>(fastxlsx::date_time::excel_1900_date_serial(
+                {std::chrono::year {1899}, std::chrono::month {12}, std::chrono::day {31}}));
+        },
+        "date helper should reject dates before Excel's 1900 date-system range");
+    check_fastxlsx_error(
+        [] {
+            static_cast<void>(fastxlsx::date_time::excel_1900_time_fraction(
+                std::chrono::milliseconds {-1}));
+        },
+        "time helper should reject negative time-of-day values");
+    check_fastxlsx_error(
+        [] {
+            static_cast<void>(fastxlsx::date_time::excel_1900_time_fraction(
+                std::chrono::hours {24}));
+        },
+        "time helper should reject 24:00:00 as an out-of-day value");
+
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-styles-date-time-presets.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const auto date_style = workbook.add_style(fastxlsx::style_preset::date_iso());
+    const auto time_style = workbook.add_style(fastxlsx::style_preset::time_hh_mm_ss());
+    const auto date_time_style = workbook.add_style(fastxlsx::style_preset::date_time_iso());
+
+    auto sheet = workbook.add_worksheet("DateTime");
+    sheet.append_row({
+        fastxlsx::CellView::text("Date"),
+        fastxlsx::CellView::text("Time"),
+        fastxlsx::CellView::text("DateTime"),
+    });
+    sheet.append_row({
+        fastxlsx::CellView::number(
+            fastxlsx::date_time::excel_1900_date_serial(leap_day)).with_style(date_style),
+        fastxlsx::CellView::number(
+            fastxlsx::date_time::excel_1900_time_fraction(std::chrono::hours {12}))
+            .with_style(time_style),
+        fastxlsx::CellView::number(
+            fastxlsx::date_time::excel_1900_date_time_serial(
+                leap_day, std::chrono::hours {12}))
+            .with_style(date_time_style),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "date/time preset xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check(entries.contains("xl/styles.xml"), "missing date/time preset styles part");
+    check(!entries.contains("xl/worksheets/_rels/sheet1.xml.rels"),
+        "date/time presets should not create worksheet relationships");
+    check(!entries.contains("xl/sharedStrings.xml"),
+        "date/time preset inline sample should not create shared strings");
+    check(!entries.contains("xl/calcChain.xml"),
+        "date/time preset sample should not create calcChain");
+
+    const auto& styles_xml = entries.at("xl/styles.xml");
+    check_contains(styles_xml, R"(<numFmts count="3">)",
+        "date/time presets should create three custom number formats");
+    check_contains(styles_xml, R"(<numFmt numFmtId="164" formatCode="yyyy-mm-dd"/>)",
+        "date preset number format mismatch");
+    check_contains(styles_xml, R"(<numFmt numFmtId="165" formatCode="hh:mm:ss"/>)",
+        "time preset number format mismatch");
+    check_contains(styles_xml,
+        R"(<numFmt numFmtId="166" formatCode="yyyy-mm-dd hh:mm:ss"/>)",
+        "date-time preset number format mismatch");
+    check_contains(styles_xml,
+        R"(<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>)",
+        "date/time preset cellXfs count mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="164" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "date preset xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "time preset xf mismatch");
+    check_contains(styles_xml,
+        R"(<xf numFmtId="166" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>)",
+        "date-time preset xf mismatch");
+
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "date/time preset worksheet dimension mismatch");
+    check_contains(worksheet_xml, R"(<c r="A2" s="1"><v>45351</v></c>)",
+        "date helper should write a numeric date serial");
+    check_contains(worksheet_xml, R"(<c r="B2" s="2"><v>0.5</v></c>)",
+        "time helper should write a numeric time fraction");
+    check_contains(worksheet_xml, R"(<c r="C2" s="3"><v>45351.5</v></c>)",
+        "date-time helper should write a numeric date-time serial");
+    check(worksheet_xml.find("t=\"d\"") == std::string::npos,
+        "date/time helpers should not create a dedicated date cell type");
+    check(worksheet_xml.find("s=\"0\"") == std::string::npos,
+        "date/time preset sample should not serialize s=\"0\"");
 }
 
 void test_streaming_writer_alignment_styles()
@@ -1119,6 +1246,7 @@ int main()
 {
     try {
         test_streaming_writer_number_format_styles();
+        test_streaming_writer_date_time_helpers_and_presets();
         test_streaming_writer_alignment_styles();
         test_streaming_writer_font_styles();
         test_streaming_writer_fill_styles();

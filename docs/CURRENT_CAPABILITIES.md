@@ -8,7 +8,8 @@
 
 - `WorkbookWriter`、`WorksheetWriter`、`CellView`。
 - 按 worksheet/row 顺序输出，适合大型有序导出。
-- 支持当前 public headers 中的数字、文本、布尔、公式、显式 blank cell 和稀疏行写入，以及 string strategy、style registry、worksheet metadata、table、conditional formatting 和 PNG/JPEG insertion 窄切片。
+- 支持当前 public headers 中的数字、文本、布尔、公式、显式 blank cell 和稀疏行写入，以及 string strategy、style registry、Excel 1900 date/time serial helper、number-format preset、worksheet metadata、table、conditional formatting 和 PNG/JPEG insertion 窄切片。
+- Date/time helper 只生成 numeric cell 所需的 1900 date-system serial；调用方仍需显式注册并附加 number-format style，不支持 1904 date system，也不推断时区。
 - 不支持历史行随机修改；不得引入 worksheet DOM 或 dense matrix。
 
 ### Small new workbook

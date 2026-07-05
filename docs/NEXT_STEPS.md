@@ -4931,6 +4931,9 @@ It now continues once more from that clean no-op state: the same borrowed
 `WorksheetEditor` handle can replace the recovered formula, dirty only the
 formula sheet again, flush to a fresh workbook, preserve the previous no-op
 package, and settle into another byte-stable no-op save/reopen cycle.
+That post-noop reuse now also pins diagnostic hygiene: the later successful
+formula edit keeps `last_edit_error()` clear through public inspection,
+`save_as()`, and the final clean no-op save.
 P8.678 broadens that success-side diagnostic hygiene from the guard recovery
 case to the representative explicit formula rewrite paths. The definedName-only,
 materialized worksheet formula, combined definedName + materialized formula,
@@ -4976,6 +4979,8 @@ It now also continues from that clean no-op state: the same borrowed
 `Formula` again, preserve the cross-sheet replacement diagnostics, write a
 fresh post-noop output, and settle into another byte-stable no-op save/reopen
 cycle without mutating the earlier no-op package.
+That same replacement-mixing post-noop edit now also proves successful reuse
+keeps `last_edit_error()` empty across public inspection and both save steps.
 P8.682 splits the formula-heavy WorkbookEditor public tests out of the large
 `tests/test_workbook_editor.cpp` facade shard. The new
 `tests/test_workbook_editor_formula_rewrite.cpp` target owns formula reference

@@ -2646,6 +2646,9 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
         "post-noop edit after same-sheet replacement boundary should dirty Formula again");
     check(formula_sheet.get_cell("A1").text_value() == post_noop_formula,
         "post-noop edit after same-sheet replacement boundary should update the live formula");
+    check(!editor.last_edit_error().has_value(),
+        "post-noop edit after same-sheet replacement boundary should keep last_edit_error clear");
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
     const std::vector<std::string> post_noop_dirty_names =
         editor.pending_materialized_worksheet_names();
     check(post_noop_dirty_names.size() == 1 && post_noop_dirty_names[0] == "Formula",
@@ -2687,6 +2690,8 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
             editor.estimated_pending_replacement_memory_usage()
                 == replacement_memory_before_save,
         "post-noop edit save_as should keep replacement diagnostics stable");
+    check(!editor.last_edit_error().has_value(),
+        "post-noop edit save_as should keep last_edit_error clear");
     const WorkbookEditorPublicSaveStateSnapshot save_state_after_post_noop_edit =
         workbook_editor_public_save_state_snapshot(editor);
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
@@ -2709,6 +2714,8 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
             editor.estimated_pending_replacement_memory_usage()
                 == replacement_memory_before_save,
         "post-noop edit clean no-op save_as should keep replacement diagnostics stable");
+    check(!editor.last_edit_error().has_value(),
+        "post-noop edit clean no-op save_as should keep last_edit_error clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_after_post_noop_edit,
         "post-noop edit after same-sheet replacement boundary no-op save_as");
@@ -2901,6 +2908,9 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "post-noop edit after formula rewrite guard recovery should dirty the formula session");
     check(formula_sheet.get_cell("A1").text_value() == "'R'!A1",
         "post-noop edit after formula rewrite guard recovery should update the live formula");
+    check(!editor.last_edit_error().has_value(),
+        "post-noop edit after formula rewrite guard recovery should keep last_edit_error clear");
+    check_public_inspection_preserves_last_edit_error(editor, std::nullopt);
     const std::vector<std::string> post_noop_dirty_names =
         editor.pending_materialized_worksheet_names();
     check(post_noop_dirty_names.size() == 1 && post_noop_dirty_names[0] == "Formula",
@@ -2931,6 +2941,8 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "post-noop edit save_as should clear materialized diagnostics again");
+    check(!editor.last_edit_error().has_value(),
+        "post-noop edit save_as should keep last_edit_error clear");
     const WorkbookEditorPublicSaveStateSnapshot save_state_after_post_noop_edit =
         workbook_editor_public_save_state_snapshot(editor);
     const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
@@ -2947,6 +2959,8 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "post-noop edit clean no-op save_as should keep materialized diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "post-noop edit clean no-op save_as should keep last_edit_error clear");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_after_post_noop_edit,
         "post-noop edit after formula rewrite guard recovery no-op save_as");

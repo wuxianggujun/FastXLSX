@@ -3225,7 +3225,9 @@ reference translation. Structural rewrite coverage now also pins quoted and
 external-workbook qualifiers through row deletion / column insertion while
 leaving structured references and string literals untouched; this is a reusable
 foundation for later dependency graphing, sheet-rename formula sync, and
-calcChain policy work, not an in-process formula evaluator.
+calcChain policy work, not an in-process formula evaluator. The same structural
+rewrite guard now covers 3D and external-3D qualifier text as lexical boundaries,
+without claiming local sheet semantics or cross-workbook formula synchronization.
 The representative source-formula dirty-save outputs now also fresh-reopen
 through the public `WorkbookEditor` facade: ordinary formulas with stale cached
 values, source error cells, cached-result type variants, and source-order shared

@@ -635,6 +635,8 @@ column views and erased dirty-cell absence.
 The exact-budget `erase_cells()` release no-op path now pins its saved live
 handle as well, including the lone recovery `A3` row/column views, erased
 source-cell absence, and clean materialized diagnostics.
+The range and batch exact-budget `erase_cells()` release no-op paths now share
+that saved-handle coverage for their recovery `A3` cells and clean summaries.
 The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet

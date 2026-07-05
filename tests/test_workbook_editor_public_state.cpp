@@ -10897,6 +10897,69 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
     const std::filesystem::path source =
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-erase-cells-memory-source.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto check_erase_cells_memory_release_saved_snapshot =
+        [](fastxlsx::WorkbookEditor& editor,
+            fastxlsx::WorksheetEditor& handle,
+            std::string_view expected_text,
+            std::size_t expected_pending_count,
+            std::string_view prefix) {
+            const std::string label(prefix);
+            const std::string expected(expected_text);
+            check(handle.cell_count() == 1,
+                label + " should keep the recovery sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 1,
+                label + " should expose the recovery cell only");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 3 &&
+                        cells[0].reference.column == 1 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == expected,
+                    label + " should keep A3 recovery text");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                handle.row_cells(3);
+            check(row_three.size() == 1 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == expected,
+                label + " should keep row-three recovery text");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                handle.column_cells(1);
+            check(column_one.size() == 1 &&
+                    column_one[0].reference.row == 3 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == expected,
+                label + " should keep column-one recovery text");
+            check(!handle.try_cell("A1").has_value(),
+                label + " should keep erased A1 absent");
+            check(!handle.try_cell("B1").has_value(),
+                label + " should keep erased B1 absent");
+            check(!handle.try_cell("A2").has_value(),
+                label + " should keep erased A2 absent");
+            check_cell_range_equals(handle.used_range(), 3, 1, 3, 1,
+                label + " should keep compact bounds");
+            check(!handle.has_pending_changes(),
+                label + " should keep the handle clean");
+            check(editor.pending_change_count() == expected_pending_count,
+                label + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                label + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                label + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                label + " should keep dirty materialized memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                label + " should keep dirty summaries empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor,
+                label + " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                label + " should keep diagnostics clear");
+        };
 
     {
         const std::filesystem::path output =
@@ -11010,6 +11073,12 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
             editor, "erase_cells range memory-budget release noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "erase_cells range memory-budget release noop save should keep diagnostics clear");
+        check_erase_cells_memory_release_saved_snapshot(
+            editor,
+            sheet,
+            "range-cells-mb-release",
+            pending_count_after_save,
+            "erase_cells range memory-budget release saved handle");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
             "erase_cells range memory-budget release noop save");
@@ -11144,6 +11213,12 @@ void test_public_worksheet_editor_erase_cells_memory_budget_release()
             editor, "erase_cells batch memory-budget release noop save should not queue replacement diagnostics");
         check(!editor.last_edit_error().has_value(),
             "erase_cells batch memory-budget release noop save should keep diagnostics clear");
+        check_erase_cells_memory_release_saved_snapshot(
+            editor,
+            sheet,
+            "batch-cells-mb-release",
+            pending_count_after_save,
+            "erase_cells batch memory-budget release saved handle");
         check_workbook_editor_public_save_state_preserved(
             editor, save_state_before_noop,
             "erase_cells batch memory-budget release noop save");

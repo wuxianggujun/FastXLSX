@@ -6332,6 +6332,12 @@ in-memory edit appends to the existing string table, the dirty output
 fresh-reopens through public sparse views, a follow-up no-op `save_as()` is
 byte-stable, and the source / prior no-op packages remain unchanged. This is
 not broad sharedStrings migration, schema repair, or in-place save.
+That same base fixture now continues after the post-dirty no-op save: the
+borrowed `WorksheetEditor` can append a second plain shared string, preserve
+the first appended index, advance `count` / `uniqueCount`, leave the earlier
+dirty/no-op packages unchanged, and settle into another byte-stable no-op
+save/reopen cycle. This remains narrow small-file In-memory sharedStrings
+append evidence, not full sharedStrings migration.
 The base rich sharedStrings fixture now also carries dirty save/reopen
 evidence: a later in-memory edit appends a plain shared string, preserves source
 rich-run markup bytes, leaves the source and prior no-op output unchanged,

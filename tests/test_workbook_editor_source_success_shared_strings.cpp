@@ -768,6 +768,10 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         artifact("fastxlsx-workbook-editor-public-sharedstrings-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-dirty-noop-output.xlsx");
+    const std::filesystem::path post_dirty_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-post-dirty-output.xlsx");
+    const std::filesystem::path post_dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-post-dirty-noop-output.xlsx");
     editor.save_as(noop_output);
     check(!sheet.has_pending_changes(),
         "no-op save_as after source sharedStrings materialization should keep Data clean");
@@ -865,6 +869,83 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         expected_cells,
         fastxlsx::CellRange {1, 1, 3, 3},
         "source sharedStrings post-dirty no-op output");
+
+    sheet.set_cell("D3", fastxlsx::CellValue::text("second-inline"));
+    check(sheet.has_pending_changes(),
+        "source sharedStrings post-dirty edit should dirty Data again");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "source sharedStrings post-dirty edit before save");
+    check(!editor.last_edit_error().has_value(),
+        "source sharedStrings post-dirty edit before save should keep last_edit_error clear");
+    editor.save_as(post_dirty_output);
+
+    const auto post_dirty_entries = fastxlsx::test::read_zip_entries(post_dirty_output);
+    const std::string post_dirty_worksheet_xml =
+        post_dirty_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_dirty_worksheet_xml,
+        R"(<c r="C3" t="s"><v>3</v></c>)",
+        "source sharedStrings post-dirty edit should preserve the first appended shared string index");
+    check_contains(post_dirty_worksheet_xml,
+        R"(<c r="D3" t="s"><v>4</v></c>)",
+        "source sharedStrings post-dirty edit should append the next shared string index");
+    const std::string post_dirty_shared_strings =
+        post_dirty_entries.at("xl/sharedStrings.xml");
+    check_contains(post_dirty_shared_strings,
+        R"(<si><t>new-inline</t></si><si><t>second-inline</t></si></sst>)",
+        "source sharedStrings post-dirty edit should append new strings in save order");
+    check_contains(post_dirty_shared_strings, R"(count="6")",
+        "source sharedStrings post-dirty edit should advance conservative count again");
+    check_contains(post_dirty_shared_strings, R"(uniqueCount="5")",
+        "source sharedStrings post-dirty edit should advance uniqueCount again");
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings post-dirty edit save should clean Data again");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "source sharedStrings post-dirty edit save should clear materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "source sharedStrings post-dirty edit save");
+    check(!editor.last_edit_error().has_value(),
+        "source sharedStrings post-dirty edit save should keep last_edit_error clear");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source sharedStrings post-dirty edit save should not mutate the prior dirty no-op output");
+
+    const ReopenedLazySharedStringsCell post_dirty_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("shared-a")},
+        {1, 2, fastxlsx::CellValue::text("A&B <C>")},
+        {2, 1, fastxlsx::CellValue::text("shared-a")},
+        {3, 3, fastxlsx::CellValue::text("new-inline")},
+        {3, 4, fastxlsx::CellValue::text("second-inline")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        post_dirty_output,
+        post_dirty_expected_cells,
+        fastxlsx::CellRange {1, 1, 3, 4},
+        "source sharedStrings post-dirty edit output");
+
+    editor.save_as(post_dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings post-dirty edit clean no-op save should keep Data clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "source sharedStrings post-dirty edit clean no-op save should keep materialized diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "source sharedStrings post-dirty edit clean no-op save");
+    check(!editor.last_edit_error().has_value(),
+        "source sharedStrings post-dirty edit clean no-op save should keep last_edit_error clear");
+    check(fastxlsx::test::read_zip_entries(post_dirty_noop_output)
+            == post_dirty_entries,
+        "source sharedStrings post-dirty edit clean no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "source sharedStrings post-dirty edit clean no-op save should not mutate the first dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source sharedStrings post-dirty edit clean no-op save should not mutate the dirty no-op output");
+    check_reopened_shared_strings_dirty_output(
+        post_dirty_noop_output,
+        post_dirty_expected_cells,
+        fastxlsx::CellRange {1, 1, 3, 4},
+        "source sharedStrings post-dirty edit clean no-op output");
 }
 
 void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()

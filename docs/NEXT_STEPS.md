@@ -4124,6 +4124,11 @@ external-workbook qualifiers, 3D sheet ranges, string literals, and every
 non-materialized worksheet formula cell. It does not scan source worksheet XML,
 evaluate formulas, build a dependency graph, rebuild calcChain, or synchronize
 tables/drawings/charts/hyperlinks/relationships.
+The normal materialized formula rewrite save handoff now also has a clean
+no-op gate in the dedicated formula-rewrite test target: after the first
+`save_as()` flushes the rewritten formula session, dirty materialized
+diagnostics return to zero, a second `save_as()` writes byte-identical package
+entries, and the no-op output fresh-reopens with the rewritten formula text.
 The guardrail path is now covered as well: if that opt-in materialized formula
 rewrite would exceed the existing `WorksheetEditorOptions::memory_budget_bytes`
 budget, the public `rename_sheet()` call fails before catalog/package mutation,

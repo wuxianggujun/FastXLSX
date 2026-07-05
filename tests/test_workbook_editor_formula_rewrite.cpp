@@ -1548,6 +1548,8 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
         "fastxlsx-workbook-editor-materialized-formula-rewrite-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-formula-rewrite-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-formula-rewrite-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -1607,6 +1609,31 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
         "dirty projection should preserve 3D sheet-range references");
     check_contains(formula_sheet_xml, R"("Data!Z9")",
         "dirty projection should preserve string literals containing sheet-like text");
+    check(!formula_sheet.has_pending_changes(),
+        "materialized formula rewrite save_as should clean the WorksheetEditor session");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "materialized formula rewrite after save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "materialized formula rewrite after save_as should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "materialized formula rewrite after save_as should clear dirty materialized memory");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_flush =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_flush = editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "materialized formula rewrite clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "materialized formula rewrite no-op save_as should keep the session clean");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_flush,
+        "materialized formula rewrite after no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_flush),
+        "materialized formula rewrite no-op save_as should preserve pending summaries");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     const fastxlsx::CellValue reopened_formula =
@@ -1614,6 +1641,12 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
             reopened_formula.text_value() == expected_formula,
         "reopened output should expose the rewritten materialized formula text");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    const fastxlsx::CellValue reopened_noop_formula =
+        reopened_noop.worksheet("Formula").get_cell("A1");
+    check(reopened_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_formula.text_value() == expected_formula,
+        "reopened no-op output should expose the rewritten materialized formula text");
 }
 
 void test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas()

@@ -2445,6 +2445,8 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
         "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-source.xlsx");
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -2515,6 +2517,12 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
         "cross-sheet replacement should add to the queued formula rewrite rename");
     check(formula_sheet.get_cell("A1").text_value() == expected_formula,
         "cross-sheet replacement should not disturb the rewritten Formula session");
+    const std::vector<std::string> replacement_names_before_save =
+        editor.pending_replacement_worksheet_names();
+    const std::size_t replacement_count_before_save =
+        editor.pending_replacement_cell_count();
+    const std::size_t replacement_memory_before_save =
+        editor.estimated_pending_replacement_memory_usage();
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -2532,6 +2540,47 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
         "rejected same-sheet replacement should not leak into Formula output");
     check_contains(other_sheet_xml, "allowed-other-sheet-after-formula-rewrite",
         "cross-sheet replacement should save beside the rewritten Formula session");
+    check(!formula_sheet.has_pending_changes(),
+        "same-sheet replacement boundary save_as should clean the formula session");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "same-sheet replacement boundary save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "same-sheet replacement boundary save_as should clear dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "same-sheet replacement boundary save_as should clear dirty materialized memory");
+    check(editor.has_pending_replacement("Other Sheet") &&
+            editor.pending_replacement_worksheet_names() == replacement_names_before_save &&
+            editor.pending_replacement_cell_count() == replacement_count_before_save &&
+            editor.estimated_pending_replacement_memory_usage()
+                == replacement_memory_before_save,
+        "same-sheet replacement boundary save_as should preserve planned replacement diagnostics");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_flush =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_flush = editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "same-sheet replacement boundary clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "same-sheet replacement boundary no-op save_as should keep the formula session clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "same-sheet replacement boundary no-op save_as should keep materialized diagnostics clear");
+    check(editor.has_pending_replacement("Other Sheet") &&
+            editor.pending_replacement_worksheet_names() == replacement_names_before_save &&
+            editor.pending_replacement_cell_count() == replacement_count_before_save &&
+            editor.estimated_pending_replacement_memory_usage()
+                == replacement_memory_before_save,
+        "same-sheet replacement boundary no-op save_as should preserve planned replacement diagnostics");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_flush,
+        "same-sheet replacement boundary after no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_flush),
+        "same-sheet replacement boundary no-op save_as should preserve pending summaries");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.worksheet("Formula").get_cell("A1").text_value() == expected_formula,
@@ -2539,6 +2588,13 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
     check(reopened.worksheet("Other Sheet").get_cell("A1").text_value()
             == "allowed-other-sheet-after-formula-rewrite",
         "reopened same-sheet replacement boundary output should expose cross-sheet replacement");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    check(reopened_noop.worksheet("Formula").get_cell("A1").text_value()
+            == expected_formula,
+        "reopened same-sheet replacement boundary no-op output should expose rewritten formula");
+    check(reopened_noop.worksheet("Other Sheet").get_cell("A1").text_value()
+            == "allowed-other-sheet-after-formula-rewrite",
+        "reopened same-sheet replacement boundary no-op output should expose cross-sheet replacement");
 }
 
 void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()

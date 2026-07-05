@@ -4954,6 +4954,11 @@ session guard, preserve the rewritten formula and public rename state, and avoid
 queuing replacement diagnostics. A cross-sheet replacement on `Other Sheet`
 still succeeds, clears the guard diagnostic, and saves beside the rewritten
 formula state.
+The same Patch-mixing boundary now carries clean no-op save evidence: after
+the cross-sheet replacement and dirty materialized formula flush together,
+materialized diagnostics clear while the planned replacement diagnostics remain
+stable, the follow-up `save_as()` is byte-stable, and the no-op output
+fresh-reopens both the formula and replacement sheets.
 P8.682 splits the formula-heavy WorkbookEditor public tests out of the large
 `tests/test_workbook_editor.cpp` facade shard. The new
 `tests/test_workbook_editor_formula_rewrite.cpp` target owns formula reference

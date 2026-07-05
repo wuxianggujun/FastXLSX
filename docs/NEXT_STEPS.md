@@ -1704,6 +1704,9 @@ budget release across row/column ranges: after a rejected oversized insertion,
 erasing rows 1..2 or columns 1..2 clears diagnostics, drops the sparse store to
 empty, and a smaller recovery cell saves/reopens as the only represented cell
 without resurrecting erased source cells.
+The `erase_row()` and `erase_rows()` exact memory-budget release no-op paths
+now also pin saved-handle sparse, row, and column snapshots for erased source
+absence, recovery cells, and clean materialized diagnostics.
 The dirty-state save/reuse path now reopens both the first erased-cell save and
 the later post-save mutation output, verifying clean readback across repeated
 `save_as()` calls on the same materialized handle.

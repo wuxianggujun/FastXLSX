@@ -1686,6 +1686,9 @@ reopen without leaking rejected cells or mutating the source package.
 The saved outputs now also reacquire with the same exact `WorksheetEditorOptions`
 and perform a clean no-op `save_as()`, proving the released sparse budget remains
 usable after the first handoff without dirty diagnostics or rejected payloads.
+They now repeat that same-budget reacquired no-op save too, keeping all four
+delete-row/delete-column max-cells and memory-budget outputs byte-stable while
+the saved input packages and recovered sparse readback remain unchanged.
 The adjacent source-load options / memory-budget guard recoveries and mutation
 max-cells / memory-budget guard recoveries now mirror that second no-op
 contract too: repeated clean saves keep package entries byte-stable, preserve

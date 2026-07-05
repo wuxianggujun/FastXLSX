@@ -1675,6 +1675,9 @@ reopen with shifted row/column snapshots.
 That success path now also reopens the saved output with the same exact
 `WorksheetEditorOptions` and performs a clean no-op `save_as()`, proving the
 shifted sparse store remains within the original budget after the handoff.
+It now repeats that same-budget reacquired no-op save as well, preserving clean
+public state, the shifted sparse readback, byte-stable output entries, and the
+saved input package across a second clean save.
 Delete-side shifts now cover exact-budget release too: after a rejected new-cell
 insertion, `delete_rows()` and `delete_columns()` remove represented sparse
 records, clear the guardrail diagnostic, allow a smaller recovered insertion

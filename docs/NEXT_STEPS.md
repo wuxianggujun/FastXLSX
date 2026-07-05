@@ -1677,6 +1677,9 @@ insertion, `delete_rows()` and `delete_columns()` remove represented sparse
 records, clear the guardrail diagnostic, allow a smaller recovered insertion
 under both exact `max_cells` and exact `memory_budget_bytes`, and save/no-op
 reopen without leaking rejected cells or mutating the source package.
+The saved outputs now also reacquire with the same exact `WorksheetEditorOptions`
+and perform a clean no-op `save_as()`, proving the released sparse budget remains
+usable after the first handoff without dirty diagnostics or rejected payloads.
 The adjacent source-load options / memory-budget guard recoveries and mutation
 max-cells / memory-budget guard recoveries now mirror that second no-op
 contract too: repeated clean saves keep package entries byte-stable, preserve

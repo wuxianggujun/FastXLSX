@@ -4971,6 +4971,11 @@ the cross-sheet replacement and dirty materialized formula flush together,
 materialized diagnostics clear while the planned replacement diagnostics remain
 stable, the follow-up `save_as()` is byte-stable, and the no-op output
 fresh-reopens both the formula and replacement sheets.
+It now also continues from that clean no-op state: the same borrowed
+`WorksheetEditor` handle can replace the rewritten formula, dirty only
+`Formula` again, preserve the cross-sheet replacement diagnostics, write a
+fresh post-noop output, and settle into another byte-stable no-op save/reopen
+cycle without mutating the earlier no-op package.
 P8.682 splits the formula-heavy WorkbookEditor public tests out of the large
 `tests/test_workbook_editor.cpp` facade shard. The new
 `tests/test_workbook_editor_formula_rewrite.cpp` target owns formula reference

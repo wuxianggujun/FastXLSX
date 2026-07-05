@@ -2487,6 +2487,10 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
         "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-output.xlsx");
     const std::filesystem::path noop_output = artifact(
         "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-noop-output.xlsx");
+    const std::filesystem::path post_noop_edit_output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-post-noop-edit-output.xlsx");
+    const std::filesystem::path post_noop_edit_noop_output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-same-sheet-replacement-post-noop-edit-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -2635,6 +2639,93 @@ void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()
     check(reopened_noop.worksheet("Other Sheet").get_cell("A1").text_value()
             == "allowed-other-sheet-after-formula-rewrite",
         "reopened same-sheet replacement boundary no-op output should expose cross-sheet replacement");
+
+    const std::string post_noop_formula = "'RenamedData'!B2";
+    formula_sheet.set_cell("A1", fastxlsx::CellValue::formula(post_noop_formula));
+    check(formula_sheet.has_pending_changes(),
+        "post-noop edit after same-sheet replacement boundary should dirty Formula again");
+    check(formula_sheet.get_cell("A1").text_value() == post_noop_formula,
+        "post-noop edit after same-sheet replacement boundary should update the live formula");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 1 && post_noop_dirty_names[0] == "Formula",
+        "post-noop edit after same-sheet replacement boundary should expose only Formula dirty");
+    check(editor.pending_materialized_cell_count() == formula_sheet.cell_count(),
+        "post-noop edit after same-sheet replacement boundary should refresh dirty cell count");
+    check(editor.has_pending_replacement("Other Sheet") &&
+            editor.pending_replacement_worksheet_names() == replacement_names_before_save &&
+            editor.pending_replacement_cell_count() == replacement_count_before_save &&
+            editor.estimated_pending_replacement_memory_usage()
+                == replacement_memory_before_save,
+        "post-noop edit after same-sheet replacement boundary should preserve replacement diagnostics");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "post-noop edit after same-sheet replacement boundary should not rewrite the prior no-op output");
+
+    editor.save_as(post_noop_edit_output);
+    const auto post_noop_edit_entries =
+        fastxlsx::test::read_zip_entries(post_noop_edit_output);
+    check_contains(post_noop_edit_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "post-noop edit output should preserve the renamed catalog");
+    const std::string post_noop_formula_sheet_xml =
+        post_noop_edit_entries.at("xl/worksheets/sheet3.xml");
+    check_contains(post_noop_formula_sheet_xml, "<f>'RenamedData'!B2</f>",
+        "post-noop edit output should persist the later formula edit");
+    check_not_contains(post_noop_formula_sheet_xml, expected_formula,
+        "post-noop edit output should replace the earlier rewritten formula");
+    check_contains(post_noop_edit_entries.at("xl/worksheets/sheet2.xml"),
+        "allowed-other-sheet-after-formula-rewrite",
+        "post-noop edit output should still persist the cross-sheet replacement");
+    check(!formula_sheet.has_pending_changes(),
+        "post-noop edit save_as should clean Formula again");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-noop edit save_as should clear materialized diagnostics again");
+    check(editor.has_pending_replacement("Other Sheet") &&
+            editor.pending_replacement_worksheet_names() == replacement_names_before_save &&
+            editor.pending_replacement_cell_count() == replacement_count_before_save &&
+            editor.estimated_pending_replacement_memory_usage()
+                == replacement_memory_before_save,
+        "post-noop edit save_as should keep replacement diagnostics stable");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_post_noop_edit =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_post_noop_edit = editor.pending_worksheet_edits();
+
+    editor.save_as(post_noop_edit_noop_output);
+    const auto post_noop_edit_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_edit_noop_output);
+    check(post_noop_edit_noop_entries == post_noop_edit_entries,
+        "post-noop edit clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "post-noop edit clean no-op save_as should keep Formula clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-noop edit clean no-op save_as should keep materialized diagnostics clear");
+    check(editor.has_pending_replacement("Other Sheet") &&
+            editor.pending_replacement_worksheet_names() == replacement_names_before_save &&
+            editor.pending_replacement_cell_count() == replacement_count_before_save &&
+            editor.estimated_pending_replacement_memory_usage()
+                == replacement_memory_before_save,
+        "post-noop edit clean no-op save_as should keep replacement diagnostics stable");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_post_noop_edit,
+        "post-noop edit after same-sheet replacement boundary no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_post_noop_edit),
+        "post-noop edit clean no-op save_as should preserve pending summaries");
+
+    fastxlsx::WorkbookEditor reopened_post_noop =
+        fastxlsx::WorkbookEditor::open(post_noop_edit_noop_output);
+    check(reopened_post_noop.worksheet("Formula").get_cell("A1").kind()
+            == fastxlsx::CellValueKind::Formula &&
+            reopened_post_noop.worksheet("Formula").get_cell("A1").text_value()
+                == post_noop_formula,
+        "reopened post-noop edit output should expose the later formula edit");
+    check(reopened_post_noop.worksheet("Other Sheet").get_cell("A1").text_value()
+            == "allowed-other-sheet-after-formula-rewrite",
+        "reopened post-noop edit output should expose the cross-sheet replacement");
 }
 
 void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_state()

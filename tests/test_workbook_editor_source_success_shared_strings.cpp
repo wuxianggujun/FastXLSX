@@ -1618,6 +1618,10 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
         artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-xml-space-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-xml-space-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-xml-space-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1717,6 +1721,64 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
         expected_cells,
         fastxlsx::CellRange {1, 1, 1, 3},
         "source sharedStrings xml:space post-dirty no-op output");
+
+    sheet.set_cell("D2", fastxlsx::CellValue::text("  xml-space-reuse  "));
+    check(sheet.has_pending_changes(),
+        "source sharedStrings xml:space post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "source sharedStrings xml:space post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings xml:space post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="D2" t="s"><v>3</v></c>)",
+        "source sharedStrings xml:space post-noop reuse save should include the later text edit");
+    const std::string post_noop_reuse_shared_strings =
+        post_noop_reuse_entries.at("xl/sharedStrings.xml");
+    check_contains(post_noop_reuse_shared_strings,
+        R"(<si><t xml:space="preserve">  xml-space-reuse  </t></si></sst>)",
+        "source sharedStrings xml:space post-noop reuse save should append whitespace-preserving text");
+    check_contains(post_noop_reuse_shared_strings, R"(count="4")",
+        "source sharedStrings xml:space post-noop reuse save should update count metadata");
+    check_contains(post_noop_reuse_shared_strings, R"(uniqueCount="4")",
+        "source sharedStrings xml:space post-noop reuse save should update uniqueCount metadata");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source sharedStrings xml:space post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "source sharedStrings xml:space post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "source sharedStrings xml:space post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source sharedStrings xml:space post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("  plain & space  ")},
+        {1, 2, fastxlsx::CellValue::text("  rich & B tail  ")},
+        {1, 3, fastxlsx::CellValue::text("dirty-space-trigger")},
+        {2, 4, fastxlsx::CellValue::text("  xml-space-reuse  ")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        "source sharedStrings xml:space post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source sharedStrings xml:space post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "source sharedStrings xml:space post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source sharedStrings xml:space post-noop reuse no-op save should not mutate the source package");
+    check_reopened_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        "source sharedStrings xml:space post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unknown_attributes()

@@ -6403,6 +6403,13 @@ fresh-reopen with the expanded sparse values, and settle into another
 byte-stable no-op `save_as()`. This remains local-name materialization/reuse
 evidence only, not namespace repair, sharedStrings writeback, or broad
 sharedStrings migration.
+The `xml:space` sharedStrings path now has the same post-noop reuse coverage:
+after a byte-stable post-dirty no-op save, the same borrowed `WorksheetEditor`
+can append whitespace-preserving text through sharedStrings, update count
+metadata, fresh-reopen with the expanded sparse values, and settle into another
+byte-stable no-op `save_as()`. This remains whitespace materialization and
+small-file save/reuse evidence, not rich-text preservation, sharedStrings
+rebuild, or broad migration.
 The same save/reopen stability evidence now also covers wrong-namespace
 local-name materialization and inconsistent count / unknown-attribute
 sharedStrings metadata. Dirty outputs remain byte-stable across a follow-up

@@ -1707,6 +1707,9 @@ without resurrecting erased source cells.
 The `erase_row()` and `erase_rows()` exact memory-budget release no-op paths
 now also pin saved-handle sparse, row, and column snapshots for erased source
 absence, recovery cells, and clean materialized diagnostics.
+The matching `erase_column()` and `erase_columns()` exact memory-budget release
+no-op paths now extend that saved-handle coverage to preserved non-target
+columns, erased column absence, recovery cells, and clean diagnostics.
 The dirty-state save/reuse path now reopens both the first erased-cell save and
 the later post-save mutation output, verifying clean readback across repeated
 `save_as()` calls on the same materialized handle.

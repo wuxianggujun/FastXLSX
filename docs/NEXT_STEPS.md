@@ -6156,6 +6156,14 @@ package bytes and fresh-reopens with both rectangular shared formula groups
 translated as plain formula text, while the later flattened output remains
 byte-stable, drops stale cached values, and preserves both source and prior
 no-op package bytes.
+That office-like 2D shared formula path now also has post-noop reuse evidence:
+after the byte-stable post-dirty no-op save, the same borrowed
+`WorksheetEditor` can write another formula, preserve source/prior packages,
+fresh-reopen with both flattened shared formula groups plus the new formula, and
+settle into another byte-stable no-op `save_as()`. This remains office-like
+shared formula materialization/reuse evidence only, not shared formula metadata
+preservation, formula evaluation, cached value regeneration, or calcChain
+rebuild.
 Array/dataTable metadata fallbacks now carry the same two no-op gates: read-only
 materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with formula text cells flattened as plain formulas while

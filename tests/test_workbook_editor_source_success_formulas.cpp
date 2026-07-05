@@ -1003,6 +1003,10 @@ void test_public_worksheet_editor_materializes_office_like_shared_formula_shape(
         artifact("fastxlsx-workbook-editor-public-office-like-shared-formula-output.xlsx");
     const std::filesystem::path dirty_noop_output = artifact(
         "fastxlsx-workbook-editor-public-office-like-shared-formula-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-office-like-shared-formula-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-office-like-shared-formula-post-noop-reuse-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -1166,6 +1170,77 @@ void test_public_worksheet_editor_materializes_office_like_shared_formula_shape(
         fastxlsx::CellRange {1, 1, 6, 8},
         expected_cells,
         "office-like shared formula post-dirty no-op output");
+
+    sheet.set_cell("I7", fastxlsx::CellValue::formula("C1+G3+E1"));
+    check(sheet.has_pending_changes(),
+        "office-like shared formula post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "office-like shared formula post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "office-like shared formula post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string& post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="I7"><f>C1+G3+E1</f></c>)",
+        "office-like shared formula post-noop reuse save should include the later formula edit");
+    check_not_contains(post_noop_reuse_xml, R"(t="shared")",
+        "office-like shared formula post-noop reuse save should keep shared metadata flattened");
+    for (int stale_value = 9901; stale_value <= 9911; ++stale_value) {
+        check_not_contains(post_noop_reuse_xml, "<v>" + std::to_string(stale_value) + "</v>",
+            "office-like shared formula post-noop reuse save should keep stale cached values omitted");
+    }
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "office-like shared formula post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "office-like shared formula post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "office-like shared formula post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "office-like shared formula post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedFormulaOutputCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(1.0)},
+        {1, 2, fastxlsx::CellValue::number(2.0)},
+        {1, 3, fastxlsx::CellValue::formula("A1+B1")},
+        {1, 4, fastxlsx::CellValue::formula("B1+C1")},
+        {1, 5, fastxlsx::CellValue::formula("A1*2")},
+        {2, 1, fastxlsx::CellValue::number(10.0)},
+        {2, 2, fastxlsx::CellValue::number(20.0)},
+        {2, 3, fastxlsx::CellValue::formula("A2+B2")},
+        {2, 4, fastxlsx::CellValue::formula("B2+C2")},
+        {2, 5, fastxlsx::CellValue::text("between-shared-groups")},
+        {2, 6, fastxlsx::CellValue::formula("SUM($A2:B2)+C$1")},
+        {2, 7, fastxlsx::CellValue::formula("SUM($A2:C2)+D$1")},
+        {3, 1, fastxlsx::CellValue::number(100.0)},
+        {3, 2, fastxlsx::CellValue::number(200.0)},
+        {3, 3, fastxlsx::CellValue::formula("A3+B3")},
+        {3, 4, fastxlsx::CellValue::formula("B3+C3")},
+        {3, 6, fastxlsx::CellValue::formula("SUM($A3:B3)+C$1")},
+        {3, 7, fastxlsx::CellValue::formula("SUM($A3:C3)+D$1")},
+        {6, 8, fastxlsx::CellValue::text("office-like-shared-formula-edit")},
+        {7, 9, fastxlsx::CellValue::formula("C1+G3+E1")},
+    };
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 7, 9},
+        post_noop_reuse_cells,
+        "office-like shared formula post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "office-like shared formula post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "office-like shared formula post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "office-like shared formula post-noop reuse no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 7, 9},
+        post_noop_reuse_cells,
+        "office-like shared formula post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_array_and_datatable_formula_metadata()

@@ -2647,6 +2647,10 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-output.xlsx");
     const std::filesystem::path recovered_noop_output = artifact(
         "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-noop-output.xlsx");
+    const std::filesystem::path recovered_post_noop_edit_output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-post-noop-edit-output.xlsx");
+    const std::filesystem::path recovered_post_noop_edit_noop_output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-guard-recovered-post-noop-edit-noop-output.xlsx");
     const std::string target_name = "RenamedDataLongerSheetName01";
 
     fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
@@ -2800,6 +2804,72 @@ void test_rename_sheet_materialized_formula_rewrite_guard_failure_preserves_stat
         "reopened recovered no-op output should expose the rewritten formula");
     check(reopened_noop_formula.text_value().find(target_name) == std::string::npos,
         "reopened recovered no-op output should not leak the rejected long rename");
+
+    formula_sheet.set_cell("A1", fastxlsx::CellValue::formula("'R'!A1"));
+    check(formula_sheet.has_pending_changes(),
+        "post-noop edit after formula rewrite guard recovery should dirty the formula session");
+    check(formula_sheet.get_cell("A1").text_value() == "'R'!A1",
+        "post-noop edit after formula rewrite guard recovery should update the live formula");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 1 && post_noop_dirty_names[0] == "Formula",
+        "post-noop edit after formula rewrite guard recovery should expose only Formula dirty");
+    check(editor.pending_materialized_cell_count() == formula_sheet.cell_count(),
+        "post-noop edit after formula rewrite guard recovery should refresh dirty cell count");
+
+    editor.save_as(recovered_post_noop_edit_output);
+    const auto recovered_post_noop_edit_entries =
+        fastxlsx::test::read_zip_entries(recovered_post_noop_edit_output);
+    check(fastxlsx::test::read_zip_entries(recovered_noop_output)
+            == recovered_noop_entries,
+        "post-noop edit after formula rewrite guard recovery should not rewrite the prior no-op output");
+    check_contains(recovered_post_noop_edit_entries.at("xl/workbook.xml"), R"(name="R")",
+        "post-noop edit output should preserve the recovered short catalog");
+    check_not_contains(recovered_post_noop_edit_entries.at("xl/workbook.xml"),
+        target_name,
+        "post-noop edit output should not leak the rejected long rename");
+    const std::string recovered_post_noop_edit_formula_xml =
+        recovered_post_noop_edit_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(recovered_post_noop_edit_formula_xml, "<f>'R'!A1</f>",
+        "post-noop edit output should persist the later formula edit");
+    check_not_contains(recovered_post_noop_edit_formula_xml, target_name,
+        "post-noop edit formula output should not leak the rejected long rename");
+    check(!formula_sheet.has_pending_changes(),
+        "post-noop edit save_as should clean the formula session again");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-noop edit save_as should clear materialized diagnostics again");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_post_noop_edit =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_post_noop_edit = editor.pending_worksheet_edits();
+
+    editor.save_as(recovered_post_noop_edit_noop_output);
+    const auto recovered_post_noop_edit_noop_entries =
+        fastxlsx::test::read_zip_entries(recovered_post_noop_edit_noop_output);
+    check(recovered_post_noop_edit_noop_entries == recovered_post_noop_edit_entries,
+        "post-noop edit clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "post-noop edit clean no-op save_as should keep the formula session clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "post-noop edit clean no-op save_as should keep materialized diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_post_noop_edit,
+        "post-noop edit after formula rewrite guard recovery no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_post_noop_edit),
+        "post-noop edit clean no-op save_as should preserve pending summaries");
+
+    fastxlsx::WorkbookEditor reopened_post_noop =
+        fastxlsx::WorkbookEditor::open(recovered_post_noop_edit_noop_output);
+    const fastxlsx::CellValue reopened_post_noop_formula =
+        reopened_post_noop.worksheet("Formula").get_cell("A1");
+    check(reopened_post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_post_noop_formula.text_value() == "'R'!A1",
+        "reopened post-noop edit output should expose the later formula edit");
 }
 
 

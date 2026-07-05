@@ -4927,6 +4927,10 @@ That recovery branch now also has the matching clean no-op handoff: after the
 short-name retry save clears materialized diagnostics, a follow-up `save_as()`
 is byte-stable, preserves public save-state/edit summaries, and fresh-reopens
 with the recovered formula without leaking the rejected long target.
+It now continues once more from that clean no-op state: the same borrowed
+`WorksheetEditor` handle can replace the recovered formula, dirty only the
+formula sheet again, flush to a fresh workbook, preserve the previous no-op
+package, and settle into another byte-stable no-op save/reopen cycle.
 P8.678 broadens that success-side diagnostic hygiene from the guard recovery
 case to the representative explicit formula rewrite paths. The definedName-only,
 materialized worksheet formula, combined definedName + materialized formula,

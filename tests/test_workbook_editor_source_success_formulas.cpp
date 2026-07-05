@@ -796,6 +796,10 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         artifact("fastxlsx-workbook-editor-public-source-shared-formula-matrix-output.xlsx");
     const std::filesystem::path dirty_noop_output = artifact(
         "fastxlsx-workbook-editor-public-source-shared-formula-matrix-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-source-shared-formula-matrix-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-shared-formula-matrix-post-noop-reuse-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -926,6 +930,67 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
         fastxlsx::CellRange {1, 1, 4, 5},
         expected_cells,
         "source-order shared formula matrix post-dirty no-op output");
+
+    sheet.set_cell("F5", fastxlsx::CellValue::formula("C1&D1+B3"));
+    check(sheet.has_pending_changes(),
+        "source-order shared formula matrix post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "source-order shared formula matrix post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "source-order shared formula matrix post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string& post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="F5"><f>C1&amp;D1+B3</f></c>)",
+        "source-order shared formula matrix post-noop reuse save should include the later formula edit");
+    check_not_contains(post_noop_reuse_xml, R"(t="shared")",
+        "source-order shared formula matrix post-noop reuse save should keep shared metadata flattened");
+    check_not_contains(post_noop_reuse_xml, "<v>999</v>",
+        "source-order shared formula matrix post-noop reuse save should keep stale cached values omitted");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source-order shared formula matrix post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "source-order shared formula matrix post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "source-order shared formula matrix post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source-order shared formula matrix post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedFormulaOutputCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula(
+            "A1+Sheet1!A1+'O''Brien'!A1+SUM(A1:B1)+LOG10(A1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(1:1)+SUM(Sheet1!A:A)+SUM('Other Sheet'!1:1)+SUM($A:B)+SUM($1:2)")},
+        {1, 2, fastxlsx::CellValue::formula("C1+D$1+$C1+$C$1")},
+        {1, 3, fastxlsx::CellValue::formula(
+            "C1+Sheet1!C1+'O''Brien'!C1+SUM(C1:D1)+LOG10(C1)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(C:C)+SUM(1:1)+SUM(Sheet1!C:C)+SUM('Other Sheet'!1:1)+SUM($A:D)+SUM($1:2)")},
+        {1, 4, fastxlsx::CellValue::formula("E1+F$1+$C1+$C$1")},
+        {2, 1, fastxlsx::CellValue::formula(
+            "A2+Sheet1!A2+'O''Brien'!A2+SUM(A2:B2)+LOG10(A2)+A1foo+_A1+A1_+R1C1+Table1[A1]+SUM(A:A)+SUM(2:2)+SUM(Sheet1!A:A)+SUM('Other Sheet'!2:2)+SUM($A:B)+SUM($1:3)")},
+        {3, 1, fastxlsx::CellValue::formula("Z3+1")},
+        {3, 2, fastxlsx::CellValue::formula("AA3+1")},
+        {4, 5, fastxlsx::CellValue::text("shared-formula-matrix-edit")},
+        {5, 6, fastxlsx::CellValue::formula("C1&D1+B3")},
+    };
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 5, 6},
+        post_noop_reuse_cells,
+        "source-order shared formula matrix post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source-order shared formula matrix post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "source-order shared formula matrix post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source-order shared formula matrix post-noop reuse no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 5, 6},
+        post_noop_reuse_cells,
+        "source-order shared formula matrix post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_office_like_shared_formula_shape()

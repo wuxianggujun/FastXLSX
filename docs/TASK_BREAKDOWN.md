@@ -44,7 +44,18 @@ C0 状态校准与验证基线
 - F1 `WorksheetEditor` In-memory editor：只处理 small-file random cell editing，不扩展成 large worksheet 低内存随机访问。
 - F2 Existing-file preservation policy：先定义 preserve / audit / fail / edit，再决定是否开放语义编辑。
 - F3 Streaming writer polish：只做不破坏 row-order hot path 的 new-workbook API、示例和文档改进。
+  细化产品化计划见 [STREAMING_WRITER_PRODUCTIZATION_PLAN.md](STREAMING_WRITER_PRODUCTIZATION_PLAN.md)。
 - F4 Release evidence：只用 benchmark / Excel / openpyxl / CTest 证据支撑 release wording，不把实现细节写成性能承诺。
+
+产品化计划索引：
+- F0 / C1：[`EXISTING_WORKBOOK_EDITING_PRODUCTIZATION_PLAN.md`](EXISTING_WORKBOOK_EDITING_PRODUCTIZATION_PLAN.md)。
+- F1 / C4：[`IN_MEMORY_EDITOR_PRODUCTIZATION_PLAN.md`](IN_MEMORY_EDITOR_PRODUCTIZATION_PLAN.md)。
+- C5：[`LARGE_WORKSHEET_REWRITE_PLAN.md`](LARGE_WORKSHEET_REWRITE_PLAN.md)。
+- C1 / C2 / C5 / C6：[`OPC_PACKAGE_FOUNDATION_PLAN.md`](OPC_PACKAGE_FOUNDATION_PLAN.md)。
+- F2 / C2 / C3：[`COMPLEX_OBJECTS_SUPPORT_PLAN.md`](COMPLEX_OBJECTS_SUPPORT_PLAN.md)。
+- F3 / C6：[`STREAMING_WRITER_PRODUCTIZATION_PLAN.md`](STREAMING_WRITER_PRODUCTIZATION_PLAN.md)。
+- F4 / C6 / C7：[`PERFORMANCE_AND_RELEASE_EVIDENCE_PLAN.md`](PERFORMANCE_AND_RELEASE_EVIDENCE_PLAN.md)。
+- C0 / C3 / C7：[`API_STABILITY_AND_PUBLIC_WORDING_GATE.md`](API_STABILITY_AND_PUBLIC_WORDING_GATE.md)。
 
 ### C0 状态校准与验证基线
 

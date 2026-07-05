@@ -2674,6 +2674,11 @@ the shifted materialized output writes `fullCalcOnLoad` without inventing
 `calcChain.xml`, each path performs two clean no-op saves, compares package
 entries, and fresh-reopens the second no-op output through the full-calc shift
 inspectors.
+Those full-calculation insert-shift success paths now also continue after the
+second clean no-op save: a later edit through the same `WorksheetEditor` handle
+writes a fresh output, keeps the shifted styled formula readable, preserves
+`fullCalcOnLoad`, still omits `calcChain.xml`, and leaves source plus prior
+outputs byte-stable.
 Full-calculation plus delete-shift success paths now have matching repeated
 no-op-save readback. The styled `delete_rows()` path writes a second clean
 no-op output, while the styled `delete_columns()` path now also fresh-reopens

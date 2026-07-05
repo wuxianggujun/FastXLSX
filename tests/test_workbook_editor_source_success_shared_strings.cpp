@@ -1473,6 +1473,10 @@ void test_public_worksheet_editor_materializes_local_names_without_namespace_val
         artifact("fastxlsx-workbook-editor-public-local-name-no-namespace-validation-dirty.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-local-name-no-namespace-validation-dirty-noop.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-local-name-no-namespace-validation-post-noop-reuse.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-local-name-no-namespace-validation-post-noop-reuse-noop.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1606,6 +1610,62 @@ void test_public_worksheet_editor_materializes_local_names_without_namespace_val
         expected_cells,
         fastxlsx::CellRange {1, 1, 1, 4},
         "wrong-namespace local-name post-dirty no-op output");
+
+    sheet.set_cell("E2", fastxlsx::CellValue::text("wrong-ns-reuse"));
+    check(sheet.has_pending_changes(),
+        "wrong-namespace local-name post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "wrong-namespace local-name post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "wrong-namespace local-name post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet, R"(<bad:dimension ref="A1:E2"/>)",
+        "wrong-namespace local-name post-noop reuse save should refresh dimension with the source prefix");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="E2" t="inlineStr"><is><t>wrong-ns-reuse</t></is></c>)",
+        "wrong-namespace local-name post-noop reuse save should include the later inline text edit");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") != post_noop_reuse_entries.end()
+            && post_noop_reuse_entries.at("xl/sharedStrings.xml")
+                == source_entries.at("xl/sharedStrings.xml"),
+        "wrong-namespace local-name post-noop reuse save should preserve source sharedStrings bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "wrong-namespace local-name post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "wrong-namespace local-name post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "wrong-namespace local-name post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "wrong-namespace local-name post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("wrong-ns-shared")},
+        {1, 2, fastxlsx::CellValue::text("wrong-ns-inline")},
+        {1, 3, fastxlsx::CellValue::text("wrong-rich-tail")},
+        {1, 4, fastxlsx::CellValue::text("wrong-ns-dirty")},
+        {2, 5, fastxlsx::CellValue::text("wrong-ns-reuse")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        fastxlsx::CellRange {1, 1, 2, 5},
+        "wrong-namespace local-name post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "wrong-namespace local-name post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "wrong-namespace local-name post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "wrong-namespace local-name post-noop reuse no-op save should not mutate the source package");
+    check_reopened_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        fastxlsx::CellRange {1, 1, 2, 5},
+        "wrong-namespace local-name post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_and_projects_inline()

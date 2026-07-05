@@ -2535,6 +2535,10 @@ materialized diagnostics, keeps the rejected target absent, and leaves a
 copy-original save unchanged. A later smaller overwrite in the same exact-budget
 session clears the diagnostic, saves/reopens cleanly, and keeps the failed early
 overwrite plus rejected payload out of both recovery and no-op outputs.
+The styled source-backed `set_cell_values()` path now also repeats a second
+clean no-op `save_as()` after the first no-op output, requiring byte-identical
+entries plus live and fresh-reopen snapshots of the preserved source `StyleId`,
+later-wins formula, inserted boolean, and untouched source tail.
 The sparse batch mutation APIs also have small literal-batch convenience
 overloads: `set_cells(initializer_list<WorksheetCellUpdate>)`,
 `set_cell_values(initializer_list<WorksheetCellUpdate>)`,

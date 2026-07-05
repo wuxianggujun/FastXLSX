@@ -2558,7 +2558,9 @@ insertion, row metadata creation, table/range metadata recalculation,
 sharedStrings/styles migration, or large-file low-memory random editing.
 The saved append output is reopened in public-state coverage to verify clean
 readback for the appended text, number, formula, explicit blank, and preserved
-source-backed rows.
+source-backed rows. The styled append path now also repeats a second clean
+no-op `save_as()` and requires byte-identical entries plus fresh reopen readback
+for the unstyled appended cells and preserved source `StyleId`.
 `WorksheetEditor::set_row()` now covers the matching sparse represented-row
 replacement convenience for small files: it deletes currently represented cells
 in the target row, writes input values to columns 1..N, treats empty input as a

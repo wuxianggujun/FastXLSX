@@ -6173,6 +6173,14 @@ byte-stable, preserves both source and prior no-op package bytes, and fresh
 reopen preserves the sparse projection beside later edits. This keeps lossy
 formula projection evidence tied to sparse public state, not formula evaluation
 or calcChain rebuild.
+That array/dataTable fallback path now also has post-noop reuse evidence: after
+the byte-stable post-dirty no-op save, the same borrowed `WorksheetEditor` can
+write another formula, keep array/dataTable metadata flattened, preserve
+source/prior packages, fresh-reopen with the fallback cells plus the new
+formula, and settle into another byte-stable no-op `save_as()`. This remains
+lossy formula materialization/reuse evidence only, not array/dataTable metadata
+preservation, formula evaluation, cached value regeneration, or calcChain
+rebuild.
 Source inline text failure hygiene is now pinned at the same facade: unknown XML
 entities, unsupported inline `<t>` attributes, duplicate direct inline text
 elements, and unknown inline string metadata fail cleanly without partial

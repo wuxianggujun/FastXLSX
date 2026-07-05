@@ -206,6 +206,10 @@ void test_public_worksheet_editor_materializes_source_formulas()
         artifact("fastxlsx-workbook-editor-public-source-formula-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-formula-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-source-formula-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-formula-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -306,6 +310,58 @@ void test_public_worksheet_editor_materializes_source_formulas()
         fastxlsx::CellRange {1, 1, 2, 4},
         expected_cells,
         "source formula post-dirty no-op output");
+
+    sheet.set_cell("E3", fastxlsx::CellValue::formula("C1&A1"));
+    check(sheet.has_pending_changes(),
+        "source formula post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "source formula post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "source formula post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string& post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="E3"><f>C1&amp;A1</f></c>)",
+        "source formula post-noop reuse save should include the later formula edit");
+    check_not_contains(post_noop_reuse_xml, "<v>999</v>",
+        "source formula post-noop reuse save should keep stale cached values omitted");
+    check(fastxlsx::test::read_zip_entries(source) == entries,
+        "source formula post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "source formula post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "source formula post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "source formula post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedFormulaOutputCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(2.0)},
+        {1, 2, fastxlsx::CellValue::number(3.0)},
+        {1, 3, fastxlsx::CellValue::formula("SUM(A1:B1)&\"<ok>\"")},
+        {2, 4, fastxlsx::CellValue::text("formula-new-inline")},
+        {3, 5, fastxlsx::CellValue::formula("C1&A1")},
+    };
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 3, 5},
+        post_noop_reuse_cells,
+        "source formula post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source formula post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "source formula post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == entries,
+        "source formula post-noop reuse no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 5},
+        post_noop_reuse_cells,
+        "source formula post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_source_error_cells()

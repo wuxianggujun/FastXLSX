@@ -6102,6 +6102,12 @@ The base source formula dirty-save path now also has post-dirty no-op evidence:
 the later no-op `save_as()` output is byte-stable, the source fixture remains
 unchanged, and fresh reopen still reads formula text without stale cached values.
 This is formula text projection only, not formula evaluation or calcChain rebuild.
+That same base source formula path now continues after the post-dirty no-op
+save: the borrowed `WorksheetEditor` can become dirty again with a later formula
+cell, write a new projection, preserve source/prior outputs, fresh-reopen
+through public sparse views, and settle into another byte-stable no-op
+`save_as()`. This is still formula text projection/reuse evidence only, not
+formula evaluation, cached value regeneration, or calcChain rebuild.
 Cached-result formula variants now carry the same post-dirty no-op check:
 numeric/string/boolean/error cached `<v>` values are still omitted from the
 byte-stable no-op output, the source package is unchanged, and fresh reopen reads

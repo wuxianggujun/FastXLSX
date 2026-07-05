@@ -1672,6 +1672,11 @@ The adjacent exact-budget shift success path now pins the opposite branch:
 so exact `max_cells` and exact `memory_budget_bytes` budgets remain valid,
 dirty diagnostics report the stable sparse store, and the saved/no-op outputs
 reopen with shifted row/column snapshots.
+Delete-side shifts now cover exact-budget release too: after a rejected new-cell
+insertion, `delete_rows()` and `delete_columns()` remove represented sparse
+records, clear the guardrail diagnostic, allow a smaller recovered insertion
+under both exact `max_cells` and exact `memory_budget_bytes`, and save/no-op
+reopen without leaking rejected cells or mutating the source package.
 The adjacent source-load options / memory-budget guard recoveries and mutation
 max-cells / memory-budget guard recoveries now mirror that second no-op
 contract too: repeated clean saves keep package entries byte-stable, preserve

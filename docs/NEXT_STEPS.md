@@ -1700,6 +1700,9 @@ replacement values.
 The source-load options guard recovery no-op branches now also pin the retained
 single-sheet replacement diagnostics and clear `last_edit_error()` contract,
 distinguishing replacement handoff state from dirty materialized state.
+The same recovery output now reacquires with the original strict `max_cells`
+options that rejected the source worksheet, proving the saved replacement can
+materialize cleanly under that budget and write a byte-stable no-op output.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.

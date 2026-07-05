@@ -5316,6 +5316,10 @@ coverage: with a clean source-backed session already at the configured cell
 budget, the rejected append preserves source cells, keeps `A3` absent, retains
 the `max_cells` diagnostic across both saves, and reopens unchanged. This is
 budget guardrail hygiene only, not budget auto-sizing or rollback machinery.
+The follow-up exact-budget append recovery path now also pins saved-handle
+sparse, row, and column snapshots after erasing a source cell and appending a
+replacement in the same session, keeping rejected `A3` absent and diagnostics
+clean across the no-op save.
 `set_row()` validation failures now have matching copy-original/no-op coverage
 for oversized row payloads and row zero: both rejected calls preserve the clean
 source-backed `Data` session, retain public diagnostics across both saves, keep

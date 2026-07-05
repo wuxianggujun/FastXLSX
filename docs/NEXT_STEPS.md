@@ -4937,6 +4937,10 @@ planned catalog, dirty materialized diagnostics, and empty `last_edit_error()`,
 then forces a missing-parent `save_as()` failure. The same editor must preserve
 the rewritten state and a later safe retry must persist the renamed catalog,
 rewritten definedName, and rewritten materialized formula.
+That retry boundary now also proves the clean handoff after recovery: the safe
+retry clears materialized diagnostics, a following no-op `save_as()` is
+byte-stable against the retry output, and the no-op package fresh-reopens with
+the rewritten materialized formula.
 P8.680 pins the adjacent post-rewrite materialized mutation boundary. After a
 successful opt-in formula rewrite dirties the `Formula` worksheet session, an
 invalid follow-up mutation must update `last_edit_error()` without reverting or

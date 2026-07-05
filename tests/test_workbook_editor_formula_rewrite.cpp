@@ -2229,6 +2229,8 @@ void test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()
         / "output.xlsx";
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-formula-rewrite-failed-save-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-failed-save-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -2298,6 +2300,37 @@ void test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()
         "safe retry after formula rewrite failed save should persist rewritten definedNames");
     check_contains(output_entries.at("xl/worksheets/sheet3.xml"), expected_formula,
         "safe retry after formula rewrite failed save should persist rewritten worksheet formulas");
+    check(!formula_sheet.has_pending_changes(),
+        "safe retry after formula rewrite failed save should clean the materialized session");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "safe retry after formula rewrite failed save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "safe retry after formula rewrite failed save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "safe retry after formula rewrite failed save should clear dirty materialized memory");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_retry =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_retry = editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "formula rewrite failed-save retry clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "formula rewrite failed-save retry no-op save_as should keep the session clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "formula rewrite failed-save retry no-op save_as should keep dirty names clear");
+    check(editor.pending_materialized_cell_count() == 0,
+        "formula rewrite failed-save retry no-op save_as should keep dirty cell count clear");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "formula rewrite failed-save retry no-op save_as should keep dirty memory clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_retry,
+        "formula rewrite failed-save retry after no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_retry),
+        "formula rewrite failed-save retry no-op save_as should preserve pending summaries");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     const fastxlsx::CellValue reopened_formula =
@@ -2305,6 +2338,12 @@ void test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
             reopened_formula.text_value() == expected_formula,
         "reopened retry output should expose the rewritten formula after failed save_as");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    const fastxlsx::CellValue reopened_noop_formula =
+        reopened_noop.worksheet("Formula").get_cell("A1");
+    check(reopened_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_formula.text_value() == expected_formula,
+        "reopened retry no-op output should expose the rewritten formula after failed save_as");
 }
 
 void test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()

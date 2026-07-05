@@ -2648,6 +2648,12 @@ styled formula shift output and first no-op save, each path writes a second
 no-op output, requires byte-identical entries, fresh-reopens through the styled
 shift inspectors, and later post-noop edits prove both no-op packages remain
 unchanged.
+The value-only styled row/column shift paths now repeat that same clean no-op
+save contract for `insert_rows()`, `insert_columns()`, `delete_rows()`, and
+`delete_columns()`: after replacing a styled source formula with a value-only
+cell and shifting it, each path writes two clean no-op packages, checks stable
+entries and untouched source/output bytes, and fresh-reopens both no-op outputs
+to prove the preserved source `StyleId` remains readable.
 Full-calculation plus insert-shift success paths now carry the same repeated
 no-op-save readback for styled `insert_rows()` and `insert_columns()`: after
 the shifted materialized output writes `fullCalcOnLoad` without inventing

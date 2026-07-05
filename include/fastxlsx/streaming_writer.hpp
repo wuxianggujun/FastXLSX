@@ -774,6 +774,17 @@ private:
     StyleId style_id_;
 };
 
+/// A column-indexed cell view consumed by WorksheetWriter::append_sparse_row().
+///
+/// API mode: Streaming. `column` is a 1-based Excel column index and `cell` has
+/// the same non-owning lifetime rules as CellView. Sparse row entries are
+/// consumed only for the duration of append_sparse_row(); the worksheet writer
+/// does not retain a row matrix, sort entries, or synthesize omitted cells.
+struct SparseCellView {
+    std::uint32_t column = 0;
+    CellView cell;
+};
+
 /// Append-only worksheet writer for large-data paths.
 ///
 /// API mode: Streaming. Rows are consumed in order and previously written rows
@@ -809,6 +820,34 @@ public:
     /// This is a convenience wrapper over the span overload and has the same
     /// streaming and string-lifetime rules.
     void append_row(std::initializer_list<CellView> cells, RowOptions options = {});
+
+    /// Appends a row from a sparse, column-indexed cell view range.
+    ///
+    /// Cells are written only for the provided entries. `SparseCellView::column`
+    /// is 1-based, must be within Excel's column limit, and entries must be
+    /// strictly increasing with no duplicates. Gaps are omitted rather than
+    /// serialized as blank cells; use CellView::blank() when an explicit blank
+    /// cell element is required. The row number is assigned automatically by
+    /// append order and string_view values only need to remain valid for this
+    /// call.
+    ///
+    /// Memory use is proportional to the number of sparse entries and the
+    /// current row XML buffer, not the highest referenced column. Shared strings
+    /// and formula recalculation metadata are updated only after validation
+    /// succeeds; validation failures occur before row state is advanced.
+    ///
+    /// @throws FastXlsxError when sparse columns are invalid or not strictly
+    /// increasing, row limits are exceeded, a numeric cell value is not finite,
+    /// row height metadata is non-positive or non-finite, a style id does not
+    /// belong to this workbook, or the writer cannot write worksheet XML.
+    void append_sparse_row(std::span<const SparseCellView> cells, RowOptions options = {});
+
+    /// Appends a sparse row from an initializer list.
+    ///
+    /// This is a convenience wrapper over the span overload and has the same
+    /// streaming and string-lifetime rules.
+    void append_sparse_row(
+        std::initializer_list<SparseCellView> cells, RowOptions options = {});
 
     /// Records a column width metadata range.
     ///

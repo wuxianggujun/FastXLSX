@@ -1029,6 +1029,14 @@ bool row_has_formula(std::span<const CellView> cells) noexcept
         [](const CellView& cell) { return cell.type() == CellView::Type::Formula; });
 }
 
+bool row_has_formula(std::span<const SparseCellView> cells) noexcept
+{
+    return std::any_of(cells.begin(), cells.end(),
+        [](const SparseCellView& cell) {
+            return cell.cell.type() == CellView::Type::Formula;
+        });
+}
+
 void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
 {
     if (state == nullptr) {
@@ -1045,6 +1053,38 @@ void validate_numeric_cells(std::span<const CellView> cells)
         if (cell.type() == CellView::Type::Number && !std::isfinite(cell.number_value())) {
             throw FastXlsxError("numeric values must be finite");
         }
+    }
+}
+
+void validate_numeric_cells(std::span<const SparseCellView> cells)
+{
+    for (const SparseCellView& cell : cells) {
+        if (cell.cell.type() == CellView::Type::Number
+            && !std::isfinite(cell.cell.number_value())) {
+            throw FastXlsxError("numeric values must be finite");
+        }
+    }
+}
+
+void validate_row_options(RowOptions options)
+{
+    if (options.height.has_value()
+        && (!std::isfinite(*options.height) || *options.height <= 0.0)) {
+        throw FastXlsxError("row height must be positive and finite");
+    }
+}
+
+void validate_sparse_row_columns(std::span<const SparseCellView> cells)
+{
+    std::uint32_t previous_column = 0;
+    for (const SparseCellView& cell : cells) {
+        if (cell.column == 0 || cell.column > max_excel_columns) {
+            throw FastXlsxError("sparse row column is outside Excel's column limit");
+        }
+        if (cell.column <= previous_column) {
+            throw FastXlsxError("sparse row columns must be strictly increasing");
+        }
+        previous_column = cell.column;
     }
 }
 
@@ -2375,10 +2415,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     if (state_->row_count >= max_excel_rows) {
         throw FastXlsxError("worksheet exceeds Excel's row limit");
     }
-    if (options.height.has_value()
-        && (!std::isfinite(*options.height) || *options.height <= 0.0)) {
-        throw FastXlsxError("row height must be positive and finite");
-    }
+    validate_row_options(options);
     validate_numeric_cells(cells);
     if (state_->workbook != nullptr) {
         const std::uintptr_t owner_token =
@@ -2432,6 +2469,72 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
 void WorksheetWriter::append_row(std::initializer_list<CellView> cells, RowOptions options)
 {
     append_row(std::span<const CellView>(cells.begin(), cells.size()), options);
+}
+
+void WorksheetWriter::append_sparse_row(std::span<const SparseCellView> cells, RowOptions options)
+{
+    ensure_mutable_worksheet(state_);
+    if (state_->row_count >= max_excel_rows) {
+        throw FastXlsxError("worksheet exceeds Excel's row limit");
+    }
+    validate_row_options(options);
+    validate_sparse_row_columns(cells);
+    validate_numeric_cells(cells);
+    if (state_->workbook != nullptr) {
+        const std::uintptr_t owner_token =
+            reinterpret_cast<std::uintptr_t>(state_->workbook);
+        for (const SparseCellView& sparse_cell : cells) {
+            const StyleId style_id = sparse_cell.cell.style_id();
+            if (style_id.value_ == 0) {
+                continue;
+            }
+            if (style_id.owner_token_ != owner_token
+                || style_id.value_ > state_->workbook->styles.size()) {
+                throw FastXlsxError("cell style id is not registered in this workbook");
+            }
+        }
+    }
+
+    ++state_->row_count;
+    if (!cells.empty()) {
+        state_->max_column = std::max(state_->max_column, cells.back().column);
+    }
+    state_->has_formula = state_->has_formula || row_has_formula(cells);
+
+    std::string& row_xml = state_->row_buffer;
+    row_xml.clear();
+    const std::size_t expected_row_size = 32 + cells.size() * 64;
+    if (row_xml.capacity() < expected_row_size) {
+        row_xml.reserve(expected_row_size);
+    }
+
+    row_xml += "<row r=\"";
+    detail::append_unsigned_decimal(row_xml, state_->row_count);
+    if (options.height.has_value()) {
+        row_xml += "\" ht=\"";
+        detail::append_number(row_xml, *options.height);
+        row_xml += "\" customHeight=\"1";
+    }
+    row_xml += "\">";
+    for (const SparseCellView& sparse_cell : cells) {
+        write_cell(row_xml, state_->row_count, sparse_cell.column, sparse_cell.cell, *state_);
+    }
+    row_xml += "</row>";
+
+    state_->body.write(row_xml.data(), static_cast<std::streamsize>(row_xml.size()));
+    if (!state_->body) {
+        throw FastXlsxError("failed to write worksheet row XML");
+    }
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+    detail::add_benchmark_temporary_worksheet_part_bytes(
+        static_cast<std::uint64_t>(row_xml.size()));
+#endif
+}
+
+void WorksheetWriter::append_sparse_row(
+    std::initializer_list<SparseCellView> cells, RowOptions options)
+{
+    append_sparse_row(std::span<const SparseCellView>(cells.begin(), cells.size()), options);
 }
 
 void WorksheetWriter::set_column_width(std::uint32_t first_column, std::uint32_t last_column, double width)

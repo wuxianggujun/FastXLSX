@@ -22,7 +22,8 @@
 - 当前入口：`WorkbookWriter`、`WorksheetWriter`、`CellView`、`WorkbookWriterOptions`、
   `StringStrategy`、`StyleId`、`CellStyle`、`CellAlignment`、`CellFont`、`CellFill`、
   `DocumentProperties`、worksheet metadata 值类型和 image 值类型。
-- 当前能力：row/cell 顺序写入、数字 / 文本 / 布尔 / 公式 / 显式空白单元格、sharedStrings 显式策略、
+- 当前能力：row/cell 顺序写入、数字 / 文本 / 布尔 / 公式 / 显式空白单元格、稀疏行写入、
+  sharedStrings 显式策略、
   document properties、行高、列宽、冻结窗格、自动筛选、合并单元格、data validations、
   external/internal hyperlinks、streaming-only tables、two-/three-color color scales、
   basic data bars、basic `3Arrows` icon sets、基础 number format / alignment / font / fill styles、

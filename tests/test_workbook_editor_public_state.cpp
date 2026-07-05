@@ -17811,6 +17811,64 @@ void test_public_worksheet_editor_erase_all_memory_budget_release()
         };
     check_reopened_clean_sheet_output(output, "Data", "erase_cells() memory-budget release",
         inspect_erase_all_memory_release_output);
+    const auto check_erase_all_memory_release_saved_snapshot =
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+            check(handle.cell_count() == 1,
+                std::string(prefix) + " should keep the recovery sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 1,
+                std::string(prefix) + " should expose the recovery cell only");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 3 &&
+                        cells[0].reference.column == 1 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "all-cells-mb-release",
+                    std::string(prefix) + " should keep A3 recovery text");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                handle.row_cells(3);
+            check(row_three.size() == 1 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 1 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "all-cells-mb-release",
+                std::string(prefix) + " should keep row-three recovery text");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                handle.column_cells(1);
+            check(column_one.size() == 1 &&
+                    column_one[0].reference.row == 3 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == "all-cells-mb-release",
+                std::string(prefix) + " should keep column-one recovery text");
+            check(!handle.try_cell("A1").has_value(),
+                std::string(prefix) + " should keep erased A1 absent");
+            check(!handle.try_cell("B1").has_value(),
+                std::string(prefix) + " should keep erased B1 absent");
+            check(!handle.try_cell("A2").has_value(),
+                std::string(prefix) + " should keep erased A2 absent");
+            check_cell_range_equals(handle.used_range(), 3, 1, 3, 1,
+                std::string(prefix) + " should keep compact bounds");
+            check(!handle.has_pending_changes(),
+                std::string(prefix) + " should keep the handle clean");
+            check(editor.pending_change_count() == 1,
+                std::string(prefix) + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                std::string(prefix) + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                std::string(prefix) + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(prefix) + " should keep dirty materialized memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(prefix) + " should keep dirty summaries empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor,
+                std::string(prefix) +
+                    " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                std::string(prefix) + " should keep diagnostics clear");
+        };
 
     const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
         workbook_editor_public_catalog_snapshot(editor);
@@ -17833,6 +17891,9 @@ void test_public_worksheet_editor_erase_all_memory_budget_release()
         editor, "erase_cells() memory-budget release noop save should not queue replacement diagnostics");
     check(!editor.last_edit_error().has_value(),
         "erase_cells() memory-budget release noop save should keep diagnostics clear");
+    check_erase_all_memory_release_saved_snapshot(
+        sheet,
+        "erase_cells() memory-budget release saved handle");
     check_workbook_editor_public_save_state_preserved(
         editor, save_state_before_noop,
         "erase_cells() memory-budget release noop save");

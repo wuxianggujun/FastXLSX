@@ -632,6 +632,9 @@ clean materialized diagnostics before the fresh reopen checks.
 The whole-store `erase_cells()` reacquired no-op path now mirrors that saved
 live-handle snapshot coverage for the appended `A1:B1` row, including matching
 column views and erased dirty-cell absence.
+The exact-budget `erase_cells()` release no-op path now pins its saved live
+handle as well, including the lone recovery `A3` row/column views, erased
+source-cell absence, and clean materialized diagnostics.
 The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet

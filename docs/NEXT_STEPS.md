@@ -2654,6 +2654,12 @@ save contract for `insert_rows()`, `insert_columns()`, `delete_rows()`, and
 cell and shifting it, each path writes two clean no-op packages, checks stable
 entries and untouched source/output bytes, and fresh-reopens both no-op outputs
 to prove the preserved source `StyleId` remains readable.
+The cleared styled row/column shift paths now have the matching repeated
+clean no-op coverage for `insert_rows()`, `insert_columns()`, `delete_rows()`,
+and `delete_columns()`: after clearing the styled source formula value to a
+blank while preserving the source `StyleId`, each shifted output writes two
+clean no-op packages, compares stable entries, and fresh-reopens through the
+cleared-cell inspectors while source and prior output bytes stay unchanged.
 Full-calculation plus insert-shift success paths now carry the same repeated
 no-op-save readback for styled `insert_rows()` and `insert_columns()`: after
 the shifted materialized output writes `fullCalcOnLoad` without inventing

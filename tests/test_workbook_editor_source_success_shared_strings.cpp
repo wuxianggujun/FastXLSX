@@ -1285,6 +1285,10 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
         artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-sharedstrings-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-prefixed-sharedstrings-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1405,6 +1409,58 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
         expected_cells,
         fastxlsx::CellRange {1, 1, 1, 3},
         "prefixed sharedStrings post-dirty no-op output");
+
+    sheet.set_cell("D2", fastxlsx::CellValue::text("prefixed-shared-reuse"));
+    check(sheet.has_pending_changes(),
+        "prefixed sharedStrings post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "prefixed sharedStrings post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "prefixed sharedStrings post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="D2" t="inlineStr"><is><t>prefixed-shared-reuse</t></is></c>)",
+        "prefixed sharedStrings post-noop reuse save should include the later inline text edit");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") != post_noop_reuse_entries.end()
+            && post_noop_reuse_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "prefixed sharedStrings post-noop reuse save should preserve source sharedStrings bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "prefixed sharedStrings post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "prefixed sharedStrings post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "prefixed sharedStrings post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "prefixed sharedStrings post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-A&B")},
+        {1, 2, fastxlsx::CellValue::text("rich- tail ")},
+        {1, 3, fastxlsx::CellValue::text("prefixed-shared-dirty")},
+        {2, 4, fastxlsx::CellValue::text("prefixed-shared-reuse")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        "prefixed sharedStrings post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "prefixed sharedStrings post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "prefixed sharedStrings post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "prefixed sharedStrings post-noop reuse no-op save should not mutate the source package");
+    check_reopened_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        fastxlsx::CellRange {1, 1, 2, 4},
+        "prefixed sharedStrings post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_local_names_without_namespace_validation()

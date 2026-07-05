@@ -6396,6 +6396,13 @@ The same post-dirty no-op evidence now covers prefixed sharedStrings and
 views, follow-up no-op `save_as()` outputs are byte-stable, and source/no-op
 packages remain unchanged. This is still not namespace repair, rich-text
 formatting preservation, or broad sharedStrings migration.
+The prefixed sharedStrings path now also has post-noop reuse evidence: after the
+byte-stable post-dirty no-op save, the same borrowed `WorksheetEditor` can write
+another text cell, keep source sharedStrings bytes and prior packages unchanged,
+fresh-reopen with the expanded sparse values, and settle into another
+byte-stable no-op `save_as()`. This remains local-name materialization/reuse
+evidence only, not namespace repair, sharedStrings writeback, or broad
+sharedStrings migration.
 The same save/reopen stability evidence now also covers wrong-namespace
 local-name materialization and inconsistent count / unknown-attribute
 sharedStrings metadata. Dirty outputs remain byte-stable across a follow-up

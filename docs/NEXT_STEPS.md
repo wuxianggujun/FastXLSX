@@ -1698,6 +1698,10 @@ erased source cells.
 Those exact `max_cells` row/column erase no-op paths now also pin saved-handle
 sparse, row, and column snapshots for erased source absence, preserved
 non-target cells, recovery cells, and clean diagnostics.
+The inclusive `erase_rows()` / `erase_columns()` exact `max_cells` release
+paths now mirror that saved-handle coverage after a clean no-op save, proving
+the erased source rows/columns stay absent while the recovery cell remains the
+only represented sparse record.
 The same row/column erase paths now cover exact `memory_budget_bytes` release:
 an oversized insertion fails first, the erase clears that diagnostic and lowers
 the sparse memory estimate, then a smaller insertion saves/reopens without

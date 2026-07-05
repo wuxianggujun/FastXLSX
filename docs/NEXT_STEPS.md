@@ -643,6 +643,10 @@ source payloads, recovery cells, and clean materialized diagnostics.
 The matching `clear_rows()` and `clear_columns()` exact-budget release no-op
 paths now extend that saved-handle coverage across multi-row and multi-column
 blank/source/recovery views.
+The sparse range and batch `clear_cell_values()` exact-budget release no-op
+paths now carry the same saved-handle row/column snapshot checks for explicit
+blanks, preserved source payloads, recovery cells, and clean materialized
+diagnostics.
 The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet

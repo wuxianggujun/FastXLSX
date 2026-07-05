@@ -2664,6 +2664,10 @@ and `delete_columns()`: after clearing the styled source formula value to a
 blank while preserving the source `StyleId`, each shifted output writes two
 clean no-op packages, compares stable entries, and fresh-reopens through the
 cleared-cell inspectors while source and prior output bytes stay unchanged.
+Those cleared styled shift paths now also mirror the post-noop edit/save reuse
+coverage: after the repeated clean saves, the same `WorksheetEditor` handle can
+write a later text cell while the shifted blank keeps its `StyleId` and every
+previous package snapshot remains byte-stable.
 Full-calculation plus insert-shift success paths now carry the same repeated
 no-op-save readback for styled `insert_rows()` and `insert_columns()`: after
 the shifted materialized output writes `fullCalcOnLoad` without inventing

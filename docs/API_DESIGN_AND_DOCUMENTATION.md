@@ -397,10 +397,12 @@ finite-only 边界。`Cell::number(double)`、`CellView::number(double)`、
 width；小型 in-memory `Workbook` 路径在 `Workbook::save()` 序列化 worksheet XML
 时报 `FastXlsxError`。不要把 `NaN/Inf` 写成字符串、空单元格或 OpenXML 数字文本。
 
-当前 `Cell` / `CellView` 都没有专用 date cell 类型；日期/时间单元格只能由调用方按
-Excel serial number 写入 numeric cell。当前已有 streaming-only 自定义 number format
-styles，但 number format 只控制显示格式，不编码 date cell type、不计算日期序列值，也不验证
-日期语义。不要把 `DataValidationType::Date` 误写成 date cell encoding 已实现。
+当前 `Cell` / `CellView` 都没有专用 date cell 类型；日期/时间单元格仍写成 numeric cell。
+Streaming public helper 可以按 Excel 1900 date system 计算 date/time serial，并明确保留
+serial 60 的 1900 leap-year compatibility gap；它不支持 1904 date system，不做 timezone
+推断，也不创建样式或 workbook metadata。当前已有 streaming-only 自定义 number format
+styles 和常用 date/time number-format presets，但 number format 只控制显示格式，不编码
+date cell type。不要把 `DataValidationType::Date` 误写成 date cell encoding 已实现。
 
 对 styles 相关 public API，注释还要写清当前只支持 Streaming / new-workbook-only 的
 custom number format、窄 wrap-text + limited horizontal/vertical alignment、

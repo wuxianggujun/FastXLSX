@@ -2317,7 +2317,52 @@ private:
     std::filesystem::path path_;
 };
 
+std::chrono::sys_days make_sys_day(int year, unsigned month, unsigned day) noexcept
+{
+    return std::chrono::sys_days {std::chrono::year_month_day {
+        std::chrono::year {year}, std::chrono::month {month}, std::chrono::day {day}}};
+}
+
 } // namespace
+
+double date_time::excel_1900_date_serial(std::chrono::year_month_day date)
+{
+    if (!date.ok()) {
+        throw FastXlsxError("date must be a valid Gregorian calendar date");
+    }
+
+    const std::chrono::sys_days date_day {date};
+    const std::chrono::sys_days min_day = make_sys_day(1900, 1, 1);
+    const std::chrono::sys_days max_day = make_sys_day(9999, 12, 31);
+    if (date_day < min_day || date_day > max_day) {
+        throw FastXlsxError("date is outside Excel 1900 date-system range");
+    }
+
+    const std::chrono::sys_days base_day = make_sys_day(1899, 12, 31);
+    const std::chrono::sys_days leap_bug_cutover = make_sys_day(1900, 3, 1);
+    std::int64_t serial = (date_day - base_day).count();
+    if (date_day >= leap_bug_cutover) {
+        ++serial;
+    }
+    return static_cast<double>(serial);
+}
+
+double date_time::excel_1900_time_fraction(std::chrono::milliseconds time_of_day)
+{
+    const auto one_day =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::hours {24});
+    if (time_of_day < std::chrono::milliseconds::zero() || time_of_day >= one_day) {
+        throw FastXlsxError("time of day must be non-negative and less than 24 hours");
+    }
+
+    return static_cast<double>(time_of_day.count()) / static_cast<double>(one_day.count());
+}
+
+double date_time::excel_1900_date_time_serial(
+    std::chrono::year_month_day date, std::chrono::milliseconds time_of_day)
+{
+    return excel_1900_date_serial(date) + excel_1900_time_fraction(time_of_day);
+}
 
 StyleId::StyleId(std::uint32_t value, std::uintptr_t owner_token) noexcept
     : value_(value)

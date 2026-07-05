@@ -2654,6 +2654,10 @@ save contract for `insert_rows()`, `insert_columns()`, `delete_rows()`, and
 cell and shifting it, each path writes two clean no-op packages, checks stable
 entries and untouched source/output bytes, and fresh-reopens both no-op outputs
 to prove the preserved source `StyleId` remains readable.
+Those same value-only styled shift paths now also perform a later edit/save
+through the same clean `WorksheetEditor` handle after the repeated no-op saves,
+proving handle reuse while source, first output, and both no-op packages remain
+byte-stable.
 The cleared styled row/column shift paths now have the matching repeated
 clean no-op coverage for `insert_rows()`, `insert_columns()`, `delete_rows()`,
 and `delete_columns()`: after clearing the styled source formula value to a

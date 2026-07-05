@@ -1667,6 +1667,11 @@ and reopened copy-original readback stable.
 The formula-translation memory-budget shift failure path now also runs a second
 clean no-op `save_as()`, proving the copy-original output and public state stay
 stable after the rejected `insert_rows()` mutation.
+The adjacent exact-budget shift success path now pins the opposite branch:
+`insert_rows()` plus `insert_columns()` only move represented sparse records,
+so exact `max_cells` and exact `memory_budget_bytes` budgets remain valid,
+dirty diagnostics report the stable sparse store, and the saved/no-op outputs
+reopen with shifted row/column snapshots.
 The adjacent source-load options / memory-budget guard recoveries and mutation
 max-cells / memory-budget guard recoveries now mirror that second no-op
 contract too: repeated clean saves keep package entries byte-stable, preserve

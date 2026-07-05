@@ -8,7 +8,7 @@
 
 - `WorkbookWriter`、`WorksheetWriter`、`CellView`。
 - 按 worksheet/row 顺序输出，适合大型有序导出。
-- 支持当前 public headers 中的 cell、string strategy、style registry、worksheet metadata、table、conditional formatting 和 PNG/JPEG insertion 窄切片。
+- 支持当前 public headers 中的数字、文本、布尔、公式和显式 blank cell，以及 string strategy、style registry、worksheet metadata、table、conditional formatting 和 PNG/JPEG insertion 窄切片。
 - 不支持历史行随机修改；不得引入 worksheet DOM 或 dense matrix。
 
 ### Small new workbook

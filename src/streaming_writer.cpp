@@ -1104,6 +1104,11 @@ void write_cell(std::string& xml, std::uint32_t row, std::uint32_t column, const
     xml += "<c r=\"";
     detail::append_cell_reference(xml, row, column);
     switch (cell.type()) {
+    case CellView::Type::Blank:
+        xml += "\"";
+        append_style_attribute(xml, cell.style_id());
+        xml += "/>";
+        break;
     case CellView::Type::Number:
         xml += "\"";
         append_style_attribute(xml, cell.style_id());
@@ -2286,6 +2291,11 @@ StyleId::StyleId(std::uint32_t value, std::uintptr_t owner_token) noexcept
 std::uint32_t StyleId::value() const noexcept
 {
     return value_;
+}
+
+CellView CellView::blank() noexcept
+{
+    return CellView {};
 }
 
 CellView CellView::number(double value) noexcept

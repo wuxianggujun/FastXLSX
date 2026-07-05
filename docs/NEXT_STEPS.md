@@ -6131,6 +6131,13 @@ read-only materialization stays clean, the clean no-op output copies source
 package bytes and fresh-reopens with translated follower text, while the later
 flattened plain-formula output remains byte-stable and preserves both source and
 prior no-op package bytes.
+That base shared-formula path now also continues after the post-dirty no-op
+save: the same borrowed `WorksheetEditor` can accept a later formula edit, write
+a new flattened projection, preserve source/prior packages, fresh-reopen through
+public sparse views, and settle into another byte-stable no-op `save_as()`. This
+is shared-formula materialization/reuse evidence only, not shared formula
+metadata preservation, formula evaluation, cached value regeneration, or
+calcChain rebuild.
 Source-order shared formula matrices now carry both no-op gates too: read-only
 materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with interleaved/latest-definition followers translated as

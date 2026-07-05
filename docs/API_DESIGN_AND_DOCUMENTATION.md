@@ -182,6 +182,13 @@ later-wins ordering, rejects caller-supplied non-default `StyleId` handles, drop
 prior source style handles on overwritten cells, and rejects guardrail failures
 before mutating the active sparse store.
 
+`WorksheetEditor::set_row()` and `WorksheetEditor::set_column()` are the
+represented-row / represented-column full-cell replacements. They remove the
+currently represented sparse records in that row or column, write the input
+prefix from A / row 1, reject caller-supplied non-default `StyleId` handles, drop
+prior source style handles on overwritten target records, and leave non-target
+sparse cells and style handles unchanged.
+
 `WorksheetEditor` value-only APIs (`set_cell_value()`、`set_cell_values()`、
 `set_row_values()`、`set_column_values()`) keep the target cell's currently
 materialized source `StyleId` when overwriting an existing cell, reject

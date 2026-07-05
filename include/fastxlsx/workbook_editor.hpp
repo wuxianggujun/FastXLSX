@@ -636,9 +636,10 @@ struct WorkbookEditorRenameOptions {
 /// during materialization. Canonical non-zero unsigned decimal source style ids
 /// are validated against the source styles.xml `cellXfs` table, materialized as
 /// numeric passthrough handles, and written back by dirty projection while the
-/// source styles part is preserved. `set_cells()` shares the full-cell
-/// replacement semantics of `set_cell()`: caller-supplied non-default style ids
-/// are rejected, and prior source styles on overwritten cells are dropped.
+/// source styles part is preserved. `set_cells()`, `set_row()`, and
+/// `set_column()` share the full-cell replacement semantics of `set_cell()`:
+/// caller-supplied non-default style ids are rejected, and prior source styles
+/// on overwritten cells are dropped.
 /// `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
 /// `set_column_values()` can replace cell values while preserving currently
 /// materialized source style handles on those coordinates.
@@ -821,7 +822,9 @@ public:
     /// max_cells violations, or memory_budget_bytes violations reject the
     /// replacement before the active sparse store is mutated. Explicit
     /// CellValue::blank() values are represented as blank cells and are subject
-    /// to the same sparse-store guardrails.
+    /// to the same sparse-store guardrails. Because this is full-cell
+    /// replacement, source StyleId handles on overwritten target-row cells are
+    /// dropped; non-target sparse cells keep their existing style handles.
     ///
     /// This is not row insertion/deletion, row shifting, row metadata editing,
     /// table/range metadata recalculation, style migration/merge,
@@ -850,7 +853,9 @@ public:
     /// handles, max_cells violations, or memory_budget_bytes violations reject
     /// the replacement before the active sparse store is mutated. Explicit
     /// CellValue::blank() values are represented as blank cells and are subject
-    /// to the same sparse-store guardrails.
+    /// to the same sparse-store guardrails. Because this is full-cell
+    /// replacement, source StyleId handles on overwritten target-column cells
+    /// are dropped; non-target sparse cells keep their existing style handles.
     ///
     /// This is not column insertion/deletion, column shifting, column metadata
     /// editing, table/range metadata recalculation, style migration/merge,

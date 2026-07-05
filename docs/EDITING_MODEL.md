@@ -955,6 +955,13 @@ later-wins batch, reject caller-supplied non-default `StyleId` handles, drop
 prior source styles on overwritten cells, and fail before mutation when
 guardrails are exceeded.
 
+Represented row/column replacements (`set_row()` / `set_column()`) use the same
+full-cell replacement style policy for their target row or column: they remove
+currently represented target records, write the input prefix from column A or
+row 1, reject caller-supplied non-default `StyleId` handles, drop prior source
+styles on overwritten target records, and leave non-target sparse records and
+style handles unchanged.
+
 Value-only edits (`set_cell_value()`、`set_cell_values()`、`set_row_values()`、
 `set_column_values()`) are existing-workbook style-preserving writes over the
 materialized sparse store. They preserve an existing target cell's source

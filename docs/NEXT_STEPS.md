@@ -2572,6 +2572,11 @@ migration, or large-file low-memory random editing.
 Saved row/column replacement outputs are also reopened in public-state coverage
 to verify clean readback for replacement text, number, formula, explicit blank,
 untouched non-target cells, and non-synthesized sparse gaps.
+Public-state coverage now also pins the full-cell replacement style boundary for
+`set_row()` / `set_column()`: overwritten source-backed cells drop their prior
+`StyleId`, non-target source-backed cells keep their `StyleId`, dirty `save_as()`
+preserves the source `styles.xml`, fresh reopen readback matches the materialized
+state, and no-op saves keep the clean handle / catalog diagnostics stable.
 Public-state now also pins the exact-memory-budget failure path for those
 row/column replacements: oversized `set_row()` / `set_column()` payloads fail
 before deleting the old target records, preserving sparse counts, memory

@@ -73,10 +73,14 @@
   strict uppercase A1 convenience overloads、
   `cell_count()`、`estimated_memory_usage()` 和 dirty-session `save_as()` auto-flush。
 - `set_cells()` and `set_cell_values()` batch inputs are preflighted, allow duplicate
-  coordinates, and apply later-wins ordering. `set_cells()` is full sparse replacement and
-  drops prior source style handles on overwritten cells; `set_cell_values()` is value-only and
-  preserves the target's existing materialized source style handle. Guardrail checks reject the
-  whole batch before mutation, and duplicate missing coordinates count as one final sparse target.
+  coordinates, and apply later-wins ordering. `set_cell()` / `set_cells()` /
+  `set_row()` / `set_column()` are full sparse replacements and drop prior source
+  style handles on overwritten cells while leaving non-target sparse cells unchanged;
+  `set_cell_value()` / `set_cell_values()` / `set_row_values()` / `set_column_values()`
+  are value-only writes and preserve the target's existing materialized source style
+  handle, inserting missing cells without a style. Guardrail checks reject the whole
+  batch or row/column operation before mutation, and duplicate missing coordinates count
+  as one final sparse target for `set_cells()` / `set_cell_values()`.
 - Row/column shift helpers only move or delete represented sparse records. Shifted records keep
   their `CellValue` payloads and materialized source `StyleId` handles; moved formula cells
   translate supported A1-style references, and stationary formula cells already in the

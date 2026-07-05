@@ -17637,6 +17637,82 @@ void test_public_worksheet_editor_clear_and_erase_all_cells()
             "erase_cells reacquired no-op output should match the reacquired save output");
         check(fastxlsx::test::read_zip_entries(source) == source_entries,
             "erase_cells reacquired no-op save should leave the source package unchanged");
+
+        const auto check_erase_all_reacquired_saved_snapshots =
+            [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+                check(handle.cell_count() == 2,
+                    std::string(prefix) + " should keep the appended sparse count");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                    handle.sparse_cells();
+                check(cells.size() == 2,
+                    std::string(prefix) + " should expose both appended cells");
+                if (cells.size() == 2) {
+                    check(cells[0].reference.row == 1 &&
+                            cells[0].reference.column == 1 &&
+                            cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[0].value.text_value() == "after-erase-reacquire",
+                        std::string(prefix) + " should keep A1 text first");
+                    check(cells[1].reference.row == 1 &&
+                            cells[1].reference.column == 2 &&
+                            cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                            cells[1].value.number_value() == 9.0,
+                        std::string(prefix) + " should keep B1 number second");
+                }
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                    handle.row_cells(1);
+                check(row_one.size() == 2 &&
+                        row_one[0].reference.row == 1 &&
+                        row_one[0].reference.column == 1 &&
+                        row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_one[0].value.text_value() == "after-erase-reacquire" &&
+                        row_one[1].reference.row == 1 &&
+                        row_one[1].reference.column == 2 &&
+                        row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        row_one[1].value.number_value() == 9.0,
+                    std::string(prefix) + " should keep row-one appended order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                    handle.column_cells(1);
+                check(column_one.size() == 1 &&
+                        column_one[0].reference.row == 1 &&
+                        column_one[0].reference.column == 1 &&
+                        column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[0].value.text_value() == "after-erase-reacquire",
+                    std::string(prefix) + " should keep column-one A1 text");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                    handle.column_cells(2);
+                check(column_two.size() == 1 &&
+                        column_two[0].reference.row == 1 &&
+                        column_two[0].reference.column == 2 &&
+                        column_two[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        column_two[0].value.number_value() == 9.0,
+                    std::string(prefix) + " should keep column-two B1 number");
+                check(!handle.try_cell("D4").has_value(),
+                    std::string(prefix) + " should keep erased dirty D4 absent");
+                check_cell_range_equals(handle.used_range(), 1, 1, 1, 2,
+                    std::string(prefix) + " should keep appended bounds");
+                check(!handle.has_pending_changes(),
+                    std::string(prefix) + " should keep the handle clean");
+                check(editor.pending_change_count() == 2,
+                    std::string(prefix) + " should not add another materialized handoff");
+                check(editor.pending_materialized_worksheet_names().empty(),
+                    std::string(prefix) + " should keep dirty materialized names empty");
+                check(editor.pending_materialized_cell_count() == 0,
+                    std::string(prefix) + " should keep dirty materialized cells empty");
+                check(editor.estimated_pending_materialized_memory_usage() == 0,
+                    std::string(prefix) + " should keep dirty materialized memory empty");
+                check_workbook_editor_no_replacement_diagnostics(
+                    editor,
+                    std::string(prefix) +
+                        " should keep replacement diagnostics empty");
+                check(!editor.last_edit_error().has_value(),
+                    std::string(prefix) + " should keep diagnostics clear");
+            };
+        check_erase_all_reacquired_saved_snapshots(
+            sheet,
+            "erase_cells reacquired original saved handle");
+        check_erase_all_reacquired_saved_snapshots(
+            reacquired,
+            "erase_cells reacquired matching saved handle");
         check_reopened_clean_sheet_output(noop_output_after_reacquire, "Data",
             "erase_cells reacquired no-op save", inspect_erase_all_reacquired_output);
     }

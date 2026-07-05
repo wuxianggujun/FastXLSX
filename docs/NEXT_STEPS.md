@@ -629,6 +629,9 @@ read-only-query, invalid-read, and second no-op saves.
 The range-erase reacquired no-op save now also snapshots both saved live
 handles, pinning the lone `C3` row/column view, erased source-cell absence, and
 clean materialized diagnostics before the fresh reopen checks.
+The whole-store `erase_cells()` reacquired no-op path now mirrors that saved
+live-handle snapshot coverage for the appended `A1:B1` row, including matching
+column views and erased dirty-cell absence.
 The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet

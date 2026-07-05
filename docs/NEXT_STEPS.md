@@ -626,6 +626,9 @@ Range-erase reacquire and `clear_cell_values()` renamed memory-budget summary
 no-op sequences now carry the same diagnostics parity: replacement diagnostics
 stay empty across range erase reacquire, option-mismatch, missing-query,
 read-only-query, invalid-read, and second no-op saves.
+The range-erase reacquired no-op save now also snapshots both saved live
+handles, pinning the lone `C3` row/column view, erased source-cell absence, and
+clean materialized diagnostics before the fresh reopen checks.
 The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet

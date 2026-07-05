@@ -10795,6 +10795,67 @@ void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "range erase reacquired no-op save should leave the source package unchanged");
 
+    const auto check_range_erase_reacquired_saved_snapshots =
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+            check(handle.cell_count() == 1,
+                std::string(prefix) + " should keep one represented sparse cell");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 1,
+                std::string(prefix) + " should expose one row-major sparse snapshot");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 3 &&
+                        cells[0].reference.column == 3 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "range-erase-reacquired",
+                    std::string(prefix) + " should keep the saved C3 text snapshot");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                handle.row_cells(3);
+            check(row_three.size() == 1 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 3 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "range-erase-reacquired",
+                std::string(prefix) + " should keep the row-three C3 snapshot");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                handle.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 3 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "range-erase-reacquired",
+                std::string(prefix) + " should keep the column-three C3 snapshot");
+            check(!handle.try_cell("A1").has_value() &&
+                    !handle.try_cell("B1").has_value() &&
+                    !handle.try_cell("A2").has_value(),
+                std::string(prefix) + " should keep erased source cells absent");
+            check_cell_range_equals(handle.used_range(), 3, 3, 3, 3,
+                std::string(prefix) + " should keep the saved C3 bounds");
+            check(!handle.has_pending_changes(),
+                std::string(prefix) + " should keep the handle clean");
+            check(editor.pending_change_count() == 2,
+                std::string(prefix) + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                std::string(prefix) + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                std::string(prefix) + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(prefix) + " should keep dirty materialized memory empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor,
+                std::string(prefix) +
+                    " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                std::string(prefix) + " should keep diagnostics clear");
+        };
+    check_range_erase_reacquired_saved_snapshots(
+        sheet,
+        "range erase reacquired original saved handle");
+    check_range_erase_reacquired_saved_snapshots(
+        reacquired,
+        "range erase reacquired matching saved handle");
+
     check_reopened_clean_sheet_output(second_output, "Data", "range erase reacquired save",
         [](fastxlsx::WorksheetEditor& reopened_sheet) {
             check(reopened_sheet.cell_count() == 1,

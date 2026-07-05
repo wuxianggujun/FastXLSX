@@ -1697,6 +1697,9 @@ max-cells / memory-budget guard recoveries now mirror that second no-op
 contract too: repeated clean saves keep package entries byte-stable, preserve
 public diagnostics, leave sources unchanged, and fresh-reopen with the recovered
 replacement values.
+The source-load options guard recovery no-op branches now also pin the retained
+single-sheet replacement diagnostics and clear `last_edit_error()` contract,
+distinguishing replacement handoff state from dirty materialized state.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.

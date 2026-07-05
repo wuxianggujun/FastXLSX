@@ -474,6 +474,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM('O''Brien'!A2,[Book.xlsx]Sheet1!A4,Table1[A2],"A2"))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
+        R"(SUM('O''Brien'!#REF!,[Book.xlsx]Sheet1!A2,Table1[A2],"A2"))",
+        "formula structural row delete should preserve qualifiers and skip non-references");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM('Other Sheet'!B:B,[Book.xlsx]Sheet1!B2,Table1[B2],"B2"))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"(SUM('Other Sheet'!C:C,[Book.xlsx]Sheet1!C2,Table1[B2],"B2"))",
+        "formula structural column insert should preserve qualified whole-axis references");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             "A1+B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 3, 0}),
         "A1+B1",
         "formula structural rewrite should preserve text for zero-count edits");

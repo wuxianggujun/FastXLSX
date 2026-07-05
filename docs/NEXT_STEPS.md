@@ -3221,9 +3221,11 @@ formula cells continue to fall back to supported cached scalar `<v>` values when
 present. The narrow scanner/translator now lives in internal
 `include/fastxlsx/detail/formula.hpp` / `src/formula.cpp`, with
 `fastxlsx.formula` covering scanner boundaries, raw sheet qualifier spans, and
-reference translation; this is a reusable foundation for later dependency
-graphing, sheet-rename formula sync, and calcChain policy work, not an
-in-process formula evaluator.
+reference translation. Structural rewrite coverage now also pins quoted and
+external-workbook qualifiers through row deletion / column insertion while
+leaving structured references and string literals untouched; this is a reusable
+foundation for later dependency graphing, sheet-rename formula sync, and
+calcChain policy work, not an in-process formula evaluator.
 The representative source-formula dirty-save outputs now also fresh-reopen
 through the public `WorkbookEditor` facade: ordinary formulas with stale cached
 values, source error cells, cached-result type variants, and source-order shared

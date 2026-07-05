@@ -528,6 +528,52 @@ void test_streaming_writer_blank_cells()
         "blank cells should not create inline string markup");
 }
 
+void test_streaming_writer_sparse_rows()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-sparse-rows.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const fastxlsx::StyleId text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+    auto sheet = workbook.add_worksheet("Sparse");
+
+    sheet.append_sparse_row(
+        {
+            {3, fastxlsx::CellView::text("C1")},
+            {5, fastxlsx::CellView::number(5.0)},
+            {16384, fastxlsx::CellView::blank().with_style(text_style)},
+        },
+        fastxlsx::RowOptions {18.5});
+    sheet.append_sparse_row({});
+    sheet.append_sparse_row({{2, fastxlsx::CellView::formula("A1+1")}});
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "sparse-row xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:XFD3\"/>",
+        "sparse rows should track the highest sparse column and final appended row");
+    check_contains(worksheet_xml,
+        "<row r=\"1\" ht=\"18.5\" customHeight=\"1\"><c r=\"C1\" t=\"inlineStr\">"
+        "<is><t>C1</t></is></c><c r=\"E1\"><v>5</v></c><c r=\"XFD1\" s=\"1\"/></row>",
+        "sparse row should write only provided entries at their requested columns");
+    check_contains(worksheet_xml, "<row r=\"2\"></row>",
+        "empty sparse row should still append an empty row");
+    check_contains(worksheet_xml, "<row r=\"3\"><c r=\"B3\"><f>A1+1</f></c></row>",
+        "sparse formula row should preserve the requested column");
+    check(worksheet_xml.find("r=\"A1\"") == std::string::npos,
+        "sparse row should not synthesize missing leading cells");
+    check(worksheet_xml.find("r=\"D1\"") == std::string::npos,
+        "sparse row should not synthesize missing middle cells");
+    check(worksheet_xml.find("r=\"F1\"") == std::string::npos,
+        "sparse row should not synthesize missing cells before a styled blank");
+
+    const auto& workbook_xml = entries.at("xl/workbook.xml");
+    check_contains(workbook_xml, "<calcPr calcId=\"124519\" fullCalcOnLoad=\"1\"/>",
+        "sparse formula row should request workbook recalculation");
+}
+
 void test_streaming_writer_max_column_boundary()
 {
     const auto output_path =
@@ -613,6 +659,16 @@ void test_streaming_writer_failed_append_preserves_state()
         },
         "append_row should reject invalid row height before mutating streaming state");
 
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_sparse_row(
+                {
+                    {2, fastxlsx::CellView::text("bad sparse shared string")},
+                    {2, fastxlsx::CellView::formula("A1+1")},
+                });
+        },
+        "append_sparse_row should reject duplicate columns before mutating streaming state");
+
     sheet.append_row({fastxlsx::CellView::number(7.0)});
 
     check_fastxlsx_error(
@@ -625,6 +681,19 @@ void test_streaming_writer_failed_append_preserves_state()
     check_fastxlsx_error(
         [&sheet] { sheet.append_row({fastxlsx::CellView::formula("")}); },
         "append_row should reject empty formula text before mutating streaming state");
+
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_sparse_row(
+                {{2, fastxlsx::CellView::number(std::numeric_limits<double>::quiet_NaN())}});
+        },
+        "append_sparse_row should reject NaN before consuming a row number");
+
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_sparse_row({{2, fastxlsx::CellView::formula("")}});
+        },
+        "append_sparse_row should reject empty formula text before mutating streaming state");
 
     sheet.append_row({fastxlsx::CellView::boolean(true)});
 
@@ -646,6 +715,8 @@ void test_streaming_writer_failed_append_preserves_state()
         "failed append should not leave a gap in row numbers");
     check(worksheet_xml.find("bad shared string") == std::string::npos,
         "failed append should not serialize rejected text cells");
+    check(worksheet_xml.find("bad sparse shared string") == std::string::npos,
+        "failed sparse append should not serialize rejected text cells");
     check(worksheet_xml.find("<f>A1+1</f>") == std::string::npos,
         "failed append should not serialize rejected formulas");
     check(worksheet_xml.find("<f></f>") == std::string::npos,
@@ -1154,6 +1225,21 @@ void test_streaming_writer_invalid_metadata_and_rows()
                 too_wide_row.data(), too_wide_row.size()));
         },
         "append_row should reject rows beyond Excel's column limit");
+    check_fastxlsx_error(
+        [&sheet] { sheet.append_sparse_row({{0, fastxlsx::CellView::text("bad column")}}); },
+        "append_sparse_row should reject a zero column");
+    check_fastxlsx_error(
+        [&sheet] { sheet.append_sparse_row({{16385, fastxlsx::CellView::text("bad column")}}); },
+        "append_sparse_row should reject a column beyond Excel's limit");
+    check_fastxlsx_error(
+        [&sheet] {
+            sheet.append_sparse_row(
+                {
+                    {3, fastxlsx::CellView::text("bad order")},
+                    {2, fastxlsx::CellView::text("bad order")},
+                });
+        },
+        "append_sparse_row should reject non-increasing columns");
 
     fastxlsx::detail::testing_set_worksheet_row_count(sheet, 1048576);
     check_fastxlsx_error(
@@ -1171,6 +1257,7 @@ int main()
         test_streaming_writer_zip_compression_level_options();
         test_streaming_writer_empty_rows_dimension();
         test_streaming_writer_blank_cells();
+        test_streaming_writer_sparse_rows();
         test_streaming_writer_max_column_boundary();
         test_streaming_writer_max_row_boundary_with_test_hook();
         test_streaming_writer_failed_append_preserves_state();

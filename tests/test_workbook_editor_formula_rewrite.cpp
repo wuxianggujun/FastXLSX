@@ -2110,6 +2110,8 @@ void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
         "fastxlsx-workbook-editor-multi-materialized-formula-rewrite-source.xlsx");
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-multi-materialized-formula-rewrite-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-multi-materialized-formula-rewrite-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor formula_one = editor.worksheet("Formula One");
@@ -2175,12 +2177,47 @@ void test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in()
         "second materialized formula sheet should persist rewritten formula text");
     check_contains(output_entries.at("xl/worksheets/sheet4.xml"), "no formula",
         "unrelated materialized plain sheet should remain preserved");
+    check(!formula_one.has_pending_changes() && !formula_two.has_pending_changes()
+            && !plain.has_pending_changes(),
+        "multi-session formula rewrite save_as should clean every materialized session");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "multi-session formula rewrite after save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "multi-session formula rewrite after save_as should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-session formula rewrite after save_as should clear dirty materialized memory");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_flush =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_flush = editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "multi-session formula rewrite clean no-op save_as should be byte-stable");
+    check(!formula_one.has_pending_changes() && !formula_two.has_pending_changes()
+            && !plain.has_pending_changes(),
+        "multi-session formula rewrite no-op save_as should keep sessions clean");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_flush,
+        "multi-session formula rewrite after no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_flush),
+        "multi-session formula rewrite no-op save_as should preserve pending summaries");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     check(reopened.worksheet("Formula One").get_cell("A1").text_value() == expected_one,
         "reopened output should expose first rewritten materialized formula");
     check(reopened.worksheet("Formula Two").get_cell("A1").text_value() == expected_two,
         "reopened output should expose second rewritten materialized formula");
+    fastxlsx::WorkbookEditor reopened_noop =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    check(reopened_noop.worksheet("Formula One").get_cell("A1").text_value()
+            == expected_one,
+        "reopened no-op output should expose first rewritten materialized formula");
+    check(reopened_noop.worksheet("Formula Two").get_cell("A1").text_value()
+            == expected_two,
+        "reopened no-op output should expose second rewritten materialized formula");
 }
 
 void test_rename_sheet_formula_rewrite_failed_save_as_preserves_state()

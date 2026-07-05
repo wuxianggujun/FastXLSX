@@ -4143,6 +4143,10 @@ already-materialized worksheet formula sessions that actually contain matching
 formula references, leaves unrelated clean materialized sessions untouched,
 aggregates dirty diagnostics only for changed sessions, preserves external
 workbook qualifiers, and persists both rewritten worksheets through `save_as()`.
+That multi-session path now carries the same clean no-op handoff: after both
+changed materialized formula sessions flush, aggregate materialized diagnostics
+clear, the second `save_as()` writes byte-identical package entries, and the
+no-op output fresh-reopens both rewritten formula sheets.
 P8.574 moves formula dependency audit behind a semantic detail boundary:
 `include/fastxlsx/detail/formula_reference_audit.hpp` exposes
 `audit_formula_references()` and

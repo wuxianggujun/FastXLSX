@@ -948,6 +948,9 @@ add_fastxlsx_workbook_editor_target(
     fastxlsx_workbook_editor_public_state_tests
     test_workbook_editor_public_state.cpp
 )
+if(MSVC)
+    target_compile_options(fastxlsx_workbook_editor_public_state_tests PRIVATE /bigobj)
+endif()
 add_fastxlsx_workbook_editor_target(
     fastxlsx_workbook_editor_public_guards_tests
     test_workbook_editor_public_guards.cpp

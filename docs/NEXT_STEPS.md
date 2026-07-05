@@ -4947,6 +4947,10 @@ invalid follow-up mutation must update `last_edit_error()` without reverting or
 corrupting the rewritten formula, while a later valid mutation clears the
 diagnostic, updates dirty materialized diagnostics, and saves/reopens with both
 the rewritten formula and the later cell edit.
+That later-mutation path now also carries the clean no-op handoff: after the
+save flushes the rewritten formula plus the later materialized edit,
+materialized diagnostics clear, the next `save_as()` is byte-stable, and the
+no-op package fresh-reopens with both cells intact.
 P8.681 pins the corresponding Patch mixing boundary. After opt-in formula
 rewrite has dirtied the materialized `Formula` session, same-sheet
 `replace_sheet_data("Formula", ...)` must fail with the existing materialized

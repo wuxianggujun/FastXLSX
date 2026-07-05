@@ -2352,6 +2352,8 @@ void test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()
         "fastxlsx-workbook-editor-formula-rewrite-later-mutation-source.xlsx");
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-formula-rewrite-later-mutation-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-formula-rewrite-later-mutation-noop-output.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
@@ -2429,6 +2431,35 @@ void test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()
         "later mutation after formula rewrite should persist later materialized edits");
     check_not_contains(formula_sheet_xml, "rejected-after-formula-rewrite",
         "later mutation after formula rewrite should not leak rejected payloads");
+    check(!formula_sheet.has_pending_changes(),
+        "later mutation after formula rewrite save_as should clean the materialized session");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "later mutation after formula rewrite save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "later mutation after formula rewrite save_as should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "later mutation after formula rewrite save_as should clear dirty materialized memory");
+    const WorkbookEditorPublicSaveStateSnapshot save_state_after_flush =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary>
+        summaries_after_flush = editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "later mutation after formula rewrite clean no-op save_as should be byte-stable");
+    check(!formula_sheet.has_pending_changes(),
+        "later mutation after formula rewrite no-op save_as should keep the session clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "later mutation after formula rewrite no-op save_as should keep materialized diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_after_flush,
+        "later mutation after formula rewrite after no-op save_as");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_after_flush),
+        "later mutation after formula rewrite no-op save_as should preserve pending summaries");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
     fastxlsx::WorksheetEditor reopened_formula = reopened.worksheet("Formula");
@@ -2437,6 +2468,15 @@ void test_rename_sheet_formula_rewrite_dirty_session_accepts_later_mutations()
     check(reopened_formula.get_cell("A2").text_value()
             == "post-rewrite materialized edit",
         "reopened later-mutation output should expose the later edit");
+    fastxlsx::WorkbookEditor reopened_noop =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_noop_formula =
+        reopened_noop.worksheet("Formula");
+    check(reopened_noop_formula.get_cell("A1").text_value() == expected_formula,
+        "reopened later-mutation no-op output should expose the rewritten formula");
+    check(reopened_noop_formula.get_cell("A2").text_value()
+            == "post-rewrite materialized edit",
+        "reopened later-mutation no-op output should expose the later edit");
 }
 
 void test_rename_sheet_formula_rewrite_blocks_same_sheet_replacement()

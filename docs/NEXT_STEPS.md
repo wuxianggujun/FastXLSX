@@ -2633,6 +2633,10 @@ The styled source-backed `erase_row()` / `erase_rows()` variants now also repeat
 that second clean no-op save, requiring byte-identical entries and fresh reopen
 readback proving erased styled source cells stay absent without leaking their
 `StyleId` into the remaining non-target row.
+The styled source-backed `erase_column()` / `erase_columns()` variants now carry
+the same repeated clean no-op save, requiring byte-identical entries and fresh
+reopen readback proving erased styled source cells stay absent without leaking
+their `StyleId` into the remaining non-target column.
 The base sparse row/column shift success paths now also repeat that second
 clean no-op save before their existing post-noop edit checks. `insert_rows()`,
 `delete_rows()`, `insert_columns()`, and `delete_columns()` now require the

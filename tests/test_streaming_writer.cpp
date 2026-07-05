@@ -462,6 +462,72 @@ void test_streaming_writer_empty_rows_dimension()
         "sparse empty-row worksheet XML mismatch");
 }
 
+void test_streaming_writer_blank_cells()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-blank-cells.xlsx";
+
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    const fastxlsx::StyleId text_style = workbook.add_style(fastxlsx::CellStyle {"@"});
+    auto sheet = workbook.add_worksheet("Blank");
+
+    sheet.append_row({
+        fastxlsx::CellView::blank(),
+        fastxlsx::CellView::text(""),
+        fastxlsx::CellView::blank().with_style(text_style),
+        fastxlsx::CellView::text("tail"),
+    });
+
+    workbook.close();
+    check(std::filesystem::exists(output_path), "blank-cell xlsx file was not generated");
+
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    const auto& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "<dimension ref=\"A1:D1\"/>",
+        "blank cells should participate in dimension tracking");
+    check_contains(worksheet_xml,
+        "<row r=\"1\"><c r=\"A1\"/><c r=\"B1\" t=\"inlineStr\"><is><t></t></is></c>"
+        "<c r=\"C1\" s=\"1\"/><c r=\"D1\" t=\"inlineStr\"><is><t>tail</t></is></c></row>",
+        "blank, empty-string, styled-blank, and text cell XML should stay distinct");
+    check(worksheet_xml.find("E1") == std::string::npos,
+        "missing cells beyond the appended row should not be serialized");
+
+    const auto shared_blank_output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-shared-strings-blank-cells.xlsx";
+
+    fastxlsx::WorkbookWriterOptions options;
+    options.string_strategy = fastxlsx::StringStrategy::SharedString;
+    auto shared_workbook = fastxlsx::WorkbookWriter::create(shared_blank_output_path, options);
+    auto shared_sheet = shared_workbook.add_worksheet("BlankOnly");
+    shared_sheet.append_row({
+        fastxlsx::CellView::blank(),
+        fastxlsx::CellView::boolean(false),
+        fastxlsx::CellView::number(1.0),
+    });
+    shared_workbook.close();
+
+    const auto shared_entries = fastxlsx::test::read_zip_entries(shared_blank_output_path);
+    check(!shared_entries.contains("xl/sharedStrings.xml"),
+        "blank cells should not create sharedStrings.xml under SharedString strategy");
+    const auto& shared_content_types = shared_entries.at("[Content_Types].xml");
+    check(shared_content_types.find("/xl/sharedStrings.xml") == std::string::npos,
+        "blank cells should not add a sharedStrings content type override");
+    const auto& shared_workbook_rels = shared_entries.at("xl/_rels/workbook.xml.rels");
+    check(shared_workbook_rels.find("relationships/sharedStrings") == std::string::npos,
+        "blank cells should not add a sharedStrings workbook relationship");
+    const auto& shared_worksheet_xml = shared_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(shared_worksheet_xml, "<dimension ref=\"A1:C1\"/>",
+        "blank-only shared-string worksheet dimension mismatch");
+    check_contains(shared_worksheet_xml,
+        "<row r=\"1\"><c r=\"A1\"/><c r=\"B1\" t=\"b\"><v>0</v></c>"
+        "<c r=\"C1\"><v>1</v></c></row>",
+        "blank cells should not use shared or inline string markup");
+    check(shared_worksheet_xml.find(" t=\"s\"") == std::string::npos,
+        "blank cells should not reference shared string indexes");
+    check(shared_worksheet_xml.find("inlineStr") == std::string::npos,
+        "blank cells should not create inline string markup");
+}
+
 void test_streaming_writer_max_column_boundary()
 {
     const auto output_path =
@@ -1098,6 +1164,7 @@ int main()
         test_streaming_writer_document_properties();
         test_streaming_writer_zip_compression_level_options();
         test_streaming_writer_empty_rows_dimension();
+        test_streaming_writer_blank_cells();
         test_streaming_writer_max_column_boundary();
         test_streaming_writer_max_row_boundary_with_test_hook();
         test_streaming_writer_failed_append_preserves_state();

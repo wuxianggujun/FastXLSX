@@ -2547,9 +2547,11 @@ range editing or A1 range parsing.
 it writes input values to columns 1..N on the row after the current maximum
 represented sparse row, treats empty input as a no-op, and stages the append so
 width, row-limit, style, max_cells, and memory-budget failures do not mutate the
-active sparse store. This is not row insertion, row metadata creation,
-table/range metadata recalculation, sharedStrings/styles migration, or
-large-file low-memory random editing.
+active sparse store. Appended cells are new sparse records that do not inherit
+source style handles from existing source rows, while untouched source-backed
+cells and the preserved source styles part remain intact. This is not row
+insertion, row metadata creation, table/range metadata recalculation,
+sharedStrings/styles migration, or large-file low-memory random editing.
 The saved append output is reopened in public-state coverage to verify clean
 readback for the appended text, number, formula, explicit blank, and preserved
 source-backed rows.

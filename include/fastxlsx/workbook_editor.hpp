@@ -794,6 +794,8 @@ public:
     /// the append before the active sparse store is mutated. Explicit
     /// CellValue::blank() values are represented as blank cells in the appended
     /// row and are subject to the same sparse-store guardrails.
+    /// Appended records are new sparse cells: they do not inherit source StyleId
+    /// handles from prior rows, and no style metadata is synthesized.
     ///
     /// This is not row insertion, row metadata creation, table/range metadata
     /// recalculation, style migration/merge, sharedStrings migration, or a

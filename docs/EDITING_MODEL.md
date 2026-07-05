@@ -962,6 +962,11 @@ row 1, reject caller-supplied non-default `StyleId` handles, drop prior source
 styles on overwritten target records, and leave non-target sparse records and
 style handles unchanged.
 
+Append-row edits (`append_row()`) create new represented sparse cells after the
+current maximum represented row. They reject caller-supplied non-default
+`StyleId` handles and do not inherit source style handles from existing rows;
+the source styles part and untouched source-backed cells are still preserved.
+
 Value-only edits (`set_cell_value()`、`set_cell_values()`、`set_row_values()`、
 `set_column_values()`) are existing-workbook style-preserving writes over the
 materialized sparse store. They preserve an existing target cell's source

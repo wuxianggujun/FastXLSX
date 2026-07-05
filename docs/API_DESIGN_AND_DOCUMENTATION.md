@@ -189,6 +189,12 @@ prefix from A / row 1, reject caller-supplied non-default `StyleId` handles, dro
 prior source style handles on overwritten target records, and leave non-target
 sparse cells and style handles unchanged.
 
+`WorksheetEditor::append_row()` inserts a new represented sparse row after the
+current maximum represented row. Appended cells are new full cells, reject
+caller-supplied non-default `StyleId` handles, and do not inherit source
+`StyleId` handles from existing rows; existing source cells and the preserved
+source styles part remain unchanged.
+
 `WorksheetEditor` value-only APIs (`set_cell_value()`、`set_cell_values()`、
 `set_row_values()`、`set_column_values()`) keep the target cell's currently
 materialized source `StyleId` when overwriting an existing cell, reject

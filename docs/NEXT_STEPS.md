@@ -6380,6 +6380,13 @@ rich-run markup bytes, leaves the source and prior no-op output unchanged,
 fresh-reopens with flattened values through the public sparse views, and then
 proves a follow-up no-op `save_as()` output is byte-stable. This is not
 rich-text formatting preservation or broad sharedStrings migration.
+That rich sharedStrings fixture now also continues after the post-dirty no-op
+save: the same borrowed `WorksheetEditor` can append another text cell, preserve
+the earlier rich/plain shared-string indexes and prior package bytes, advance
+`count` / `uniqueCount`, fresh-reopen with the flattened sparse values, and
+settle into another byte-stable no-op `save_as()`. This remains narrow
+small-file In-memory sharedStrings reuse evidence, not sharedStrings rebuild,
+rich-text formatting preservation, relationship repair, or in-place save.
 The legal XML declaration sharedStrings cases now carry the same post-dirty
 no-op evidence: dirty output reopens through public sparse views, the follow-up
 no-op `save_as()` is byte-stable, and source/no-op packages remain unchanged.

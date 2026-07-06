@@ -1679,6 +1679,9 @@ verify the rejected target stays absent while source-backed cells remain clean.
 They now repeat the clean no-op save as well, covering both max-cells and
 memory-budget missing-erase recovery while keeping public state, source entries,
 and reopened copy-original readback stable.
+Those missing-erase outputs now also reacquire with the original strict
+`WorksheetEditorOptions` and repeat clean no-op saves, proving copy-original
+readback remains budget-valid after the saved-output handoff.
 The formula-translation memory-budget shift failure path now also runs a second
 clean no-op `save_as()`, proving the copy-original output and public state stay
 stable after the rejected `insert_rows()` mutation.

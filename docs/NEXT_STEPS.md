@@ -1762,6 +1762,9 @@ stays clean, and repeated no-op saves keep package entries stable.
 The styled `erase_cells()` range variant now follows the same handoff: erased
 styled and unstyled targets stay absent, the non-target source cell remains
 unstyled, and reacquired no-op saves keep the output stable.
+The styled `erase_row()` variant now carries that saved-output handoff too:
+the erased styled row remains absent, the surviving row stays unstyled, and
+reacquired no-op saves stay byte-stable.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.

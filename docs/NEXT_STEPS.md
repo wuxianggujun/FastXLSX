@@ -1653,6 +1653,9 @@ rejected prefix targets.
 Those value-prefix max-cells recovery outputs now also reacquire with the same
 strict `max_cells` options and run a clean no-op `save_as()`, proving the saved
 sparse prefix edits remain reusable after handoff.
+The adjacent value-prefix memory-budget recovery outputs now carry the same
+strict-options reacquire/no-op contract, including the original sparse-store
+memory estimate, byte-stable entries, and unchanged sources.
 Whole-store `clear_cell_values()` / `erase_cells()` saves are now reopened after
 both the first projection and post-save handle reuse, covering styled blanks,
 empty worksheets, and later value/appended edits.

@@ -1802,6 +1802,9 @@ absence, recovery cells, and clean materialized diagnostics.
 The matching `erase_column()` and `erase_columns()` exact memory-budget release
 no-op paths now extend that saved-handle coverage to preserved non-target
 columns, erased column absence, recovery cells, and clean diagnostics.
+They now also reacquire the saved outputs with the original strict
+`WorksheetEditorOptions`, keeping the same sparse snapshots within budget while
+the matching-option clean no-op save remains byte-stable.
 The dirty-state save/reuse path now reopens both the first erased-cell save and
 the later post-save mutation output, verifying clean readback across repeated
 `save_as()` calls on the same materialized handle.

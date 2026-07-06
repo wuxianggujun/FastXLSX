@@ -649,6 +649,8 @@ source payloads, recovery cells, and clean materialized diagnostics.
 The matching `clear_rows()` and `clear_columns()` exact-budget release no-op
 paths now extend that saved-handle coverage across multi-row and multi-column
 blank/source/recovery views.
+They now also cover same-editor matching-option reacquire plus clean no-op
+saves, proving both saved handles stay clean and package entries remain stable.
 The sparse range and batch `clear_cell_values()` exact-budget release no-op
 paths now carry the same saved-handle row/column snapshot checks for explicit
 blanks, preserved source payloads, recovery cells, and clean materialized

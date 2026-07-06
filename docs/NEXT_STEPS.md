@@ -1650,6 +1650,9 @@ absence.
 The `set_row_values()` / `set_column_values()` max-cells recovery saves are
 also reopened, pinning value-prefix overwrites, preserved sparse tails, and
 rejected prefix targets.
+Those value-prefix max-cells recovery outputs now also reacquire with the same
+strict `max_cells` options and run a clean no-op `save_as()`, proving the saved
+sparse prefix edits remain reusable after handoff.
 Whole-store `clear_cell_values()` / `erase_cells()` saves are now reopened after
 both the first projection and post-save handle reuse, covering styled blanks,
 empty worksheets, and later value/appended edits.

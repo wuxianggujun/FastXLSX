@@ -6541,6 +6541,14 @@ the expected deferred diagnostic for shared-string sheets, a follow-up no-op
 is deferred failure hygiene and dirty-session reuse evidence only, not
 sharedStrings repair, relationship repair, schema/content-type repair, or broad
 migration.
+Those same lazy invalid sharedStrings paths now also continue after that
+post-dirty no-op save: the borrowed `WorksheetEditor` can write another inline
+text cell on the non-index sheet, keep the bad sharedStrings metadata opaque,
+leave source / prior dirty / prior no-op packages unchanged, fresh-reopen with
+the expanded sparse row and the same deferred diagnostic, and settle into
+another byte-stable no-op save. This is still small-file In-memory
+dirty-session handoff evidence, not metadata repair, string-table migration, or
+relationship cleanup.
 That same base fixture now continues after the post-dirty no-op save: the
 borrowed `WorksheetEditor` can append a second plain shared string, preserve
 the first appended index, advance `count` / `uniqueCount`, leave the earlier

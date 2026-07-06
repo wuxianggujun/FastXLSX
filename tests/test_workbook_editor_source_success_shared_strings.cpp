@@ -379,6 +379,10 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-post-noop-reuse-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-missing-target-failure-recovery-output.xlsx");
     {
@@ -476,6 +480,62 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
         "workbook sharedStrings relationship targets an unknown package part",
         "lazy missing sharedStrings target post-dirty no-op output");
 
+    sheet.set_cell("E1", fastxlsx::CellValue::text("lazy-missing-target-reuse"));
+    check(sheet.has_pending_changes(),
+        "lazy missing sharedStrings target post-noop reuse edit should dirty Data");
+    check(!editor.last_edit_error().has_value(),
+        "lazy missing sharedStrings target post-noop reuse edit should keep last_edit_error clear");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "lazy missing sharedStrings target post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="E1" t="inlineStr"><is><t>lazy-missing-target-reuse</t></is></c>)",
+        "lazy missing sharedStrings target post-noop reuse save should include the later inline text edit");
+    check_not_contains(post_noop_reuse_worksheet, R"(t="s")",
+        "lazy missing sharedStrings target post-noop reuse save should not introduce shared string indexes");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") != post_noop_reuse_entries.end()
+            && post_noop_reuse_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "lazy missing sharedStrings target post-noop reuse save should preserve source sharedStrings bytes");
+    check_contains(post_noop_reuse_entries.at("xl/_rels/workbook.xml.rels"),
+        R"(Target="missingSharedStrings.xml")",
+        "lazy missing sharedStrings target post-noop reuse save should not repair the stale workbook relationship");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy missing sharedStrings target post-noop reuse save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy missing sharedStrings target post-noop reuse save should not mutate dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy missing sharedStrings target post-noop reuse save should not mutate dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(2.0)},
+        {1, 2, fastxlsx::CellValue::boolean(true)},
+        {1, 3, fastxlsx::CellValue::formula("A1+1")},
+        {1, 4, fastxlsx::CellValue::text("inline-after-lazy-sharedStrings")},
+        {1, 5, fastxlsx::CellValue::text("lazy-missing-target-reuse")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        "workbook sharedStrings relationship targets an unknown package part",
+        "lazy missing sharedStrings target post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy missing sharedStrings target post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "lazy missing sharedStrings target post-noop reuse no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy missing sharedStrings target post-noop reuse no-op save should not mutate source");
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        "workbook sharedStrings relationship targets an unknown package part",
+        "lazy missing sharedStrings target post-noop reuse no-op output");
+
     check_public_worksheet_materialization_failure_hygiene(
         source,
         failure_recovery_output,
@@ -495,6 +555,10 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-post-noop-reuse-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-failure-recovery-output.xlsx");
     {
@@ -565,6 +629,59 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         "workbook sharedStrings lookup found multiple sharedStrings relationships",
         "lazy duplicate sharedStrings relationship post-dirty no-op output");
 
+    sheet.set_cell("C1", fastxlsx::CellValue::text("duplicate-rel-reuse"));
+    check(sheet.has_pending_changes(),
+        "lazy duplicate sharedStrings relationship post-noop reuse edit should dirty Data");
+    check(!editor.last_edit_error().has_value(),
+        "lazy duplicate sharedStrings relationship post-noop reuse edit should keep last_edit_error clear");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "lazy duplicate sharedStrings relationship post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="C1" t="inlineStr"><is><t>duplicate-rel-reuse</t></is></c>)",
+        "lazy duplicate sharedStrings relationship post-noop reuse save should include the later inline text edit");
+    check_not_contains(post_noop_reuse_worksheet, R"(t="s")",
+        "lazy duplicate sharedStrings relationship post-noop reuse save should not introduce shared string indexes");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") != post_noop_reuse_entries.end()
+            && post_noop_reuse_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "lazy duplicate sharedStrings relationship post-noop reuse save should preserve source sharedStrings bytes");
+    check_contains(post_noop_reuse_entries.at("xl/_rels/workbook.xml.rels"), R"(Id="rId99")",
+        "lazy duplicate sharedStrings relationship post-noop reuse save should preserve duplicate relationship bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy duplicate sharedStrings relationship post-noop reuse save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy duplicate sharedStrings relationship post-noop reuse save should not mutate dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy duplicate sharedStrings relationship post-noop reuse save should not mutate dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(7.0)},
+        {1, 2, fastxlsx::CellValue::text("after-duplicate-rel-lazy-load")},
+        {1, 3, fastxlsx::CellValue::text("duplicate-rel-reuse")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "lazy duplicate sharedStrings relationship post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy duplicate sharedStrings relationship post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "lazy duplicate sharedStrings relationship post-noop reuse no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy duplicate sharedStrings relationship post-noop reuse no-op save should not mutate source");
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "lazy duplicate sharedStrings relationship post-noop reuse no-op output");
+
     check_public_worksheet_materialization_failure_hygiene(
         source,
         failure_recovery_output,
@@ -584,6 +701,10 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-post-noop-reuse-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-failure-recovery-output.xlsx");
     {
@@ -649,6 +770,57 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
         "CellStore sharedStrings loader root is missing an sst element",
         "lazy malformed sharedStrings XML post-dirty no-op output");
 
+    sheet.set_cell("C1", fastxlsx::CellValue::text("malformed-xml-reuse"));
+    check(sheet.has_pending_changes(),
+        "lazy malformed sharedStrings XML post-noop reuse edit should dirty Data");
+    check(!editor.last_edit_error().has_value(),
+        "lazy malformed sharedStrings XML post-noop reuse edit should keep last_edit_error clear");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "lazy malformed sharedStrings XML post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="C1" t="inlineStr"><is><t>malformed-xml-reuse</t></is></c>)",
+        "lazy malformed sharedStrings XML post-noop reuse save should include the later inline text edit");
+    check_not_contains(post_noop_reuse_worksheet, R"(t="s")",
+        "lazy malformed sharedStrings XML post-noop reuse save should not introduce shared string indexes");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") != post_noop_reuse_entries.end()
+            && post_noop_reuse_entries.at("xl/sharedStrings.xml") == R"(<notSst/>)",
+        "lazy malformed sharedStrings XML post-noop reuse save should preserve malformed sharedStrings bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy malformed sharedStrings XML post-noop reuse save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy malformed sharedStrings XML post-noop reuse save should not mutate dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy malformed sharedStrings XML post-noop reuse save should not mutate dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(11.0)},
+        {1, 2, fastxlsx::CellValue::text("after-malformed-xml-lazy-load")},
+        {1, 3, fastxlsx::CellValue::text("malformed-xml-reuse")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        "CellStore sharedStrings loader root is missing an sst element",
+        "lazy malformed sharedStrings XML post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy malformed sharedStrings XML post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "lazy malformed sharedStrings XML post-noop reuse no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy malformed sharedStrings XML post-noop reuse no-op save should not mutate source");
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        "CellStore sharedStrings loader root is missing an sst element",
+        "lazy malformed sharedStrings XML post-noop reuse no-op output");
+
     check_public_worksheet_materialization_failure_hygiene(
         source,
         failure_recovery_output,
@@ -668,6 +840,10 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-post-noop-reuse-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-failure-recovery-output.xlsx");
     {
@@ -739,6 +915,60 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
         expected_cells,
         "workbook sharedStrings relationship target is not a sharedStrings part",
         "lazy wrong sharedStrings content type post-dirty no-op output");
+
+    sheet.set_cell("C1", fastxlsx::CellValue::text("wrong-content-type-reuse"));
+    check(sheet.has_pending_changes(),
+        "lazy wrong sharedStrings content type post-noop reuse edit should dirty Data");
+    check(!editor.last_edit_error().has_value(),
+        "lazy wrong sharedStrings content type post-noop reuse edit should keep last_edit_error clear");
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "lazy wrong sharedStrings content type post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_worksheet =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_worksheet,
+        R"(<c r="C1" t="inlineStr"><is><t>wrong-content-type-reuse</t></is></c>)",
+        "lazy wrong sharedStrings content type post-noop reuse save should include the later inline text edit");
+    check_not_contains(post_noop_reuse_worksheet, R"(t="s")",
+        "lazy wrong sharedStrings content type post-noop reuse save should not introduce shared string indexes");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") != post_noop_reuse_entries.end()
+            && post_noop_reuse_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "lazy wrong sharedStrings content type post-noop reuse save should preserve sharedStrings bytes");
+    check_contains(post_noop_reuse_entries.at("[Content_Types].xml"),
+        R"(PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml")",
+        "lazy wrong sharedStrings content type post-noop reuse save should preserve wrong content type metadata");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy wrong sharedStrings content type post-noop reuse save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy wrong sharedStrings content type post-noop reuse save should not mutate dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy wrong sharedStrings content type post-noop reuse save should not mutate dirty no-op output");
+    const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(13.0)},
+        {1, 2, fastxlsx::CellValue::text("after-wrong-content-type-lazy-load")},
+        {1, 3, fastxlsx::CellValue::text("wrong-content-type-reuse")},
+    };
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_output,
+        post_noop_reuse_cells,
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "lazy wrong sharedStrings content type post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy wrong sharedStrings content type post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "lazy wrong sharedStrings content type post-noop reuse no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy wrong sharedStrings content type post-noop reuse no-op save should not mutate source");
+    check_reopened_lazy_shared_strings_dirty_output(
+        post_noop_reuse_noop_output,
+        post_noop_reuse_cells,
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "lazy wrong sharedStrings content type post-noop reuse no-op output");
 
     check_public_worksheet_materialization_failure_hygiene(
         source,

@@ -1756,6 +1756,9 @@ shrunk bounds.
 That saved erase output now also reacquires as a clean `WorksheetEditor` session
 and repeats clean no-op saves, proving the erased coordinate remains absent and
 package entries stay stable after saved-output handoff.
+The styled `erase_cell()` variant now mirrors that saved-output reacquire path:
+the erased styled source cell stays absent, the surviving unstyled neighbor
+stays clean, and repeated no-op saves keep package entries stable.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.

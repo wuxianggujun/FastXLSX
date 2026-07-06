@@ -925,6 +925,9 @@ leave the dirty formula session and materialized diagnostics intact.
 The same baseline formula lane now also snapshots the same-editor saved-audit
 live handle and no-op output reopen, proving audit reads do not dirty the saved
 materialized session before the clean no-op save.
+That same live-handle snapshot now also pins editor-level saved-state hygiene:
+the materialized handoff count remains stable while dirty materialized
+diagnostics and dirty summaries stay empty.
 The failed-save baseline no-op output now reuses the same row/column snapshot
 helper after fresh reopen, pinning source rows/columns and the saved `C2`
 formula after the rejected exact-source save is safely retried.

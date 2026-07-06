@@ -7060,6 +7060,10 @@ schema validation.
   coverage for explicit blank `A1`, preserved source-backed `A2`, and
   source-backed `B1`, while the rejected blank `D4` column stays absent. This is
   readback parity for clean saved outputs, not a new blank-cell policy.
+- The erased-cell budget-release recovery path now also snapshots reopened
+  source-backed `A1` / `B1` through `row_cells()` and `column_cells()`, while
+  erased source-backed `A2` remains absent and inserted `D4` keeps its existing
+  row/column readback. This is sparse-store recovery evidence only.
 - Current public API:
   - `Workbook`
   - `Worksheet`

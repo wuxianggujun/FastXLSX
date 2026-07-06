@@ -6379,6 +6379,14 @@ still save through the standalone CellStore worksheet projection, the follow-up
 unchanged, and fresh reopen still sees only the inserted sparse cell. This does
 not imply XML repair, clean-session commit semantics, source wrapper metadata
 preservation, same-sheet Patch bypass, or large-file random editing.
+Those empty-source variants now also reuse the same clean materialized handle
+after the byte-stable post-dirty no-op save: a later escaped text edit extends
+the regenerated projection to `B2:C3`, keeps the original placeholder absent,
+avoids sharedStrings, preserves source/no-op/dirty/no-op package bytes,
+fresh-reopens through sparse views, and settles into another byte-stable no-op
+save. This remains standalone sparse CellStore projection reuse only, not XML
+repair, clean-session commit semantics, source wrapper metadata preservation,
+same-sheet Patch bypass, metadata repair, or large-file random editing.
 Worksheet root and `sheetData` boundary failure hygiene is pinned too: markup
 before the worksheet root, duplicate `sheetData`, duplicate worksheet roots, and
 trailing text fail cleanly without partial sessions. This is strict validation,

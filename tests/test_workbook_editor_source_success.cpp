@@ -1319,6 +1319,12 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
             const std::filesystem::path dirty_noop_output = artifact(
                 std::string("fastxlsx-workbook-editor-public-empty-source-")
                 + std::string(tag) + "-dirty-noop-output.xlsx");
+            const std::filesystem::path post_noop_reuse_output = artifact(
+                std::string("fastxlsx-workbook-editor-public-empty-source-")
+                + std::string(tag) + "-post-noop-reuse-output.xlsx");
+            const std::filesystem::path post_noop_reuse_noop_output = artifact(
+                std::string("fastxlsx-workbook-editor-public-empty-source-")
+                + std::string(tag) + "-post-noop-reuse-noop-output.xlsx");
 
             std::map<std::string, std::string> entries =
                 fastxlsx::test::read_zip_entries(source);
@@ -1426,6 +1432,85 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
                 expected_cells,
                 std::string("empty source ") + std::string(tag)
                     + " post-dirty no-op output");
+
+            const auto dirty_noop_entries = fastxlsx::test::read_zip_entries(dirty_noop_output);
+            const std::string reused_text =
+                std::string("empty-source-reused-") + std::string(tag) + " & <again>";
+            sheet.set_cell("C3", fastxlsx::CellValue::text(reused_text));
+            check(sheet.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse edit should dirty Data");
+            check(editor.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse edit should dirty WorkbookEditor");
+            check(sheet.cell_count() == 2,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse edit should add one sparse record");
+
+            editor.save_as(post_noop_reuse_output);
+            check(!sheet.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should keep Data clean");
+            const auto post_noop_reuse_entries =
+                fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+            const std::string post_noop_reuse_xml =
+                post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+            check_contains(post_noop_reuse_xml, R"(<dimension ref="B2:C3"/>)",
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should refresh dimension from sparse records");
+            check_contains(post_noop_reuse_xml,
+                R"(<row r="3"><c r="C3" t="inlineStr"><is><t>)"
+                    + std::string("empty-source-reused-") + std::string(tag)
+                    + R"( &amp; &lt;again&gt;</t></is></c></row>)",
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should include the later escaped text edit");
+            check_not_contains(post_noop_reuse_xml, "placeholder-empty-source",
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should not revive original placeholder cells");
+            check(post_noop_reuse_entries.find("xl/sharedStrings.xml")
+                    == post_noop_reuse_entries.end(),
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should still avoid sharedStrings");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should not mutate the source package");
+            check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should not mutate the prior no-op output");
+            check(fastxlsx::test::read_zip_entries(output) == output_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should not mutate the prior dirty output");
+            check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_noop_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse save should not mutate the prior dirty no-op output");
+            const ReopenedSourceSuccessCell post_noop_reuse_cells[] = {
+                {2, 2, fastxlsx::CellValue::text(inserted_text)},
+                {3, 3, fastxlsx::CellValue::text(reused_text)},
+            };
+            check_reopened_source_success_dirty_output(
+                post_noop_reuse_output,
+                fastxlsx::CellRange {2, 2, 3, 3},
+                post_noop_reuse_cells,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse output");
+
+            editor.save_as(post_noop_reuse_noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse no-op save should keep Data clean");
+            check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+                    == post_noop_reuse_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse no-op save should keep output byte-stable");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse no-op save should not mutate the source package");
+            check_reopened_source_success_dirty_output(
+                post_noop_reuse_noop_output,
+                fastxlsx::CellRange {2, 2, 3, 3},
+                post_noop_reuse_cells,
+                std::string("empty source ") + std::string(tag)
+                    + " post-noop reuse no-op output");
         };
 
     expect_empty_source_worksheet_materialization(

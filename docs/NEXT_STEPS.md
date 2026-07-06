@@ -574,6 +574,9 @@ same shifted and post-noop formula cells through the range snapshot overload.
 The same rich formula-shape matrix now also exercises coordinate-batch
 `sparse_cells()` reads so stale pre-shift coordinates are skipped while shifted
 and later post-noop formula cells remain visible.
+It now mirrors the row/column snapshot checks on live materialized sessions before
+the initial save and after later post-noop formula edits, so fresh reopen is not
+the only public surface proving represented formula order.
 The basic materialized shift reacquire paths now carry the same replacement
 diagnostics check after their post-noop edit/save step for row insert, column
 insert, row delete, and column delete.

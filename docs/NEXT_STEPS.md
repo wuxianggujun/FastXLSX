@@ -1677,6 +1677,10 @@ max-cells recovery saves, verifying compact readback plus rejected column
 absence.
 The row/column replacement max-cells recovery outputs now also reacquire under
 the same strict `max_cells` options and keep clean save/no-op entries stable.
+Those strict-options represented row/column max-cells handles now also continue
+past the no-op saves: a later in-budget `A1` replacement saves a fresh-reopenable
+output while preserving the non-target sparse tail, excluding rejected cells,
+and leaving earlier outputs unchanged.
 The matching `set_row()` / `set_column()` memory-budget recovery outputs now
 also reacquire under the original strict sparse-store budget and keep clean
 save/no-op output entries stable.

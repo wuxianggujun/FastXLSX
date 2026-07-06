@@ -2585,6 +2585,10 @@ Sparse range and coordinate-batch value clears now match that boundary too:
 release cleared text payload estimates, keep represented target coordinates as
 blanks, skip missing coordinates without synthesis, preserve non-target cells,
 and save/reopen a later recovery cell inside the same exact budget.
+The range `clear_cell_values(CellRange)` exact-budget output now also reacquires
+with the same `WorksheetEditorOptions` and writes a clean no-op save, proving the
+blank sparse records and recovery cell remain readable without adding another
+materialized handoff.
 No-argument `clear_cell_values()` now completes the value-clear exact-budget
 family: it clears all represented values to explicit blanks, releases all value
 payload estimates, and still saves/reopens a later recovery cell without

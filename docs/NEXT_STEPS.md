@@ -1759,6 +1759,9 @@ That recovered output now also reacquires with the original strict
 `WorksheetEditorOptions` and repeats clean no-op saves, proving diagnostics stay
 clear and the successful overwrite remains budget-valid after saved-output
 handoff.
+The same strict-options reacquired output now also performs a later same-budget
+A1 overwrite after those repeated no-op saves, then saves and reopens without
+reviving stale `last_edit_error()` diagnostics or rejected payloads.
 The mixed public-edit diagnostic recovery path also reopens the saved output to
 verify copy-original `Data` state and replacement-only `Untouched` state after
 failed replacement, rename, and materialized mutation attempts.

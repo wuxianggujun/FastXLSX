@@ -6084,6 +6084,15 @@ bytes, clean no-op outputs fresh-reopen with the edge record still present, and
 erasing either `XFD1048576` record shrinks dirty projection to `A1:B2`. This is
 not rich text preservation, inline/scalar coercion, XML repair, source reload,
 or large-file random editing.
+Those empty inline-string source shapes now also reuse the same materialized
+handle after erase and a byte-stable clean no-op save: the empty-text edge can be
+written back as non-empty inline text, the `<is/>` edge can be written back as an
+explicit blank, dimension expands again to `A1:XFD1048576`, source/erase/no-op
+packages remain unchanged, fresh reopen sees the restored edge through sparse
+views, and a second no-op save remains byte-stable. This is empty inline
+materialization/projection reuse evidence only, not rich text preservation,
+inline wrapper preservation, XML repair, source reload, or large-file random
+editing.
 Workbook sharedStrings rich text is pinned at the same edge too: a source
 `XFD1048576` `t="s"` record can point at simple rich `<r><t>...</t></r>` runs,
 materialize as flattened plain text, ignore phonetic/extension metadata text,

@@ -1682,6 +1682,10 @@ clean diagnostics plus the saved erased/inserted sparse coordinates.
 Those erased-cell budget-release recoveries now also run a second clean no-op
 `save_as()` for both max-cells and memory-budget paths, proving repeated saves
 remain byte-stable while sources and recovered sparse readback stay unchanged.
+They now also reopen those erased-cell budget-release outputs with the original
+strict `WorksheetEditorOptions`, run repeated clean no-op saves, then overwrite
+the recovered `D4` cell without exceeding the original max-cells or memory
+budgets while prior outputs and rejected payloads remain unchanged.
 The adjacent missing-erase guardrail clean-save paths are also reopened to
 verify the rejected target stays absent while source-backed cells remain clean.
 They now repeat the clean no-op save as well, covering both max-cells and

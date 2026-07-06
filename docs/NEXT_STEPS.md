@@ -2711,6 +2711,10 @@ fresh editor session and repeats clean no-op saves, proving preserved source
 The styled `clear_rows()` inclusive-range path now mirrors that saved-output
 handoff: preserved source `StyleId` blank handles, unstyled blanks, and clean
 no-op saves survive after reacquiring the saved output.
+The styled `clear_column()` / `clear_columns()` paths now close the same
+saved-output handoff loop for column clears: a fresh editor session can reopen
+the styled blank output, repeat clean no-op saves, and preserve non-target
+column cells without introducing dirty diagnostics.
 The successful sparse row/column erase paths now have the same repeated
 no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 `erase_columns()`: after the erase output and first clean no-op save, each path

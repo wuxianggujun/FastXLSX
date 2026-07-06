@@ -6443,6 +6443,17 @@ package bytes stay unchanged, and fresh reopen still sees the supported sparse
 cells. This is not merged-cell editing, validation/conditional-formatting
 import, page setup synchronization, range recalculation, metadata repair,
 relationship repair, or semantic range-object editing.
+That range/reference wrapper path now also reuses the same clean materialized
+handle after the byte-stable post-dirty no-op save: a later escaped text edit
+extends the regenerated sparse projection to `A1:D4`, keeps the original
+`mergeCells`, `dataValidations`, `conditionalFormatting`, `ignoredErrors`,
+`pageMargins`, and `pageSetup` XML around the rewritten `sheetData`, avoids
+sharedStrings, preserves source/no-op/dirty/no-op package bytes, fresh-reopens
+through sparse views, and settles into another byte-stable no-op save. This
+remains range/reference wrapper projection reuse only, not merged-cell editing,
+validation/conditional-formatting import, page setup synchronization, range
+recalculation, metadata repair, relationship repair, or semantic range-object
+editing.
 Source comments and processing instructions outside cells now have both no-op
 gates too: they do not block supported cell materialization, the clean no-op
 output copies source package bytes and fresh-reopens with the supported sparse

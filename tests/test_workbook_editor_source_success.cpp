@@ -1948,6 +1948,10 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
         artifact("fastxlsx-workbook-editor-public-source-range-wrapper-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-range-wrapper-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-source-range-wrapper-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-range-wrapper-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -2093,6 +2097,79 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
         fastxlsx::CellRange {1, 1, 3, 3},
         expected_cells,
         "range wrapper post-dirty no-op output");
+
+    const auto dirty_noop_entries = fastxlsx::test::read_zip_entries(dirty_noop_output);
+    sheet.set_cell("D4", fastxlsx::CellValue::text("range-wrapper-reused & <again>"));
+    check(sheet.has_pending_changes(),
+        "range wrapper post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "range wrapper post-noop reuse edit should dirty WorkbookEditor");
+    check(sheet.cell_count() == 5,
+        "range wrapper post-noop reuse edit should add one sparse record");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "range wrapper post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<dimension ref="A1:D4"/>)",
+        "range wrapper post-noop reuse save should refresh the sparse-store dimension");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="D4" t="inlineStr"><is><t>range-wrapper-reused &amp; &lt;again&gt;</t></is></c>)",
+        "range wrapper post-noop reuse save should include the later escaped text edit");
+    check_contains(post_noop_reuse_xml, R"(<mergeCells count="1"><mergeCell ref="A1:B1"/></mergeCells>)",
+        "range wrapper post-noop reuse save should preserve source mergeCells metadata");
+    check_contains(post_noop_reuse_xml, R"(<dataValidations count="1">)",
+        "range wrapper post-noop reuse save should preserve source dataValidations metadata");
+    check_contains(post_noop_reuse_xml, R"(<conditionalFormatting sqref="B2:B3">)",
+        "range wrapper post-noop reuse save should preserve source conditionalFormatting metadata");
+    check_contains(post_noop_reuse_xml,
+        R"(<ignoredErrors><ignoredError sqref="A1:C3" numberStoredAsText="1"/></ignoredErrors>)",
+        "range wrapper post-noop reuse save should preserve source ignoredErrors metadata without recalculation");
+    check_contains(post_noop_reuse_xml,
+        R"(<pageMargins left="0.7" right="0.7" top="0.75" bottom="0.75" header="0.3" footer="0.3"/>)",
+        "range wrapper post-noop reuse save should preserve source pageMargins metadata");
+    check_contains(post_noop_reuse_xml, R"(<pageSetup orientation="landscape"/>)",
+        "range wrapper post-noop reuse save should preserve source pageSetup metadata");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml")
+            == post_noop_reuse_entries.end(),
+        "range wrapper post-noop reuse save should still avoid sharedStrings");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range wrapper post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "range wrapper post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "range wrapper post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_noop_entries,
+        "range wrapper post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedSourceSuccessCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("range-wrapper-source")},
+        {1, 2, fastxlsx::CellValue::number(3.0)},
+        {2, 1, fastxlsx::CellValue::boolean(true)},
+        {3, 3, fastxlsx::CellValue::text("range-wrapper-new")},
+        {4, 4, fastxlsx::CellValue::text("range-wrapper-reused & <again>")},
+    };
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 4, 4},
+        post_noop_reuse_cells,
+        "range wrapper post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "range wrapper post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "range wrapper post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range wrapper post-noop reuse no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 4, 4},
+        post_noop_reuse_cells,
+        "range wrapper post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processing_instructions_on_dirty_sheet_data_flush()

@@ -1735,6 +1735,10 @@ The mutation `max_cells` recovery output now also reacquires with the original
 exact `WorksheetEditorOptions`, performs a clean no-op save, then overwrites A1
 within the same budget and fresh-reopens without reviving the rejected D4
 payload.
+The matching mutation `memory_budget_bytes` recovery output now carries the
+same same-budget handoff path, using a same-size A1 overwrite after the clean
+no-op save to prove the recovered session can become dirty again without
+exceeding the original sparse-store memory budget or leaking rejected D4.
 The source-load options guard recovery no-op branches now also pin the retained
 single-sheet replacement diagnostics and clear `last_edit_error()` contract,
 distinguishing replacement handoff state from dirty materialized state.

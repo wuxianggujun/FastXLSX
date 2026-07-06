@@ -1719,6 +1719,10 @@ usable after the first handoff without dirty diagnostics or rejected payloads.
 They now repeat that same-budget reacquired no-op save too, keeping all four
 delete-row/delete-column max-cells and memory-budget outputs byte-stable while
 the saved input packages and recovered sparse readback remain unchanged.
+Those same-budget release handles now also overwrite the recovered insertion
+after repeated clean no-op saves, proving the saved delete-row/delete-column
+outputs can become dirty again, save, and reopen under the original exact
+`WorksheetEditorOptions` without reviving rejected payloads.
 The original saved-handle no-op path now repeats the clean save as well, with
 the same recovered sparse readback and source-package stability checks across
 that delete-row/delete-column exact-budget release matrix.

@@ -141,8 +141,8 @@ They also repeat the clean no-op save before those later `D3` / `F3` edits:
 the second no-op outputs are byte-identical to the first no-op outputs,
 fresh-reopen with the shifted formula state, and remain unchanged after the
 post-noop saves.
-The delete-column and delete-row reacquire post-noop outputs now also pin
-`sparse_cells()`, range/requested sparse snapshots, `row_cells()`, and
+The delete-column, delete-row, and insert-column reacquire post-noop outputs now
+also pin `sparse_cells()`, range/requested sparse snapshots, `row_cells()`, and
 `column_cells()` readback for shifted source cells, translated formulas, shifted
 dirty cells, and the later post-noop edit. This is snapshot parity and
 materialized handoff evidence, not broader worksheet metadata synchronization.

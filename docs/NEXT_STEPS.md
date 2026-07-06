@@ -2575,6 +2575,9 @@ but clearing large source text payloads lowers the sparse memory estimate enough
 for a later small insertion in the same exact-budget session. The saved output
 reopens with blank target records, preserved non-target cells, and no rejected
 payload leakage.
+Those row/column exact-budget outputs now also reacquire with the same
+`WorksheetEditorOptions` and write a clean no-op save, keeping saved-handle
+snapshots, catalog state, diagnostics, and decompressed package entries stable.
 The inclusive row/column range variants now carry the same evidence:
 `clear_rows()` and `clear_columns()` clear every represented target record to an
 explicit blank, preserve records outside the target row/column range, lower the

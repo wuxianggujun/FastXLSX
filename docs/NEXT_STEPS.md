@@ -1799,6 +1799,9 @@ without resurrecting erased source cells.
 The `erase_row()` and `erase_rows()` exact memory-budget release no-op paths
 now also pin saved-handle sparse, row, and column snapshots for erased source
 absence, recovery cells, and clean materialized diagnostics.
+They now also reacquire the saved outputs with the original strict
+`WorksheetEditorOptions`, keeping the same row-side sparse snapshots within
+budget while the matching-option clean no-op save remains byte-stable.
 The matching `erase_column()` and `erase_columns()` exact memory-budget release
 no-op paths now extend that saved-handle coverage to preserved non-target
 columns, erased column absence, recovery cells, and clean diagnostics.

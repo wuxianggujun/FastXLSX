@@ -2548,6 +2548,10 @@ validates one 1-based inclusive rectangle, the coordinate overload validates
 every coordinate before mutation, all variants delete only represented active
 sparse records, treat empty / missing-only inputs as successful no-ops, and
 write no tombstones or explicit blank cells for erased coordinates.
+The no-argument `erase_cells()` whole-store reuse path now also mirrors the
+clear-all handoff after post-save reacquire: repeated clean no-op saves stay
+byte-stable, leave both saved handles clean, and do not resurrect erased source
+or dirty cells.
 The range erase save/reacquire state path is also pinned: after
 `erase_cells(CellRange)` removes all represented cells and `save_as()` flushes
 the materialized session, matching `worksheet()` reacquire reuses the clean

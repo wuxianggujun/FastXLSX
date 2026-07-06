@@ -1890,7 +1890,9 @@ The styled `erase_cells()` range variant now follows the same handoff: erased
 styled and unstyled targets stay absent, the non-target source cell remains
 unstyled, reacquired no-op saves keep the output stable, and a post-noop
 overwrite/save/reopen keeps the erased range absent while prior outputs remain
-byte-stable.
+byte-stable. The final post-noop output now also snapshots sparse, row, and
+column views for the unstyled surviving cell while the erased styled/unstyled
+target columns stay absent; this is readback parity, not style migration.
 The styled `erase_row()` variant now carries that saved-output handoff too:
 the erased styled row remains absent, the surviving row stays unstyled,
 reacquired no-op saves stay byte-stable, and a post-noop overwrite/save/reopen

@@ -1731,6 +1731,10 @@ max-cells / memory-budget guard recoveries now mirror that second no-op
 contract too: repeated clean saves keep package entries byte-stable, preserve
 public diagnostics, leave sources unchanged, and fresh-reopen with the recovered
 replacement values.
+The mutation `max_cells` recovery output now also reacquires with the original
+exact `WorksheetEditorOptions`, performs a clean no-op save, then overwrites A1
+within the same budget and fresh-reopens without reviving the rejected D4
+payload.
 The source-load options guard recovery no-op branches now also pin the retained
 single-sheet replacement diagnostics and clear `last_edit_error()` contract,
 distinguishing replacement handoff state from dirty materialized state.

@@ -1858,6 +1858,11 @@ It now also reacquires the saved blank-overwrite outputs with the original
 strict `WorksheetEditorOptions` and repeats clean no-op saves, proving explicit
 blank readback and rejected-target absence survive the saved-output handoff
 within the same sparse-store budgets.
+Those strict-options blank-overwrite handles now also snapshot sparse, row, and
+column views across the clean reacquire, repeated no-op saves, and later
+post-noop A1 overwrite handoff for both exact `max_cells` and
+`memory_budget_bytes` branches, pinning explicit blank/source-backed readback
+parity without broadening blank insertion policy.
 Those strict-options reacquired blank outputs now also become dirty again after
 the repeated no-op saves: `max_cells` writes a new A1 text value without changing
 the represented sparse count, while `memory_budget_bytes` writes a shorter A1
@@ -7070,6 +7075,11 @@ schema validation.
   coverage for explicit blank `A1`, preserved source-backed `A2`, and
   source-backed `B1`, while the rejected blank `D4` column stays absent. This is
   readback parity for clean saved outputs, not a new blank-cell policy.
+- That blank-overwrite guardrail path now also applies sparse, row, and column
+  snapshot checks to strict-options reacquired live handles, their repeated
+  clean no-op saves, and the later post-noop `A1` overwrite handoff for both
+  max-cells and memory-budget branches. This is handle inspection parity only,
+  not broader blank insertion or metadata repair policy.
 - The erased-cell budget-release recovery path now also snapshots reopened
   source-backed `A1` / `B1` through `row_cells()` and `column_cells()`, while
   erased source-backed `A2` remains absent and inserted `D4` keeps its existing

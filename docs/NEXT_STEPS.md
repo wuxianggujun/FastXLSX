@@ -3205,6 +3205,9 @@ keeping the old `Data!D1` reference absent and output bytes stable.
 The delete-column saved-reopen audit path now mirrors the delete-row no-op
 coverage for `Data!#REF!+Data!B1`, keeping `#REF!` skipped from audits,
 preserving only `Data!B1`, and requiring byte-identical output.
+The four stationary row/column insert/delete saved-reopen no-op outputs now
+also re-check clean editor diagnostics after row/column snapshot reads, proving
+the snapshot helpers do not re-dirty those saved sessions.
 The row-range and column-range saved-reopen audit paths now also no-op save
 after verifying translated saved ranges (`Data!A4:B4` / `Data!4:4` and
 `Data!E1:F1` / `Data!E:F`), with old ranges absent and output bytes stable.

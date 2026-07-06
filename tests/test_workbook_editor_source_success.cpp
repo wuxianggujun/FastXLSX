@@ -439,6 +439,10 @@ void test_public_worksheet_editor_materializes_source_scalar_string_cells()
         artifact("fastxlsx-workbook-editor-public-source-string-type-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-string-type-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-source-string-type-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-string-type-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -558,6 +562,65 @@ void test_public_worksheet_editor_materializes_source_scalar_string_cells()
         fastxlsx::CellRange {1, 1, 2, 4},
         expected_cells,
         "source t=str post-dirty no-op output");
+
+    const auto dirty_noop_entries = fastxlsx::test::read_zip_entries(dirty_noop_output);
+    sheet.set_cell("E3", fastxlsx::CellValue::number(42.5));
+    check(sheet.has_pending_changes(),
+        "source t=str post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "source t=str post-noop reuse edit should dirty WorkbookEditor");
+    check(sheet.cell_count() == 5,
+        "source t=str post-noop reuse edit should add one sparse record");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "source t=str post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<dimension ref="A1:E3"/>)",
+        "source t=str post-noop reuse save should refresh dimension");
+    check_contains(post_noop_reuse_xml, R"(<c r="E3"><v>42.5</v></c>)",
+        "source t=str post-noop reuse save should include the later numeric edit");
+    check_not_contains(post_noop_reuse_xml, R"(t="str")",
+        "source t=str post-noop reuse save should keep regenerated cells free of t=str tokens");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") == post_noop_reuse_entries.end(),
+        "source t=str post-noop reuse save should still avoid sharedStrings");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source t=str post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "source t=str post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "source t=str post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_noop_entries,
+        "source t=str post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedSourceSuccessCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("plain & <text>")},
+        {1, 2, fastxlsx::CellValue::formula("TEXT(C1,\"@\")&\"!\"")},
+        {1, 3, fastxlsx::CellValue::number(7.0)},
+        {2, 4, fastxlsx::CellValue::text("string-type-new-inline")},
+        {3, 5, fastxlsx::CellValue::number(42.5)},
+    };
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 3, 5},
+        post_noop_reuse_cells,
+        "source t=str post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source t=str post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "source t=str post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source t=str post-noop reuse no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 5},
+        post_noop_reuse_cells,
+        "source t=str post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_flattens_source_inline_rich_text()

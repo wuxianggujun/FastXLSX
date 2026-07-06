@@ -6319,6 +6319,14 @@ fresh-reopens with scalar text, plain formula, and numeric sibling records.
 The later dirty projection remains byte-stable, preserves the source and prior
 no-op packages, and fresh reopen still sees the inline edit. This is not
 sharedStrings migration or cached formula preservation.
+The same `t="str"` path now also reuses its clean materialized handle after the
+byte-stable post-dirty no-op save: a later numeric edit extends the regenerated
+projection to `A1:E3`, keeps `t="str"` source tokens out of dirty outputs, avoids
+creating sharedStrings, preserves all prior package outputs, fresh-reopens
+through sparse views, and settles into another byte-stable no-op save. This is
+scalar-string materialization/projection reuse only, not cached-value
+preservation, source token round-tripping, sharedStrings migration, metadata
+repair, or large-file random editing.
 Flattened source inline rich text now has both no-op gates too: read-only
 materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with the flattened plain text, and the later dirty projection

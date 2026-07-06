@@ -1737,6 +1737,10 @@ failed replacement, rename, and materialized mutation attempts.
 It now repeats that clean no-op save as well, preserving public summaries,
 keeping `last_edit_error()` clear, proving output entries stable, and reopening
 the second output with the same recovered worksheet split.
+That recovered mixed output now also reacquires as a clean saved workbook and
+repeats clean no-op saves, proving copy-original `Data` and replacement-only
+`Untouched` survive saved-output handoff without stale diagnostics or entry
+drift.
 Existing-cell blank overwrite after rejected blank insertions is reopened as
 well, pinning explicit blank readback without admitting the rejected target.
 That same path now repeats a second clean no-op save for both exact `max_cells`

@@ -1753,6 +1753,9 @@ within the same sparse-store budgets.
 The single-cell `erase_cell()` auto-flush save now reopens the output to verify
 the erased coordinate stays absent while surviving source-backed cells keep the
 shrunk bounds.
+That saved erase output now also reacquires as a clean `WorksheetEditor` session
+and repeats clean no-op saves, proving the erased coordinate remains absent and
+package entries stay stable after saved-output handoff.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.

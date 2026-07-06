@@ -1815,7 +1815,9 @@ post-noop overwrite/save/reopen keeps the erased styled source absent while
 the previous saved/no-op outputs remain byte-stable.
 The styled `erase_cells()` range variant now follows the same handoff: erased
 styled and unstyled targets stay absent, the non-target source cell remains
-unstyled, and reacquired no-op saves keep the output stable.
+unstyled, reacquired no-op saves keep the output stable, and a post-noop
+overwrite/save/reopen keeps the erased range absent while prior outputs remain
+byte-stable.
 The styled `erase_row()` variant now carries that saved-output handoff too:
 the erased styled row remains absent, the surviving row stays unstyled, and
 reacquired no-op saves stay byte-stable.

@@ -7047,6 +7047,11 @@ schema validation.
   replacement cell through both row and column snapshots. This is saved-output
   readback coverage for clean `WorksheetEditor` inspection, not a broader
   recovery, metadata repair, or cross-sheet edit composition guarantee.
+- The last-error recovery public-state path now also snapshots reopened
+  `column_cells()` for the overwritten `A1`, preserved source-backed `A2`, and
+  source-backed `B1`, keeping row/column readback parity with the saved recovery
+  output. This is clean inspection coverage only, not structured diagnostic
+  history or broader metadata repair.
 - Current public API:
   - `Workbook`
   - `Worksheet`

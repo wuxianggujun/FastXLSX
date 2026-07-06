@@ -1737,6 +1737,10 @@ distinguishing replacement handoff state from dirty materialized state.
 The same recovery output now reacquires with the original strict `max_cells`
 options that rejected the source worksheet, proving the saved replacement can
 materialize cleanly under that budget and write a byte-stable no-op output.
+That strict-options reacquired output now also performs a later in-budget A1
+overwrite after the clean no-op save, proving the saved replacement can become
+dirty again, save, and fresh-reopen without reviving the rejected source cells
+or exceeding the original `max_cells` guardrail.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.

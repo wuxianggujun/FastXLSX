@@ -6051,6 +6051,14 @@ packages, fresh-reopen through A1, row, column, and range snapshots, and settle
 into another byte-stable no-op `save_as()`. This remains sparse boundary
 save/reuse evidence only, not dense allocation, row metadata repair, source
 reload, or large-file random editing.
+The formula-shaped max-coordinate erase path now mirrors that post-noop reuse:
+after an erased source-backed formula edge with a stale cached `<v>` has settled
+into a byte-stable clean no-op save, the same `WorksheetEditor` can write a new
+formula at `XFD1048576`, re-expand dimension to `A1:XFD1048576`, omit cached
+values, preserve source/erase/no-op packages, fresh-reopen through sparse
+views, and settle into another byte-stable no-op save. This remains formula-text
+projection/reuse evidence only, not formula evaluation, cached value
+regeneration, calcChain rebuild, or metadata repair.
 The same edge is now pinned for empty inline-string source shapes: `t="inlineStr"`
 with an empty `<t></t>` materializes as empty text, `t="inlineStr"` with
 `<is/>` and no text materializes as blank, no-op `save_as()` keeps copy-original

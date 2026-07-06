@@ -6059,6 +6059,15 @@ values, preserve source/erase/no-op packages, fresh-reopen through sparse
 views, and settle into another byte-stable no-op save. This remains formula-text
 projection/reuse evidence only, not formula evaluation, cached value
 regeneration, calcChain rebuild, or metadata repair.
+The workbook sharedStrings max-coordinate path now has matching post-noop reuse
+evidence: after the erased `t="s"` edge and its byte-stable clean no-op save,
+the same `WorksheetEditor` can write a new text value back to `XFD1048576`,
+re-expand dimension to `A1:XFD1048576`, append a new shared string index while
+keeping earlier package outputs unchanged, fresh-reopen through sparse views,
+and settle into another byte-stable no-op save. This is append-only
+source-sharedStrings projection/reuse evidence only, not sharedStrings
+compaction, index migration, table rebuild, relationship repair, or large-file
+random editing.
 The same edge is now pinned for empty inline-string source shapes: `t="inlineStr"`
 with an empty `<t></t>` materializes as empty text, `t="inlineStr"` with
 `<is/>` and no text materializes as blank, no-op `save_as()` keeps copy-original

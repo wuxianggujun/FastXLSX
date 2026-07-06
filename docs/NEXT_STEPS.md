@@ -7061,6 +7061,11 @@ schema validation.
   `column_cells()` for the preserved source-backed `A1` / `A2` column and
   source-backed `B1`, while the rejected `D4` column remains absent. This is
   saved-output sparse readback coverage only, not guardrail policy expansion.
+- That missing-erase guardrail path now also applies the same sparse, row, and
+  column snapshot checks to strict-options reacquired live handles, their
+  repeated clean no-op saves, and the later post-noop `A1` overwrite handoff for
+  both max-cells and memory-budget branches. This is clean handle readback
+  parity only, not a broader missing-cell erase policy.
 - The blank-overwrite guardrail recovery path now mirrors that column snapshot
   coverage for explicit blank `A1`, preserved source-backed `A2`, and
   source-backed `B1`, while the rejected blank `D4` column stays absent. This is

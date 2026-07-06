@@ -1666,6 +1666,10 @@ The matching `append_row()` max-cells and memory-budget recovery outputs now
 also reacquire with the original strict `WorksheetEditorOptions` and repeat
 clean no-op saves, proving the recovered sparse append remains readable and
 within budget after handoff.
+The memory-budget branch now continues past those repeated no-op saves: the
+strict-options reacquired handle overwrites the recovered `A2` text with a
+shorter value, saves again, and fresh-reopens without reviving the rejected
+append payload or exceeding the original sparse-store budget.
 The `set_row()` guard paths now reopen both represented-row clearing and
 max-cells recovery saves, verifying compact readback plus rejected row absence.
 The `set_column()` guard paths now reopen both represented-column clearing and

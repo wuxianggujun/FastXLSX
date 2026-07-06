@@ -1695,6 +1695,10 @@ rejected prefix targets.
 Those value-prefix max-cells recovery outputs now also reacquire with the same
 strict `max_cells` options and run a clean no-op `save_as()`, proving the saved
 sparse prefix edits remain reusable after handoff.
+Those strict-options value-prefix max-cells handles now also continue past the
+clean no-op saves: later in-budget `A1` prefix overwrites save and fresh-reopen
+while preserving the row/column tail cells, excluding rejected prefix targets,
+and leaving prior outputs plus sources unchanged.
 The adjacent value-prefix memory-budget recovery outputs now carry the same
 strict-options reacquire/no-op contract, including the original sparse-store
 memory estimate, byte-stable entries, and unchanged sources.

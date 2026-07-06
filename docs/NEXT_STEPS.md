@@ -1810,7 +1810,9 @@ the repeated no-op saves, writes a fresh output, and reopens with `A2` still
 absent while the saved and no-op packages remain byte-stable.
 The styled `erase_cell()` variant now mirrors that saved-output reacquire path:
 the erased styled source cell stays absent, the surviving unstyled neighbor
-stays clean, and repeated no-op saves keep package entries stable.
+stays clean, repeated no-op saves keep package entries stable, and a later
+post-noop overwrite/save/reopen keeps the erased styled source absent while
+the previous saved/no-op outputs remain byte-stable.
 The styled `erase_cells()` range variant now follows the same handoff: erased
 styled and unstyled targets stay absent, the non-target source cell remains
 unstyled, and reacquired no-op saves keep the output stable.

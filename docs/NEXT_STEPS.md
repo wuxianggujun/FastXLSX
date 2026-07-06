@@ -2705,6 +2705,9 @@ no-op-save contract for `clear_row()`, `clear_rows()`, `clear_column()`, and
 writes a second clean no-op output, requires byte-identical entries, and
 fresh-reopens the workbook to verify preserved source `StyleId` handles,
 unstyled blanks, and untouched row/column tails.
+The styled `clear_row()` path now also reacquires the saved blank output as a
+fresh editor session and repeats clean no-op saves, proving preserved source
+`StyleId` blank handles and unstyled blanks survive the saved-output handoff.
 The successful sparse row/column erase paths now have the same repeated
 no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 `erase_columns()`: after the erase output and first clean no-op save, each path

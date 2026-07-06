@@ -919,6 +919,9 @@ saved live handle, and after fresh reopen/no-op reopen. It
 also snapshots the baseline materialized-only formula saved-reopen audit output
 through `row_cells()` and `column_cells()`, including source row/column records
 and the saved `C2` formula on both the reopened output and clean no-op output.
+The unsaved dirty materialized-only formula audit path now uses the same
+row/column snapshot helper before save, proving audit reads plus snapshot reads
+leave the dirty formula session and materialized diagnostics intact.
 The same baseline formula lane now also snapshots the same-editor saved-audit
 live handle and no-op output reopen, proving audit reads do not dirty the saved
 materialized session before the clean no-op save.

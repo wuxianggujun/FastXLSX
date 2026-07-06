@@ -7052,6 +7052,10 @@ schema validation.
   source-backed `B1`, keeping row/column readback parity with the saved recovery
   output. This is clean inspection coverage only, not structured diagnostic
   history or broader metadata repair.
+- The missing-erase guardrail clean-output path now also snapshots reopened
+  `column_cells()` for the preserved source-backed `A1` / `A2` column and
+  source-backed `B1`, while the rejected `D4` column remains absent. This is
+  saved-output sparse readback coverage only, not guardrail policy expansion.
 - Current public API:
   - `Workbook`
   - `Worksheet`

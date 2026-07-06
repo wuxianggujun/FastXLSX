@@ -816,6 +816,10 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
         artifact("fastxlsx-workbook-editor-public-prefixed-inline-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-prefixed-inline-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-inline-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-prefixed-inline-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -993,6 +997,73 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
         fastxlsx::CellRange {1, 1, 2, 4},
         expected_cells,
         "prefixed inline post-dirty no-op output");
+
+    const auto dirty_noop_entries = fastxlsx::test::read_zip_entries(dirty_noop_output);
+    sheet.set_cell("E3", fastxlsx::CellValue::text("prefixed-inline-reused & <again>"));
+    check(sheet.has_pending_changes(),
+        "prefixed inline post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "prefixed inline post-noop reuse edit should dirty WorkbookEditor");
+    check(sheet.cell_count() == 8,
+        "prefixed inline post-noop reuse edit should add one sparse record");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "prefixed inline post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<x:dimension ref="A1:E3"/>)",
+        "prefixed inline post-noop reuse save should refresh dimension while preserving the source prefix");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="E3" t="inlineStr"><is><t>prefixed-inline-reused &amp; &lt;again&gt;</t></is></c>)",
+        "prefixed inline post-noop reuse save should include the later escaped text edit");
+    check_not_contains(post_noop_reuse_xml, "<x:c",
+        "prefixed inline post-noop reuse save should keep regenerated cell elements unprefixed");
+    check_not_contains(post_noop_reuse_xml, "<x:v",
+        "prefixed inline post-noop reuse save should keep regenerated value elements unprefixed");
+    check_not_contains(post_noop_reuse_xml, "ignored-nested-ext",
+        "prefixed inline post-noop reuse save should keep ignored extension text omitted");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") == post_noop_reuse_entries.end(),
+        "prefixed inline post-noop reuse save should still avoid sharedStrings");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "prefixed inline post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "prefixed inline post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "prefixed inline post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_noop_entries,
+        "prefixed inline post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedSourceSuccessCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-inline")},
+        {1, 2, fastxlsx::CellValue::text(" spaced ")},
+        {1, 3, fastxlsx::CellValue::text("rich-tail")},
+        {2, 1, fastxlsx::CellValue::number(42.0)},
+        {2, 2, fastxlsx::CellValue::boolean(true)},
+        {2, 3, fastxlsx::CellValue::formula("SUM(A2:A2)")},
+        {2, 4, fastxlsx::CellValue::text("prefixed-inline-dirty")},
+        {3, 5, fastxlsx::CellValue::text("prefixed-inline-reused & <again>")},
+    };
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 3, 5},
+        post_noop_reuse_cells,
+        "prefixed inline post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "prefixed inline post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "prefixed inline post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "prefixed inline post-noop reuse no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 5},
+        post_noop_reuse_cells,
+        "prefixed inline post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled()

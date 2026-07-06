@@ -6346,6 +6346,15 @@ package bytes and fresh-reopens with normalized sparse cells, and the later
 dirty projection remains byte-stable while preserving source plus prior
 copy-original output. This is not namespace repair or a promise to preserve
 cell/value element prefixes inside regenerated `sheetData`.
+That prefixed inline-source path now also reuses the same clean materialized
+handle after the byte-stable post-dirty no-op save: a later escaped inline text
+edit extends the regenerated projection to `A1:E3`, keeps regenerated
+cell/value elements unprefixed, avoids sharedStrings, preserves source/no-op/
+dirty/no-op package bytes, fresh-reopens through sparse views, and settles into
+another byte-stable no-op save. This remains local-name materialization and
+projection reuse only, not namespace repair, prefix preservation inside
+regenerated `sheetData`, sharedStrings migration, metadata repair, or
+large-file random editing.
 Normalized source `s=0` cells now have both no-op gates: read-only
 materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with unstyled text cells, and explicit default-style

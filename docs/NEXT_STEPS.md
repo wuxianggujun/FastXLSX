@@ -1772,6 +1772,11 @@ That recovered mixed output now also reacquires as a clean saved workbook and
 repeats clean no-op saves, proving copy-original `Data` and replacement-only
 `Untouched` survive saved-output handoff without stale diagnostics or entry
 drift.
+The same mixed saved-output reacquire path now performs a later `Untouched!A1`
+edit after those repeated no-op saves, saves and reopens the final output, and
+proves the failed replacement payload, bad rename target, and invalid
+`WorksheetEditor` mutation payload stay absent while `Data` remains
+copy-original.
 Existing-cell blank overwrite after rejected blank insertions is reopened as
 well, pinning explicit blank readback without admitting the rejected target.
 That same path now repeats a second clean no-op save for both exact `max_cells`

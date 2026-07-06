@@ -6423,6 +6423,13 @@ fresh-reopen with the expanded sparse values, and settle into another
 byte-stable no-op `save_as()`. This remains namespace-URI non-validation and
 small-file save/reuse evidence, not namespace repair, schema validation, or
 sharedStrings migration.
+The inconsistent count / unknown-attribute sharedStrings metadata path now has
+matching post-noop reuse coverage: after the byte-stable post-dirty no-op save,
+the same borrowed `WorksheetEditor` can write another inline text cell, keep the
+source sharedStrings bytes and prior packages unchanged, fresh-reopen with the
+expanded sparse values, and settle into another byte-stable no-op `save_as()`.
+This remains materialization/save reuse evidence only, not count repair,
+unknown-attribute preservation, sharedStrings writeback, or broad migration.
 Prefixed source worksheet XML is now pinned for the same narrow local-name
 materialization boundary: worksheet, `sheetData`, row, cell, inlineStr wrapper,
 rich-run, formula, and value-wrapper element names may be prefixed and still

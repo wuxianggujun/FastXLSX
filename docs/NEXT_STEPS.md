@@ -1694,6 +1694,10 @@ and reopened copy-original readback stable.
 Those missing-erase outputs now also reacquire with the original strict
 `WorksheetEditorOptions` and repeat clean no-op saves, proving copy-original
 readback remains budget-valid after the saved-output handoff.
+They now continue past that repeated no-op checkpoint as well: both strict
+max-cells and memory-budget reacquired sessions overwrite source-backed `A1`,
+save a fresh output, keep rejected `D4` absent, and leave the saved/no-op
+packages byte-stable.
 The formula-translation memory-budget shift failure path now also runs a second
 clean no-op `save_as()`, proving the copy-original output and public state stay
 stable after the rejected `insert_rows()` mutation.

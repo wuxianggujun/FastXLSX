@@ -6361,6 +6361,15 @@ and fresh-reopens with unstyled text cells, and explicit default-style
 attributes remain omitted after the later dirty projection. The follow-up
 `save_as()` output is byte-stable, and source plus prior no-op packages stay
 unchanged. This is not non-default style migration or style registry repair.
+That default-style normalization path now also reuses the same clean
+materialized handle after the byte-stable post-dirty no-op save: a later
+escaped text edit extends the regenerated projection to `A1:F2`, still omits
+all normalized `s=0` spellings, avoids sharedStrings, preserves the source /
+no-op / dirty / no-op packages, fresh-reopens through sparse views, and settles
+into another byte-stable no-op save. This remains default-style coercion and
+projection reuse only, not caller-supplied non-default style writes,
+non-default style migration, style registry repair, metadata repair, or
+large-file random editing.
 Empty source worksheet materialization now has both no-op gates as well:
 worksheets with no `sheetData` and worksheets with self-closing `<sheetData/>`
 load as empty sparse stores, stay clean, and the clean no-op output copies

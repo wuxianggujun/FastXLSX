@@ -1076,6 +1076,10 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
         artifact("fastxlsx-workbook-editor-public-source-default-style-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-default-style-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-source-default-style-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-default-style-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
         fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
@@ -1214,6 +1218,71 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
         fastxlsx::CellRange {1, 1, 1, 5},
         expected_cells,
         "default style post-dirty no-op output");
+
+    const auto dirty_noop_entries = fastxlsx::test::read_zip_entries(dirty_noop_output);
+    sheet.set_cell("F2", fastxlsx::CellValue::text("default-style-reused & <again>"));
+    check(sheet.has_pending_changes(),
+        "default style post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "default style post-noop reuse edit should dirty WorkbookEditor");
+    check(sheet.cell_count() == 6,
+        "default style post-noop reuse edit should add one sparse record");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "default style post-noop reuse save should keep Data clean");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<dimension ref="A1:F2"/>)",
+        "default style post-noop reuse save should refresh dimension");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="F2" t="inlineStr"><is><t>default-style-reused &amp; &lt;again&gt;</t></is></c>)",
+        "default style post-noop reuse save should include the later escaped text edit");
+    check_not_contains(post_noop_reuse_xml, R"(s="0")",
+        "default style post-noop reuse save should not serialize normalized default style attributes");
+    check_not_contains(post_noop_reuse_xml, R"(s='0')",
+        "default style post-noop reuse save should not serialize single-quoted default style attributes");
+    check_not_contains(post_noop_reuse_xml, R"(s = "0")",
+        "default style post-noop reuse save should not serialize spaced default style attributes");
+    check(post_noop_reuse_entries.find("xl/sharedStrings.xml") == post_noop_reuse_entries.end(),
+        "default style post-noop reuse save should still avoid sharedStrings");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "default style post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "default style post-noop reuse save should not mutate the prior no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "default style post-noop reuse save should not mutate the prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_noop_entries,
+        "default style post-noop reuse save should not mutate the prior dirty no-op output");
+    const ReopenedSourceSuccessCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("loadable-before-style")},
+        {1, 2, fastxlsx::CellValue::text("explicit-default-source-style")},
+        {1, 3, fastxlsx::CellValue::text("single-quoted-default-source-style")},
+        {1, 4, fastxlsx::CellValue::text("spaced-default-source-style")},
+        {1, 5, fastxlsx::CellValue::text("dirty-default-style-trigger")},
+        {2, 6, fastxlsx::CellValue::text("default-style-reused & <again>")},
+    };
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 2, 6},
+        post_noop_reuse_cells,
+        "default style post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "default style post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "default style post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "default style post-noop reuse no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 6},
+        post_noop_reuse_cells,
+        "default style post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_materializes_empty_source_worksheets()

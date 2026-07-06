@@ -1786,6 +1786,11 @@ It now also reacquires the saved blank-overwrite outputs with the original
 strict `WorksheetEditorOptions` and repeats clean no-op saves, proving explicit
 blank readback and rejected-target absence survive the saved-output handoff
 within the same sparse-store budgets.
+Those strict-options reacquired blank outputs now also become dirty again after
+the repeated no-op saves: `max_cells` writes a new A1 text value without changing
+the represented sparse count, while `memory_budget_bytes` writes a shorter A1
+text value that stays inside the original exact memory budget; both final
+outputs reopen without reviving the old A1 text or rejected D4 blank.
 The single-cell `erase_cell()` auto-flush save now reopens the output to verify
 the erased coordinate stays absent while surviving source-backed cells keep the
 shrunk bounds.

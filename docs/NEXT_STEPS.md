@@ -1689,6 +1689,10 @@ sparse prefix edits remain reusable after handoff.
 The adjacent value-prefix memory-budget recovery outputs now carry the same
 strict-options reacquire/no-op contract, including the original sparse-store
 memory estimate, byte-stable entries, and unchanged sources.
+Those strict-options value-prefix memory-budget handles now also continue past
+the no-op saves: both row and column variants overwrite the recovered `A1` text
+with a shorter value, save again, and fresh-reopen while preserving the row/column
+tail cells and excluding rejected payloads.
 Whole-store `clear_cell_values()` / `erase_cells()` saves are now reopened after
 both the first projection and post-save handle reuse, covering styled blanks,
 empty worksheets, and later value/appended edits.

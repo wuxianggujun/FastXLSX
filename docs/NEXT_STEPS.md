@@ -2589,6 +2589,9 @@ The range `clear_cell_values(CellRange)` exact-budget output now also reacquires
 with the same `WorksheetEditorOptions` and writes a clean no-op save, proving the
 blank sparse records and recovery cell remain readable without adding another
 materialized handoff.
+The coordinate-list `clear_cell_values(...)` exact-budget output now mirrors
+that same-options reacquire/no-op contract, including the missing-coordinate
+absence check and stable decompressed package entries.
 No-argument `clear_cell_values()` now completes the value-clear exact-budget
 family: it clears all represented values to explicit blanks, releases all value
 payload estimates, and still saves/reopens a later recovery cell without

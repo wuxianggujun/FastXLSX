@@ -3243,6 +3243,9 @@ translated styled formula, shifted source cells, and absent old coordinates.
 Those direct reacquire, failed-save, and option-mismatch no-op reopen checks now
 also re-check clean editor diagnostics after shifted sparse formula/source
 readback, proving the saved-output reads do not re-dirty the session.
+The adjacent invalid-mutation, missing-query, and invalid-read no-op reopen
+checks now carry the same post-read clean diagnostic assertion after shifted
+sparse formula/source readback.
 The option-mismatch path now mirrors that final no-op reopen check after its
 later shared-session column shift, including clean diagnostics on the reopened
 workbook.

@@ -6532,6 +6532,15 @@ in-memory edit appends to the existing string table, the dirty output
 fresh-reopens through public sparse views, a follow-up no-op `save_as()` is
 byte-stable, and the source / prior no-op packages remain unchanged. This is
 not broad sharedStrings migration, schema repair, or in-place save.
+The lazy invalid sharedStrings metadata paths now also prove post-dirty no-op
+stability: after editing a sheet with no `t="s"` cells while workbook
+sharedStrings metadata is missing-target, duplicated, malformed, or wrong
+content type, dirty outputs preserve the bad source metadata, fresh-reopen with
+the expected deferred diagnostic for shared-string sheets, a follow-up no-op
+`save_as()` is byte-stable, and source / dirty packages remain unchanged. This
+is deferred failure hygiene and dirty-session reuse evidence only, not
+sharedStrings repair, relationship repair, schema/content-type repair, or broad
+migration.
 That same base fixture now continues after the post-dirty no-op save: the
 borrowed `WorksheetEditor` can append a second plain shared string, preserve
 the first appended index, advance `count` / `uniqueCount`, leave the earlier

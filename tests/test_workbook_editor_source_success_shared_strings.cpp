@@ -377,6 +377,8 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-dirty-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-missing-target-failure-recovery-output.xlsx");
     {
@@ -459,6 +461,21 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
         "workbook sharedStrings relationship targets an unknown package part",
         "lazy missing sharedStrings target dirty output");
 
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy missing sharedStrings target post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy missing sharedStrings target post-dirty no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy missing sharedStrings target post-dirty no-op save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy missing sharedStrings target post-dirty no-op save should not mutate dirty output");
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        "workbook sharedStrings relationship targets an unknown package part",
+        "lazy missing sharedStrings target post-dirty no-op output");
+
     check_public_worksheet_materialization_failure_hygiene(
         source,
         failure_recovery_output,
@@ -476,6 +493,8 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-duplicate-rel-failure-recovery-output.xlsx");
     {
@@ -498,6 +517,7 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         R"(</Relationships>)");
     const std::string shared_strings_before = entries.at("xl/sharedStrings.xml");
     write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -530,6 +550,21 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
         "workbook sharedStrings lookup found multiple sharedStrings relationships",
         "lazy duplicate sharedStrings relationship dirty output");
 
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy duplicate sharedStrings relationship post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy duplicate sharedStrings relationship post-dirty no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy duplicate sharedStrings relationship post-dirty no-op save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy duplicate sharedStrings relationship post-dirty no-op save should not mutate dirty output");
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        "workbook sharedStrings lookup found multiple sharedStrings relationships",
+        "lazy duplicate sharedStrings relationship post-dirty no-op output");
+
     check_public_worksheet_materialization_failure_hygiene(
         source,
         failure_recovery_output,
@@ -547,6 +582,8 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-malformed-xml-failure-recovery-output.xlsx");
     {
@@ -597,6 +634,21 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
         "CellStore sharedStrings loader root is missing an sst element",
         "lazy malformed sharedStrings XML dirty output");
 
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy malformed sharedStrings XML post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy malformed sharedStrings XML post-dirty no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy malformed sharedStrings XML post-dirty no-op save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy malformed sharedStrings XML post-dirty no-op save should not mutate dirty output");
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        "CellStore sharedStrings loader root is missing an sst element",
+        "lazy malformed sharedStrings XML post-dirty no-op output");
+
     check_public_worksheet_materialization_failure_hygiene(
         source,
         failure_recovery_output,
@@ -614,6 +666,8 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-source.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-noop-output.xlsx");
     const std::filesystem::path failure_recovery_output =
         artifact("fastxlsx-workbook-editor-public-sharedstrings-lazy-wrong-content-type-failure-recovery-output.xlsx");
     {
@@ -670,6 +724,21 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
         expected_cells,
         "workbook sharedStrings relationship target is not a sharedStrings part",
         "lazy wrong sharedStrings content type dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "lazy wrong sharedStrings content type post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "lazy wrong sharedStrings content type post-dirty no-op output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "lazy wrong sharedStrings content type post-dirty no-op save should not mutate source");
+    check(fastxlsx::test::read_zip_entries(dirty_output) == output_entries,
+        "lazy wrong sharedStrings content type post-dirty no-op save should not mutate dirty output");
+    check_reopened_lazy_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        "workbook sharedStrings relationship target is not a sharedStrings part",
+        "lazy wrong sharedStrings content type post-dirty no-op output");
 
     check_public_worksheet_materialization_failure_hygiene(
         source,

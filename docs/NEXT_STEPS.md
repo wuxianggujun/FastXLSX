@@ -3220,6 +3220,9 @@ session snapshot-hygiene gap.
 The renamed full-calculation formula no-op output helpers now also re-check
 clean editor diagnostics after C5 and shifted source-row readback, keeping
 those saved-session reads in the same no-dirty snapshot-hygiene contract.
+The adjacent saved/reacquired recovery no-op outputs now repeat that clean
+diagnostic check after reopened C5 readback, including invalid-diagnostic,
+post-save, and failed-save retry paths.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

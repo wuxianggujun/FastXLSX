@@ -6332,6 +6332,14 @@ materialization stays clean, the clean no-op output copies source package bytes
 and fresh-reopens with the flattened plain text, and the later dirty projection
 remains byte-stable while preserving the source and prior no-op packages. This
 is not rich-text formatting preservation.
+It now also reuses that flattened inline-rich materialized handle after the
+byte-stable post-dirty no-op save: a later text edit extends the regenerated
+projection to `A1:C3`, keeps rich formatting / phonetic markup omitted, avoids
+creating sharedStrings, preserves source/no-op/dirty/no-op package bytes,
+fresh-reopens through sparse views, and settles into another byte-stable no-op
+save. This is flattened plain-text projection reuse only, not rich text
+round-tripping, formatting preservation, phonetic metadata preservation,
+sharedStrings migration, metadata repair, or large-file random editing.
 Prefixed source worksheet local-name wrappers now carry both no-op gates:
 read-only materialization stays clean, the clean no-op output copies source
 package bytes and fresh-reopens with normalized sparse cells, and the later

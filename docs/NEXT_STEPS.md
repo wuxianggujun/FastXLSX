@@ -1704,6 +1704,10 @@ shifted sparse store remains within the original budget after the handoff.
 It now repeats that same-budget reacquired no-op save as well, preserving clean
 public state, the shifted sparse readback, byte-stable output entries, and the
 saved input package across a second clean save.
+The same exact-budget reacquired handle now also performs a later budget-valid
+overwrite after repeated clean no-op saves, proving the saved `insert_rows()` /
+`insert_columns()` sparse shift can become dirty again, save, and reopen without
+exceeding the original `max_cells` / `memory_budget_bytes` guardrails.
 Delete-side shifts now cover exact-budget release too: after a rejected new-cell
 insertion, `delete_rows()` and `delete_columns()` remove represented sparse
 records, clear the guardrail diagnostic, allow a smaller recovered insertion

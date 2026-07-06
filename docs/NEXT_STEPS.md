@@ -1824,7 +1824,9 @@ reacquired no-op saves stay byte-stable, and a post-noop overwrite/save/reopen
 keeps the erased row absent while prior outputs remain stable.
 The styled `erase_rows()` inclusive-range variant now mirrors the same saved-output
 handoff: erased styled rows stay absent, the surviving row stays unstyled, and
-reacquired no-op saves stay byte-stable.
+reacquired no-op saves stay byte-stable; it now also overwrites the surviving
+row after those no-op saves, saves again, and reopens without reviving the
+erased styled rows or mutating the earlier saved/no-op packages.
 The styled `erase_column()` variant now carries the same saved-output handoff:
 the erased styled column remains absent, the surviving column stays unstyled,
 and reacquired no-op saves stay byte-stable.

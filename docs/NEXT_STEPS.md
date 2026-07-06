@@ -1727,6 +1727,10 @@ state plus rejected-payload absence after the later successful overwrite.
 It now repeats that recovered clean no-op save too, proving the replacement
 diagnostic stays clear, package entries remain stable, source bytes are
 unchanged, and the second output still reopens with only the successful value.
+That recovered output now also reacquires with the original strict
+`WorksheetEditorOptions` and repeats clean no-op saves, proving diagnostics stay
+clear and the successful overwrite remains budget-valid after saved-output
+handoff.
 The mixed public-edit diagnostic recovery path also reopens the saved output to
 verify copy-original `Data` state and replacement-only `Untouched` state after
 failed replacement, rename, and materialized mutation attempts.

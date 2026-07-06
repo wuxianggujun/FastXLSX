@@ -1847,9 +1847,9 @@ The inclusive `erase_rows()` / `erase_columns()` exact `max_cells` release
 paths now mirror that saved-handle coverage after a clean no-op save, proving
 the erased source rows/columns stay absent while the recovery cell remains the
 only represented sparse record.
-The row-side exact `max_cells` release outputs now also reacquire with the
-original strict `WorksheetEditorOptions` and perform clean no-op saves, keeping
-the erased source rows absent and the saved packages byte-stable.
+The row/column-side exact `max_cells` release outputs now also reacquire with
+the original strict `WorksheetEditorOptions` and perform clean no-op saves,
+keeping the erased source rows/columns absent and the saved packages byte-stable.
 The same row/column erase paths now cover exact `memory_budget_bytes` release:
 an oversized insertion fails first, the erase clears that diagnostic and lowers
 the sparse memory estimate, then a smaller insertion saves/reopens without

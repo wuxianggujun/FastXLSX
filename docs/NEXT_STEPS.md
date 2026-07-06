@@ -3217,6 +3217,9 @@ no-op save after preserving surviving references (`Data!A:A` / `Data!B3` and
 Those range and mixed `#REF!` no-op output reopen paths now also re-check clean
 editor diagnostics after row/column snapshot reads, closing the same saved
 session snapshot-hygiene gap.
+The renamed full-calculation formula no-op output helpers now also re-check
+clean editor diagnostics after C5 and shifted source-row readback, keeping
+those saved-session reads in the same no-dirty snapshot-hygiene contract.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

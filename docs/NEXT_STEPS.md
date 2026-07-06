@@ -6101,6 +6101,15 @@ flattened edge text, and erase back to `A1:B2` while preserving
 `xl/sharedStrings.xml`. This is not rich text preservation, sharedStrings
 rebuild/writeback/index migration, relationship repair, or large-file random
 editing.
+The rich shared-string max-coordinate path now also has post-noop reuse
+coverage: after the flattened rich edge is erased and its clean no-op output is
+byte-stable, the same materialized `WorksheetEditor` can write a new plain text
+edge back to `XFD1048576`, append a new shared string index, re-expand dimension
+to `A1:XFD1048576`, preserve source/erase/no-op packages, fresh-reopen through
+sparse views, and settle into another byte-stable no-op save. This is flattened
+rich-source projection/reuse evidence only, not rich text writeback,
+sharedStrings compaction, index migration, relationship repair, or large-file
+random editing.
 Those source-backed max-coordinate erase projections now also fresh-reopen after
 save: inline text, formula, shared-string, scalar, empty-inline, and rich
 shared-string edge cases all reopen as clean `A1:B2` sparse stores with

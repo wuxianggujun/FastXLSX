@@ -1617,6 +1617,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-output.xlsx");
     const std::filesystem::path erase_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-post-noop-reuse-noop-output.xlsx");
 
     {
         fastxlsx::WorkbookWriterOptions options;
@@ -1805,6 +1809,68 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         "source max-coordinate rich shared string erase",
         "source-rich-a1",
         "source-rich-a2");
+
+    const auto erase_noop_entries = fastxlsx::test::read_zip_entries(erase_noop_output);
+
+    sheet.set_cell(
+        "XFD1048576",
+        fastxlsx::CellValue::text("rich-shared-edge-reused & <again>"));
+    check(sheet.has_pending_changes(),
+        "source max-coordinate rich shared string post-noop reuse edit should dirty the materialized handle");
+    check(editor.has_pending_changes(),
+        "source max-coordinate rich shared string post-noop reuse edit should dirty WorkbookEditor");
+    check(editor.pending_materialized_cell_count() == 4,
+        "source max-coordinate rich shared string post-noop reuse edit should expose the restored sparse count");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "source max-coordinate rich shared string post-noop reuse save should clean the handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "source max-coordinate rich shared string post-noop reuse save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "source max-coordinate rich shared string post-noop reuse save should clear dirty cell count");
+
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "source max-coordinate rich shared string post-noop reuse output should restore max-bound dimension");
+    check_contains(post_noop_reuse_xml, R"(<c r="XFD1048576" t="s"><v>3</v></c>)",
+        "source max-coordinate rich shared string post-noop reuse output should append the edge index");
+    const std::string post_noop_reuse_shared_strings =
+        post_noop_reuse_entries.at("xl/sharedStrings.xml");
+    check_contains(
+        post_noop_reuse_shared_strings,
+        R"(<si><t>rich-shared-edge-reused &amp; &lt;again&gt;</t></si></sst>)",
+        "source max-coordinate rich shared string post-noop reuse output should append the edge text");
+    check_contains(post_noop_reuse_shared_strings, R"(count="4")",
+        "source max-coordinate rich shared string post-noop reuse output should advance count metadata");
+    check_contains(post_noop_reuse_shared_strings, R"(uniqueCount="4")",
+        "source max-coordinate rich shared string post-noop reuse output should advance uniqueCount metadata");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source max-coordinate rich shared string post-noop reuse save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(erase_output) == erase_entries,
+        "source max-coordinate rich shared string post-noop reuse save should not mutate the erase output");
+    check(fastxlsx::test::read_zip_entries(erase_noop_output) == erase_noop_entries,
+        "source max-coordinate rich shared string post-noop reuse save should not mutate the erase no-op output");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        post_noop_reuse_output,
+        "source max-coordinate rich shared string post-noop reuse output",
+        fastxlsx::CellValue::text("rich-shared-edge-reused & <again>"));
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source max-coordinate rich shared string post-noop reuse no-op save should keep the handle clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "source max-coordinate rich shared string post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source max-coordinate rich shared string post-noop reuse no-op save should leave the source package unchanged");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        post_noop_reuse_noop_output,
+        "source max-coordinate rich shared string post-noop reuse no-op output",
+        fastxlsx::CellValue::text("rich-shared-edge-reused & <again>"));
 }
 
 } // namespace

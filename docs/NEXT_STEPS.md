@@ -3214,6 +3214,9 @@ after verifying translated saved ranges (`Data!A4:B4` / `Data!4:4` and
 The mixed delete-row/delete-column `#REF!` saved-reopen audit paths now also
 no-op save after preserving surviving references (`Data!A:A` / `Data!B3` and
 `Data!1:1` / `Data!C2`) while skipping persisted `Data!#REF!` tokens.
+Those range and mixed `#REF!` no-op output reopen paths now also re-check clean
+editor diagnostics after row/column snapshot reads, closing the same saved
+session snapshot-hygiene gap.
 Early shift-after-rename coverage now applies the same memory-summary checks to
 the direct planned-name, saved-session reacquire, and option-mismatch paths.
 The direct shift-after-rename reopened-output check now also verifies clean

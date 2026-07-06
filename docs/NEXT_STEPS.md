@@ -1647,6 +1647,9 @@ max-cells recovery saves, verifying compact readback plus rejected row absence.
 The `set_column()` guard paths now reopen both represented-column clearing and
 max-cells recovery saves, verifying compact readback plus rejected column
 absence.
+The matching `set_row()` / `set_column()` memory-budget recovery outputs now
+also reacquire under the original strict sparse-store budget and keep clean
+save/no-op output entries stable.
 The `set_row_values()` / `set_column_values()` max-cells recovery saves are
 also reopened, pinning value-prefix overwrites, preserved sparse tails, and
 rejected prefix targets.

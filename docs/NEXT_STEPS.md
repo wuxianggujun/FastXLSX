@@ -1765,6 +1765,9 @@ unstyled, and reacquired no-op saves keep the output stable.
 The styled `erase_row()` variant now carries that saved-output handoff too:
 the erased styled row remains absent, the surviving row stays unstyled, and
 reacquired no-op saves stay byte-stable.
+The styled `erase_rows()` inclusive-range variant now mirrors the same saved-output
+handoff: erased styled rows stay absent, the surviving row stays unstyled, and
+reacquired no-op saves stay byte-stable.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.

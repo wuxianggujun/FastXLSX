@@ -1829,10 +1829,14 @@ row after those no-op saves, saves again, and reopens without reviving the
 erased styled rows or mutating the earlier saved/no-op packages.
 The styled `erase_column()` variant now carries the same saved-output handoff:
 the erased styled column remains absent, the surviving column stays unstyled,
-and reacquired no-op saves stay byte-stable.
+and reacquired no-op saves stay byte-stable; it now also overwrites the
+surviving column cell after those no-op saves, saves again, and reopens without
+reviving erased column cells or mutating the earlier saved/no-op packages.
 The styled `erase_columns()` inclusive-range variant now mirrors that handoff:
 erased styled columns stay absent, the surviving column stays unstyled, and
-reacquired no-op saves stay byte-stable.
+reacquired no-op saves stay byte-stable; it now also overwrites the surviving
+column cell after those no-op saves, saves again, and reopens without reviving
+the erased styled columns or mutating the earlier saved/no-op packages.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.

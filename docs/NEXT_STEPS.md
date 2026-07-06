@@ -646,6 +646,10 @@ while the matching-option clean no-op saves remain byte-stable.
 The exact-budget `clear_row()` and `clear_column()` release no-op paths now
 pin saved live-handle row/column snapshots for explicit blanks, preserved
 source payloads, recovery cells, and clean materialized diagnostics.
+The `erase_rows()` and `erase_columns()` exact memory-budget release paths now
+also reopen the saved outputs with the original strict options, repeat
+byte-stable clean no-op saves, then prove a later small `A3` overwrite can
+save and reopen without reviving erased cells or rejected guardrail payloads.
 The matching `clear_rows()` and `clear_columns()` exact-budget release no-op
 paths now extend that saved-handle coverage across multi-row and multi-column
 blank/source/recovery views.

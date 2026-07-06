@@ -6068,6 +6068,15 @@ and settle into another byte-stable no-op save. This is append-only
 source-sharedStrings projection/reuse evidence only, not sharedStrings
 compaction, index migration, table rebuild, relationship repair, or large-file
 random editing.
+The source-backed scalar max-coordinate cases now mirror that reuse boundary:
+after number, boolean, and explicit-blank `XFD1048576` edge cells are erased and
+their clean no-op outputs are byte-stable, the same materialized
+`WorksheetEditor` can write scalar values back to the last legal cell, re-expand
+dimension to `A1:XFD1048576`, preserve source/erase/no-op packages, fresh-reopen
+through sparse views, and settle into another byte-stable no-op save. This is
+scalar value projection/reuse evidence only, not date typing, non-finite number
+acceptance, number-format/style migration, dense allocation, row metadata
+repair, or large-file random editing.
 The same edge is now pinned for empty inline-string source shapes: `t="inlineStr"`
 with an empty `<t></t>` materializes as empty text, `t="inlineStr"` with
 `<is/>` and no text materializes as blank, no-op `save_as()` keeps copy-original

@@ -6422,6 +6422,16 @@ linked table part stay as opaque preserved package artifacts. The follow-up
 unchanged, and fresh reopen still sees the supported sparse cells. This is not
 hyperlink/table semantic editing, relationship pruning/repair, table range
 repair, or the internal sheetData Patch API.
+That relationship-wrapper path now also reuses the same clean materialized
+handle after the byte-stable post-dirty no-op save: a later escaped text edit
+extends the regenerated sparse projection to `A1:D4`, keeps `<hyperlinks>`,
+`<tableParts>`, relationship references, the worksheet `.rels`, and linked
+table part as opaque preserved artifacts, avoids sharedStrings, preserves
+source/no-op/dirty/no-op package bytes, fresh-reopens through sparse views, and
+settles into another byte-stable no-op save. This remains relationship-bearing
+wrapper projection reuse only, not hyperlink/table semantic editing,
+relationship pruning/repair, table range repair, metadata repair, or the
+internal sheetData Patch API.
 Representative range/reference wrapper metadata now has both no-op gates too:
 source `<mergeCells>`, `<dataValidations>`, `<conditionalFormatting>`,
 `<ignoredErrors>`, `<pageMargins>`, and `<pageSetup>` do not block supported

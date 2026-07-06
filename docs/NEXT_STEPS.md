@@ -7041,6 +7041,12 @@ schema validation.
   The corresponding read-only no-op saves now also explicitly prove the source
   packages stay unchanged while copy-original outputs fresh-reopen at the
   `XFD1048576` edge.
+- The mixed diagnostic recovery public-state path now also snapshots the
+  untouched source-backed `Data` sheet through reopened `row_cells()` and
+  `column_cells()` views while the recovered `Untouched` sheet exposes only its
+  replacement cell. This is saved-output readback coverage for clean
+  `WorksheetEditor` inspection, not a broader recovery, metadata repair, or
+  cross-sheet edit composition guarantee.
 - Current public API:
   - `Workbook`
   - `Worksheet`

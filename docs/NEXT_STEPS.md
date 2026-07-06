@@ -6497,6 +6497,15 @@ first output and source package, source and first output remain unchanged, and
 fresh reopen still sees the same sparse cells. This is still not clean-session
 commit semantics, in-place save, transaction history, or sharedStrings
 migration.
+That clean read-only copy-original path now also proves the same materialized
+handle remains reusable after the repeated no-op save: a later escaped text edit
+turns the session dirty, the dirty save reuses source shared-string indexes for
+existing cells, appends the new escaped text to `xl/sharedStrings.xml`, keeps
+source and both prior copy-original no-op outputs unchanged, fresh-reopens
+through sparse views, and then settles into another byte-stable no-op save.
+This is narrow same-workbook sharedStrings append evidence, not broad
+sharedStrings index migration, sharedStrings cleanup, relationship repair,
+clean-session commit semantics, or in-place save.
 Prefixed source sharedStrings are now pinned on the same read-only
 materialization path: `sst` / `si` / `t` / `r` element names may be prefixed and
 are matched by local-name for public `WorksheetEditor` materialization, no-op

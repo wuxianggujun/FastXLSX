@@ -2389,6 +2389,10 @@ void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_c
         artifact("fastxlsx-workbook-editor-public-readonly-materialized-noop-output.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-public-readonly-materialized-second-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output =
+        artifact("fastxlsx-workbook-editor-public-readonly-materialized-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output =
+        artifact("fastxlsx-workbook-editor-public-readonly-materialized-post-noop-reuse-noop-output.xlsx");
     {
         fastxlsx::WorkbookWriterOptions options;
         options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -2499,6 +2503,84 @@ void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_c
         fastxlsx::CellRange {1, 1, 1, 2},
         expected_cells,
         "read-only materialized second no-op output");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("noop-materialized-reused & <again>"));
+    check(sheet.has_pending_changes(),
+        "read-only materialized post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "read-only materialized post-noop reuse edit should dirty WorkbookEditor");
+    check(sheet.cell_count() == 3,
+        "read-only materialized post-noop reuse edit should add one sparse record");
+    const std::vector<std::string> dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names.size() == 1 && dirty_names.front() == "Data",
+        "read-only materialized post-noop reuse edit should expose Data as dirty");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "read-only materialized post-noop reuse save should keep Data clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only materialized post-noop reuse save should clear dirty names");
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<dimension ref="A1:C3"/>)",
+        "read-only materialized post-noop reuse save should refresh sparse-store dimension");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="A1" t="s"><v>0</v></c>)",
+        "read-only materialized post-noop reuse save should reuse source shared string index A1");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="B1" t="s"><v>1</v></c>)",
+        "read-only materialized post-noop reuse save should reuse source shared string index B1");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="C3" t="s"><v>3</v></c>)",
+        "read-only materialized post-noop reuse save should append the later text edit to sharedStrings");
+    check_contains(post_noop_reuse_xml, "readonly-noop-comment-before-root",
+        "read-only materialized post-noop reuse save should preserve source comments");
+    check_contains(post_noop_reuse_xml, "readonly-noop-pi",
+        "read-only materialized post-noop reuse save should preserve source processing instructions");
+    check_contains(post_noop_reuse_xml, "<sheetPr>",
+        "read-only materialized post-noop reuse save should preserve source wrapper metadata");
+    check_contains(post_noop_reuse_xml, R"(<autoFilter ref="A1:B1"/>)",
+        "read-only materialized post-noop reuse save should preserve source autoFilter metadata without recalculation");
+    const std::string post_noop_reuse_shared_strings =
+        post_noop_reuse_entries.at("xl/sharedStrings.xml");
+    check_contains(post_noop_reuse_shared_strings,
+        R"(<si><t>noop-materialized-reused &amp; &lt;again&gt;</t></si></sst>)",
+        "read-only materialized post-noop reuse save should append the escaped text to sharedStrings");
+    check_contains(post_noop_reuse_shared_strings, R"(uniqueCount="4")",
+        "read-only materialized post-noop reuse save should advance sharedStrings uniqueCount");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "read-only materialized post-noop reuse save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "read-only materialized post-noop reuse save should not mutate the first no-op output");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_output_entries,
+        "read-only materialized post-noop reuse save should not mutate the second no-op output");
+    const ReopenedSourceSuccessCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("noop-shared-a")},
+        {1, 2, fastxlsx::CellValue::text("noop-shared-b")},
+        {3, 3, fastxlsx::CellValue::text("noop-materialized-reused & <again>")},
+    };
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        post_noop_reuse_cells,
+        "read-only materialized post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "read-only materialized post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "read-only materialized post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "read-only materialized post-noop reuse no-op save should not mutate the source package");
+    check_reopened_source_success_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 3},
+        post_noop_reuse_cells,
+        "read-only materialized post-noop reuse no-op output");
 }
 
 } // namespace

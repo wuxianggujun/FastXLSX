@@ -925,6 +925,9 @@ materialized session before the clean no-op save.
 The failed-save baseline no-op output now reuses the same row/column snapshot
 helper after fresh reopen, pinning source rows/columns and the saved `C2`
 formula after the rejected exact-source save is safely retried.
+The safe-retry output itself now has the same fresh-reopen row/column snapshot
+coverage before the no-op branch, so the first successful package after
+failure also proves the source-backed cells and saved formula shape.
 It
 also carries those row/column snapshots into the stationary saved-reopen audit
 outputs, including cell-reference, `#REF!`, range, whole-row, and whole-column

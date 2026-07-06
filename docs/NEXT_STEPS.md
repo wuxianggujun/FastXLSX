@@ -6403,6 +6403,15 @@ source plus prior no-op package bytes stay unchanged, and fresh reopen still
 sees the same sparse cells. This is wrapper preservation only, not wrapper
 metadata synchronization, range recalculation, relationship repair, or the
 internal sheetData Patch API.
+That wrapper-metadata path now also reuses the same clean materialized handle
+after the byte-stable post-dirty no-op save: a later escaped text edit extends
+the regenerated sparse projection to `A1:C3`, keeps `sheetPr`, `sheetViews`,
+`sheetFormatPr`, `cols`, and `autoFilter` around the rewritten `sheetData`,
+avoids sharedStrings, preserves source/no-op/dirty/no-op package bytes,
+fresh-reopens through sparse views, and settles into another byte-stable no-op
+save. This remains wrapper-preserving projection reuse only, not wrapper
+metadata synchronization, range recalculation, relationship repair, metadata
+repair, or the internal sheetData Patch API.
 Representative relationship-bearing wrapper metadata now follows the same
 two-gate no-op boundary: source `<hyperlinks>` and `<tableParts>` do not block
 supported cell materialization, the clean no-op output copies source package

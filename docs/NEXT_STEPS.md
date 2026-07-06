@@ -1642,6 +1642,10 @@ payloads.
 The `append_row()` max-cells guardrail recovery path is reopened after erasing a
 source-backed row to release budget, pinning the saved appended A2 and rejected
 payload absence.
+The matching `append_row()` max-cells and memory-budget recovery outputs now
+also reacquire with the original strict `WorksheetEditorOptions` and repeat
+clean no-op saves, proving the recovered sparse append remains readable and
+within budget after handoff.
 The `set_row()` guard paths now reopen both represented-row clearing and
 max-cells recovery saves, verifying compact readback plus rejected row absence.
 The `set_column()` guard paths now reopen both represented-column clearing and

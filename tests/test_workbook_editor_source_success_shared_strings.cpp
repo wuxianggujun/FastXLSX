@@ -978,6 +978,12 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
         const std::filesystem::path dirty_noop_output = artifact(
             "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
             + std::string(test_case.name) + "-dirty-noop-output.xlsx");
+        const std::filesystem::path post_noop_reuse_output = artifact(
+            "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
+            + std::string(test_case.name) + "-post-noop-reuse-output.xlsx");
+        const std::filesystem::path post_noop_reuse_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-sharedstrings-xml-declaration-"
+            + std::string(test_case.name) + "-post-noop-reuse-noop-output.xlsx");
         {
             fastxlsx::WorkbookWriterOptions options;
             options.string_strategy = fastxlsx::StringStrategy::SharedString;
@@ -1092,6 +1098,79 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
             fastxlsx::CellRange {1, 1, 2, 2},
             std::string(test_case.name)
                 + " legal declaration post-dirty no-op output");
+
+        sheet.set_cell("C3", fastxlsx::CellValue::text("legal-declaration-reuse"));
+        check(sheet.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse edit should dirty Data");
+        check(editor.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse edit should dirty WorkbookEditor");
+        editor.save_as(post_noop_reuse_output);
+        check(!sheet.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should keep Data clean");
+        const auto post_noop_reuse_entries =
+            fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+        const std::string post_noop_reuse_worksheet =
+            post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_reuse_worksheet,
+            R"(<c r="C3" t="s"><v>3</v></c>)",
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should include the later text edit");
+        const std::string post_noop_reuse_shared_strings =
+            post_noop_reuse_entries.at("xl/sharedStrings.xml");
+        check_contains(post_noop_reuse_shared_strings,
+            R"(<si><t>legal-declaration-reuse</t></si></sst>)",
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should append the later shared string");
+        check_contains(post_noop_reuse_shared_strings, R"(count="4")",
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should update count metadata");
+        check_contains(post_noop_reuse_shared_strings, R"(uniqueCount="4")",
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should update uniqueCount metadata");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should not mutate the source package");
+        check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should not mutate the prior no-op output");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should not mutate the prior dirty output");
+        check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse save should not mutate the prior dirty no-op output");
+        const ReopenedLazySharedStringsCell post_noop_reuse_cells[] = {
+            {1, 1, fastxlsx::CellValue::text(std::string(test_case.expected_text))},
+            {2, 2, fastxlsx::CellValue::text("legal-declaration-new-inline")},
+            {3, 3, fastxlsx::CellValue::text("legal-declaration-reuse")},
+        };
+        check_reopened_shared_strings_dirty_output(
+            post_noop_reuse_output,
+            post_noop_reuse_cells,
+            fastxlsx::CellRange {1, 1, 3, 3},
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse output");
+
+        editor.save_as(post_noop_reuse_noop_output);
+        check(!sheet.has_pending_changes(),
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse no-op save should keep Data clean");
+        check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+                == post_noop_reuse_entries,
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse no-op save should keep output byte-stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse no-op save should not mutate the source package");
+        check_reopened_shared_strings_dirty_output(
+            post_noop_reuse_noop_output,
+            post_noop_reuse_cells,
+            fastxlsx::CellRange {1, 1, 3, 3},
+            std::string(test_case.name)
+                + " legal declaration post-noop reuse no-op output");
     }
 }
 

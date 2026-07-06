@@ -6391,6 +6391,13 @@ The legal XML declaration sharedStrings cases now carry the same post-dirty
 no-op evidence: dirty output reopens through public sparse views, the follow-up
 no-op `save_as()` is byte-stable, and source/no-op packages remain unchanged.
 This is not XML declaration repair or broad sharedStrings migration.
+Those legal XML declaration cases now also have post-noop reuse coverage across
+the declaration variants: after the byte-stable post-dirty no-op save, the same
+borrowed `WorksheetEditor` can append another shared string, update count
+metadata, keep source/prior packages unchanged, fresh-reopen with the expanded
+sparse values, and settle into another byte-stable no-op `save_as()`. This is
+still declaration materialization/save reuse evidence, not XML declaration
+repair, sharedStrings writeback, or broad migration.
 The same post-dirty no-op evidence now covers prefixed sharedStrings and
 `xml:space` sharedStrings: dirty outputs fresh-reopen through public sparse
 views, follow-up no-op `save_as()` outputs are byte-stable, and source/no-op

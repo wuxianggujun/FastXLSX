@@ -916,6 +916,10 @@ session and source package bytes until a later safe save. Public-state coverage
 now also snapshots stationary formula-only rewrites through `row_cells()` and
 `column_cells()` before save, after the rejected source-overwrite save, on the
 saved live handle, and after fresh reopen/no-op reopen. It
+also snapshots the baseline materialized-only formula saved-reopen audit output
+through `row_cells()` and `column_cells()`, including source row/column records
+and the saved `C2` formula on both the reopened output and clean no-op output.
+It
 also carries those row/column snapshots into the stationary saved-reopen audit
 outputs, including cell-reference, `#REF!`, range, whole-row, and whole-column
 variants plus their no-op output reopen checks. It

@@ -663,6 +663,10 @@ The sparse range and batch `clear_cell_values()` exact-budget release no-op
 paths now carry the same saved-handle row/column snapshot checks for explicit
 blanks, preserved source payloads, recovery cells, and clean materialized
 diagnostics.
+They now also reopen the saved outputs with the original strict
+`WorksheetEditorOptions`, repeat byte-stable clean no-op saves, then prove a
+later smaller `D4` overwrite saves and reopens without reviving cleared payload
+text, missing batch coordinates, or rejected guardrail values.
 The renamed full-calc formula-audit saved/reacquire no-op paths now carry the
 same contract across preserved-state, failed-save recovery, invalid mutation,
 invalid read, invalid shift, missing query, option mismatch, and same-sheet

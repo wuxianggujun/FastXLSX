@@ -1876,12 +1876,16 @@ and repeats clean no-op saves, proving the erased coordinate remains absent and
 package entries stay stable after saved-output handoff.
 That same reacquired saved-output path now also overwrites surviving `A1` after
 the repeated no-op saves, writes a fresh output, and reopens with `A2` still
-absent while the saved and no-op packages remain byte-stable.
+absent while the saved and no-op packages remain byte-stable. The final
+post-noop output now also snapshots sparse, row, and column views for the
+overwritten `A1`, preserved source-backed `B1`, and erased `A2` absence.
 The styled `erase_cell()` variant now mirrors that saved-output reacquire path:
 the erased styled source cell stays absent, the surviving unstyled neighbor
 stays clean, repeated no-op saves keep package entries stable, and a later
 post-noop overwrite/save/reopen keeps the erased styled source absent while
-the previous saved/no-op outputs remain byte-stable.
+the previous saved/no-op outputs remain byte-stable. That final styled output
+now also snapshots sparse, row, and column views for the unstyled surviving
+cell while the erased styled column stays absent.
 The styled `erase_cells()` range variant now follows the same handoff: erased
 styled and unstyled targets stay absent, the non-target source cell remains
 unstyled, reacquired no-op saves keep the output stable, and a post-noop

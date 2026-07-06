@@ -1680,6 +1680,11 @@ the same strict `max_cells` options and keep clean save/no-op entries stable.
 The matching `set_row()` / `set_column()` memory-budget recovery outputs now
 also reacquire under the original strict sparse-store budget and keep clean
 save/no-op output entries stable.
+Those strict-options represented row/column memory-budget handles now also
+continue past the no-op saves: a later shorter `A1` replacement stays within the
+original sparse-store budget, saves a fresh-reopenable output, keeps the
+non-target sparse tail, and leaves rejected payloads plus prior outputs
+unchanged.
 The `set_row_values()` / `set_column_values()` max-cells recovery saves are
 also reopened, pinning value-prefix overwrites, preserved sparse tails, and
 rejected prefix targets.

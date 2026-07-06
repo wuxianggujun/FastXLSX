@@ -2537,6 +2537,10 @@ no-argument form clears all currently represented records, missing targets /
 missing-only rows / missing-only columns / missing-only ranges /
 missing-only coordinate batches and empty stores are successful no-ops, and the
 output remains non-tombstone sparse projection.
+The styled no-argument `clear_cell_values()` reuse path now also repeats a
+second clean no-op save after a post-save value-only edit and save, proving the
+reacquired handle remains clean and byte-stable without reviving cleared source
+payloads.
 No-argument `erase_cells()`, `erase_cells(CellRange)`, and
 `erase_cells(span<WorksheetCellReference>)` now cover the matching sparse delete
 cases: the no-argument form removes all represented records, the range overload

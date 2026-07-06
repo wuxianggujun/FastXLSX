@@ -913,6 +913,9 @@ catalog/save-state diagnostics, keeps summaries empty, emits a byte-equivalent
 package, and reopens with the same rewritten formula. A rejected exact-source
 `save_as()` before that first flush now also preserves the dirty formula-only
 session and source package bytes until a later safe save. Public-state coverage
+now also snapshots stationary formula-only rewrites through `row_cells()` and
+`column_cells()` before save, after the rejected source-overwrite save, on the
+saved live handle, and after fresh reopen/no-op reopen. It
 also pins supported cell-range and whole-axis stationary formulas such as
 `SUM(A3:B3)+3:3` and `SUM(D1:E1)+D:E`, and verifies
 `formula_reference_audits()` observes the rewritten `Data!A4` plus stable

@@ -1896,7 +1896,10 @@ target columns stay absent; this is readback parity, not style migration.
 The styled `erase_row()` variant now carries that saved-output handoff too:
 the erased styled row remains absent, the surviving row stays unstyled,
 reacquired no-op saves stay byte-stable, and a post-noop overwrite/save/reopen
-keeps the erased row absent while prior outputs remain stable.
+keeps the erased row absent while prior outputs remain stable. That final
+post-noop output now also snapshots sparse, row, and column views for the
+overwritten surviving row while the erased row remains absent; this is
+readback parity, not style migration.
 The styled `erase_rows()` inclusive-range variant now mirrors the same saved-output
 handoff: erased styled rows stay absent, the surviving row stays unstyled, and
 reacquired no-op saves stay byte-stable; it now also overwrites the surviving
@@ -1909,7 +1912,10 @@ The styled `erase_column()` variant now carries the same saved-output handoff:
 the erased styled column remains absent, the surviving column stays unstyled,
 and reacquired no-op saves stay byte-stable; it now also overwrites the
 surviving column cell after those no-op saves, saves again, and reopens without
-reviving erased column cells or mutating the earlier saved/no-op packages.
+reviving erased column cells or mutating the earlier saved/no-op packages. That
+final post-noop output now also snapshots sparse, row, and column views for the
+overwritten surviving column cell while the erased column remains absent; this
+is readback parity, not style migration.
 The styled `erase_columns()` inclusive-range variant now mirrors that handoff:
 erased styled columns stay absent, the surviving column stays unstyled, and
 reacquired no-op saves stay byte-stable; it now also overwrites the surviving

@@ -2602,6 +2602,9 @@ cell counts, memory, and summaries are cleared, and a same-options
 recovery cell. A no-op `save_as()` after that same-options reacquire is also
 pinned: it keeps both handles clean, does not add another materialized handoff,
 and writes the same decompressed package entries as the first output.
+That no-op path now also preserves the public catalog snapshot, keeps
+replacement diagnostics empty, snapshots both saved handles, and reopens the
+no-op output with the saved blank records plus recovery cell intact.
 Mismatched `WorksheetEditorOptions` access against that saved/reacquired session
 is now pinned as well: rejected lookups keep diagnostics clear, preserve the
 saved blank/recovery cells and catalog state, and a later no-op save still

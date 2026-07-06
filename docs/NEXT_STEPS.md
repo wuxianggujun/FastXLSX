@@ -7069,6 +7069,11 @@ schema validation.
   source-backed `A1` / `B1` through `row_cells()` and `column_cells()`, while
   erased source-backed `A2` remains absent and inserted `D4` keeps its existing
   row/column readback. This is sparse-store recovery evidence only.
+- That erased-cell budget-release path now mirrors those sparse, row, and column
+  snapshots on the strict-options reacquired live handles, their repeated clean
+  no-op saves, and the later post-noop handoff for both max-cells and
+  memory-budget recoveries. This is handle readback parity only, not a broader
+  guardrail or metadata repair policy.
 - Current public API:
   - `Workbook`
   - `Worksheet`

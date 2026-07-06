@@ -629,6 +629,9 @@ read-only-query, invalid-read, and second no-op saves.
 The range-erase reacquired no-op save now also snapshots both saved live
 handles, pinning the lone `C3` row/column view, erased source-cell absence, and
 clean materialized diagnostics before the fresh reopen checks.
+It now repeats that post-reacquire clean no-op save too, requiring
+byte-identical package entries and the same fresh-reopened `C3` projection while
+keeping replacement diagnostics empty.
 The whole-store `erase_cells()` reacquired no-op path now mirrors that saved
 live-handle snapshot coverage for the appended `A1:B1` row, including matching
 column views and erased dirty-cell absence.

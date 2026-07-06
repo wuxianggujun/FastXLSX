@@ -3240,6 +3240,9 @@ memory after the later shared shift, and reopened clean diagnostics.
 The failed-save retry path now also reopens its final clean no-op output, so the
 safe retry's byte-stable save has fresh readback evidence for the renamed sheet,
 translated styled formula, shifted source cells, and absent old coordinates.
+Those direct reacquire, failed-save, and option-mismatch no-op reopen checks now
+also re-check clean editor diagnostics after shifted sparse formula/source
+readback, proving the saved-output reads do not re-dirty the session.
 The option-mismatch path now mirrors that final no-op reopen check after its
 later shared-session column shift, including clean diagnostics on the reopened
 workbook.

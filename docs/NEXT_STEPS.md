@@ -6043,6 +6043,14 @@ edge cell present through A1, row, column, and range snapshots, and
 `erase_cell("XFD1048576")` removes the source-backed edge record so the next
 dirty projection shrinks to `A1:B2` without dense allocation, source reload,
 tombstones, wrapper preservation, or row metadata repair.
+That source-backed max-coordinate erase path now also has post-noop reuse
+evidence: after the erased `XFD1048576` output has settled into a byte-stable
+clean no-op save, the same borrowed `WorksheetEditor` can write `XFD1048576`
+again, re-expand dimension to `A1:XFD1048576`, preserve source/erase/no-op
+packages, fresh-reopen through A1, row, column, and range snapshots, and settle
+into another byte-stable no-op `save_as()`. This remains sparse boundary
+save/reuse evidence only, not dense allocation, row metadata repair, source
+reload, or large-file random editing.
 The same edge is now pinned for empty inline-string source shapes: `t="inlineStr"`
 with an empty `<t></t>` materializes as empty text, `t="inlineStr"` with
 `<is/>` and no text materializes as blank, no-op `save_as()` keeps copy-original

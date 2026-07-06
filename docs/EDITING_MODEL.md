@@ -1010,6 +1010,12 @@ replacement payload 诊断。`WorkbookEditor::pending_worksheet_edits()` 会把 
 sessions 合并进 source-order worksheet summary，暴露 `materialized_dirty`、
 materialized cell count 和 materialized memory estimate；这仍只是 public diagnostic，
 不是 `EditPlan`、package diff、sharedStrings/styles migration 或 relationship repair。
+`WorksheetEditor` read and snapshot calls (`try_cell()`、`get_cell()`、
+`contains_cell()`、`used_range()`、`sparse_cells()`、`row_cells()`、
+`column_cells()`、`cell_count()`、`estimated_memory_usage()` 和
+`has_pending_changes()`) are non-flushing sparse-store inspections: they do not
+auto-save, queue Patch handoffs, expose internal `EditPlan` state, synthesize
+dense missing cells, or make clean saved sessions dirty.
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("small.xlsx", options);

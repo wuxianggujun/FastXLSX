@@ -3392,6 +3392,10 @@ the same sparse ordering as `try_cell()` reads.
 Formula-audit fresh-reopen helpers now also re-check clean editor diagnostics
 immediately after styled formula `try_cell()` readback, before running the
 materialized audit scan.
+API docs and the editing model now explicitly spell out that `WorksheetEditor`
+read/snapshot APIs are non-flushing sparse-store inspections and cannot queue
+Patch handoffs, expose `EditPlan`, synthesize dense cells, or dirty clean saved
+sessions.
 Shift guard/no-op/overflow coverage now pins aggregate materialized memory for
 clean no-op/validation paths and dirty overflow rejection paths.
 Shift formula memory-budget failure coverage now pins aggregate materialized

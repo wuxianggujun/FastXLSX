@@ -211,6 +211,15 @@ They are not Excel semantic row/column operations: they do not synchronize
 tables, filters, validations, conditional formatting, drawings, defined names,
 relationships, sharedStrings/styles metadata, or calcChain.
 
+`WorksheetEditor` read and snapshot APIs (`try_cell()`、`get_cell()`、
+`contains_cell()`、`used_range()`、`sparse_cells()`、`row_cells()`、
+`column_cells()`、`cell_count()`、`estimated_memory_usage()` 和
+`has_pending_changes()`) inspect the materialized sparse store only. They do
+not flush dirty sessions, increment Patch handoff counts, update
+`WorkbookEditor::last_edit_error()` on read failures, expose internal
+`EditPlan` state, synthesize dense missing cells, or turn clean saved sessions
+dirty.
+
 ### 当前能力事实源
 
 当前 public / internal / planned / non-goal 状态矩阵统一维护在

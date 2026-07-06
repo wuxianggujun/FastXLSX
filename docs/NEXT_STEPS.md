@@ -3360,6 +3360,9 @@ Guardrail failure and recovery no-op coverage now also pins empty pending
 summaries and empty replacement diagnostics for source-load `max_cells` /
 memory-budget failures, mutation-side memory-budget / `max_cells` failures,
 and the materialized recovery no-op saves.
+Mutation-side memory-budget / `max_cells` recovery now also repeats the
+same-budget reacquired clean no-op `save_as()` before the later overwrite,
+keeping entries byte-stable, public state clean, and saved inputs unchanged.
 Guardrail recovery overwrite coverage now also pins the dirty `Data`
 materialized summary before save for source-load memory-budget recovery and
 mutation-side memory-budget / `max_cells` recovery.

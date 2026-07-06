@@ -655,6 +655,10 @@ paths now extend that saved-handle coverage across multi-row and multi-column
 blank/source/recovery views.
 They now also cover same-editor matching-option reacquire plus clean no-op
 saves, proving both saved handles stay clean and package entries remain stable.
+Those multi-row and multi-column exact memory-budget release paths now also
+reopen their saved outputs with the original strict options, repeat byte-stable
+clean no-op saves, then prove a later smaller `D4` overwrite saves and reopens
+without reviving cleared payload text or rejected guardrail values.
 The sparse range and batch `clear_cell_values()` exact-budget release no-op
 paths now carry the same saved-handle row/column snapshot checks for explicit
 blanks, preserved source payloads, recovery cells, and clean materialized

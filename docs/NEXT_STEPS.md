@@ -3389,6 +3389,9 @@ The rich reference-shape shift readback now also pins `row_cells()` and
 `column_cells()` snapshots after fresh reopen and post-noop saves, so saved
 insert-row, insert-column, delete-row, and delete-column formula outputs expose
 the same sparse ordering as `try_cell()` reads.
+Formula-audit fresh-reopen helpers now also re-check clean editor diagnostics
+immediately after styled formula `try_cell()` readback, before running the
+materialized audit scan.
 Shift guard/no-op/overflow coverage now pins aggregate materialized memory for
 clean no-op/validation paths and dirty overflow rejection paths.
 Shift formula memory-budget failure coverage now pins aggregate materialized

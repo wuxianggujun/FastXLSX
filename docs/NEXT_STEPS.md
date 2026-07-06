@@ -922,6 +922,9 @@ and the saved `C2` formula on both the reopened output and clean no-op output.
 The same baseline formula lane now also snapshots the same-editor saved-audit
 live handle and no-op output reopen, proving audit reads do not dirty the saved
 materialized session before the clean no-op save.
+The failed-save baseline no-op output now reuses the same row/column snapshot
+helper after fresh reopen, pinning source rows/columns and the saved `C2`
+formula after the rejected exact-source save is safely retried.
 It
 also carries those row/column snapshots into the stationary saved-reopen audit
 outputs, including cell-reference, `#REF!`, range, whole-row, and whole-column

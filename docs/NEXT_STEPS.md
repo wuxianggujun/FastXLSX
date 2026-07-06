@@ -6118,6 +6118,13 @@ bytes are copied unchanged, the no-op output fresh-reopens through public sparse
 views as formula text only, and stale cached values remain source-only until a
 dirty projection omits them. This is not cached value preservation, formula
 evaluation, or calcChain rebuild.
+The cached-result formula path now also continues after the byte-stable
+post-dirty no-op save: the same borrowed `WorksheetEditor` can accept a later
+formula edit, keep all source cached results omitted, preserve source/prior
+packages, fresh-reopen with the expanded formula set, and settle into another
+byte-stable no-op `save_as()`. This remains formula-text materialization/reuse
+evidence only, not cached value regeneration, formula evaluation, or calcChain
+rebuild.
 Source error cell materialization now has matching post-dirty no-op evidence:
 the no-op output remains byte-stable, the rewritten source package is unchanged,
 and fresh reopen still reads the `t="e"` error cells beside later edits.
@@ -6126,6 +6133,13 @@ The same source error cell path now also has a read-only clean no-op
 source package bytes unchanged, fresh-reopen through public sparse views, and
 leave the source package untouched. This remains scalar error-cell readback and
 copy-original evidence, not error-token validation or formula evaluation.
+The source error cell path now also has post-noop reuse evidence: after the
+byte-stable post-dirty no-op save, the same borrowed `WorksheetEditor` can write
+another error cell, preserve source/prior packages, fresh-reopen through public
+sparse views with both source-backed and later error cells, and settle into
+another byte-stable no-op `save_as()`. This is still scalar error-cell
+projection/reuse evidence only, not broader error-token semantics or formula
+evaluation.
 Source shared formula definitions/followers now carry both no-op gates:
 read-only materialization stays clean, the clean no-op output copies source
 package bytes and fresh-reopens with translated follower text, while the later

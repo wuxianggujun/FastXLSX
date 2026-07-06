@@ -6306,6 +6306,13 @@ and fresh-reopens with blank, boolean, empty-text, plain formula, and
 cached-scalar fallback records. The later follow-up `save_as()` output is
 byte-stable, the source and prior no-op packages remain unchanged, and fresh
 reopen still sees those records beside the later inline edit.
+It now also reuses the same clean materialized handle after that byte-stable
+post-dirty no-op save: a later boolean edit extends the sparse projection to
+`A1:J3`, preserves source/no-op/dirty/no-op package bytes, fresh-reopens through
+the public sparse views, and settles into another byte-stable no-op save. This
+is supported scalar/formula value materialization reuse only, not sharedStrings
+migration, cached formula preservation, rich-text preservation, metadata repair,
+or large-file random editing.
 Source `t="str"` cells now carry both no-op gates: read-only materialization
 stays clean, the clean no-op output copies source package bytes and
 fresh-reopens with scalar text, plain formula, and numeric sibling records.

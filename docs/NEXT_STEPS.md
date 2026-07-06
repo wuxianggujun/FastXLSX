@@ -6465,6 +6465,16 @@ supported sparse cells. This is not comment import, processing-instruction
 semantic support, comments-part editing, broad XML trivia preservation, XML
 repair, relationship repair, or a change to cell-internal comment / PI
 rejection.
+That comment/processing-instruction wrapper path now also reuses the same clean
+materialized handle after the byte-stable post-dirty no-op save: a later escaped
+text edit extends the regenerated sparse projection to `A1:C3`, keeps
+wrapper-level comments and processing instructions outside the rewritten
+`sheetData`, continues to omit source `sheetData` trivia, avoids sharedStrings,
+preserves source/no-op/dirty/no-op package bytes, fresh-reopens through sparse
+views, and settles into another byte-stable no-op save. This remains wrapper
+trivia projection reuse only, not comment import, processing-instruction
+semantic support, comments-part editing, broad XML trivia preservation, XML
+repair, or relationship repair.
 These wrapper/default-style/empty-source dirty outputs now also fresh-reopen
 through the public sparse views: normalized `s=0`, empty worksheets that acquire
 a single sparse edit, wrapper metadata, relationship-bearing metadata,

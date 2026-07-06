@@ -1738,6 +1738,10 @@ well, pinning explicit blank readback without admitting the rejected target.
 That same path now repeats a second clean no-op save for both exact `max_cells`
 and `memory_budget_bytes` budgets, keeping package entries stable and public
 dirty materialized state empty after the saved-session handoff.
+It now also reacquires the saved blank-overwrite outputs with the original
+strict `WorksheetEditorOptions` and repeats clean no-op saves, proving explicit
+blank readback and rejected-target absence survive the saved-output handoff
+within the same sparse-store budgets.
 The single-cell `erase_cell()` auto-flush save now reopens the output to verify
 the erased coordinate stays absent while surviving source-backed cells keep the
 shrunk bounds.

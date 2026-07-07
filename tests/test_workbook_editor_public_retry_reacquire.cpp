@@ -1583,6 +1583,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all styled shift recovery handles");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe styled row-shift save");
 
     const std::string saved_formula_xml =
         std::string(R"(<c r="D2" s=")")

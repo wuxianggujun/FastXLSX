@@ -641,6 +641,9 @@ names/count/memory, summaries, replacement diagnostics, and `last_edit_error()`.
 The row/column insert/delete reacquire second safe-save points now share that
 helper too, so shifted sparse saves clear materialized memory diagnostics,
 replacement diagnostics, summaries, and `last_edit_error()` before XML readback.
+The styled row-shift reacquire save now uses the same helper before checking
+the shifted styled formula XML, so style-preserving formula moves also prove
+clean materialized/replacement diagnostics after save.
 Their no-op and fresh-reopened outputs now share the complete clean diagnostics
 gate too: clean workbook/worksheet handles, empty dirty materialized names,
 cell counts, memory estimates, and summaries, no replacement diagnostics, and

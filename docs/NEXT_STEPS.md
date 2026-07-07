@@ -167,6 +167,10 @@ It now also writes a second clean no-op output after the rejected mismatched
 options path: public state stays stable, the second no-op package is
 byte-identical to the first, fresh-reopens with shifted `A3`, and remains
 unchanged after the later matching `C3` save.
+The option-mismatch post-noop output now also pins full sparse, range,
+requested-coordinate, row, and column readback for the shifted source row plus
+the later edit. This is handle-inspection parity for the materialized handoff,
+not broader metadata synchronization.
 The missing-query saved-session path mirrors that evidence too: rejected
 missing-sheet lookups and the clean no-op output leave the row-shifted session
 reusable, a later matching reacquire writes `C3`, and the next output

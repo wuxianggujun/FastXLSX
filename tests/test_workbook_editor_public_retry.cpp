@@ -269,6 +269,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_sa
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-reacquire-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-reacquire-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-reacquire-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -398,6 +400,28 @@ void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_sa
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
         "rename-back-reacquire-second",
         "second output should include the post-reacquire mutation");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "no-op save after rename-back reacquire recovery should keep both handles clean");
+    check(editor.pending_change_count() == 4,
+        "no-op save after rename-back reacquire recovery should not count another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "no-op save after rename-back reacquire recovery should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "no-op save after rename-back reacquire recovery should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "no-op save after rename-back reacquire recovery should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "no-op save after rename-back reacquire recovery should keep summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "no-op save after rename-back reacquire recovery");
+    check(!editor.last_edit_error().has_value(),
+        "no-op save after rename-back reacquire recovery should keep last_edit_error clear");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "no-op save after rename-back reacquire recovery should preserve output package XML");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save after rename-back reacquire recovery should leave the source package unchanged");
 }
 
 } // namespace

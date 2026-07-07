@@ -5593,6 +5593,10 @@ dirty-state recovery path: after the safe recovery output, a clean no-op
 `save_as()` keeps the source package unchanged, preserves the output package
 XML, and leaves materialized/replacement diagnostics plus `last_edit_error()`
 clean.
+The rename-back failed-save reacquire recovery path now has the same clean
+no-op `save_as()` gate after its second safe output, proving both handles stay
+clean, source package bytes stay unchanged, output package XML remains stable,
+and materialized/replacement diagnostics plus `last_edit_error()` stay clear.
 The linked-object PackageEditor preservation shard split keeps
 `tests/test_package_editor_preservation_linked.cpp` as the comments /
 threaded-comments base shard and moves pivot/cache, external-link, and custom

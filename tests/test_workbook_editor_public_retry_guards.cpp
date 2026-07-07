@@ -16,8 +16,16 @@ void check_reopened_guard_recovery_materialized_output(
             !reopened_sheet.has_pending_changes(),
         prefix + " reopened output should materialize as clean public state");
     check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        prefix + " reopened output should not expose dirty diagnostics");
+            reopened_editor.pending_worksheet_edits().empty(),
+        prefix + " reopened output should not expose pending edits");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " reopened output should not expose dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened_editor, prefix + " reopened output");
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened output should keep diagnostics clear");
     check(reopened_sheet.cell_count() == 4,
         prefix + " reopened output should keep the saved sparse cell count");
 

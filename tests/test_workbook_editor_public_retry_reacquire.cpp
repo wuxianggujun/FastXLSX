@@ -1600,6 +1600,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-styled-shift-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-styled-shift-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-styled-shift-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -1736,6 +1738,62 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             reopened_column_four[0].value.has_style() &&
             reopened_column_four[0].value.style_id().value() == styled_formula_style.value(),
         "reopened styled shift column_cells should expose shifted formula style");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "styled row-shift no-op save should keep all recovery handles clean");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "styled row-shift no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "styled row-shift no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "styled row-shift no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "styled row-shift no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled row-shift no-op save should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor noop_editor =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor noop_sheet =
+        noop_editor.worksheet("Data", options);
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "styled row-shift no-op reopened output");
+    const fastxlsx::CellValue noop_formula = noop_sheet.get_cell("D4");
+    check(noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula.text_value() == "A3+B3" &&
+            noop_formula.has_style() &&
+            noop_formula.style_id().value() == styled_formula_style.value(),
+        "styled row-shift no-op reopened output should read back shifted formula style");
+    check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 5, 4,
+        "styled row-shift no-op reopened output should read back shifted sparse used range");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> noop_row_four =
+        noop_sheet.row_cells(4);
+    check(noop_row_four.size() == 4 &&
+            noop_row_four[3].reference.row == 4 &&
+            noop_row_four[3].reference.column == 4 &&
+            noop_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+            noop_row_four[3].value.text_value() == "A3+B3" &&
+            noop_row_four[3].value.has_style() &&
+            noop_row_four[3].value.style_id().value() == styled_formula_style.value(),
+        "styled row-shift no-op row_cells should expose shifted formula style");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> noop_column_four =
+        noop_sheet.column_cells(4);
+    check(noop_column_four.size() == 1 &&
+            noop_column_four[0].reference.row == 4 &&
+            noop_column_four[0].reference.column == 4 &&
+            noop_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            noop_column_four[0].value.text_value() == "A3+B3" &&
+            noop_column_four[0].value.has_style() &&
+            noop_column_four[0].value.style_id().value() == styled_formula_style.value(),
+        "styled row-shift no-op column_cells should expose shifted formula style");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_preserve_reacquired_state()

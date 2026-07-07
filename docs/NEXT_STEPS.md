@@ -649,9 +649,10 @@ The column-shift reacquire recovery path now mirrors that clean no-op gate:
 the no-op package matches the shifted output, source bytes stay unchanged,
 public save/catalog snapshots stay stable, and fresh reopen keeps the shifted
 number plus translated formula layout.
-The styled row-shift reacquire save now uses the same helper before checking
-the shifted styled formula XML, so style-preserving formula moves also prove
-clean materialized/replacement diagnostics after save.
+The styled row-shift reacquire path now also repeats the clean no-op save:
+the no-op package matches the shifted output, source bytes remain unchanged,
+public save/catalog snapshots stay stable, and fresh reopen keeps the
+translated formula plus original `StyleId`.
 The delete-row and delete-column `#REF!` formula reacquire saves now share that
 helper as well, proving formula-reference deletion outputs clear dirty
 materialized diagnostics, replacement diagnostics, summaries, and

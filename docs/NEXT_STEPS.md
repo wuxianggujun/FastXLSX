@@ -2885,6 +2885,11 @@ Public-state coverage now also pins the full-cell replacement style boundary for
 `StyleId`, non-target source-backed cells keep their `StyleId`, dirty `save_as()`
 preserves the source `styles.xml`, fresh reopen readback matches the materialized
 state, and no-op saves keep the clean handle / catalog diagnostics stable.
+Those full-cell default-style regressions now also read the live materialized
+state and the fresh-reopen/no-op outputs through `contains_cell()`,
+`row_cells()`, and `column_cells()`: represented replacement cells, non-target
+cells, explicit blanks, and sparse gaps stay consistent across both row-major
+and column-major public views.
 Public-state now also pins the exact-memory-budget failure path for those
 row/column replacements: oversized `set_row()` / `set_column()` payloads fail
 before deleting the old target records, preserving sparse counts, memory

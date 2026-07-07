@@ -1797,6 +1797,11 @@ and leaving prior outputs plus sources unchanged.
 The adjacent value-prefix memory-budget recovery outputs now carry the same
 strict-options reacquire/no-op contract, including the original sparse-store
 memory estimate, byte-stable entries, and unchanged sources.
+The `set_row_values()` memory-budget branch now repeats that strict-options
+clean no-op save, keeping the saved input, first reacquire output, first no-op
+output, repeated no-op output, source package, row-prefix replacement, row tail,
+non-target row, and original sparse-store budget unchanged before the later
+post-noop overwrite.
 Those strict-options value-prefix memory-budget handles now also continue past
 the no-op saves: both row and column variants overwrite the recovered `A1` text
 with a shorter value, save again, and fresh-reopen while preserving the row/column

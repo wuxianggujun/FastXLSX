@@ -5914,6 +5914,13 @@ The follow-up exact-budget append recovery path now also pins saved-handle
 sparse, row, and column snapshots after erasing a source cell and appending a
 replacement in the same session, keeping rejected `A3` absent and diagnostics
 clean across the no-op save.
+`set_cell_values()` validation and exact `max_cells` rejection now have matching
+copy-original/no-op coverage: invalid batch coordinates and a new sparse target
+over the configured cell budget preserve the clean source-backed `Data`
+session, retain public diagnostics across both saves, keep materialized and
+replacement diagnostics empty, and reopen unchanged. This is sparse value-batch
+rejection hygiene only, not coordinate clamping, budget auto-sizing, or rollback
+machinery.
 `set_row()` validation failures now have matching copy-original/no-op coverage
 for oversized row payloads and row zero: both rejected calls preserve the clean
 source-backed `Data` session, retain public diagnostics across both saves, keep

@@ -5803,12 +5803,14 @@ coverage for both `set_cell_value(row, column, ...)` and strict A1
 source-backed `Data` cells unchanged, preserve the public diagnostic across
 copy-original and follow-up no-op saves, and reopen unchanged. This does not
 add caller-supplied non-default style writes or style migration.
-Single-cell value-only guardrails now also pin the strict A1 string overload:
-lowercase `set_cell_value("a1", ...)` and `max_cells` rejection for
+Single-cell value-only guardrails now also pin row/column and strict A1
+validation paths: row-zero and column-overflow
+`set_cell_value(row, column, ...)`, lowercase `set_cell_value("a1", ...)`,
+column-overflow `set_cell_value("XFE1", ...)`, and `max_cells` rejection for
 `set_cell_value("C3", ...)` leave source-backed `Data` cells unchanged, preserve
 the public diagnostic across copy-original and follow-up no-op saves, and reopen
 unchanged. This remains small-file in-memory validation coverage, not A1 range
-mutation expansion or dense allocation.
+mutation expansion, coordinate clamping, or dense allocation.
 Full-cell and value-clear coordinate/A1 mutation guardrails now have matching
 direct save/no-op evidence: `set_cell()` row-zero / column-overflow rejections,
 `set_cell("a1", ...)` lowercase-A1 rejection, `erase_cell()` row-overflow /

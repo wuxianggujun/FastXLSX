@@ -303,6 +303,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_prese
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-reads-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-reads-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-invalid-reads-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -444,6 +446,9 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_prese
     check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
         "rename-back-invalid-reads-first",
         "source package should not contain the saved invalid-read materialized value");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-invalid-reads-second",
+        "source package should not contain the later invalid-read materialized value");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -477,6 +482,44 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_prese
         second_output,
         options,
         "invalid-read recovery",
+        "rename-back-invalid-reads-first",
+        "rename-back-invalid-reads-second");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "invalid-read no-op save should keep recovery handles clean");
+    check(editor.pending_change_count() == 4,
+        "invalid-read no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "invalid-read no-op save should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "invalid-read no-op save should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "invalid-read no-op save");
+    check(!editor.last_edit_error().has_value(),
+        "invalid-read no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "invalid-read no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "invalid-read no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "invalid-read no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid-read no-op save should leave the source package unchanged");
+
+    check_reopened_guard_recovery_materialized_output(
+        noop_output,
+        options,
+        "invalid-read no-op",
         "rename-back-invalid-reads-first",
         "rename-back-invalid-reads-second");
 }

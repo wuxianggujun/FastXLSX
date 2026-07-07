@@ -6041,6 +6041,13 @@ coverage after clearing a prior edit diagnostic. `insert_rows(..., 0)`,
 stay clean, preserve source-backed `Data`, emit source-identical outputs across
 both saves, and reopen unchanged. This is zero-count shift clean-save hygiene
 only, not structural metadata movement, dimension repair, or relationship sync.
+Shift start-coordinate overflow validation now shares that copy-original/no-op
+coverage for nonzero shifts: `insert_rows(1048577, 1)`,
+`delete_rows(1048577, 1)`, `insert_columns(16385, 1)`, and
+`delete_columns(16385, 1)` fail before dirtying state, preserve source-backed
+`Data`, emit source-identical outputs across both saves, and reopen unchanged.
+This is input validation save hygiene only, not metadata movement, dimension
+repair, rollback, or relationship sync.
 Pending materialized worksheet-name and aggregate diagnostics now also have
 diagnostics-specific no-op save coverage after a two-sheet materialized flush.
 The first save clears dirty names, aggregate cell count, and memory diagnostics;

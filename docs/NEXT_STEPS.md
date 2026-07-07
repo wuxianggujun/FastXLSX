@@ -5815,6 +5815,12 @@ recovery branch: after the copy-original/no-op saves, a valid explicit-default
 `set_cell()` clears `last_edit_error()`, drops the overwritten source style,
 saves/reopens as an unstyled A1 replacement, keeps rejected payloads out of the
 worksheet XML, and leaves the follow-up clean no-op output byte-stable.
+The same recovery branch now also reuses the recovered clean handle for a
+second valid explicit-default value-only edit: `set_cell_value("B1", ...)`
+stays diagnostic-clean, saves/reopens with both unstyled recovery values, keeps
+rejected payloads absent, preserves the original `styles.xml` bytes, and leaves
+the follow-up no-op output byte-stable. This remains failure-recovery hygiene,
+not caller-supplied non-default style writes or style migration.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

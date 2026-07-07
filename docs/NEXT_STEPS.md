@@ -217,6 +217,11 @@ rejected source-overwrite save preserves the dirty shifted session and source
 bytes, the safe retry plus clean no-op output leave that saved session reusable,
 and a later `C3` edit re-dirties both shared handles before saving a
 fresh-reopenable post-noop output while earlier outputs remain unchanged.
+The failed-save retry saved-session outputs now also pin full sparse, range,
+requested-coordinate, row, and column readback for the combined row/column
+shifted source cells across the older handle, reacquired handle, retry handle,
+and fresh reopen. This is handle-inspection parity for the materialized
+handoff, not broader metadata synchronization.
 The path-equivalent failed-save retry path now mirrors that evidence: a rejected
 path-equivalent source-overwrite save keeps the dirty shifted session and source
 bytes intact, the safe retry/no-op output remains reusable, and a later `C3`

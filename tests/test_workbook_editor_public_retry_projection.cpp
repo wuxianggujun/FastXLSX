@@ -1,5 +1,21 @@
 #include "test_workbook_editor_public_retry_common.hpp"
 
+void check_reopened_projection_clean_state(
+    const fastxlsx::WorkbookEditor& reopened_editor,
+    const fastxlsx::WorksheetEditor& reopened_sheet,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " should materialize the worksheet handle as clean public state");
+    check_workbook_editor_public_clean_state(reopened_editor, prefix);
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should not expose dirty materialized diagnostics");
+}
+
 void check_reopened_blank_erase_projection(
     const std::filesystem::path& output,
     const fastxlsx::WorksheetEditorOptions& options)
@@ -8,12 +24,8 @@ void check_reopened_blank_erase_projection(
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
 
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened blank/erase projection should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened blank/erase projection should not expose dirty diagnostics");
+    check_reopened_projection_clean_state(
+        reopened_editor, reopened_sheet, "reopened blank/erase projection");
     check(reopened_sheet.cell_count() == 2,
         "reopened blank/erase projection should keep blank A1 and source-backed B1");
 
@@ -48,12 +60,8 @@ void check_reopened_scalar_formula_projection(
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
 
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened scalar/formula projection should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened scalar/formula projection should not expose dirty diagnostics");
+    check_reopened_projection_clean_state(
+        reopened_editor, reopened_sheet, "reopened scalar/formula projection");
     check(reopened_sheet.cell_count() == 4,
         "reopened scalar/formula projection should keep A1, B1, A2, and C3");
 
@@ -83,12 +91,8 @@ void check_reopened_text_escape_projection(
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
 
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened text escape projection should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened text escape projection should not expose dirty diagnostics");
+    check_reopened_projection_clean_state(
+        reopened_editor, reopened_sheet, "reopened text escape projection");
     check(reopened_sheet.cell_count() == 4,
         "reopened text escape projection should keep A1, B1, A2, and C3");
 

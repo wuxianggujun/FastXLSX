@@ -1155,9 +1155,11 @@ unchanged, public save/catalog snapshots plus diagnostics stay stable, and a
 fresh reopen preserves shifted `A3` while leaving old `A2` absent.
 The retry/projection shard also reopens saved blank/erase, scalar/formula, and
 text-escape projection outputs to verify clean public state and value-kind
-readback after the saved XML projection; each path now also repeats a clean
-no-op `save_as()`, confirms byte-stable output and unchanged source package
-bytes, and reopens that no-op output. A1 overload edit coverage now also
+readback after the saved XML projection. Those reopened-output checks now share
+the complete clean diagnostics gate: no dirty materialized sessions, no
+replacement diagnostics, and no `last_edit_error`. Each path now also repeats a
+clean no-op `save_as()`, confirms byte-stable output and unchanged source
+package bytes, and reopens that no-op output. A1 overload edit coverage now also
 reopens the second no-op output, verifying repeated byte-stable no-op saves
 remain readable with source-backed `A1` / `B1`, erased `A2`, and inserted `D4`.
 Explicit blank coverage now mirrors that second-no-op readback shape for

@@ -5736,6 +5736,11 @@ explicit-default style regressions now also assert `contains_cell()` across
 live, fresh-reopen, and clean no-op readback checks: source-styled targets,
 unstyled blank/untouched cells, and inserted formulas remain represented, while
 unrelated missing `D4` stays absent.
+Those value-only explicit-default style regressions now also check
+`row_cells()` and `column_cells()` across the same live, fresh-reopen, and clean
+no-op stages: styled value-only overwrites, unstyled explicit blanks, inserted
+formulas, untouched source cells, and sparse row/column gaps project consistently
+without changing the small-file In-memory style boundary.
 The explicit-default-style single-cell full replacement path now mirrors that
 public view coverage: overwritten source-backed A1 drops its prior `StyleId`,
 the untouched B1 tail stays unstyled, and missing row/column gaps stay absent

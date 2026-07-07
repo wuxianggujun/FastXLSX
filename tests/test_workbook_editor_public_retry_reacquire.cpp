@@ -1352,6 +1352,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-column-shift-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-column-shift-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-column-shift-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -1540,6 +1542,51 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
             reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
             reopened_column_four[0].value.text_value() == "B1+C2",
         "reopened column-shift column_cells should expose shifted formula");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "column-shift no-op save should keep all recovery handles clean");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "column-shift no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "column-shift no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "column-shift no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "column-shift no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "column-shift no-op save should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor noop_editor =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor noop_sheet =
+        noop_editor.worksheet("Data", options);
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "column-shift no-op reopened output");
+    check(noop_sheet.get_cell("A1").text_value() ==
+            "rename-back-column-shift-first",
+        "column-shift no-op reopened output should read back preserved first-column text");
+    check(!noop_sheet.try_cell("B1").has_value(),
+        "column-shift no-op reopened output should not read back old number coordinate");
+    const fastxlsx::CellValue noop_number = noop_sheet.get_cell("C1");
+    check(noop_number.kind() == fastxlsx::CellValueKind::Number &&
+            noop_number.number_value() == 1.0,
+        "column-shift no-op reopened output should read back shifted source-backed number");
+    check(!noop_sheet.try_cell("C2").has_value(),
+        "column-shift no-op reopened output should not read back old formula coordinate");
+    const fastxlsx::CellValue noop_formula = noop_sheet.get_cell("D2");
+    check(noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            noop_formula.text_value() == "B1+C2",
+        "column-shift no-op reopened output should read back translated formula");
+    check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 4,
+        "column-shift no-op reopened output should read back shifted sparse used range");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preserves_reacquired_state()

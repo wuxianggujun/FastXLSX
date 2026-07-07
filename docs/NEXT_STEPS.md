@@ -5886,11 +5886,12 @@ public view coverage for full replacement semantics: duplicate later-wins
 `set_cells()` targets, an overwritten unstyled formula, an untouched styled
 source cell, and missing sparse gaps stay consistent across live, fresh-reopen,
 and clean no-op `contains_cell()`, `row_cells()`, and `column_cells()` checks.
-The row/column full-replacement explicit-default style paths now also repeat
-the clean no-op save: public catalog/save-state snapshots stay stable, the
-second no-op packages are byte-identical to the first, source and materialized
-outputs remain unchanged, and fresh reopen still reads unstyled replacement
-cells plus untouched source styles.
+The explicit-default style single-cell, sparse-batch, row/column
+full-replacement, and append paths now also repeat the clean no-op save:
+public catalog/save-state snapshots stay stable, the second no-op packages are
+byte-identical to the first, source and materialized outputs remain unchanged,
+and fresh reopen still reads unstyled replacement or appended cells plus
+untouched source styles.
 Styled sparse clear coverage now also includes the range and coordinate-batch
 helpers under the same isolated source-style shard:
 `clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,

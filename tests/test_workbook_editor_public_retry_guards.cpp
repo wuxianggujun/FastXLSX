@@ -56,6 +56,28 @@ void check_reopened_guard_recovery_materialized_output(
         prefix + " reopened row_cells should expose source-backed and later edits");
 }
 
+void check_retry_guard_safe_save_clean_state(
+    const fastxlsx::WorkbookEditor& editor,
+    std::size_t expected_pending_change_count,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+
+    check(editor.pending_change_count() == expected_pending_change_count,
+        prefix + " should count the expected materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        prefix + " should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        prefix + " should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should clear dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should clear dirty materialized summaries");
+    check_workbook_editor_no_replacement_diagnostics(editor, prefix);
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep diagnostics clear");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preserve_reacquired_state()
 {
     const std::filesystem::path source =
@@ -214,10 +236,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_handle_reads_preser
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all handle-read recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after handle reads");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after handle reads");
+    check_retry_guard_safe_save_clean_state(
+        editor, 4, "second safe handle-read save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -443,10 +463,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_reads_prese
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all invalid-read recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after invalid reads");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after invalid reads");
+    check_retry_guard_safe_save_clean_state(
+        editor, 4, "second safe invalid-read save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -677,10 +695,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_invalid_mutations_p
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all invalid-mutation recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after invalid mutations");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after invalid mutations");
+    check_retry_guard_safe_save_clean_state(
+        editor, 4, "second safe invalid-mutation save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -919,8 +935,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all shift-guard recovery handles");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after shift guards");
+    check_retry_guard_safe_save_clean_state(
+        editor, 4, "second safe shift-guard save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -1188,10 +1204,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all missing-erase recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after missing erase");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after missing erase");
+    check_retry_guard_safe_save_clean_state(
+        editor, 4, "second safe missing-erase save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",

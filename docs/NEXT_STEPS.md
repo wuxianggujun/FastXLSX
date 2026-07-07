@@ -700,6 +700,9 @@ no materialized names/count/memory, no replacement diagnostics, and no
 The shift-guard saved and no-op reopened outputs now mirror that contract,
 including empty replacement diagnostics, materialized counters, pending
 summaries, and `last_edit_error()` before their shifted-row readback.
+The guard recovery second safe-save points now use the same clean diagnostics
+gate for handle-read, invalid-read, invalid-mutation, shift-guard, and
+missing-erase recovery saves before their package XML/readback checks.
 The core materialized saved-session no-op paths now also keep replacement
 diagnostics empty for single-sheet dirty-state reuse, same-handle reuse,
 multi-sheet save/retry, and single-/multi-sheet reopen post-noop lifecycle

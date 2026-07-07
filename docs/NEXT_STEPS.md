@@ -5588,6 +5588,11 @@ The core public-retry failed-mutation recovery case now repeats a clean no-op
 `save_as()` after the safe recovery output, proving the source package remains
 unchanged, the output package XML stays stable, and materialized/replacement
 diagnostics plus `last_edit_error()` remain clean.
+The same core retry coverage now applies to the rename-back failed-save
+dirty-state recovery path: after the safe recovery output, a clean no-op
+`save_as()` keeps the source package unchanged, preserves the output package
+XML, and leaves materialized/replacement diagnostics plus `last_edit_error()`
+clean.
 The linked-object PackageEditor preservation shard split keeps
 `tests/test_package_editor_preservation_linked.cpp` as the comments /
 threaded-comments base shard and moves pivot/cache, external-link, and custom

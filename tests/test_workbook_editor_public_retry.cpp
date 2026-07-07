@@ -135,6 +135,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_preserves_dirty_sta
         write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-noop.xlsx");
 
     const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
 
@@ -233,6 +235,30 @@ void test_public_worksheet_editor_rename_back_failed_save_as_preserves_dirty_sta
         "rename-back failed-save recovery output should include the materialized edit");
     check_not_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "rename-back failed-save recovery output should replace the old source value");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "rename-back failed-save recovery should leave the source package unchanged");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save after rename-back failed-save recovery should keep the handle clean");
+    check(editor.pending_change_count() == 3,
+        "no-op save after rename-back failed-save recovery should not count another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "no-op save after rename-back failed-save recovery should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "no-op save after rename-back failed-save recovery should keep dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "no-op save after rename-back failed-save recovery should keep dirty memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "no-op save after rename-back failed-save recovery should keep summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "no-op save after rename-back failed-save recovery");
+    check(!editor.last_edit_error().has_value(),
+        "no-op save after rename-back failed-save recovery should keep last_edit_error clear");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "no-op save after rename-back failed-save recovery should preserve output package XML");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "no-op save after rename-back failed-save recovery should still leave the source package unchanged");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_saved_state()

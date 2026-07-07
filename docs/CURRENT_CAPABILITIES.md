@@ -79,8 +79,9 @@
   explicit caller-supplied default `StyleId{0}` is accepted and normalized to no
   style handle, while non-default caller-supplied `StyleId` handles remain rejected;
   `append_row()` creates new represented sparse cells after the current maximum row,
-  rejects caller-supplied non-default `StyleId` handles, and does not inherit source
-  style handles from existing rows;
+  accepts explicit caller-supplied default `StyleId{0}` as no style, rejects
+  caller-supplied non-default `StyleId` handles, and does not inherit source style
+  handles from existing rows;
   `set_cell_value()` / `set_cell_values()` / `set_row_values()` / `set_column_values()`
   are value-only writes and preserve the target's existing materialized source style
   handle, inserting missing cells without a style. Guardrail checks reject the whole

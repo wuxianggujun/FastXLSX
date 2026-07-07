@@ -954,21 +954,24 @@ worksheet formulas 或 range/object metadata。
 
 Full-cell batch edits (`set_cells()`) are sparse replacements over the
 materialized store. They accept duplicate coordinates as a preflighted
-later-wins batch, reject caller-supplied non-default `StyleId` handles, drop
-prior source styles on overwritten cells, and fail before mutation when
-guardrails are exceeded.
+later-wins batch, accept explicit caller-supplied default `StyleId{0}` as no
+style, reject caller-supplied non-default `StyleId` handles, drop prior source
+styles on overwritten cells, and fail before mutation when guardrails are
+exceeded.
 
 Represented row/column replacements (`set_row()` / `set_column()`) use the same
 full-cell replacement style policy for their target row or column: they remove
 currently represented target records, write the input prefix from column A or
-row 1, reject caller-supplied non-default `StyleId` handles, drop prior source
-styles on overwritten target records, and leave non-target sparse records and
-style handles unchanged.
+row 1, accept explicit caller-supplied default `StyleId{0}` as no style, reject
+caller-supplied non-default `StyleId` handles, drop prior source styles on
+overwritten target records, and leave non-target sparse records and style
+handles unchanged.
 
 Append-row edits (`append_row()`) create new represented sparse cells after the
-current maximum represented row. They reject caller-supplied non-default
-`StyleId` handles and do not inherit source style handles from existing rows;
-the source styles part and untouched source-backed cells are still preserved.
+current maximum represented row. They accept explicit caller-supplied default
+`StyleId{0}` as no style, reject caller-supplied non-default `StyleId` handles,
+and do not inherit source style handles from existing rows; the source styles
+part and untouched source-backed cells are still preserved.
 
 Value-only edits (`set_cell_value()`、`set_cell_values()`、`set_row_values()`、
 `set_column_values()`) are existing-workbook style-preserving writes over the

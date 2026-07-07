@@ -188,12 +188,14 @@ there is an existing-workbook style policy.
 `WorksheetEditor::set_row()` and `WorksheetEditor::set_column()` are the
 represented-row / represented-column full-cell replacements. They remove the
 currently represented sparse records in that row or column, write the input
-prefix from A / row 1, reject caller-supplied non-default `StyleId` handles, drop
-prior source style handles on overwritten target records, and leave non-target
-sparse cells and style handles unchanged.
+prefix from A / row 1, accept explicit caller-supplied default `StyleId{0}` as
+no style, reject caller-supplied non-default `StyleId` handles, drop prior
+source style handles on overwritten target records, and leave non-target sparse
+cells and style handles unchanged.
 
 `WorksheetEditor::append_row()` inserts a new represented sparse row after the
-current maximum represented row. Appended cells are new full cells, reject
+current maximum represented row. Appended cells are new full cells, accept
+explicit caller-supplied default `StyleId{0}` as no style, reject
 caller-supplied non-default `StyleId` handles, and do not inherit source
 `StyleId` handles from existing rows; existing source cells and the preserved
 source styles part remain unchanged.

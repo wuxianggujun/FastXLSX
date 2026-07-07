@@ -4117,6 +4117,10 @@ catalog views and borrowed handles, and retain the saved materialized value.
 The next valid mutation still clears the diagnostic and saves. This is invalid
 mutation hygiene only, not coordinate repair, clamping, source reload, catalog
 repair, commit, undo, or rollback semantics.
+It now also carries the clean no-op `save_as()` proof: the no-op package is
+byte-identical to the second recovery output, source bytes remain unchanged,
+public save/catalog snapshots plus diagnostics stay stable, and a fresh reopen
+starts clean with the saved sparse `A1:B2` state.
 P8.536 applies the helper to successful missing-cell erase no-ops after that
 recovery: valid row/column and A1 `erase_cell()` calls targeting absent cells
 clear a prior mutation diagnostic while keeping sparse cell-count/memory

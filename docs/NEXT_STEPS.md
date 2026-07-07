@@ -5992,17 +5992,18 @@ keep materialized/replacement diagnostics empty, and reopen unchanged. This is
 column value-prefix rejection hygiene only, not dense column writes, column
 insertion, budget auto-sizing, or rollback.
 `clear_row()` / `clear_rows()` validation failures now have copy-original/no-op
-coverage as well: row zero and reversed row ranges preserve the clean
-source-backed `Data` session, retain public diagnostics across both saves, keep
-materialized/replacement diagnostics empty, and reopen unchanged. This is row
-clear validation hygiene only, not row metadata creation, dense materialization,
-range repair, or rollback.
+coverage as well: row zero, row overflow, overflow row ranges, and reversed row
+ranges preserve the clean source-backed `Data` session, retain public
+diagnostics across both saves, keep materialized/replacement diagnostics empty,
+and reopen unchanged. This is row clear validation hygiene only, not row
+metadata creation, dense materialization, range repair, or rollback.
 `clear_column()` / `clear_columns()` now have the symmetric validation
-copy-original/no-op coverage: column zero and reversed column ranges preserve
-the clean source-backed `Data` session, retain public diagnostics across both
-saves, keep materialized/replacement diagnostics empty, and reopen unchanged.
-This is column clear validation hygiene only, not column metadata creation,
-dense materialization, range repair, or rollback.
+copy-original/no-op coverage: column zero, column overflow, overflow column
+ranges, and reversed column ranges preserve the clean source-backed `Data`
+session, retain public diagnostics across both saves, keep
+materialized/replacement diagnostics empty, and reopen unchanged. This is
+column clear validation hygiene only, not column metadata creation, dense
+materialization, range repair, or rollback.
 `erase_row()` / `erase_rows()` validation failures now have the same
 copy-original/no-op coverage: row zero and reversed row ranges preserve the
 clean source-backed `Data` session, retain public diagnostics across both

@@ -4071,6 +4071,10 @@ summaries, unchanged source/planned catalog views, preserved borrowed-handle
 cleanliness, and the saved materialized value. This is catalog-query
 diagnostic hygiene only, not source reload, catalog repair, commit, undo, or
 rollback semantics.
+It now also carries the same clean no-op `save_as()` proof: the no-op package
+is byte-identical to the second recovery output, source bytes stay unchanged,
+public save/catalog snapshots and diagnostics remain stable, and a fresh reopen
+starts clean with the saved sparse `A1:B2` state.
 P8.532 applies that same complete saved-materialized-session helper to the
 post-recovery pending-diagnostic query regression: read-only pending-state and
 worksheet-catalog diagnostics now prove preserved prior edit count, unchanged

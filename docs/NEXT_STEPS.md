@@ -1802,6 +1802,11 @@ clean no-op save, keeping the saved input, first reacquire output, first no-op
 output, repeated no-op output, source package, row-prefix replacement, row tail,
 non-target row, and original sparse-store budget unchanged before the later
 post-noop overwrite.
+The `set_column_values()` memory-budget branch now mirrors that repeated
+strict-options clean no-op save, keeping the saved input, first reacquire
+output, first no-op output, repeated no-op output, source package,
+column-prefix replacement, column tail, non-target column, and original
+sparse-store budget unchanged before the later post-noop overwrite.
 Those strict-options value-prefix memory-budget handles now also continue past
 the no-op saves: both row and column variants overwrite the recovered `A1` text
 with a shorter value, save again, and fresh-reopen while preserving the row/column

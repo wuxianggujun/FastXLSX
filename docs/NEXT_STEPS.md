@@ -5967,14 +5967,15 @@ diagnostics, saves, reopens, and no-op saves byte-stable without leaking the
 rejected D4 payload. This is small-file in-memory budget hygiene only, not
 low-memory random editing or rollback machinery.
 `set_row()` validation failures now have matching copy-original/no-op coverage
-for oversized row payloads and row zero: both rejected calls preserve the clean
-source-backed `Data` session, retain public diagnostics across both saves, keep
-materialized/replacement diagnostics empty, and reopen unchanged. This is
-full-row validation hygiene only, not coordinate clamping or rollback machinery.
-`set_column()` column-zero validation failure now has the same save/no-op
-coverage: the rejected full-column call preserves the clean source-backed
-`Data` session, retains the public diagnostic across both saves, keeps
-materialized/replacement diagnostics empty, and reopens unchanged. This is
+for oversized row payloads, row zero, and row overflow: rejected calls preserve
+the clean source-backed `Data` session, retain public diagnostics across both
+saves, keep materialized/replacement diagnostics empty, and reopen unchanged.
+This is full-row validation hygiene only, not coordinate clamping or rollback
+machinery.
+`set_column()` column-zero and column-overflow validation failures now have the
+same save/no-op coverage: rejected full-column calls preserve the clean
+source-backed `Data` session, retain the public diagnostic across both saves,
+keep materialized/replacement diagnostics empty, and reopen unchanged. This is
 full-column validation hygiene only, not coordinate clamping or rollback.
 `set_row_values()` validation and exact `max_cells` rejection now have matching
 copy-original/no-op coverage: row zero and a new row-prefix write over the

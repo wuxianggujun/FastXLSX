@@ -190,6 +190,10 @@ clean no-op output leave the row-shifted session reusable, a later `C3` edit
 re-dirties the shared handles with aligned materialized diagnostics, and the
 next output fresh-reopens with shifted `A3` plus the new `C3` while earlier
 outputs remain unchanged.
+The invalid-read post-noop output now also pins full sparse, range,
+requested-coordinate, row, and column readback for the shifted source row plus
+the later edit. This is handle-inspection parity for the materialized handoff,
+not broader metadata synchronization.
 The invalid-mutation saved-session path now mirrors that post-noop coverage:
 rejected invalid `set_cell` / `erase_cell` calls leave the shifted session
 clean, the no-op output preserves the invalid mutation diagnostic, a later

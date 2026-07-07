@@ -5827,6 +5827,11 @@ materialized sheet, a rejected caller-supplied non-default `StyleId` full-cell
 write keeps that dirty value and source-styled `A1` intact, saves/reopens
 without leaking the rejected payload, preserves `styles.xml`, retains the public
 diagnostic across save/no-op save, and keeps the no-op package byte-stable.
+That dirty-session branch now also proves a later valid explicit-default
+`A2` full-cell recovery clears the retained `StyleId` diagnostic, preserves the
+source-styled `A1` and prior dirty unstyled `B1`, writes the recovered `A2` as
+unstyled, keeps the rejected payload absent, and leaves the recovery no-op
+output byte-stable.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

@@ -110,6 +110,47 @@ void check_reopened_text_escape_projection(
         "reopened text escape projection should read special-character C3 text");
 }
 
+void check_clean_noop_projection_save(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& first_handle,
+    fastxlsx::WorksheetEditor& second_handle,
+    const std::filesystem::path& noop_output,
+    const std::filesystem::path& source,
+    const std::map<std::string, std::string>& source_entries,
+    const std::map<std::string, std::string>& expected_entries,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!first_handle.has_pending_changes() && !second_handle.has_pending_changes(),
+        prefix + " should keep recovery handles clean");
+    check(editor.pending_change_count() == save_state_before_noop.pending_change_count,
+        prefix + " should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(editor, prefix);
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, prefix);
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, prefix);
+    check(fastxlsx::test::read_zip_entries(noop_output) == expected_entries,
+        prefix + " output should match the saved projection");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        prefix + " should leave the source package unchanged");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_erase_projection()
 {
     const std::filesystem::path source =
@@ -118,6 +159,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-blank-erase-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-blank-erase-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-blank-erase-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -240,6 +283,16 @@ void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_
         "second output should remove row 2 after erasing its only source cell");
 
     check_reopened_blank_erase_projection(second_output, options);
+    check_clean_noop_projection_save(
+        editor,
+        sheet,
+        reacquired,
+        noop_output,
+        source,
+        source_entries,
+        second_entries,
+        "blank/erase projection no-op save");
+    check_reopened_blank_erase_projection(noop_output, options);
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_projection()
@@ -250,6 +303,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-scalar-formula-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-scalar-formula-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-scalar-formula-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -396,6 +451,16 @@ void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_
         "second output should replace source-backed A2 with a boolean cell");
 
     check_reopened_scalar_formula_projection(second_output, options);
+    check_clean_noop_projection_save(
+        editor,
+        sheet,
+        reacquired,
+        noop_output,
+        source,
+        source_entries,
+        second_entries,
+        "scalar/formula projection no-op save");
+    check_reopened_scalar_formula_projection(noop_output, options);
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_projection()
@@ -406,6 +471,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_project
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-text-escape-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-text-escape-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-text-escape-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -551,6 +618,16 @@ void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_project
         "second output should replace source-backed A2 with empty text");
 
     check_reopened_text_escape_projection(second_output, options);
+    check_clean_noop_projection_save(
+        editor,
+        sheet,
+        reacquired,
+        noop_output,
+        source,
+        source_entries,
+        second_entries,
+        "text escape projection no-op save");
+    check_reopened_text_escape_projection(noop_output, options);
 }
 
 } // namespace

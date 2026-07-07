@@ -1147,7 +1147,9 @@ for handle reads, invalid reads/mutations, missing erase no-ops, and the later
 valid shift to verify clean public state and source-backed cell readback.
 The retry/projection shard also reopens saved blank/erase, scalar/formula, and
 text-escape projection outputs to verify clean public state and value-kind
-readback after the saved XML projection. A1 overload edit coverage now also
+readback after the saved XML projection; each path now also repeats a clean
+no-op `save_as()`, confirms byte-stable output and unchanged source package
+bytes, and reopens that no-op output. A1 overload edit coverage now also
 reopens the second no-op output, verifying repeated byte-stable no-op saves
 remain readable with source-backed `A1` / `B1`, erased `A2`, and inserted `D4`.
 Explicit blank coverage now mirrors that second-no-op readback shape for
@@ -4246,6 +4248,16 @@ tombstone output, formula-to-blank conversion, style-preserving clear
 semantics, dense allocation, max-coordinate performance evidence, coordinate
 repair, source reload, catalog repair, commit, undo, rollback,
 sharedStrings/style migration, or relationship repair.
+The retry/projection shard's positive blank/erase, scalar/formula, and
+text-escape projections now also repeat a clean no-op `save_as()` after the
+second safe save-as cleans both borrowed handles. The no-op gates preserve
+public save-state and catalog snapshots, keep replacement/materialized
+diagnostics and pending edit summaries empty, write byte-stable package
+entries, leave the source package unchanged, and fresh-reopen as clean public
+state with the same projected values. This is projection reuse evidence only,
+not new value semantics, formula evaluation, cached result generation,
+sharedStrings/style migration, metadata repair, commit, undo, rollback, or
+relationship repair.
 Malformed source sharedStrings XML/entity/attribute syntax is now pinned at the
 same public facade boundary: unknown or unterminated entities, out-of-range
 character references, missing or unquoted attribute values, and truncated tags
@@ -6560,6 +6572,9 @@ inline strings, escapes `&`, `<`, and `>`, preserves quotes in element text,
 uses `xml:space="preserve"` for leading/trailing whitespace, writes empty text
 as `<t></t>`, refreshes dimension to `A1:C3`, and keeps the restored sheet name
 without leaking the transient planned name.
+Those three retry/projection outputs now also repeat a clean no-op `save_as()`,
+stay byte-stable, preserve source package bytes, and reopen through public
+`WorksheetEditor` as clean sparse state with the same projected values.
 Legal maximum coordinate projection after that recovery is pinned too:
 `XFD1048576` can be written sparsely via row/column max values, read back
 through row/column and A1 APIs, and saved with dimension `A1:XFD1048576` plus a

@@ -2939,6 +2939,12 @@ regression for `clear_row()`, `clear_rows()`, `clear_column()`, and
 readbacks all keep represented styled/unstyled blank coordinates present while
 leaving missing coordinates absent. This is represented-state evidence for the
 small-file sparse store, not metadata sync or style-table migration.
+The same isolated shard now mirrors that read-side coverage for `erase_row()`,
+`erase_rows()`, `erase_column()`, and `erase_columns()`: erased styled source
+records stay absent across live state, saved output, fresh reopen, and clean
+no-op save, while non-target source records retain their existing value/style
+handles. This is still small-file sparse-store evidence, not worksheet metadata
+repair or style-table migration.
 The successful sparse row/column erase paths now have the same repeated
 no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 `erase_columns()`: after the erase output and first clean no-op save, each path

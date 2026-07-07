@@ -5832,6 +5832,14 @@ That dirty-session branch now also proves a later valid explicit-default
 source-styled `A1` and prior dirty unstyled `B1`, writes the recovered `A2` as
 unstyled, keeps the rejected payload absent, and leaves the recovery no-op
 output byte-stable.
+`set_row()` now has the same dirty-session style-rejection/recovery reuse
+coverage: an explicit-default row replacement can dirty row 2, a rejected
+non-default `StyleId` row replacement keeps that dirty row and source-styled
+`A1` intact across save/no-op, and a later explicit-default row recovery clears
+the retained diagnostic, writes only unstyled row-2 replacement cells, keeps the
+rejected payload absent, preserves `styles.xml`, and leaves the recovery no-op
+output byte-stable. This remains row replacement failure-recovery hygiene, not
+caller-supplied non-default style writes or style migration.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

@@ -5857,15 +5857,15 @@ while proving source and prior no-op bytes stay unchanged.
 That re-edit output now has matching clean no-op coverage: public
 catalog/save-state remain stable, the no-op package is byte-equivalent, and
 fresh readback still sees styled `A1=4.75`.
-Value-only explicit-default style coverage now also includes the batch and
-prefix helpers: `set_cell_values()`, `set_row_values()`, and
-`set_column_values()` all accept caller-supplied `StyleId{0}` as no caller
-style, preserve the materialized source `StyleId` on overwritten styled targets,
-keep overwritten unstyled blanks and inserted formula cells unstyled, preserve
-`xl/styles.xml` bytes, omit `s="0"` on dirty save-as output, and keep the
-follow-up clean no-op save byte-stable. This remains the small-file
-In-memory value-only style boundary, not style-table migration, foreign style
-adoption, or sharedStrings/styles rebuild.
+Value-only explicit-default style coverage now also includes the single-cell,
+batch, and prefix helpers: `set_cell_value()`, `set_cell_values()`,
+`set_row_values()`, and `set_column_values()` all accept caller-supplied
+`StyleId{0}` as no caller style, preserve the materialized source `StyleId` on
+overwritten styled targets, keep overwritten unstyled blanks and inserted
+formula cells unstyled, preserve `xl/styles.xml` bytes, omit `s="0"` on dirty
+save-as output, and keep repeated clean no-op saves byte-stable. This remains
+the small-file In-memory value-only style boundary, not style-table migration,
+foreign style adoption, or sharedStrings/styles rebuild.
 The single-cell, sparse-batch, and row/column prefix value-only
 explicit-default style regressions now also assert `contains_cell()` across
 live, fresh-reopen, and clean no-op readback checks: source-styled targets,

@@ -5978,16 +5978,17 @@ source-backed `Data` session, retain the public diagnostic across both saves,
 keep materialized/replacement diagnostics empty, and reopen unchanged. This is
 full-column validation hygiene only, not coordinate clamping or rollback.
 `set_row_values()` validation and exact `max_cells` rejection now have matching
-copy-original/no-op coverage: row zero and a new row-prefix write over the
-configured sparse cell budget preserve the clean source-backed `Data` session,
-retain public diagnostics across both saves, keep materialized/replacement
-diagnostics empty, and reopen unchanged. This is value-prefix rejection hygiene
-only, not dense row writes, row insertion, budget auto-sizing, or rollback.
-`set_column_values()` now has the symmetric validation and exact `max_cells`
-copy-original/no-op coverage: column zero and a new column-prefix write over
-the configured sparse cell budget preserve the clean source-backed `Data`
-session, retain public diagnostics across both saves, keep
+copy-original/no-op coverage: row zero, row overflow, and a new row-prefix
+write over the configured sparse cell budget preserve the clean source-backed
+`Data` session, retain public diagnostics across both saves, keep
 materialized/replacement diagnostics empty, and reopen unchanged. This is
+value-prefix rejection hygiene only, not dense row writes, row insertion,
+budget auto-sizing, or rollback.
+`set_column_values()` now has the symmetric validation and exact `max_cells`
+copy-original/no-op coverage: column zero, column overflow, and a new
+column-prefix write over the configured sparse cell budget preserve the clean
+source-backed `Data` session, retain public diagnostics across both saves,
+keep materialized/replacement diagnostics empty, and reopen unchanged. This is
 column value-prefix rejection hygiene only, not dense column writes, column
 insertion, budget auto-sizing, or rollback.
 `clear_row()` / `clear_rows()` validation failures now have copy-original/no-op

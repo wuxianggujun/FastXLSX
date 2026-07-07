@@ -6193,6 +6193,11 @@ empty and a later matching-option edit saves, the clean no-op output matches
 the second safe output, the source package remains unchanged, and fresh reopen
 reads the saved A1, source B1/A2, and post-missing-try B2 values as clean sparse
 state.
+The throwing `worksheet()` missing-query retry/reacquire branch now mirrors that
+same proof after old transient-name and missing-name lookups throw: the later
+matching-option edit can save, the clean no-op output remains byte-stable, the
+source package stays unchanged, and fresh reopen reads the saved A1,
+source-backed B1/A2, and post-missing-worksheet B2 values as clean sparse state.
 Invalid read preflights now cover the next read-only failure branch on the same
 whole-store value-clear session: invalid coordinates, invalid A1/range/batch
 reads, invalid row/column snapshots, and valid-but-missing `get_cell()` preserve

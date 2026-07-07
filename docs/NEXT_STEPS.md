@@ -4083,6 +4083,10 @@ edit summaries, unchanged source/planned catalog views, clean borrowed handles,
 and the saved materialized value. This is diagnostic-query hygiene only, not
 diagnostic-triggered flush, source reload, catalog repair, commit, undo, or
 rollback semantics.
+It now also mirrors the adjacent clean no-op `save_as()` contract: the no-op
+package is byte-identical to the second recovery output, source bytes remain
+unchanged, public save/catalog snapshots plus diagnostics stay stable, and a
+fresh reopen starts clean with the saved sparse `A1:B2` state.
 P8.533 applies the same helper to handle-level read APIs after that recovery:
 `try_cell()`, `get_cell()`, `cell_count()`, `estimated_memory_usage()`, and
 `sparse_cells()` now also prove preserved prior edit count, unchanged

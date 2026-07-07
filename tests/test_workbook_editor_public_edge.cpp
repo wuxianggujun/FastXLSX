@@ -2157,6 +2157,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_eras
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-second.xlsx");
     const std::filesystem::path third_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-third.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-max-coordinate-erase-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -2279,6 +2281,49 @@ void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_eras
     check_contains(third_worksheet_xml,
         R"(<c r="A2" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
         "third output should preserve source-backed A2 text after edge erase");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !after_max_save.has_pending_changes(),
+        "max-coordinate erase no-op save should keep recovery handles clean");
+    check(editor.pending_change_count() == 5,
+        "max-coordinate erase no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "max-coordinate erase no-op save should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "max-coordinate erase no-op save should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "max-coordinate erase no-op save");
+    check(!editor.last_edit_error().has_value(),
+        "max-coordinate erase no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "max-coordinate erase no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "max-coordinate erase no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == third_entries,
+        "max-coordinate erase no-op output should match the third output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "max-coordinate erase no-op save should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor noop_editor = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor noop_sheet = noop_editor.worksheet("Data", options);
+    check(!noop_sheet.has_pending_changes(),
+        "max-coordinate erase no-op reopened sheet should start clean");
+    check(noop_sheet.cell_count() == 3,
+        "max-coordinate erase no-op reopened sheet should preserve sparse cell count");
+    check(!noop_sheet.try_cell(max_row, max_column).has_value(),
+        "max-coordinate erase no-op reopened sheet should keep the edge cell absent");
+    check(noop_sheet.get_cell("A1").text_value() ==
+            "rename-back-max-coordinate-erase-first",
+        "max-coordinate erase no-op reopened sheet should keep the setup A1 text");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_max_coordinate_a1_mutations()

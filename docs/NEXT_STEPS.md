@@ -5809,11 +5809,12 @@ lowercase `set_cell_value("a1", ...)` and `max_cells` rejection for
 the public diagnostic across copy-original and follow-up no-op saves, and reopen
 unchanged. This remains small-file in-memory validation coverage, not A1 range
 mutation expansion or dense allocation.
-Full-cell `set_cell(row, column, ...)` coordinate guardrails now have matching
-direct save/no-op evidence: row-zero and column-overflow rejections leave
-source-backed `Data` cells unchanged, preserve the public diagnostic across
-copy-original and follow-up no-op saves, omit rejected payloads from saved
-worksheet XML, and reopen unchanged. This is coordinate validation hygiene, not
+Full-cell row/column coordinate mutation guardrails now have matching direct
+save/no-op evidence: `set_cell()` row-zero / column-overflow rejections and
+`erase_cell()` row-overflow / column-zero rejections leave source-backed `Data`
+cells unchanged, preserve the public diagnostic across copy-original and
+follow-up no-op saves, omit rejected payloads from saved worksheet XML when a
+payload exists, and reopen unchanged. This is coordinate validation hygiene, not
 coordinate clamping, range expansion, dense allocation, or XML repair.
 `append_row()` style rejection now has matching default public-state save/no-op
 coverage: a rejected caller-supplied non-default `StyleId` append leaves the

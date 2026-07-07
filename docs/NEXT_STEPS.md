@@ -641,6 +641,10 @@ saved sparse state, the clean no-op output stays byte-stable, and fresh reopen
 keeps the translated formula, shifted source row, and old formula coordinate
 absence. This is saved-session lifecycle hygiene only, not broad formula
 rewrite, metadata sync, or calcChain rebuild.
+That row-insert formula reacquire path now repeats the clean no-op save as
+well, proving the second no-op package remains byte-stable while the translated
+formula, shifted dirty tail, source workbook, first output, and first no-op
+output all remain unchanged.
 The `clear_cell_values()` memory-budget release saved-session path now extends
 that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
 no-op saves.

@@ -180,6 +180,10 @@ It now also repeats the clean no-op save after the rejected missing-sheet
 lookups: public state stays stable, the second no-op package is byte-identical
 to the first, fresh-reopens with shifted `A3`, and remains unchanged after the
 later matching `C3` save.
+The missing-query post-noop output now also pins full sparse, range,
+requested-coordinate, row, and column readback for the shifted source row plus
+the later edit. This is handle-inspection parity for the materialized handoff,
+not broader metadata synchronization.
 The invalid-read saved-session path now has matching post-noop evidence:
 rejected invalid scalar/A1/range/batch/row/column and valid-missing reads plus a
 clean no-op output leave the row-shifted session reusable, a later `C3` edit

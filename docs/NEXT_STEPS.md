@@ -638,6 +638,9 @@ The basic reacquire second safe-save points now use the same clean diagnostics
 gate as well: option mismatch, missing `try_worksheet()`, missing worksheet,
 catalog query, and diagnostic query recovery saves all clear dirty materialized
 names/count/memory, summaries, replacement diagnostics, and `last_edit_error()`.
+The row/column insert/delete reacquire second safe-save points now share that
+helper too, so shifted sparse saves clear materialized memory diagnostics,
+replacement diagnostics, summaries, and `last_edit_error()` before XML readback.
 Their no-op and fresh-reopened outputs now share the complete clean diagnostics
 gate too: clean workbook/worksheet handles, empty dirty materialized names,
 cell counts, memory estimates, and summaries, no replacement diagnostics, and

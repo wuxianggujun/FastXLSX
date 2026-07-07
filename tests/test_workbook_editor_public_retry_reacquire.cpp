@@ -1231,14 +1231,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all shift recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later shifted materialized handoff");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "second safe save_as should clear shifted dirty names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "second safe save_as should clear shifted dirty cell count");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear shifted dirty summaries");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe row-shift save");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -1420,14 +1414,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all column-shift recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later column-shifted materialized handoff");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "second safe save_as should clear column-shifted dirty names");
-    check(editor.pending_materialized_cell_count() == 0,
-        "second safe save_as should clear column-shifted dirty cell count");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear column-shifted dirty summaries");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe column-shift save");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -1764,14 +1752,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
         check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
                 !matching.has_pending_changes(),
             "second safe save_as should clean all delete-row recovery handles");
-        check(editor.pending_change_count() == 4,
-            "second safe save_as should count the later delete-row materialized handoff");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "second safe save_as should clear delete-row dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "second safe save_as should clear delete-row dirty cell count");
-        check(editor.pending_worksheet_edits().empty(),
-            "second safe save_as should clear delete-row dirty summaries");
+        check_retry_reacquire_safe_save_clean_state(
+            editor, 4, "second safe delete-row save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -1952,14 +1934,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
         check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
                 !matching.has_pending_changes(),
             "second safe save_as should clean all delete-column recovery handles");
-        check(editor.pending_change_count() == 4,
-            "second safe save_as should count the later delete-column materialized handoff");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "second safe save_as should clear delete-column dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "second safe save_as should clear delete-column dirty cell count");
-        check(editor.pending_worksheet_edits().empty(),
-            "second safe save_as should clear delete-column dirty summaries");
+        check_retry_reacquire_safe_save_clean_state(
+            editor, 4, "second safe delete-column save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",

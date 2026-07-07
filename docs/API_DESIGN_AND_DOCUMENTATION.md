@@ -202,10 +202,13 @@ source styles part remain unchanged.
 
 `WorksheetEditor` value-only APIs (`set_cell_value()`、`set_cell_values()`、
 `set_row_values()`、`set_column_values()`) keep the target cell's currently
-materialized source `StyleId` when overwriting an existing cell, reject
-caller-supplied non-default `StyleId` handles, and insert missing cells without a
-style. `set_cell_values()` preflights the whole batch, accepts duplicate
-coordinates, and applies later-wins ordering after validation.
+materialized source `StyleId` when overwriting an existing cell, accept explicit
+caller-supplied default `StyleId{0}` as no caller style, reject non-default
+caller-supplied `StyleId` handles, and insert missing cells without a style.
+Existing source styles still win over the explicit default input, and missing
+targets stay unstyled instead of serializing `s="0"`. `set_cell_values()`
+preflights the whole batch, accepts duplicate coordinates, and applies
+later-wins ordering after validation.
 
 `WorksheetEditor` row/column shift helpers (`insert_rows()`、`delete_rows()`、
 `insert_columns()`、`delete_columns()`) are represented sparse-store transforms.

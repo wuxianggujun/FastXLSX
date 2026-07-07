@@ -976,9 +976,11 @@ part and untouched source-backed cells are still preserved.
 Value-only edits (`set_cell_value()`、`set_cell_values()`、`set_row_values()`、
 `set_column_values()`) are existing-workbook style-preserving writes over the
 materialized sparse store. They preserve an existing target cell's source
-`StyleId`, insert missing cells without style, reject caller-supplied
-non-default `StyleId` handles, and keep `set_cell_values()` duplicate coordinates
-as a preflighted later-wins batch.
+`StyleId`, insert missing cells without style, accept explicit caller-supplied
+default `StyleId{0}` as no caller style, reject caller-supplied non-default
+`StyleId` handles, and keep `set_cell_values()` duplicate coordinates as a
+preflighted later-wins batch. The explicit default input does not override an
+existing source style and does not serialize `s="0"` for missing targets.
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("template.xlsx", options);

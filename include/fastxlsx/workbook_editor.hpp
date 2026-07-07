@@ -644,7 +644,9 @@ struct WorkbookEditorRenameOptions {
 /// not inherit source styles, and overwritten cells drop prior source styles.
 /// `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
 /// `set_column_values()` can replace cell values while preserving currently
-/// materialized source style handles on those coordinates.
+/// materialized source style handles on those coordinates. Explicit default
+/// StyleId{0} input is accepted as no caller style for these value-only writes:
+/// existing source handles still win, and missing target cells stay unstyled.
 /// `clear_cell_value()`, no-argument `clear_cell_values()`, `clear_row()`,
 /// `clear_rows()`, `clear_column()`, `clear_columns()`, and the
 /// `clear_cell_values()` range / batch overloads can turn existing
@@ -1066,10 +1068,13 @@ public:
     /// This is the safe existing-workbook style boundary for value-only edits:
     /// if the target coordinate already has a materialized non-default source
     /// StyleId, the replacement value keeps that same workbook-local handle.
-    /// Missing target cells are inserted without a style. Caller-supplied
-    /// non-default StyleId handles are still rejected because this method does
-    /// not migrate, merge, validate, or create styles. Use set_cell() when the
-    /// intended operation is a full cell replacement that drops any prior style.
+    /// Missing target cells are inserted without a style. Explicit default
+    /// StyleId{0} handles are accepted as no caller style: they do not override
+    /// an existing source style and do not serialize as `s="0"` on missing
+    /// targets. Caller-supplied non-default StyleId handles are still rejected
+    /// because this method does not migrate, merge, validate, or create styles.
+    /// Use set_cell() when the intended operation is a full cell replacement
+    /// that drops any prior style.
     void set_cell_value(
         std::uint32_t row, std::uint32_t column, const CellValue& value);
 
@@ -1081,8 +1086,10 @@ public:
     /// the whole batch passes validation. Existing target cells keep their
     /// current materialized source StyleId, including when an earlier update in
     /// the same batch preserved that handle. Missing target cells are inserted
-    /// without a style. Empty input is a successful no-op that does not dirty
-    /// the materialized session and clears prior public edit diagnostics.
+    /// without a style. Explicit default StyleId{0} handles are accepted as no
+    /// caller style and follow the same preserve-existing / insert-unstyled
+    /// behavior. Empty input is a successful no-op that does not dirty the
+    /// materialized session and clears prior public edit diagnostics.
     /// Invalid coordinates, caller-supplied non-default StyleId handles,
     /// max_cells violations, or memory_budget_bytes violations reject the
     /// entire batch before the active sparse store is mutated.
@@ -1105,10 +1112,12 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The row is
     /// a 1-based Excel row number. Values are written to columns 1..N in input
     /// order. Existing target cells keep their current materialized source
-    /// StyleId; missing target cells are inserted without a style. Cells beyond
-    /// the input prefix are left untouched. Empty input is a successful no-op
-    /// that does not dirty the materialized session and clears prior public
-    /// edit diagnostics.
+    /// StyleId; missing target cells are inserted without a style. Explicit
+    /// default StyleId{0} handles are accepted as no caller style and follow the
+    /// same preserve-existing / insert-unstyled behavior. Cells beyond the input
+    /// prefix are left untouched. Empty input is a successful no-op that does
+    /// not dirty the materialized session and clears prior public edit
+    /// diagnostics.
     ///
     /// The entire prefix write is preflighted and staged. Invalid row numbers,
     /// more than 16,384 values, caller-supplied non-default StyleId handles,
@@ -1136,7 +1145,9 @@ public:
     /// API mode: In-memory / existing-workbook small-file mutation. The column
     /// is a 1-based Excel column number. Values are written to rows 1..N in
     /// input order. Existing target cells keep their current materialized
-    /// source StyleId; missing target cells are inserted without a style. Cells
+    /// source StyleId; missing target cells are inserted without a style.
+    /// Explicit default StyleId{0} handles are accepted as no caller style and
+    /// follow the same preserve-existing / insert-unstyled behavior. Cells
     /// beyond the input prefix are left untouched. Empty input is a successful
     /// no-op that does not dirty the materialized session and clears prior
     /// public edit diagnostics.
@@ -1184,9 +1195,10 @@ public:
     /// while preserving the target cell's current source style handle.
     ///
     /// The reference parsing, coordinate guardrails, missing-cell insertion
-    /// behavior, and non-default caller-supplied StyleId rejection follow the
-    /// row/column set_cell_value() overload. This remains a value-only
-    /// convenience, not a public style migration or style editing API.
+    /// behavior, explicit default StyleId{0} acceptance, and non-default
+    /// caller-supplied StyleId rejection follow the row/column set_cell_value()
+    /// overload. This remains a value-only convenience, not a public style
+    /// migration or style editing API.
     void set_cell_value(std::string_view cell_reference, const CellValue& value);
 
     /// Clears the value of one represented cell while preserving its style.

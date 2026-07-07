@@ -84,9 +84,12 @@
   handles from existing rows;
   `set_cell_value()` / `set_cell_values()` / `set_row_values()` / `set_column_values()`
   are value-only writes and preserve the target's existing materialized source style
-  handle, inserting missing cells without a style. Guardrail checks reject the whole
-  batch or row/column operation before mutation, and duplicate missing coordinates count
-  as one final sparse target for `set_cells()` / `set_cell_values()`.
+  handle, inserting missing cells without a style. Explicit caller-supplied default
+  `StyleId{0}` is accepted as no caller style for value-only writes: existing source
+  styles still win, missing targets remain unstyled, and dirty save_as() does not write
+  `s="0"`. Guardrail checks reject the whole batch or row/column operation before
+  mutation, and duplicate missing coordinates count as one final sparse target for
+  `set_cells()` / `set_cell_values()`.
 - Row/column shift helpers only move or delete represented sparse records. Shifted records keep
   their `CellValue` payloads and materialized source `StyleId` handles; moved formula cells
   translate supported A1-style references, and stationary formula cells already in the

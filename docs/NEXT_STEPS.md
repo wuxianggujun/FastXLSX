@@ -1145,6 +1145,10 @@ invalid shift ranges preserve the saved sparse store until a later valid shift
 clears the diagnostic and flushes; it also reopens saved guard-recovery outputs
 for handle reads, invalid reads/mutations, missing erase no-ops, and the later
 valid shift to verify clean public state and source-backed cell readback.
+The later valid shift guard recovery now also has a clean no-op `save_as()`
+proof: the no-op package matches the shifted second output, source bytes remain
+unchanged, public save/catalog snapshots plus diagnostics stay stable, and a
+fresh reopen preserves shifted `A3` while leaving old `A2` absent.
 The retry/projection shard also reopens saved blank/erase, scalar/formula, and
 text-escape projection outputs to verify clean public state and value-kind
 readback after the saved XML projection; each path now also repeats a clean

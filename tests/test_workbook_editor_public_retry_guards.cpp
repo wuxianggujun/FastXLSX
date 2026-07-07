@@ -784,6 +784,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-shift-guards-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-shift-guards-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-shift-guards-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -912,6 +914,16 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
     check(editor.pending_worksheet_edits().empty(),
         "second safe save_as should clear summaries after shift guards");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain the original value after shift guards");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-shift-guards-first",
+        "source package should not contain the saved shift-guard materialized value");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "shift-guard-invalid-lowercase",
+        "source package should not contain rejected invalid shift-guard payload");
+
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
         "first shift-guard recovery output should use the restored source name");
@@ -972,6 +984,67 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
             reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
             reopened_row_three[0].value.text_value() == "placeholder-a2",
         "reopened shift-guard row_cells should expose the shifted source-backed cell");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "shift-guard no-op save should keep recovery handles clean");
+    check(editor.pending_change_count() == save_state_before_noop.pending_change_count,
+        "shift-guard no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift-guard no-op save should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "shift-guard no-op save should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "shift-guard no-op save");
+    check(!editor.last_edit_error().has_value(),
+        "shift-guard no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "shift-guard no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "shift-guard no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "shift-guard no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shift-guard no-op save should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor noop_editor =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor noop_sheet =
+        noop_editor.worksheet("Data", options);
+    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
+        "shift-guard no-op reopened output should start clean");
+    check(noop_editor.pending_change_count() == 0 &&
+            noop_editor.pending_materialized_cell_count() == 0,
+        "shift-guard no-op reopened output should not expose dirty diagnostics");
+    check(noop_sheet.cell_count() == 3,
+        "shift-guard no-op reopened output should keep the saved sparse cell count");
+    check(noop_sheet.get_cell("A1").text_value() ==
+            "rename-back-shift-guards-first",
+        "shift-guard no-op reopened output should read back preserved row-one text");
+    check(!noop_sheet.try_cell("A2").has_value(),
+        "shift-guard no-op reopened output should not read back the old source-backed coordinate");
+    const fastxlsx::CellValue noop_shifted_source =
+        noop_sheet.get_cell("A3");
+    check(noop_shifted_source.kind() == fastxlsx::CellValueKind::Text &&
+            noop_shifted_source.text_value() == "placeholder-a2",
+        "shift-guard no-op reopened output should read back shifted source-backed row");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> noop_row_three =
+        noop_sheet.row_cells(3);
+    check(noop_row_three.size() == 1 &&
+            noop_row_three[0].reference.row == 3 &&
+            noop_row_three[0].reference.column == 1 &&
+            noop_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            noop_row_three[0].value.text_value() == "placeholder-a2",
+        "shift-guard no-op reopened row_cells should expose the shifted source-backed cell");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_preserves_reacquired_state()

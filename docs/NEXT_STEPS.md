@@ -645,6 +645,11 @@ That row-insert formula reacquire path now repeats the clean no-op save as
 well, proving the second no-op package remains byte-stable while the translated
 formula, shifted dirty tail, source workbook, first output, and first no-op
 output all remain unchanged.
+It now also mirrors the sibling delete-row/delete-column/insert-column paths
+after those repeated clean no-op saves: a later `D4` edit re-dirties both shared
+handles, saves as a fresh post-noop output, leaves all earlier packages
+unchanged, and fresh reopen preserves the translated formula, shifted dirty
+tail, row/column views, and new post-noop cell.
 The `clear_cell_values()` memory-budget release saved-session path now extends
 that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
 no-op saves.

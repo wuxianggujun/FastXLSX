@@ -245,6 +245,10 @@ void test_public_worksheet_editor_rename_back_failed_save_as_blank_and_existing_
         "second safe save_as should clear blank/erase dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "second safe save_as should clear summaries after blank/erase");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "second safe blank/erase projection save");
+    check(!editor.last_edit_error().has_value(),
+        "second safe blank/erase projection save should keep diagnostics clear");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -403,6 +407,10 @@ void test_public_worksheet_editor_rename_back_failed_save_as_scalar_and_formula_
         "second safe save_as should clear scalar/formula dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "second safe save_as should clear summaries after scalar/formula edits");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "second safe scalar/formula projection save");
+    check(!editor.last_edit_error().has_value(),
+        "second safe scalar/formula projection save should keep diagnostics clear");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -572,6 +580,10 @@ void test_public_worksheet_editor_rename_back_failed_save_as_text_escape_project
         "second safe save_as should clear text escape dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "second safe save_as should clear summaries after text escape edits");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "second safe text escape projection save");
+    check(!editor.last_edit_error().has_value(),
+        "second safe text escape projection save should keep diagnostics clear");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",

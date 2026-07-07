@@ -5722,10 +5722,11 @@ keep overwritten unstyled blanks and inserted formula cells unstyled, preserve
 follow-up clean no-op save byte-stable. This remains the small-file
 In-memory value-only style boundary, not style-table migration, foreign style
 adoption, or sharedStrings/styles rebuild.
-The single-cell and sparse-batch value-only explicit-default style regressions
-now also assert `contains_cell()` across live, fresh-reopen, and clean no-op
-readback checks: source-styled `A1`, unstyled `B1`/`A2`, and inserted formula
-`C2` remain represented, while unrelated missing `D4` stays absent.
+The single-cell, sparse-batch, and row/column prefix value-only
+explicit-default style regressions now also assert `contains_cell()` across
+live, fresh-reopen, and clean no-op readback checks: source-styled targets,
+unstyled blank/untouched cells, and inserted formulas remain represented, while
+unrelated missing `D4` stays absent.
 Styled sparse clear coverage now also includes the range and coordinate-batch
 helpers under the same isolated source-style shard:
 `clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,

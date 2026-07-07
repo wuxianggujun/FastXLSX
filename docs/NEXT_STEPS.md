@@ -5797,6 +5797,12 @@ coverage for both `set_cell_value(row, column, ...)` and strict A1
 source-backed `Data` cells unchanged, preserve the public diagnostic across
 copy-original and follow-up no-op saves, and reopen unchanged. This does not
 add caller-supplied non-default style writes or style migration.
+Single-cell value-only guardrails now also pin the strict A1 string overload:
+lowercase `set_cell_value("a1", ...)` and `max_cells` rejection for
+`set_cell_value("C3", ...)` leave source-backed `Data` cells unchanged, preserve
+the public diagnostic across copy-original and follow-up no-op saves, and reopen
+unchanged. This remains small-file in-memory validation coverage, not A1 range
+mutation expansion or dense allocation.
 `append_row()` style rejection now has matching default public-state save/no-op
 coverage: a rejected caller-supplied non-default `StyleId` append leaves the
 sparse count and source `Data` cells unchanged, keeps the appended row absent,

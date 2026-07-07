@@ -2933,6 +2933,12 @@ The styled `clear_column()` / `clear_columns()` paths now close the same
 saved-output handoff loop for column clears: a fresh editor session can reopen
 the styled blank output, repeat clean no-op saves, and preserve non-target
 column cells without introducing dirty diagnostics.
+The isolated source-style shard now also has a compact `contains_cell()`
+regression for `clear_row()`, `clear_rows()`, `clear_column()`, and
+`clear_columns()`: live state, saved handles, fresh reopens, and clean no-op
+readbacks all keep represented styled/unstyled blank coordinates present while
+leaving missing coordinates absent. This is represented-state evidence for the
+small-file sparse store, not metadata sync or style-table migration.
 The successful sparse row/column erase paths now have the same repeated
 no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 `erase_columns()`: after the erase output and first clean no-op save, each path

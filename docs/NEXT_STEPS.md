@@ -4094,6 +4094,10 @@ P8.533 applies the same helper to handle-level read APIs after that recovery:
 edit summaries, unchanged source/planned catalog views, clean borrowed handles,
 and the saved materialized value. This is handle-read hygiene only, not source
 reload, catalog repair, commit, undo, rollback, or large-file random editing.
+It now also carries the clean no-op `save_as()` proof: the no-op package is
+byte-identical to the second recovery output, source bytes remain unchanged,
+public save/catalog snapshots plus diagnostics stay stable, and a fresh reopen
+starts clean with the saved sparse `A1:B2` state.
 P8.534 applies the helper to invalid handle-read failures after the same
 recovery: invalid row/column, A1 reference, and range reads keep sparse
 cell-count/memory diagnostics stable and preserve prior edit count,

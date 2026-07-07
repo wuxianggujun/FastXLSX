@@ -207,6 +207,11 @@ The invalid-shift saved-session path follows the same pattern: rejected invalid
 insert/delete row/column shifts leave the shifted session clean, the no-op
 output preserves the invalid shift diagnostic, and a later valid `C3` edit
 clears that diagnostic before saving a fresh-reopenable post-noop output.
+The invalid-shift post-noop output now also pins full sparse, range,
+requested-coordinate, row, and column readback for the shifted source row plus
+the later edit across the older handle, reacquired handle, and fresh reopen.
+This is handle-inspection parity for the materialized handoff, not broader
+metadata synchronization.
 The failed-save retry path now has the same post-noop reuse evidence: a
 rejected source-overwrite save preserves the dirty shifted session and source
 bytes, the safe retry plus clean no-op output leave that saved session reusable,

@@ -6187,6 +6187,12 @@ B1/A2, and post-mismatch B2 values as clean sparse state.
 Missing-sheet lookups against the same saved/reacquired session now match that
 boundary: empty optional lookup and throwing lookup preserve diagnostics,
 handles, saved cells, catalog state, and no-op-save output stability.
+The optional `try_worksheet()` failed-save retry/reacquire branch now backs that
+no-op-save boundary directly: after missing and transient-name lookups return
+empty and a later matching-option edit saves, the clean no-op output matches
+the second safe output, the source package remains unchanged, and fresh reopen
+reads the saved A1, source B1/A2, and post-missing-try B2 values as clean sparse
+state.
 Invalid read preflights now cover the next read-only failure branch on the same
 whole-store value-clear session: invalid coordinates, invalid A1/range/batch
 reads, invalid row/column snapshots, and valid-but-missing `get_cell()` preserve

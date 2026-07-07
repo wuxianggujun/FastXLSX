@@ -2076,10 +2076,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
         check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
                 !matching.has_pending_changes(),
             "second safe save_as should clean delete-row ref formula recovery handles");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "second safe save_as should clear delete-row ref formula dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "second safe save_as should clear delete-row ref formula dirty cell count");
+        check_retry_reacquire_safe_save_clean_state(
+            editor, 4, "second safe delete-row ref formula save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -2190,10 +2188,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
         check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
                 !matching.has_pending_changes(),
             "second safe save_as should clean delete-column ref formula recovery handles");
-        check(editor.pending_materialized_worksheet_names().empty(),
-            "second safe save_as should clear delete-column ref formula dirty names");
-        check(editor.pending_materialized_cell_count() == 0,
-            "second safe save_as should clear delete-column ref formula dirty cell count");
+        check_retry_reacquire_safe_save_clean_state(
+            editor, 4, "second safe delete-column ref formula save");
 
         const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
         check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",

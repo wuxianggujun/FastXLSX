@@ -5858,6 +5858,15 @@ only unstyled row-2 value cells, keeps rejected payloads absent, preserves
 `styles.xml`, and leaves the recovery no-op output byte-stable. This remains
 value-only failure-recovery hygiene, not caller-supplied non-default style
 writes, style migration, or sharedStrings/styles rebuild.
+`set_column_values()` now has the symmetric value-prefix dirty-session
+style-rejection/recovery reuse coverage: an explicit-default value edit can
+dirty column B, a rejected non-default `StyleId` value-prefix edit keeps that
+dirty column and source-styled `A1` intact across save/no-op, and a later
+explicit-default value-prefix recovery clears the retained diagnostic, writes
+only unstyled column-B value cells, keeps rejected payloads absent, preserves
+`styles.xml`, and leaves the recovery no-op output byte-stable. This remains
+value-only failure-recovery hygiene, not caller-supplied non-default style
+writes, style migration, or sharedStrings/styles rebuild.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

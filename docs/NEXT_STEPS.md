@@ -1774,6 +1774,11 @@ reacquired clean no-op save as well, proving the repeated output stays
 byte-stable while the saved input, first reacquire output, first no-op output,
 source package, compact row replacement, and original sparse-store budget all
 remain unchanged before the later post-noop edit.
+The `set_column()` memory-budget branch now mirrors that repeated
+strict-options clean no-op save, keeping the saved input, first reacquire
+output, first no-op output, repeated no-op output, source package, compact
+column replacement, and original sparse-store budget unchanged before its later
+post-noop overwrite.
 Those strict-options represented row/column memory-budget handles now also
 continue past the no-op saves: a later shorter `A1` replacement stays within the
 original sparse-store budget, saves a fresh-reopenable output, keeps the

@@ -5928,6 +5928,13 @@ session, retain public diagnostics across both saves, keep materialized and
 replacement diagnostics empty, and reopen unchanged. This is sparse value-batch
 rejection hygiene only, not coordinate clamping, budget auto-sizing, or rollback
 machinery.
+`set_cell_value()` now has the matching single value-only validation and exact
+`max_cells` copy-original/no-op coverage: row-zero edits and a new sparse target
+over the configured cell budget preserve the clean source-backed `Data`
+session, retain public diagnostics across both saves, keep materialized and
+replacement diagnostics empty, and reopen unchanged. This is single-cell
+value-only rejection hygiene only, not coordinate clamping, budget auto-sizing,
+or rollback machinery.
 `set_row()` validation failures now have matching copy-original/no-op coverage
 for oversized row payloads and row zero: both rejected calls preserve the clean
 source-backed `Data` session, retain public diagnostics across both saves, keep

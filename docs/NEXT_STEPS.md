@@ -5832,6 +5832,15 @@ That dirty-session branch now also proves a later valid explicit-default
 source-styled `A1` and prior dirty unstyled `B1`, writes the recovered `A2` as
 unstyled, keeps the rejected payload absent, and leaves the recovery no-op
 output byte-stable.
+`set_cells()` now has the matching sparse-batch full-replacement
+dirty-session style-rejection/recovery reuse coverage: an explicit-default
+batch can dirty row 2, a rejected non-default `StyleId` batch keeps that dirty
+batch and source-styled `A1` intact across save/no-op, and a later
+explicit-default batch recovery clears the retained diagnostic, writes only
+unstyled recovered batch cells, keeps rejected payloads absent, preserves
+`styles.xml`, and leaves the recovery no-op output byte-stable. This remains
+sparse full-cell batch failure-recovery hygiene, not caller-supplied
+non-default style writes, style migration, or sharedStrings/styles rebuild.
 `set_row()` now has the same dirty-session style-rejection/recovery reuse
 coverage: an explicit-default row replacement can dirty row 2, a rejected
 non-default `StyleId` row replacement keeps that dirty row and source-styled

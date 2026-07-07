@@ -1844,11 +1844,11 @@ The adjacent exact-budget shift success path now pins the opposite branch:
 so exact `max_cells` and exact `memory_budget_bytes` budgets remain valid,
 dirty diagnostics report the stable sparse store, and the saved/no-op outputs
 reopen with shifted row/column snapshots.
-The public-edge max-coordinate projection, erase-shrinks, and A1-overload erase
-paths now also run clean no-op `save_as()` checks after the sparse `XFD1048576`
-handoff, proving the repeated outputs are byte-stable, the source package stays
-unchanged, and strict-options reopen can still read or omit the sparse edge cell
-as expected.
+The public-edge max-coordinate projection, erase-shrinks, A1-overload erase,
+blank, and formula paths now also run clean no-op `save_as()` checks after the
+sparse `XFD1048576` handoff, proving the repeated outputs are byte-stable, the
+source package stays unchanged, and strict-options reopen can still read or omit
+the sparse edge cell as expected.
 That success path now also reopens the saved output with the same exact
 `WorksheetEditorOptions` and performs a clean no-op `save_as()`, proving the
 shifted sparse store remains within the original budget after the handoff.

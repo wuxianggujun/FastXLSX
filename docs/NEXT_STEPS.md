@@ -5770,6 +5770,12 @@ the materialized session stays clean, no pending edit is queued, and a later
 no-op `save_as()` remains copy-original. This is covered for both row/column
 and strict A1 `set_cell()` overloads. This is still rejection-only hygiene, not
 style migration, merge, or preservation.
+Strict A1 mutation reference rejection now has the same default public-state
+save/no-op evidence: lowercase `set_cell("a1", ...)` and range-shaped
+`erase_cell("A1:B2")` keep the sparse store clean, preserve the public diagnostic
+across copy-original and follow-up no-op saves, and reopen with the source-backed
+`Data` sheet unchanged. This remains single-cell A1 validation hygiene, not A1
+range mutation expansion or XML repair.
 The generated non-default style rejection QA lane now also has a no-op save
 variant that requires the follow-up clean `save_as()` package to be
 byte-identical after the copy-original recovery output has flushed.

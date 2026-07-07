@@ -76,6 +76,8 @@
   coordinates, and apply later-wins ordering. `set_cell()` / `set_cells()` /
   `set_row()` / `set_column()` are full sparse replacements and drop prior source
   style handles on overwritten cells while leaving non-target sparse cells unchanged;
+  explicit caller-supplied default `StyleId{0}` is accepted and normalized to no
+  style handle, while non-default caller-supplied `StyleId` handles remain rejected;
   `append_row()` creates new represented sparse cells after the current maximum row,
   rejects caller-supplied non-default `StyleId` handles, and does not inherit source
   style handles from existing rows;

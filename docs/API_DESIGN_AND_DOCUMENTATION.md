@@ -181,6 +181,9 @@ worksheet、semantic sheet rename、sharedStrings / styles 迁移、relationship
 later-wins ordering, rejects caller-supplied non-default `StyleId` handles, drops
 prior source style handles on overwritten cells, and rejects guardrail failures
 before mutating the active sparse store.
+Explicit caller-supplied default `StyleId{0}` is accepted and normalized to no
+style handle; non-default caller-supplied `StyleId` values remain rejected until
+there is an existing-workbook style policy.
 
 `WorksheetEditor::set_row()` and `WorksheetEditor::set_column()` are the
 represented-row / represented-column full-cell replacements. They remove the

@@ -30,6 +30,28 @@ void check_retry_reopened_clean_state(
         prefix + " should not expose dirty materialized diagnostics");
 }
 
+void check_retry_reacquire_safe_save_clean_state(
+    const fastxlsx::WorkbookEditor& editor,
+    std::size_t expected_pending_change_count,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+
+    check(editor.pending_change_count() == expected_pending_change_count,
+        prefix + " should count the expected materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        prefix + " should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        prefix + " should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should clear dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should clear dirty materialized summaries");
+    check_workbook_editor_no_replacement_diagnostics(editor, prefix);
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep diagnostics clear");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_preserves_reacquired_state()
 {
     const std::filesystem::path source =
@@ -148,16 +170,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_pre
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all option-mismatch recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff");
-    check(editor.pending_materialized_worksheet_names().empty(),
-        "second safe save_as should clear dirty names after option mismatch");
-    check(editor.pending_materialized_cell_count() == 0,
-        "second safe save_as should clear dirty cell count after option mismatch");
-    check(editor.estimated_pending_materialized_memory_usage() == 0,
-        "second safe save_as should clear dirty memory after option mismatch");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after option mismatch");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe option-mismatch save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -359,10 +373,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_try_preserv
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all missing-try recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after missing try_worksheet");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after missing try_worksheet");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe missing-try save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -563,10 +575,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_worksheet_p
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all missing-worksheet recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after missing worksheet");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after missing worksheet");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe missing-worksheet save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -786,10 +796,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_pre
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all catalog-query recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after catalog queries");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after catalog queries");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe catalog-query save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
@@ -1019,10 +1027,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserv
     check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
             !matching.has_pending_changes(),
         "second safe save_as should clean all diagnostic-query recovery handles");
-    check(editor.pending_change_count() == 4,
-        "second safe save_as should count the later materialized handoff after diagnostics");
-    check(editor.pending_worksheet_edits().empty(),
-        "second safe save_as should clear summaries after diagnostics");
+    check_retry_reacquire_safe_save_clean_state(
+        editor, 4, "second safe diagnostic-query save");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",

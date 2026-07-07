@@ -634,6 +634,10 @@ The saved-session shift reacquire no-op paths now carry the same contract before
 those later post-noop edits: basic, try-reacquire, guard/query, invalid-read,
 safe-retry, and failed-save guard no-op saves all keep replacement diagnostics
 empty.
+The basic reacquire second safe-save points now use the same clean diagnostics
+gate as well: option mismatch, missing `try_worksheet()`, missing worksheet,
+catalog query, and diagnostic query recovery saves all clear dirty materialized
+names/count/memory, summaries, replacement diagnostics, and `last_edit_error()`.
 Their no-op and fresh-reopened outputs now share the complete clean diagnostics
 gate too: clean workbook/worksheet handles, empty dirty materialized names,
 cell counts, memory estimates, and summaries, no replacement diagnostics, and

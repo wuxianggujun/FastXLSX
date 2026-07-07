@@ -948,6 +948,9 @@ sheet catalog 改名和 `save_as()`，并已有 small-file `WorksheetEditor` 随
 其中 `WorksheetEditor` 只提供 represented sparse row/column insert/delete shift
 helpers，不是完整 Excel structural edit。尚未暴露 document properties editing、
 完整 row/column metadata/range/formula/table/drawing 同步、semantic metadata sync 等更宽能力。
+这些 shift helpers 保留被移动 sparse record 的 `CellValue` 和 materialized source
+`StyleId`，只对已物化 formula cells 做窄 A1-style reference rewrite，不同步未物化
+worksheet formulas 或 range/object metadata。
 
 Full-cell batch edits (`set_cells()`) are sparse replacements over the
 materialized store. They accept duplicate coordinates as a preflighted

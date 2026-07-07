@@ -4128,6 +4128,10 @@ diagnostics stable, replacement/materialized diagnostics and pending edit
 summaries empty, catalog views and borrowed handles preserved, and the saved
 materialized value intact. This is missing-erase no-op hygiene only, not erase
 tombstones, source reload, catalog repair, commit, undo, or rollback semantics.
+It now also carries the clean no-op `save_as()` proof: the no-op package is
+byte-identical to the second recovery output, source bytes remain unchanged,
+public save/catalog snapshots plus diagnostics stay stable, and a fresh reopen
+starts clean with the saved sparse `A1:B2` state.
 P8.537 strengthens the positive blank/erase projection after that recovery with
 a dirty-materialized recovery helper: `set_cell("A1", CellValue::blank())` and
 `erase_cell(2, 1)` still drive the existing explicit blank / source-cell erase

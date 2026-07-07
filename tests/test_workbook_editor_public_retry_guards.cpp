@@ -982,6 +982,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-erase-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-erase-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-missing-erase-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -1111,6 +1113,9 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
     check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
         "rename-back-missing-erase-first",
         "source package should not contain the saved missing-erase materialized value");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-missing-erase-second",
+        "source package should not contain the later missing-erase materialized value");
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -1150,6 +1155,44 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_erase_prese
         second_output,
         options,
         "missing-erase recovery",
+        "rename-back-missing-erase-first",
+        "rename-back-missing-erase-second");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "missing-erase no-op save should keep recovery handles clean");
+    check(editor.pending_change_count() == 4,
+        "missing-erase no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "missing-erase no-op save should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "missing-erase no-op save should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "missing-erase no-op save");
+    check(!editor.last_edit_error().has_value(),
+        "missing-erase no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "missing-erase no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "missing-erase no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "missing-erase no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "missing-erase no-op save should leave the source package unchanged");
+
+    check_reopened_guard_recovery_materialized_output(
+        noop_output,
+        options,
+        "missing-erase no-op",
         "rename-back-missing-erase-first",
         "rename-back-missing-erase-second");
 }

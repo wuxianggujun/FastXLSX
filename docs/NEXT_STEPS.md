@@ -2945,6 +2945,11 @@ records stay absent across live state, saved output, fresh reopen, and clean
 no-op save, while non-target source records retain their existing value/style
 handles. This is still small-file sparse-store evidence, not worksheet metadata
 repair or style-table migration.
+The source-style shard also pins the single-cell and `CellRange`
+`erase_cells()` `contains_cell()` path: erased styled source records and erased
+unstyled neighbors stay absent across live/save/reopen/no-op readbacks, the
+surviving non-target styled source cell keeps its materialized `StyleId`, and
+the erased-only style id does not leak into saved sheetData.
 The successful sparse row/column erase paths now have the same repeated
 no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 `erase_columns()`: after the erase output and first clean no-op save, each path

@@ -966,12 +966,14 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
         fastxlsx::WorkbookEditor::open(second_output);
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened shift-guard output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened shift-guard output should not expose dirty diagnostics");
+    check(!reopened_sheet.has_pending_changes(),
+        "reopened shift-guard output worksheet handle should start clean");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, "reopened shift-guard output");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        "reopened shift-guard output should not expose dirty materialized diagnostics");
     check(reopened_sheet.cell_count() == 3,
         "reopened shift-guard output should keep the saved sparse cell count");
     check(reopened_sheet.get_cell("A1").text_value() ==
@@ -1028,11 +1030,14 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_guards_preser
         fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor noop_sheet =
         noop_editor.worksheet("Data", options);
-    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
-        "shift-guard no-op reopened output should start clean");
-    check(noop_editor.pending_change_count() == 0 &&
-            noop_editor.pending_materialized_cell_count() == 0,
-        "shift-guard no-op reopened output should not expose dirty diagnostics");
+    check(!noop_sheet.has_pending_changes(),
+        "shift-guard no-op reopened output worksheet handle should start clean");
+    check_workbook_editor_public_clean_state(
+        noop_editor, "shift-guard no-op reopened output");
+    check(noop_editor.pending_materialized_worksheet_names().empty() &&
+            noop_editor.pending_materialized_cell_count() == 0 &&
+            noop_editor.estimated_pending_materialized_memory_usage() == 0,
+        "shift-guard no-op reopened output should not expose dirty materialized diagnostics");
     check(noop_sheet.cell_count() == 3,
         "shift-guard no-op reopened output should keep the saved sparse cell count");
     check(noop_sheet.get_cell("A1").text_value() ==

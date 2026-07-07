@@ -5935,6 +5935,13 @@ session, retain public diagnostics across both saves, keep materialized and
 replacement diagnostics empty, and reopen unchanged. This is single-cell
 value-only rejection hygiene only, not coordinate clamping, budget auto-sizing,
 or rollback machinery.
+`set_cell_value()` now also has single value-only memory-budget failure and
+same-handle recovery coverage: an oversized missing-cell write over an exact
+`memory_budget_bytes` budget preserves the clean sparse store, copies the
+source package on failure save, then a short in-budget A1 value-only edit clears
+diagnostics, saves, reopens, and no-op saves byte-stable without leaking the
+rejected D4 payload. This is small-file in-memory budget hygiene only, not
+low-memory random editing or rollback machinery.
 `set_row()` validation failures now have matching copy-original/no-op coverage
 for oversized row payloads and row zero: both rejected calls preserve the clean
 source-backed `Data` session, retain public diagnostics across both saves, keep

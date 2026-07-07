@@ -2861,6 +2861,10 @@ readback for the appended text, number, formula, explicit blank, and preserved
 source-backed rows. The styled append path now also repeats a second clean
 no-op `save_as()` and requires byte-identical entries plus fresh reopen readback
 for the unstyled appended cells and preserved source `StyleId`.
+The explicit-default-style append path now also verifies live, fresh-reopen, and
+clean no-op `contains_cell()`, `row_cells()`, and `column_cells()` views: the
+styled source row remains represented, the appended row is unstyled, explicit
+blank cells remain represented, and missing row/column gaps stay absent.
 `WorksheetEditor::set_row()` now covers the matching sparse represented-row
 replacement convenience for small files: it deletes currently represented cells
 in the target row, writes input values to columns 1..N, treats empty input as a

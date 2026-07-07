@@ -5705,6 +5705,16 @@ keep overwritten unstyled blanks and inserted formula cells unstyled, preserve
 follow-up clean no-op save byte-stable. This remains the small-file
 In-memory value-only style boundary, not style-table migration, foreign style
 adoption, or sharedStrings/styles rebuild.
+Styled sparse clear coverage now also includes the range and coordinate-batch
+helpers under the same isolated source-style shard:
+`clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,
+`clear_cell_values(span<WorksheetCellReference>)`, and the initializer-list
+overload preserve source `StyleId` handles on represented styled cells, keep
+represented unstyled cells as unstyled blanks, skip missing coordinates without
+synthesizing new cells, preserve `xl/styles.xml` bytes, omit cleared payloads,
+and keep the clean no-op save byte-stable. This remains value clearing over the
+small-file In-memory sparse store, not dense range editing, style migration, or
+range metadata repair.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

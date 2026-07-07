@@ -154,6 +154,10 @@ plus the new `C3`.
 It now also repeats the clean no-op save before that later `C3` edit: the
 second no-op output is byte-identical to the first, fresh-reopens with the
 shifted `A3` state, and remains unchanged after the post-noop save.
+The optional reacquire post-noop output now also pins full sparse, range,
+requested-coordinate, row, and column readback for the shifted source row plus
+the later edit. This is `try_worksheet()` handle-inspection parity for the
+materialized handoff, not broader metadata synchronization.
 The option-mismatch saved-session path now carries the same post-noop reuse
 evidence as well: rejected mismatched options and a clean no-op save leave the
 row-shifted session reusable, a later matching reacquire can write `C3`, and the

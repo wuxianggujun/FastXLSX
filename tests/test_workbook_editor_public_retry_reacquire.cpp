@@ -22,6 +22,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_pre
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-option-mismatch-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-option-mismatch-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-option-mismatch-noop.xlsx");
 
     fastxlsx::WorksheetEditorOptions options;
     options.max_cells = 8;
@@ -141,6 +143,16 @@ void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_pre
     check(editor.pending_worksheet_edits().empty(),
         "second safe save_as should clear summaries after option mismatch");
 
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
+        "source package should still contain original A1 after option mismatch");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-option-mismatch-first",
+        "source package should not contain the first materialized option-mismatch edit");
+    check_not_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        "rename-back-option-mismatch-second",
+        "source package should not contain the later option-mismatch edit");
+
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
         "first option-mismatch recovery output should use the restored source name");
@@ -168,6 +180,67 @@ void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_pre
         "second output should include the valid post-mismatch mutation");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "second output should not reload stale source A1 after option mismatch");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+            !matching.has_pending_changes(),
+        "option-mismatch no-op save should keep recovery handles clean");
+    check(editor.pending_change_count() == 4,
+        "option-mismatch no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "option-mismatch no-op save should keep dirty materialized diagnostics empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "option-mismatch no-op save should keep edit summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "option-mismatch no-op save");
+    check(!editor.last_edit_error().has_value(),
+        "option-mismatch no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "option-mismatch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "option-mismatch no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "option-mismatch no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "option-mismatch no-op save should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor noop_editor =
+        fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor noop_sheet =
+        noop_editor.worksheet("Data", options);
+    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
+        "option-mismatch no-op reopened output should start clean");
+    check(noop_editor.pending_change_count() == 0 &&
+            noop_editor.pending_materialized_cell_count() == 0,
+        "option-mismatch no-op reopened output should not expose dirty diagnostics");
+    check(noop_sheet.cell_count() == 4,
+        "option-mismatch no-op reopened output should preserve sparse cell count");
+    check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 2,
+        "option-mismatch no-op reopened output should preserve sparse used range");
+    const fastxlsx::CellValue noop_a1 = noop_sheet.get_cell("A1");
+    const fastxlsx::CellValue noop_b1 = noop_sheet.get_cell("B1");
+    const fastxlsx::CellValue noop_a2 = noop_sheet.get_cell("A2");
+    const fastxlsx::CellValue noop_b2 = noop_sheet.get_cell("B2");
+    check(noop_a1.kind() == fastxlsx::CellValueKind::Text &&
+            noop_a1.text_value() == "rename-back-option-mismatch-first",
+        "option-mismatch no-op reopened output should read the saved A1 text");
+    check(noop_b1.kind() == fastxlsx::CellValueKind::Number &&
+            noop_b1.number_value() == 1.0,
+        "option-mismatch no-op reopened output should preserve source-backed B1");
+    check(noop_a2.kind() == fastxlsx::CellValueKind::Text &&
+            noop_a2.text_value() == "placeholder-a2",
+        "option-mismatch no-op reopened output should preserve source-backed A2");
+    check(noop_b2.kind() == fastxlsx::CellValueKind::Text &&
+            noop_b2.text_value() == "rename-back-option-mismatch-second",
+        "option-mismatch no-op reopened output should read the post-mismatch edit");
 }
 
 void test_public_worksheet_editor_rename_back_failed_save_as_missing_try_preserves_reacquired_state()

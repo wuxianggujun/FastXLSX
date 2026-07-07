@@ -6178,6 +6178,12 @@ Post-save option mismatch is pinned as the corresponding failure path:
 still fail against an existing saved materialized session, without updating
 `last_edit_error()`, dirtying materialized diagnostics, losing saved values, or
 blocking later valid matching-option edits.
+The failed-save retry/reacquire variant now also repeats a clean no-op
+`save_as()` after that later matching-option edit: public save-state/catalog
+snapshots stay stable, materialized/replacement diagnostics and pending edit
+summaries stay empty, the no-op package matches the second safe output, the
+source package remains unchanged, and fresh reopen reads the saved A1, source
+B1/A2, and post-mismatch B2 values as clean sparse state.
 Missing-sheet lookups against the same saved/reacquired session now match that
 boundary: empty optional lookup and throwing lookup preserve diagnostics,
 handles, saved cells, catalog state, and no-op-save output stability.

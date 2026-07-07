@@ -653,6 +653,10 @@ The styled row-shift reacquire path now also repeats the clean no-op save:
 the no-op package matches the shifted output, source bytes remain unchanged,
 public save/catalog snapshots stay stable, and fresh reopen keeps the
 translated formula plus original `StyleId`.
+The basic delete-row and delete-column reacquire paths now mirror that no-op
+save gate: the no-op packages match their shifted outputs, source bytes remain
+unchanged, public snapshots stay stable, and fresh reopen preserves the shifted
+source-backed cells, dirty tails, translated formulas, and row/column views.
 The delete-row and delete-column `#REF!` formula reacquire saves now share that
 helper as well, proving formula-reference deletion outputs clear dirty
 materialized diagnostics, replacement diagnostics, summaries, and

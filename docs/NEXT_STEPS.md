@@ -5715,6 +5715,9 @@ synthesizing new cells, preserve `xl/styles.xml` bytes, omit cleared payloads,
 and keep the clean no-op save byte-stable. This remains value clearing over the
 small-file In-memory sparse store, not dense range editing, style migration, or
 range metadata repair.
+The same range/batch clear regression now also asserts `contains_cell()` reports
+the represented styled and unstyled blank coordinates and keeps missing batch
+coordinates absent across live, fresh-reopen, and clean no-op readback checks.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

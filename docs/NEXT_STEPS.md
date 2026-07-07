@@ -6005,17 +6005,18 @@ materialized/replacement diagnostics empty, and reopen unchanged. This is
 column clear validation hygiene only, not column metadata creation, dense
 materialization, range repair, or rollback.
 `erase_row()` / `erase_rows()` validation failures now have the same
-copy-original/no-op coverage: row zero and reversed row ranges preserve the
-clean source-backed `Data` session, retain public diagnostics across both
-saves, keep materialized/replacement diagnostics empty, and reopen unchanged.
-This is row erase validation hygiene only, not row metadata deletion semantics,
-dense materialization, range repair, or rollback.
+copy-original/no-op coverage: row zero, row overflow, overflow row ranges, and
+reversed row ranges preserve the clean source-backed `Data` session, retain
+public diagnostics across both saves, keep materialized/replacement diagnostics
+empty, and reopen unchanged. This is row erase validation hygiene only, not row
+metadata deletion semantics, dense materialization, range repair, or rollback.
 `erase_column()` / `erase_columns()` now have the symmetric validation
-copy-original/no-op coverage: column zero and reversed column ranges preserve
-the clean source-backed `Data` session, retain public diagnostics across both
-saves, keep materialized/replacement diagnostics empty, and reopen unchanged.
-This is column erase validation hygiene only, not column metadata deletion
-semantics, dense materialization, range repair, or rollback.
+copy-original/no-op coverage: column zero, column overflow, overflow column
+ranges, and reversed column ranges preserve the clean source-backed `Data`
+session, retain public diagnostics across both saves, keep
+materialized/replacement diagnostics empty, and reopen unchanged. This is
+column erase validation hygiene only, not column metadata deletion semantics,
+dense materialization, range repair, or rollback.
 Valid missing `erase_row()` / `erase_column()` calls now also have default
 copy-original/no-op save coverage after clearing a prior edit diagnostic. The
 calls stay clean, preserve source-backed `Data`, emit source-identical outputs

@@ -199,6 +199,10 @@ rejected invalid `set_cell` / `erase_cell` calls leave the shifted session
 clean, the no-op output preserves the invalid mutation diagnostic, a later
 valid `C3` edit clears that diagnostic while re-dirtying the shared handles,
 and the next output fresh-reopens without leaking rejected payloads.
+The invalid-mutation post-noop output now also pins full sparse, range,
+requested-coordinate, row, and column readback for the shifted source row plus
+the later edit. This is handle-inspection parity for the materialized handoff,
+not broader metadata synchronization.
 The invalid-shift saved-session path follows the same pattern: rejected invalid
 insert/delete row/column shifts leave the shifted session clean, the no-op
 output preserves the invalid shift diagnostic, and a later valid `C3` edit

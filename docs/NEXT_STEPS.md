@@ -5821,6 +5821,12 @@ stays diagnostic-clean, saves/reopens with both unstyled recovery values, keeps
 rejected payloads absent, preserves the original `styles.xml` bytes, and leaves
 the follow-up no-op output byte-stable. This remains failure-recovery hygiene,
 not caller-supplied non-default style writes or style migration.
+Dirty-session style rejection now has the matching failure-before-state-change
+coverage: after a valid explicit-default value-only `B1` edit dirties the
+materialized sheet, a rejected caller-supplied non-default `StyleId` full-cell
+write keeps that dirty value and source-styled `A1` intact, saves/reopens
+without leaking the rejected payload, preserves `styles.xml`, retains the public
+diagnostic across save/no-op save, and keeps the no-op package byte-stable.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

@@ -5696,6 +5696,15 @@ while proving source and prior no-op bytes stay unchanged.
 That re-edit output now has matching clean no-op coverage: public
 catalog/save-state remain stable, the no-op package is byte-equivalent, and
 fresh readback still sees styled `A1=4.75`.
+Value-only explicit-default style coverage now also includes the batch and
+prefix helpers: `set_cell_values()`, `set_row_values()`, and
+`set_column_values()` all accept caller-supplied `StyleId{0}` as no caller
+style, preserve the materialized source `StyleId` on overwritten styled targets,
+keep overwritten unstyled blanks and inserted formula cells unstyled, preserve
+`xl/styles.xml` bytes, omit `s="0"` on dirty save-as output, and keep the
+follow-up clean no-op save byte-stable. This remains the small-file
+In-memory value-only style boundary, not style-table migration, foreign style
+adoption, or sharedStrings/styles rebuild.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

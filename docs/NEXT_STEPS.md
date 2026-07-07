@@ -6559,6 +6559,10 @@ borrowed session dirty under the restored source name, does not increment the
 materialized handoff count, does not create `last_edit_error()`, does not mutate
 the source package, and a later safe `save_as()` flushes the dirty edit without
 leaking the transient planned name.
+Those safe rename-back recovery saves now also pin the complete clean
+diagnostic surface for the basic public-retry shard: dirty materialized names,
+cell counts, memory estimates, current summaries, replacement diagnostics, and
+`last_edit_error()` are all empty after the recovery save.
 Clean reacquire after that failed-save recovery is now pinned: after the safe
 `save_as()`, a matching `worksheet("Data")` call reuses the saved materialized
 state instead of reloading stale source cells, keeps dirty diagnostics empty

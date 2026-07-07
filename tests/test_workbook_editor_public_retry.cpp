@@ -78,8 +78,16 @@ void test_public_worksheet_editor_rename_back_failed_mutation_preserves_clean_di
         "save_as after recovered rename-back mutation should count one materialized handoff");
     check(editor.pending_materialized_worksheet_names().empty(),
         "save_as after recovered rename-back mutation should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after recovered rename-back mutation should clear dirty cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after recovered rename-back mutation should clear dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "save_as after recovered rename-back mutation should clear current summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "save_as after recovered rename-back mutation");
+    check(!editor.last_edit_error().has_value(),
+        "save_as after recovered rename-back mutation should keep last_edit_error clear");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -182,6 +190,10 @@ void test_public_worksheet_editor_rename_back_failed_save_as_preserves_dirty_sta
         "safe save_as after rename-back rejection should clear dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "safe save_as after rename-back rejection should clear current summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "safe save_as after rename-back rejection");
+    check(!editor.last_edit_error().has_value(),
+        "safe save_as after rename-back rejection should keep last_edit_error clear");
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     check_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -231,6 +243,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_sa
         "safe save_as before reacquire should clear dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "safe save_as before reacquire should clear rename-back dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "safe save_as before reacquire");
     check(!editor.last_edit_error().has_value(),
         "failed save_as plus safe save_as should not create last_edit_error");
 
@@ -249,6 +263,10 @@ void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_sa
         "clean reacquire after rename-back failed-save recovery should not dirty memory");
     check(editor.pending_worksheet_edits().empty(),
         "clean reacquire after rename-back failed-save recovery should keep summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "clean reacquire after rename-back failed-save recovery");
+    check(!editor.last_edit_error().has_value(),
+        "clean reacquire after rename-back failed-save recovery should keep last_edit_error clear");
 
     reacquired.set_cell(2, 2,
         fastxlsx::CellValue::text("rename-back-reacquire-second"));
@@ -283,8 +301,18 @@ void test_public_worksheet_editor_rename_back_failed_save_as_reacquire_reuses_sa
         "second safe save_as should clean both borrowed handles");
     check(editor.pending_change_count() == 4,
         "second safe save_as should count the second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "second safe save_as should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "second safe save_as should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "second safe save_as should clear dirty materialized memory");
     check(editor.pending_worksheet_edits().empty(),
         "second safe save_as should clear rename-back reacquire summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "second safe save_as");
+    check(!editor.last_edit_error().has_value(),
+        "second safe save_as should keep last_edit_error clear");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",

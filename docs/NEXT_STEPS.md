@@ -5810,6 +5810,11 @@ and append helpers: repeated rejected mutations keep `contains_cell()`,
 `Data` sheet unchanged across live, copy-original save, and clean no-op save
 readback. This is rejection hygiene only, not non-default style writes or style
 migration.
+That grouped source-style rejection path now also has an invalid-to-valid
+recovery branch: after the copy-original/no-op saves, a valid explicit-default
+`set_cell()` clears `last_edit_error()`, drops the overwritten source style,
+saves/reopens as an unstyled A1 replacement, keeps rejected payloads out of the
+worksheet XML, and leaves the follow-up clean no-op output byte-stable.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

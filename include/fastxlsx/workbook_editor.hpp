@@ -628,18 +628,20 @@ struct WorkbookEditorRenameOptions {
 /// preserve formula metadata or cached formula results for formula-text cells,
 /// implement a complete formula parser, rebuild calcChain, update
 /// tables/drawings/defined names/range metadata, or repair relationships.
-/// Non-default caller-supplied StyleId values are rejected by both set_cell() overloads until a
-/// public existing-workbook style policy exists. An explicit default StyleId{0}
-/// is accepted and normalized to no style handle; dirty save_as() output omits
-/// `s="0"`. Source cells with an unqualified `s` value exactly equal to `0`
-/// (for example `s="0"`, `s='0'`, or `s = "0"`) are normalized the same way
-/// during materialization. Canonical non-zero unsigned decimal source style ids
-/// are validated against the source styles.xml `cellXfs` table, materialized as
-/// numeric passthrough handles, and written back by dirty projection while the
-/// source styles part is preserved. `set_cells()`, `set_row()`, and
-/// `set_column()` share the full-cell replacement semantics of `set_cell()`:
-/// caller-supplied non-default style ids are rejected, and prior source styles
-/// on overwritten cells are dropped.
+/// Non-default caller-supplied StyleId values are rejected by both set_cell()
+/// overloads until a public existing-workbook style policy exists. An explicit
+/// default StyleId{0} is accepted and normalized to no style handle; dirty
+/// save_as() output omits `s="0"`. Source cells with an unqualified `s` value
+/// exactly equal to `0` (for example `s="0"`, `s='0'`, or `s = "0"`) are
+/// normalized the same way during materialization. Canonical non-zero unsigned
+/// decimal source style ids are validated against the source styles.xml
+/// `cellXfs` table, materialized as numeric passthrough handles, and written
+/// back by dirty projection while the source styles part is preserved.
+/// `set_cells()`, `set_row()`, `set_column()`, and `append_row()` share the
+/// full-cell replacement style boundary of `set_cell()` for their new or
+/// overwritten cells: explicit default StyleId{0} is normalized to no style
+/// handle, caller-supplied non-default style ids are rejected, appended cells do
+/// not inherit source styles, and overwritten cells drop prior source styles.
 /// `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
 /// `set_column_values()` can replace cell values while preserving currently
 /// materialized source style handles on those coordinates.
@@ -760,9 +762,11 @@ public:
     /// respected and duplicate coordinates are allowed; later updates win after
     /// the whole batch passes validation. Empty input is a successful no-op that
     /// does not dirty the materialized session and clears prior public edit
-    /// diagnostics. Invalid coordinates, caller-supplied non-default StyleId
-    /// handles, max_cells violations, or memory_budget_bytes violations reject
-    /// the entire batch before the active sparse store is mutated.
+    /// diagnostics. Explicit default StyleId{0} handles are normalized to no
+    /// style handle and do not serialize as `s="0"`. Invalid coordinates,
+    /// caller-supplied non-default StyleId handles, max_cells violations, or
+    /// memory_budget_bytes violations reject the entire batch before the active
+    /// sparse store is mutated.
     ///
     /// This is a sparse convenience over full-cell replacement, not a dense
     /// range writer, A1 range parser, style-preserving value edit, style
@@ -788,12 +792,14 @@ public:
     /// not create row metadata, does not dirty the materialized session, and
     /// clears prior public edit diagnostics.
     ///
-    /// The entire append is preflighted and staged. More than 16,384 values,
-    /// appending past Excel row 1,048,576, caller-supplied non-default StyleId
-    /// handles, max_cells violations, or memory_budget_bytes violations reject
-    /// the append before the active sparse store is mutated. Explicit
-    /// CellValue::blank() values are represented as blank cells in the appended
-    /// row and are subject to the same sparse-store guardrails.
+    /// The entire append is preflighted and staged. Explicit default
+    /// StyleId{0} handles are normalized to no style handle and do not serialize
+    /// as `s="0"`. More than 16,384 values, appending past Excel row
+    /// 1,048,576, caller-supplied non-default StyleId handles, max_cells
+    /// violations, or memory_budget_bytes violations reject the append before
+    /// the active sparse store is mutated. Explicit CellValue::blank() values
+    /// are represented as blank cells in the appended row and are subject to the
+    /// same sparse-store guardrails.
     /// Appended records are new sparse cells: they do not inherit source StyleId
     /// handles from prior rows, and no style metadata is synthesized.
     ///
@@ -819,14 +825,16 @@ public:
     /// create row metadata, does not dirty the materialized session, and clears
     /// prior public edit diagnostics.
     ///
-    /// The entire replacement is preflighted and staged. Invalid row numbers,
-    /// more than 16,384 values, caller-supplied non-default StyleId handles,
-    /// max_cells violations, or memory_budget_bytes violations reject the
-    /// replacement before the active sparse store is mutated. Explicit
-    /// CellValue::blank() values are represented as blank cells and are subject
-    /// to the same sparse-store guardrails. Because this is full-cell
-    /// replacement, source StyleId handles on overwritten target-row cells are
-    /// dropped; non-target sparse cells keep their existing style handles.
+    /// The entire replacement is preflighted and staged. Explicit default
+    /// StyleId{0} handles are normalized to no style handle and do not serialize
+    /// as `s="0"`. Invalid row numbers, more than 16,384 values,
+    /// caller-supplied non-default StyleId handles, max_cells violations, or
+    /// memory_budget_bytes violations reject the replacement before the active
+    /// sparse store is mutated. Explicit CellValue::blank() values are
+    /// represented as blank cells and are subject to the same sparse-store
+    /// guardrails. Because this is full-cell replacement, source StyleId handles
+    /// on overwritten target-row cells are dropped; non-target sparse cells keep
+    /// their existing style handles.
     ///
     /// This is not row insertion/deletion, row shifting, row metadata editing,
     /// table/range metadata recalculation, style migration/merge,
@@ -850,14 +858,16 @@ public:
     /// no-op that does not create column metadata, does not dirty the
     /// materialized session, and clears prior public edit diagnostics.
     ///
-    /// The entire replacement is preflighted and staged. Invalid column
-    /// numbers, more than 1,048,576 values, caller-supplied non-default StyleId
-    /// handles, max_cells violations, or memory_budget_bytes violations reject
-    /// the replacement before the active sparse store is mutated. Explicit
-    /// CellValue::blank() values are represented as blank cells and are subject
-    /// to the same sparse-store guardrails. Because this is full-cell
-    /// replacement, source StyleId handles on overwritten target-column cells
-    /// are dropped; non-target sparse cells keep their existing style handles.
+    /// The entire replacement is preflighted and staged. Explicit default
+    /// StyleId{0} handles are normalized to no style handle and do not serialize
+    /// as `s="0"`. Invalid column numbers, more than 1,048,576 values,
+    /// caller-supplied non-default StyleId handles, max_cells violations, or
+    /// memory_budget_bytes violations reject the replacement before the active
+    /// sparse store is mutated. Explicit CellValue::blank() values are
+    /// represented as blank cells and are subject to the same sparse-store
+    /// guardrails. Because this is full-cell replacement, source StyleId handles
+    /// on overwritten target-column cells are dropped; non-target sparse cells
+    /// keep their existing style handles.
     ///
     /// This is not column insertion/deletion, column shifting, column metadata
     /// editing, table/range metadata recalculation, style migration/merge,
@@ -1165,8 +1175,9 @@ public:
     /// memory_budget_bytes guardrails as the row/column overload. Supported
     /// number, boolean, and formula values use the current sparse-store
     /// projection; formulas are not evaluated and do not generate cached
-    /// results. Non-default StyleId handles follow the row/column overload:
-    /// they are rejected before the sparse store is mutated or dirtied.
+    /// results. Explicit default StyleId{0} handles are normalized to no style
+    /// handle. Non-default StyleId handles follow the row/column overload: they
+    /// are rejected before the sparse store is mutated or dirtied.
     void set_cell(std::string_view cell_reference, const CellValue& value);
 
     /// Replaces one sparse-store cell value by strict uppercase A1 reference

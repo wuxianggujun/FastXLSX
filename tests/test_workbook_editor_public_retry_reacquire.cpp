@@ -14,6 +14,22 @@ void check_retry_cell_range_equals(
         message);
 }
 
+void check_retry_reopened_clean_state(
+    const fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditor& sheet,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+
+    check(!sheet.has_pending_changes(),
+        prefix + " should materialize the worksheet handle as clean public state");
+    check_workbook_editor_public_clean_state(editor, prefix);
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " should not expose dirty materialized diagnostics");
+}
+
 void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_preserves_reacquired_state()
 {
     const std::filesystem::path source =
@@ -216,11 +232,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_option_mismatch_pre
         fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor noop_sheet =
         noop_editor.worksheet("Data", options);
-    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
-        "option-mismatch no-op reopened output should start clean");
-    check(noop_editor.pending_change_count() == 0 &&
-            noop_editor.pending_materialized_cell_count() == 0,
-        "option-mismatch no-op reopened output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "option-mismatch no-op reopened output");
     check(noop_sheet.cell_count() == 4,
         "option-mismatch no-op reopened output should preserve sparse cell count");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 2,
@@ -424,11 +437,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_try_preserv
         fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor noop_sheet =
         noop_editor.worksheet("Data", options);
-    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
-        "missing-try no-op reopened output should start clean");
-    check(noop_editor.pending_change_count() == 0 &&
-            noop_editor.pending_materialized_cell_count() == 0,
-        "missing-try no-op reopened output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "missing-try no-op reopened output");
     check(noop_sheet.cell_count() == 4,
         "missing-try no-op reopened output should preserve sparse cell count");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 2,
@@ -631,11 +641,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_missing_worksheet_p
         fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor noop_sheet =
         noop_editor.worksheet("Data", options);
-    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
-        "missing-worksheet no-op reopened output should start clean");
-    check(noop_editor.pending_change_count() == 0 &&
-            noop_editor.pending_materialized_cell_count() == 0,
-        "missing-worksheet no-op reopened output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "missing-worksheet no-op reopened output");
     check(noop_sheet.cell_count() == 4,
         "missing-worksheet no-op reopened output should preserve sparse cell count");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 2,
@@ -857,11 +864,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_catalog_queries_pre
         fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor noop_sheet =
         noop_editor.worksheet("Data", options);
-    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
-        "catalog-query no-op reopened output should start clean");
-    check(noop_editor.pending_change_count() == 0 &&
-            noop_editor.pending_materialized_cell_count() == 0,
-        "catalog-query no-op reopened output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "catalog-query no-op reopened output");
     check(noop_sheet.cell_count() == 4,
         "catalog-query no-op reopened output should preserve sparse cell count");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 2,
@@ -1093,11 +1097,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_diagnostics_preserv
         fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor noop_sheet =
         noop_editor.worksheet("Data", options);
-    check(!noop_editor.has_pending_changes() && !noop_sheet.has_pending_changes(),
-        "diagnostic-query no-op reopened output should start clean");
-    check(noop_editor.pending_change_count() == 0 &&
-            noop_editor.pending_materialized_cell_count() == 0,
-        "diagnostic-query no-op reopened output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        noop_editor, noop_sheet, "diagnostic-query no-op reopened output");
     check(noop_sheet.cell_count() == 4,
         "diagnostic-query no-op reopened output should preserve sparse cell count");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 2,
@@ -1269,12 +1270,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         fastxlsx::WorkbookEditor::open(second_output);
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened row-shift output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened row-shift output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        reopened_editor, reopened_sheet, "reopened row-shift output");
     check(reopened_sheet.get_cell("A1").text_value() == "rename-back-shift-first",
         "reopened row-shift output should read back preserved row-one text");
     check(!reopened_sheet.try_cell("C2").has_value(),
@@ -1471,12 +1468,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         fastxlsx::WorkbookEditor::open(second_output);
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened column-shift output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened column-shift output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        reopened_editor, reopened_sheet, "reopened column-shift output");
     check(reopened_sheet.get_cell("A1").text_value() ==
             "rename-back-column-shift-first",
         "reopened column-shift output should read back preserved first-column text");
@@ -1630,12 +1623,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
         fastxlsx::WorkbookEditor::open(second_output);
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
-    check(!reopened_editor.has_pending_changes() &&
-            !reopened_sheet.has_pending_changes(),
-        "reopened styled shift output should materialize as clean public state");
-    check(reopened_editor.pending_change_count() == 0 &&
-            reopened_editor.pending_materialized_cell_count() == 0,
-        "reopened styled shift output should not expose dirty diagnostics");
+    check_retry_reopened_clean_state(
+        reopened_editor, reopened_sheet, "reopened styled shift output");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D4");
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
             reopened_formula.text_value() == "A3+B3" &&
@@ -1818,12 +1807,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
             fastxlsx::WorkbookEditor::open(second_output);
         fastxlsx::WorksheetEditor reopened_sheet =
             reopened_editor.worksheet("Data", options);
-        check(!reopened_editor.has_pending_changes() &&
-                !reopened_sheet.has_pending_changes(),
-            "reopened delete-row output should materialize as clean public state");
-        check(reopened_editor.pending_change_count() == 0 &&
-                reopened_editor.pending_materialized_cell_count() == 0,
-            "reopened delete-row output should not expose dirty diagnostics");
+        check_retry_reopened_clean_state(
+            reopened_editor, reopened_sheet, "reopened delete-row output");
         check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2",
             "reopened delete-row output should read back shifted source-backed row");
         check(!reopened_sheet.try_cell("B1").has_value(),
@@ -2013,12 +1998,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_shifts_prese
             fastxlsx::WorkbookEditor::open(second_output);
         fastxlsx::WorksheetEditor reopened_sheet =
             reopened_editor.worksheet("Data", options);
-        check(!reopened_editor.has_pending_changes() &&
-                !reopened_sheet.has_pending_changes(),
-            "reopened delete-column output should materialize as clean public state");
-        check(reopened_editor.pending_change_count() == 0 &&
-                reopened_editor.pending_materialized_cell_count() == 0,
-            "reopened delete-column output should not expose dirty diagnostics");
+        check_retry_reopened_clean_state(
+            reopened_editor, reopened_sheet, "reopened delete-column output");
         const fastxlsx::CellValue reopened_number =
             reopened_sheet.get_cell("A1");
         check(reopened_number.kind() == fastxlsx::CellValueKind::Number &&
@@ -2141,12 +2122,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
             fastxlsx::WorkbookEditor::open(second_output);
         fastxlsx::WorksheetEditor reopened_sheet =
             reopened_editor.worksheet("Data", options);
-        check(!reopened_editor.has_pending_changes() &&
-                !reopened_sheet.has_pending_changes(),
-            "reopened delete-row ref formula output should materialize as clean public state");
-        check(reopened_editor.pending_change_count() == 0 &&
-                reopened_editor.pending_materialized_cell_count() == 0,
-            "reopened delete-row ref formula output should not expose dirty diagnostics");
+        check_retry_reopened_clean_state(
+            reopened_editor, reopened_sheet, "reopened delete-row ref formula output");
         check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a2",
             "reopened delete-row ref formula output should read back shifted source row");
         check(!reopened_sheet.try_cell("C4").has_value(),
@@ -2259,12 +2236,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
             fastxlsx::WorkbookEditor::open(second_output);
         fastxlsx::WorksheetEditor reopened_sheet =
             reopened_editor.worksheet("Data", options);
-        check(!reopened_editor.has_pending_changes() &&
-                !reopened_sheet.has_pending_changes(),
-            "reopened delete-column ref formula output should materialize as clean public state");
-        check(reopened_editor.pending_change_count() == 0 &&
-                reopened_editor.pending_materialized_cell_count() == 0,
-            "reopened delete-column ref formula output should not expose dirty diagnostics");
+        check_retry_reopened_clean_state(
+            reopened_editor, reopened_sheet, "reopened delete-column ref formula output");
         const fastxlsx::CellValue reopened_number =
             reopened_sheet.get_cell("A1");
         check(reopened_number.kind() == fastxlsx::CellValueKind::Number &&

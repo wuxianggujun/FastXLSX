@@ -634,6 +634,10 @@ The saved-session shift reacquire no-op paths now carry the same contract before
 those later post-noop edits: basic, try-reacquire, guard/query, invalid-read,
 safe-retry, and failed-save guard no-op saves all keep replacement diagnostics
 empty.
+Their no-op and fresh-reopened outputs now share the complete clean diagnostics
+gate too: clean workbook/worksheet handles, empty dirty materialized names,
+cell counts, memory estimates, and summaries, no replacement diagnostics, and
+no `last_edit_error` before the existing value and row/column snapshot readback.
 The row-insert saved-session reacquire no-op path now also covers a moved dirty
 formula and moved dirty tail cell: after `insert_rows()` translates the formula
 and the first `save_as()` flushes it, matching-option reacquire reuses that

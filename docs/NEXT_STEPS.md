@@ -5803,6 +5803,13 @@ sparse count and source `Data` cells unchanged, keeps the appended row absent,
 preserves the public diagnostic across copy-original and follow-up no-op saves,
 and reopens unchanged. This is still append guardrail hygiene, not row insertion,
 row metadata creation, or style migration.
+The isolated source-style shard now also groups caller-supplied non-default
+`StyleId` rejection public-view checks across full-cell, value-only, row/column,
+and append helpers: repeated rejected mutations keep `contains_cell()`,
+`sparse_cells()`, `row_cells()`, and `column_cells()` on the source-backed styled
+`Data` sheet unchanged across live, copy-original save, and clean no-op save
+readback. This is rejection hygiene only, not non-default style writes or style
+migration.
 `append_row()` width validation failure now has the same copy-original/no-op
 save coverage: attempts to append more than 16,384 values keep the clean source
 session unchanged, retain the width diagnostic across both saves, leave the

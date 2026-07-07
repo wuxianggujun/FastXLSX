@@ -5736,6 +5736,11 @@ explicit-default style regressions now also assert `contains_cell()` across
 live, fresh-reopen, and clean no-op readback checks: source-styled targets,
 unstyled blank/untouched cells, and inserted formulas remain represented, while
 unrelated missing `D4` stays absent.
+The explicit-default-style single-cell full replacement path now mirrors that
+public view coverage: overwritten source-backed A1 drops its prior `StyleId`,
+the untouched B1 tail stays unstyled, and missing row/column gaps stay absent
+across live, fresh-reopen, and clean no-op `contains_cell()`, `row_cells()`, and
+`column_cells()` checks.
 The explicit-default-style sparse batch replacement path now has matching
 public view coverage for full replacement semantics: duplicate later-wins
 `set_cells()` targets, an overwritten unstyled formula, an untouched styled

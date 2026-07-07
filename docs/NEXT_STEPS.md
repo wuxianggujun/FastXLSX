@@ -5584,6 +5584,10 @@ read/mutation guard, and projection coverage move into
 in `tests/test_workbook_editor_public_retry_common.hpp`. The original
 `fastxlsx.workbook_editor.public-retry` CTest name remains the core retry
 shard; the new names are test-organization only.
+The core public-retry failed-mutation recovery case now repeats a clean no-op
+`save_as()` after the safe recovery output, proving the source package remains
+unchanged, the output package XML stays stable, and materialized/replacement
+diagnostics plus `last_edit_error()` remain clean.
 The linked-object PackageEditor preservation shard split keeps
 `tests/test_package_editor_preservation_linked.cpp` as the comments /
 threaded-comments base shard and moves pivot/cache, external-link, and custom

@@ -634,6 +634,13 @@ The saved-session shift reacquire no-op paths now carry the same contract before
 those later post-noop edits: basic, try-reacquire, guard/query, invalid-read,
 safe-retry, and failed-save guard no-op saves all keep replacement diagnostics
 empty.
+The row-insert saved-session reacquire no-op path now also covers a moved dirty
+formula and moved dirty tail cell: after `insert_rows()` translates the formula
+and the first `save_as()` flushes it, matching-option reacquire reuses that
+saved sparse state, the clean no-op output stays byte-stable, and fresh reopen
+keeps the translated formula, shifted source row, and old formula coordinate
+absence. This is saved-session lifecycle hygiene only, not broad formula
+rewrite, metadata sync, or calcChain rebuild.
 The `clear_cell_values()` memory-budget release saved-session path now extends
 that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
 no-op saves.

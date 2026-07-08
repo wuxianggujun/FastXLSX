@@ -3046,6 +3046,10 @@ regression for `clear_row()`, `clear_rows()`, `clear_column()`, and
 readbacks all keep represented styled/unstyled blank coordinates present while
 leaving missing coordinates absent. This is represented-state evidence for the
 small-file sparse store, not metadata sync or style-table migration.
+That compact clear row/column contains regression now also repeats a second
+clean no-op `save_as()` for all four helpers, requiring byte-identical packages,
+stable save/catalog snapshots, unchanged source bytes, and fresh reopen of the
+represented blank coordinates.
 The same isolated shard now mirrors that read-side coverage for `erase_row()`,
 `erase_rows()`, `erase_column()`, and `erase_columns()`: erased styled source
 records stay absent across live state, saved output, fresh reopen, and clean

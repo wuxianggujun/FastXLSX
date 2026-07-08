@@ -2268,6 +2268,10 @@ It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,
 the source package remains unchanged, and a clean no-op save stays byte-stable.
+The same standalone CTest now contrasts `clear_cell_value()` with erase:
+source-backed cells become explicit blank records, `used_range()` and dirty
+materialized cell counts stay stable, dirty `save_as()` writes blank `<c>` cells,
+reopened snapshots keep those blanks, and clean no-op save output is stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

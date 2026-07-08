@@ -3725,6 +3725,71 @@ void test_generated_source_span_batch_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_span_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid span batch should keep the materialized session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid span batch should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid span batch should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid span batch should preserve source-backed values");
+    };
+
+    const std::array<fastxlsx::WorksheetCellUpdate, 2> invalid_full_updates {{
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("span-invalid-full-leak")},
+        {fastxlsx::WorksheetCellReference {0, 1},
+            fastxlsx::CellValue::text("span-invalid-full-row-zero")},
+    }};
+    check(threw_fastxlsx_error([&sheet, &invalid_full_updates] {
+        sheet.set_cells(std::span<const fastxlsx::WorksheetCellUpdate>(
+            invalid_full_updates.data(), invalid_full_updates.size()));
+    }), "invalid span full replacements should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid span full replacements should expose last_edit_error");
+    check_clean_span_failure_state();
+
+    const std::array<fastxlsx::WorksheetCellUpdate, 2> invalid_value_updates {{
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("span-invalid-value-leak")},
+        {fastxlsx::WorksheetCellReference {1, 0},
+            fastxlsx::CellValue::text("span-invalid-value-column-zero")},
+    }};
+    check(threw_fastxlsx_error([&sheet, &invalid_value_updates] {
+        sheet.set_cell_values(std::span<const fastxlsx::WorksheetCellUpdate>(
+            invalid_value_updates.data(), invalid_value_updates.size()));
+    }), "invalid span value writes should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid span value writes should expose last_edit_error");
+    check_clean_span_failure_state();
+
+    const std::array<fastxlsx::WorksheetCellReference, 2> invalid_clear_targets {{
+        fastxlsx::WorksheetCellReference {1, 2},
+        fastxlsx::WorksheetCellReference {1048577, 1},
+    }};
+    check(threw_fastxlsx_error([&sheet, &invalid_clear_targets] {
+        sheet.clear_cell_values(std::span<const fastxlsx::WorksheetCellReference>(
+            invalid_clear_targets.data(), invalid_clear_targets.size()));
+    }), "invalid span value clears should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid span value clears should expose last_edit_error");
+    check_clean_span_failure_state();
+
+    const std::array<fastxlsx::WorksheetCellReference, 2> invalid_erase_targets {{
+        fastxlsx::WorksheetCellReference {2, 1},
+        fastxlsx::WorksheetCellReference {1, 16385},
+    }};
+    check(threw_fastxlsx_error([&sheet, &invalid_erase_targets] {
+        sheet.erase_cells(std::span<const fastxlsx::WorksheetCellReference>(
+            invalid_erase_targets.data(), invalid_erase_targets.size()));
+    }), "invalid span erases should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid span erases should expose last_edit_error");
+    check_clean_span_failure_state();
 
     const std::array<fastxlsx::WorksheetCellUpdate, 4> full_updates {{
         {fastxlsx::WorksheetCellReference {1, 1},
@@ -3738,6 +3803,8 @@ void test_generated_source_span_batch_roundtrip()
     }};
     sheet.set_cells(std::span<const fastxlsx::WorksheetCellUpdate>(
         full_updates.data(), full_updates.size()));
+    check(!editor.last_edit_error().has_value(),
+        "span full replacements should clear prior invalid span diagnostics");
     check(sheet.cell_count() == 5,
         "span full replacements should keep source cells plus inserted span targets");
     check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
@@ -3814,6 +3881,78 @@ void test_generated_source_span_batch_roundtrip()
             sheet.get_cell("D3").text_value() == "A1+B1",
         "span batch mutations should keep final D3 formula");
 
+    const auto check_dirty_span_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty span batch should keep the materialized session dirty");
+        check(sheet.cell_count() == 4 &&
+                editor.pending_materialized_cell_count() == 4,
+            "invalid dirty span batch should preserve final dirty sparse count");
+        check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+            "invalid dirty span batch should preserve final sparse bounds");
+        check(!sheet.try_cell("A2").has_value() &&
+                !sheet.try_cell("B2").has_value() &&
+                !sheet.try_cell("E5").has_value(),
+            "invalid dirty span batch should keep erased and missing targets absent");
+        check(sheet.get_cell("A1").text_value() == "span-full-a" &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Formula &&
+                sheet.get_cell("D3").text_value() == "A1+B1",
+            "invalid dirty span batch should preserve final sparse values");
+    };
+
+    const std::array<fastxlsx::WorksheetCellUpdate, 2> dirty_invalid_full_updates {{
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("span-dirty-invalid-full-leak")},
+        {fastxlsx::WorksheetCellReference {0, 1},
+            fastxlsx::CellValue::text("span-dirty-invalid-full-row-zero")},
+    }};
+    check(threw_fastxlsx_error([&sheet, &dirty_invalid_full_updates] {
+        sheet.set_cells(std::span<const fastxlsx::WorksheetCellUpdate>(
+            dirty_invalid_full_updates.data(), dirty_invalid_full_updates.size()));
+    }), "invalid dirty span full replacements should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty span full replacements should expose last_edit_error");
+    check_dirty_span_failure_state();
+
+    const std::array<fastxlsx::WorksheetCellUpdate, 2> dirty_invalid_value_updates {{
+        {fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::CellValue::text("span-dirty-invalid-value-leak")},
+        {fastxlsx::WorksheetCellReference {1, 0},
+            fastxlsx::CellValue::text("span-dirty-invalid-value-column-zero")},
+    }};
+    check(threw_fastxlsx_error([&sheet, &dirty_invalid_value_updates] {
+        sheet.set_cell_values(std::span<const fastxlsx::WorksheetCellUpdate>(
+            dirty_invalid_value_updates.data(), dirty_invalid_value_updates.size()));
+    }), "invalid dirty span value writes should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty span value writes should expose last_edit_error");
+    check_dirty_span_failure_state();
+
+    const std::array<fastxlsx::WorksheetCellReference, 2> dirty_invalid_clear_targets {{
+        fastxlsx::WorksheetCellReference {3, 4},
+        fastxlsx::WorksheetCellReference {1048577, 1},
+    }};
+    check(threw_fastxlsx_error([&sheet, &dirty_invalid_clear_targets] {
+        sheet.clear_cell_values(std::span<const fastxlsx::WorksheetCellReference>(
+            dirty_invalid_clear_targets.data(), dirty_invalid_clear_targets.size()));
+    }), "invalid dirty span value clears should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty span value clears should expose last_edit_error");
+    check_dirty_span_failure_state();
+
+    const std::array<fastxlsx::WorksheetCellReference, 2> dirty_invalid_erase_targets {{
+        fastxlsx::WorksheetCellReference {3, 4},
+        fastxlsx::WorksheetCellReference {1, 16385},
+    }};
+    check(threw_fastxlsx_error([&sheet, &dirty_invalid_erase_targets] {
+        sheet.erase_cells(std::span<const fastxlsx::WorksheetCellReference>(
+            dirty_invalid_erase_targets.data(), dirty_invalid_erase_targets.size()));
+    }), "invalid dirty span erases should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty span erases should expose last_edit_error");
+    check_dirty_span_failure_state();
+
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
         "span batch save_as should clean the materialized session");
@@ -3842,6 +3981,10 @@ void test_generated_source_span_batch_roundtrip()
         "span batch save_as should omit cleared intermediate C3 text");
     check_not_contains(data_xml, "span-value-first-b2",
         "span batch save_as should omit duplicate intermediate B2 text");
+    check_not_contains(data_xml, "span-invalid",
+        "span batch save_as should omit clean invalid span payloads");
+    check_not_contains(data_xml, "span-dirty-invalid",
+        "span batch save_as should omit dirty invalid span payloads");
     check_not_contains(data_xml, R"(r="B2")",
         "span batch save_as should omit erased B2 coordinate");
     check_span_batch_output(output);

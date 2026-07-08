@@ -2319,7 +2319,9 @@ The same snapshot lane now covers the span-based batch mutator overloads
 together: `set_cells(span)`, `set_cell_values(span)`, `clear_cell_values(span)`,
 and `erase_cells(span)` preserve later-wins / blank / erase semantics through a
 mixed dirty save, fresh reopen, row/column snapshots, and byte-stable clean
-no-op save.
+no-op save. It also rejects invalid span coordinates before applying earlier
+valid-looking entries, keeping both clean and dirty materialized sparse stores
+unchanged and preventing rejected payloads from reaching saved XML.
 It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,

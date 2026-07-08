@@ -2270,6 +2270,11 @@ That baseline and the styled-source snapshot lane now also reuse the clean
 no-op output for a later `F4` text edit: original and no-op packages stay
 unchanged, the follow-up output fresh-reopens cleanly, and the styled lane keeps
 the original source `StyleId` while the follow-up save byte-stabilizes.
+The generic reopened follow-up edit helper now also checks the later text cell
+through live and fresh-reopened `row_cells()` / `column_cells()` snapshots. This
+extends the existing post-noop reuse evidence across the standalone snapshot
+cases that share that helper, without adding a new API, metadata sync, or
+large-file random editing claim.
 That standalone CTest now also covers the other public sparse snapshot overloads:
 full `sparse_cells()`, bounded `CellRange`, strict A1 range strings, and
 coordinate-batch reads all preserve source values, saved edits, requested-order

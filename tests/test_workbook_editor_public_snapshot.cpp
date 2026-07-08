@@ -94,6 +94,65 @@ bool is_unstyled_text_snapshot(
         !cell.value.has_style();
 }
 
+std::optional<fastxlsx::WorksheetCellReference> try_parse_simple_cell_reference(
+    std::string_view reference)
+{
+    constexpr std::uint64_t max_column = 16384;
+    constexpr std::uint64_t max_row = 1048576;
+
+    std::uint64_t column = 0;
+    std::size_t index = 0;
+    while (index < reference.size()) {
+        const char ch = reference[index];
+        if (ch < 'A' || ch > 'Z') {
+            break;
+        }
+        column = (column * 26) + static_cast<std::uint64_t>(ch - 'A' + 1);
+        if (column > max_column) {
+            return std::nullopt;
+        }
+        ++index;
+    }
+
+    if (index == 0 || index == reference.size()) {
+        return std::nullopt;
+    }
+
+    std::uint64_t row = 0;
+    for (; index < reference.size(); ++index) {
+        const char ch = reference[index];
+        if (ch < '0' || ch > '9') {
+            return std::nullopt;
+        }
+        row = (row * 10) + static_cast<std::uint64_t>(ch - '0');
+        if (row > max_row) {
+            return std::nullopt;
+        }
+    }
+
+    if (row == 0 || column == 0) {
+        return std::nullopt;
+    }
+
+    return fastxlsx::WorksheetCellReference {
+        static_cast<std::uint32_t>(row),
+        static_cast<std::uint32_t>(column),
+    };
+}
+
+bool contains_text_snapshot(
+    const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+    const fastxlsx::WorksheetCellReference& reference,
+    std::string_view text)
+{
+    for (const fastxlsx::WorksheetCellSnapshot& cell : cells) {
+        if (is_text_snapshot(cell, reference.row, reference.column, text)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool is_boolean_snapshot(
     const fastxlsx::WorksheetCellSnapshot& cell,
     std::uint32_t row,
@@ -692,6 +751,11 @@ void check_reopened_followup_text_edit_on_sheet(
     check(!data.try_cell(followup_cell).has_value(),
         "reopened follow-up edit should start with the follow-up cell absent");
 
+    const std::optional<fastxlsx::WorksheetCellReference> followup_reference =
+        try_parse_simple_cell_reference(followup_cell);
+    check(followup_reference.has_value(),
+        "reopened follow-up edit helper should use a simple A1 follow-up cell");
+
     const std::size_t initial_cell_count = data.cell_count();
     data.set_cell(followup_cell,
         fastxlsx::CellValue::text(std::string(followup_text)));
@@ -700,6 +764,12 @@ void check_reopened_followup_text_edit_on_sheet(
     check(data.cell_count() == initial_cell_count + 1 &&
             data.get_cell(followup_cell).text_value() == followup_text,
         "reopened follow-up edit should append a new sparse follow-up cell");
+    check(contains_text_snapshot(data.row_cells(followup_reference->row),
+            *followup_reference, followup_text),
+        "reopened follow-up edit live row_cells should expose the follow-up cell");
+    check(contains_text_snapshot(data.column_cells(followup_reference->column),
+            *followup_reference, followup_text),
+        "reopened follow-up edit live column_cells should expose the follow-up cell");
 
     reopened.save_as(edit_output);
     check(!data.has_pending_changes(),
@@ -728,6 +798,13 @@ void check_reopened_followup_text_edit_on_sheet(
     check(edit_data.cell_count() == initial_cell_count + 1 &&
             edit_data.get_cell(followup_cell).text_value() == followup_text,
         "reopened follow-up edit output should keep the follow-up cell");
+    check(contains_text_snapshot(edit_data.row_cells(followup_reference->row),
+            *followup_reference, followup_text),
+        "reopened follow-up edit output row_cells should expose the follow-up cell");
+    check(contains_text_snapshot(
+            edit_data.column_cells(followup_reference->column),
+            *followup_reference, followup_text),
+        "reopened follow-up edit output column_cells should expose the follow-up cell");
     if (expect_audit_sheet) {
         fastxlsx::WorksheetEditor audit = edit_reopened.worksheet("Audit");
         check(audit.cell_count() == 1 &&

@@ -4562,6 +4562,10 @@ void test_generated_source_inspection_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-inspection-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-inspection-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-inspection-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-inspection-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4675,6 +4679,9 @@ void test_generated_source_inspection_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean inspection no-op save should keep output entries stable");
     check_inspection_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "inspection-reopened-f4");
 }
 
 void test_generated_source_catalog_inspection_roundtrip()
@@ -4686,6 +4693,10 @@ void test_generated_source_catalog_inspection_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-catalog-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-catalog-dirty-noop-output.xlsx");
+    const std::filesystem::path dirty_reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-catalog-dirty-reopened-edit-output.xlsx");
+    const std::filesystem::path dirty_reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-catalog-dirty-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4778,6 +4789,9 @@ void test_generated_source_catalog_inspection_roundtrip()
     check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
         "catalog dirty clean no-op save should keep output entries stable");
     check_catalog_inspection_output(dirty_noop_output, true);
+    check_reopened_followup_text_edit_at(dirty_output, dirty_noop_output,
+        dirty_reopened_edit_output, dirty_reopened_edit_noop_output,
+        "F4", "catalog-dirty-reopened-f4");
 }
 
 void test_generated_source_sparse_initializer_list_roundtrip()
@@ -4787,6 +4801,10 @@ void test_generated_source_sparse_initializer_list_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-sparse-init-list-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-sparse-init-list-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-sparse-init-list-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-sparse-init-list-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -5024,6 +5042,9 @@ void test_generated_source_sparse_initializer_list_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean sparse initializer-list no-op save should keep output entries stable");
     check_sparse_initializer_list_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "sparse-init-list-reopened-f4");
 }
 
 void test_generated_source_span_batch_roundtrip()
@@ -5033,6 +5054,10 @@ void test_generated_source_span_batch_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-span-batch-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-span-batch-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-span-batch-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-span-batch-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -5308,6 +5333,9 @@ void test_generated_source_span_batch_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean span batch no-op save should keep output entries stable");
     check_span_batch_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "span-batch-reopened-f4");
 }
 
 void test_generated_source_sparse_value_batch_roundtrip()
@@ -5317,6 +5345,10 @@ void test_generated_source_sparse_value_batch_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-value-batch-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-value-batch-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-value-batch-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-value-batch-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -5403,6 +5435,9 @@ void test_generated_source_sparse_value_batch_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean sparse value-batch no-op save should keep output entries stable");
     check_value_batch_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "value-batch-reopened-f4");
 }
 
 void test_generated_source_row_column_replacement_roundtrip()
@@ -5412,6 +5447,10 @@ void test_generated_source_row_column_replacement_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -5620,6 +5659,9 @@ void test_generated_source_row_column_replacement_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column no-op save should keep output entries stable");
     check_row_column_replaced_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-reopened-f4");
 }
 
 void test_generated_source_row_column_value_roundtrip()
@@ -5629,6 +5671,10 @@ void test_generated_source_row_column_value_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -5840,6 +5886,9 @@ void test_generated_source_row_column_value_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column value no-op save should keep output entries stable");
     check_row_column_value_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-value-reopened-f4");
 }
 
 void test_generated_source_row_column_value_span_roundtrip()
@@ -5849,6 +5898,10 @@ void test_generated_source_row_column_value_span_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-span-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-span-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-span-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-span-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -6169,6 +6222,9 @@ void test_generated_source_row_column_value_span_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column value span no-op save should keep output entries stable");
     check_row_column_value_span_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-value-span-reopened-f4");
 }
 
 void test_generated_source_insert_rows_roundtrip()

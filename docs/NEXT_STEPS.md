@@ -2461,6 +2461,12 @@ The append/value snapshot lane now carries the same reuse check for
 `contains_cell()` mixed mutation output: each no-op output is reopened clean,
 accepts a later `F4` text edit, keeps the earlier packages unchanged,
 fresh-reopens with `F4`, and byte-stabilizes after the follow-up save.
+The same post-noop reuse check now extends to inspection-heavy outputs:
+inspection mutations, catalog dirty save/no-op, sparse initializer-list batch
+mutations, span batch mutations, value-batch writes, row/column replacement,
+row/column value-prefix writes, and row/column value-span writes all reopen
+clean, accept a later `F4` text edit, preserve earlier packages, fresh-reopen
+with `F4`, and settle through a byte-stable follow-up clean save.
 The standalone snapshot lane also pins whole-store `erase_cells()`: all
 source-backed and dirty sparse records are removed, `used_range()` becomes
 empty, saved XML projects the empty worksheet dimension without cell records,

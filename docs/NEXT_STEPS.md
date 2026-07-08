@@ -691,7 +691,8 @@ that no-op diagnostics parity to option-mismatch, missing-query, and invalid-rea
 no-op saves.
 Its base matching-option reacquired no-op save now also repeats once more,
 requiring the second package to match the first matching-option no-op while
-leaving the saved output, first no-op output, and source package unchanged.
+leaving the saved output, first no-op output, first matching-option no-op
+output, and source package unchanged.
 The option-mismatch and missing-query no-op saves in that path now also reuse
 the saved-handle snapshot and fresh-reopen checks, while proving earlier no-op
 packages stay byte-stable.
@@ -746,10 +747,12 @@ handles, pinning the lone `C3` row/column view, erased source-cell absence, and
 clean materialized diagnostics before the fresh reopen checks.
 It now repeats that post-reacquire clean no-op save too, requiring
 byte-identical package entries and the same fresh-reopened `C3` projection while
-keeping replacement diagnostics empty.
+keeping the first reacquired no-op output stable and replacement diagnostics
+empty.
 The whole-store `erase_cells()` reacquired no-op path now mirrors that saved
 live-handle snapshot coverage for the appended `A1:B1` row, including matching
-column views and erased dirty-cell absence.
+column views, erased dirty-cell absence, and a repeated no-op save that keeps
+the first reacquired no-op output unchanged.
 The exact-budget `erase_cells()` release no-op path now pins its saved live
 handle as well, including the lone recovery `A3` row/column views, erased
 source-cell absence, and clean materialized diagnostics.

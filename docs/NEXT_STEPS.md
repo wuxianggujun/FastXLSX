@@ -253,6 +253,10 @@ The clean invalid-to-valid column-shift recovery path mirrors that coverage:
 rejected invalid column shifts stay clean, the valid recovery save/no-op output
 remains reusable, and a later `D2` edit saves a fresh-reopenable post-noop
 output while earlier outputs stay unchanged.
+Structural shift failure roundtrips now also pin zero-count invalid start
+validation: row/column zero and past-limit starts reject before the no-op fast
+path in both clean and dirty materialized sessions, without mutating sparse
+state or later save/no-op stability.
 Those clean invalid-to-valid recovery branches now also repeat the clean no-op
 save before the later `C3` / `D2` edits: the second no-op outputs are
 byte-identical to the first, keep dirty and replacement diagnostics clear,

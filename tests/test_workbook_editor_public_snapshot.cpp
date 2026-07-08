@@ -6451,6 +6451,22 @@ void test_generated_source_structural_shift_failure_roundtrip()
             };
 
         check_initial_snapshots(sheet);
+        expect_clean_shift_failure([&sheet] { sheet.insert_rows(0, 0); },
+            "zero-count insert_rows should still reject row zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_rows(0, 0); },
+            "zero-count delete_rows should still reject row zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.insert_rows(1048577, 0); },
+            "zero-count insert_rows should still reject rows past the Excel limit in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_rows(1048577, 0); },
+            "zero-count delete_rows should still reject rows past the Excel limit in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.insert_columns(0, 0); },
+            "zero-count insert_columns should still reject column zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_columns(0, 0); },
+            "zero-count delete_columns should still reject column zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.insert_columns(16385, 0); },
+            "zero-count insert_columns should still reject columns past the Excel limit in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_columns(16385, 0); },
+            "zero-count delete_columns should still reject columns past the Excel limit in a clean session");
         expect_clean_shift_failure([&sheet] { sheet.insert_rows(0, 1); },
             "insert_rows should reject row zero in a clean session");
         expect_clean_shift_failure([&sheet] { sheet.delete_rows(0, 1); },
@@ -6533,6 +6549,22 @@ void test_generated_source_structural_shift_failure_roundtrip()
             };
 
         check_dirty_shift_failure_state();
+        expect_dirty_shift_failure([&sheet] { sheet.insert_rows(0, 0); },
+            "zero-count insert_rows should still reject row zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_rows(0, 0); },
+            "zero-count delete_rows should still reject row zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.insert_rows(1048577, 0); },
+            "zero-count insert_rows should still reject rows past the Excel limit in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_rows(1048577, 0); },
+            "zero-count delete_rows should still reject rows past the Excel limit in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.insert_columns(0, 0); },
+            "zero-count insert_columns should still reject column zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_columns(0, 0); },
+            "zero-count delete_columns should still reject column zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.insert_columns(16385, 0); },
+            "zero-count insert_columns should still reject columns past the Excel limit in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_columns(16385, 0); },
+            "zero-count delete_columns should still reject columns past the Excel limit in a dirty session");
         expect_dirty_shift_failure([&sheet] { sheet.insert_rows(1048576, 1); },
             "insert_rows should reject shifting a dirty edge row past the Excel limit");
         expect_dirty_shift_failure([&sheet] { sheet.insert_columns(16384, 1); },

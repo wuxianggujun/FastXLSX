@@ -3065,6 +3065,10 @@ The source-style shard also pins the single-cell and `CellRange`
 unstyled neighbors stay absent across live/save/reopen/no-op readbacks, the
 surviving non-target styled source cell keeps its materialized `StyleId`, and
 the erased-only style id does not leak into saved sheetData.
+That single-cell and `CellRange` `erase_cells()` source-style regression now
+also repeats a second clean no-op `save_as()`, requiring byte-identical
+packages, stable save/catalog snapshots, unchanged source bytes, and fresh
+reopen of the erased and surviving sparse coordinates.
 The successful sparse row/column erase paths now have the same repeated
 no-op-save coverage for `erase_row()`, `erase_rows()`, `erase_column()`, and
 `erase_columns()`: after the erase output and first clean no-op save, each path

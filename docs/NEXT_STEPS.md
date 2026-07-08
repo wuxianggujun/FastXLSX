@@ -1811,7 +1811,8 @@ dirty session persists while the discarded target session does not leak into the
 clean saved workbook.
 It now repeats the clean no-op save too, keeping move-owner diagnostics empty,
 preserving both source packages, and reopening both worksheets from the second
-no-op output with only the moved dirty payload.
+no-op output with only the moved dirty payload while keeping the prior
+move-owner outputs byte-stable.
 The `pending_worksheet_edits()` summary save path now reopens both the
 auto-flushed materialized sheet and the replacement-only sheet, pinning clean
 readback after mixed summary diagnostics.
@@ -6336,7 +6337,7 @@ transaction transfer semantics, rollback, metadata repair, or relationship sync.
 The aggregate move-owner path now also repeats that clean no-op save, proving
 the second no-op package matches the first, aggregate diagnostics remain empty,
 both source packages are preserved, and both worksheets reopen with only the
-moved dirty payload.
+moved dirty payload while keeping the prior aggregate move outputs byte-stable.
 Public row/column `WorksheetEditor` overloads now have an explicit coordinate
 guardrail matching the A1 overload boundary: rows and columns must stay within
 Excel limits, invalid reads throw without changing `last_edit_error()`, and

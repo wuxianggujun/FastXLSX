@@ -93,9 +93,11 @@
 - Row/column shift helpers only move or delete represented sparse records. Shifted records keep
   their `CellValue` payloads and materialized source `StyleId` handles; moved formula cells
   translate supported A1-style references, and stationary formula cells already in the
-  materialized store use the same narrow structural rewrite for affected references. These helpers
-  do not synchronize tables, filters, validations, conditional formatting, drawings, defined names,
-  relationships, sharedStrings/styles metadata, or calcChain.
+  materialized store use the same narrow structural rewrite for affected references. Formula rewrite
+  preserves string literal text, structured-reference bracket content, quoted sheet-name token text,
+  bracketed external-workbook token text, function names, and name-like tokens as lexical formula
+  text. These helpers do not synchronize tables, filters, validations, conditional formatting,
+  drawings, defined names, relationships, sharedStrings/styles metadata, or calcChain.
 - Guardrail：`WorksheetEditorOptions::max_cells` 和 `memory_budget_bytes` 约束 source materialization
   与后续 sparse-store mutations。它们是 sparse-store estimate guardrails，不是进程 RSS 或 package save peak。
 - 适用边界：small-file random cell editing。该路径不支持 non-default caller-supplied style id 写入、

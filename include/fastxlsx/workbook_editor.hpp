@@ -663,7 +663,11 @@ struct WorkbookEditorRenameOptions {
 /// materialized store, translate relative references in moved formula cells,
 /// rewrite supported references in stationary materialized formula cells when
 /// the structural edit affects those references, and leave workbook/worksheet
-/// metadata for caller review. Empty, valueless,
+/// metadata for caller review. The formula scanner is lexical and narrow:
+/// string literal text, structured-reference bracket content, quoted sheet-name
+/// token text, bracketed external-workbook token text, function names, and
+/// name-like tokens are preserved as token text rather than treated as cells.
+/// Empty, valueless,
 /// unquoted, unterminated, padded,
 /// signed, leading-zero,
 /// entity-encoded, missing workbook styles metadata, or out-of-range source

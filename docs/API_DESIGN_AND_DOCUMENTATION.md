@@ -215,6 +215,9 @@ later-wins ordering after validation.
 They keep shifted `CellValue` payloads and materialized source `StyleId` handles,
 translate supported references in moved formula cells, and apply the same narrow
 structural rewrite to stationary formula cells already in the materialized store.
+Formula rewrite preserves string literals, structured-reference bracket content, quoted
+sheet-name token text, bracketed external-workbook token text, function names, and name-like tokens
+as lexical formula text.
 They are not Excel semantic row/column operations: they do not synchronize
 tables, filters, validations, conditional formatting, drawings, defined names,
 relationships, sharedStrings/styles metadata, or calcChain.

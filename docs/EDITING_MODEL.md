@@ -44,6 +44,8 @@ session commit、rollback 或 guard bypass。
 `CellValue` payload 和 materialized source `StyleId`。Moved formula cells 会通过窄
 A1-style translator 平移自身公式文本，stationary formula cells 已在 materialized store
 中时也会用同一窄 structural rewriter 更新受影响引用；删除或越界引用写成 `#REF!`。
+该重写保留 string literals、structured-reference bracket content、quoted sheet-name token text、
+bracketed external-workbook token text、function names 和 name-like tokens 这些 lexical 边界。
 它们不更新未物化 worksheet formulas、defined names、tables、filters、validations、
 conditional formatting、drawings、charts、hyperlinks 或 worksheet relationships，也不是
 大文件低内存随机编辑。新增更窄的

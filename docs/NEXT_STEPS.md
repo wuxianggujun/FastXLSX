@@ -764,6 +764,11 @@ output packages after later saves: max-cells and memory-budget budget-release,
 missing-erase, blank-overwrite, last-error recovery, and mixed diagnostic
 recovery all prove the first no-op package remains unchanged after the second
 no-op and post-noop save.
+The same prior-output check now covers the adjacent source-load and recovery
+no-op family: shift memory guard failure, exact shift-budget recovery scenarios,
+options-guard recovery, memory-budget source-load recovery, and successful
+mutation recovery after memory-budget / max-cells failures all re-read the
+first no-op package after the second no-op save.
 The retry guard reopened-output helper now checks the same complete clean
 diagnostic surface after saved/no-op recovery outputs: no pending summaries,
 no materialized names/count/memory, no replacement diagnostics, and no

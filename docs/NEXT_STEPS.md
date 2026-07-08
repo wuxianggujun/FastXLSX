@@ -2385,6 +2385,10 @@ That same full-axis delete regression now continues from the clean saved handle:
 a later `B2` edit reuses the empty sparse store, saves as a fresh single-cell
 worksheet, keeps the source/empty/no-op packages unchanged, fresh-reopens, and
 settles into another byte-stable no-op save.
+It now also exercises a fresh editor reopened from the empty output before the
+same-handle reuse: a later `C1` edit saves a separate single-cell package,
+leaves the empty outputs unchanged, fresh-reopens, and settles into its own
+byte-stable no-op save.
 That structural-shift snapshot lane now also covers the clean no-op group in one
 case: zero-count row/column shifts clear prior diagnostics, target-outside
 row/column shifts leave source-backed cells unchanged, no missing sparse cells

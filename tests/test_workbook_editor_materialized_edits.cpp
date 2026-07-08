@@ -402,6 +402,59 @@ void test_dirty_worksheet_projection_provider_skips_non_text_records()
         "non-text worksheet projection should not clear dirty state");
 }
 
+void test_dirty_empty_projection_after_erasing_all_source_cells()
+{
+    fastxlsx::detail::CellStore source_store;
+    source_store.set_cell(1, 1, fastxlsx::CellValue::text("source-a1"));
+    source_store.set_cell(3, 3, fastxlsx::CellValue::number(3.0));
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        registry.materialize("Data", std::move(source_store));
+    check(!data.dirty(),
+        "source-backed materialized session should start clean before erase");
+
+    data.erase_cells();
+    check(data.dirty(),
+        "erasing all source-backed materialized cells should dirty the session");
+    check(data.cell_count() == 0,
+        "erasing all source-backed materialized cells should empty the sparse store");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        sheet_data_projections = registry.dirty_sheet_data_chunk_sources();
+    check(sheet_data_projections.size() == 1,
+        "empty dirty sheetData projection should include dirty session");
+    check(sheet_data_projections[0].planned_name == "Data",
+        "empty dirty sheetData projection should preserve planned name");
+    check(sheet_data_projections[0].dimension_reference == "A1",
+        "empty dirty sheetData projection should expose A1 dimension");
+
+    auto sheet_data_read_next_chunk = sheet_data_projections[0].read_next_chunk;
+    const std::string sheet_data_xml =
+        read_all_chunks(sheet_data_read_next_chunk);
+    check(sheet_data_xml == "<sheetData></sheetData>",
+        "empty dirty sheetData projection should emit empty sheetData");
+    check(data.dirty(),
+        "consuming empty sheetData projection should not clear dirty state");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        worksheet_projections = registry.dirty_worksheet_chunk_sources();
+    check(worksheet_projections.size() == 1,
+        "empty dirty worksheet projection should include dirty session");
+    check(worksheet_projections[0].planned_name == "Data",
+        "empty dirty worksheet projection should preserve planned name");
+
+    auto worksheet_read_next_chunk = worksheet_projections[0].read_next_chunk;
+    const std::string worksheet_xml = read_all_chunks(worksheet_read_next_chunk);
+    check(worksheet_xml
+            == R"(<?xml version="1.0" encoding="UTF-8"?>)"
+               R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+               R"(<dimension ref="A1"/><sheetData></sheetData></worksheet>)",
+        "empty dirty worksheet projection should emit minimal worksheet XML");
+    check(data.dirty(),
+        "consuming empty worksheet projection should not clear dirty state");
+}
+
 void test_materialized_flush_target_validation_accepts_current_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -478,6 +531,7 @@ int main()
         test_dirty_worksheet_projection_provider_failure_keeps_session_dirty();
         test_dirty_sheet_data_projection_provider_skips_non_text_records();
         test_dirty_worksheet_projection_provider_skips_non_text_records();
+        test_dirty_empty_projection_after_erasing_all_source_cells();
         test_materialized_flush_target_validation_accepts_current_names();
         test_materialized_flush_target_validation_uses_current_catalog_names();
         test_materialized_flush_target_validation_rejects_missing_names();

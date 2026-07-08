@@ -5930,6 +5930,10 @@ while leaving the materialized session dirty for retry.
 The non-text side is covered as well: numeric/boolean-only projections can carry
 a shared-string provider without calling it, emit value-only cells, and leave
 dirty state untouched until the higher-level flush succeeds.
+It now also covers a source-backed materialized session erased down to an empty
+sparse store: both sheetData-only and full-worksheet projections keep the dirty
+session, report `A1`, and emit empty sheetData/minimal worksheet XML for save-as
+handoff.
 The follow-up WorkbookEditor facade split keeps the base public facade
 diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
 save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke

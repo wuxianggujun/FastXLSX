@@ -6453,10 +6453,14 @@ void test_generated_source_structural_shift_failure_roundtrip()
         check_initial_snapshots(sheet);
         expect_clean_shift_failure([&sheet] { sheet.insert_rows(0, 1); },
             "insert_rows should reject row zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_rows(0, 1); },
+            "delete_rows should reject row zero in a clean session");
         expect_clean_shift_failure([&sheet] { sheet.delete_rows(1048576, 2); },
             "delete_rows should reject row spans past the Excel row limit in a clean session");
         expect_clean_shift_failure([&sheet] { sheet.insert_columns(0, 1); },
             "insert_columns should reject column zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_columns(0, 1); },
+            "delete_columns should reject column zero in a clean session");
         expect_clean_shift_failure([&sheet] { sheet.delete_columns(16384, 2); },
             "delete_columns should reject column spans past the Excel column limit in a clean session");
 
@@ -6535,10 +6539,14 @@ void test_generated_source_structural_shift_failure_roundtrip()
             "insert_columns should reject shifting a dirty edge column past the Excel limit");
         expect_dirty_shift_failure([&sheet] { sheet.insert_rows(0, 1); },
             "insert_rows should reject row zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_rows(0, 1); },
+            "delete_rows should reject row zero in a dirty session");
         expect_dirty_shift_failure([&sheet] { sheet.delete_rows(1048576, 2); },
             "delete_rows should reject row spans past the Excel row limit in a dirty session");
         expect_dirty_shift_failure([&sheet] { sheet.insert_columns(0, 1); },
             "insert_columns should reject column zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_columns(0, 1); },
+            "delete_columns should reject column zero in a dirty session");
         expect_dirty_shift_failure([&sheet] { sheet.delete_columns(16384, 2); },
             "delete_columns should reject column spans past the Excel column limit in a dirty session");
 

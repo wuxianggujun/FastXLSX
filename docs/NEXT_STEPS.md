@@ -6960,6 +6960,10 @@ Formula structural rewrite coverage now also ties the tokenizer recovery
 boundary to row/column edit rewriting: unterminated string, bracketed, and
 quoted-sheet tokens preserve their embedded A1-like text while real references
 before those tokens still shift.
+Structural shift failure snapshot coverage now also closes the symmetric
+delete-coordinate preflight gap: clean and dirty `delete_rows(0, 1)` and
+`delete_columns(0, 1)` reject before materialized state changes while preserving
+the existing save/reopen no-pollution checks.
 Single missing-cell value-clear no-ops now cover the scalar cleanup branch too:
 row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
 failures clear diagnostics, preserve read-only or saved-clean sparse state,

@@ -720,6 +720,8 @@ after a repeated clean no-op save.
 The follow-on public-state no-op group now does the same for empty
 `set_row_values()` / `set_column_values()`, styled `erase_column()` /
 `erase_columns()`, and renamed shift reacquire saves.
+The earliest dirty-session reuse paths now also pin the second output package
+while writing clean no-op outputs for dirty-state reuse and same-handle reuse.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

@@ -2251,6 +2251,10 @@ workbook brackets, function calls, and name-like tokens.
 The lightweight `fastxlsx.formula` lane now mirrors that boundary directly for
 structural rewrites, covering function/name-like/R1C1-like text and
 quoted/external qualifier token preservation without touching production logic.
+The public `WorksheetEditor` wording now also spells out the existing
+`row_cells()` / `column_cells()` invalid-coordinate read-failure boundary:
+these snapshot reads throw without dirtying the materialized session or
+replacing `WorkbookEditor::last_edit_error()`.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

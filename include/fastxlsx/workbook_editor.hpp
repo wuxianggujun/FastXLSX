@@ -1525,7 +1525,8 @@ public:
     /// reference into the WorkbookEditor session. This is a sparse row
     /// inspection convenience over sparse_cells(CellRange), not dense row read,
     /// row metadata inspection, row iterator, metadata recalculation, or
-    /// large-file low-memory random access. It does not mutate dirty state,
+    /// large-file low-memory random access. Invalid row coordinates throw
+    /// FastXlsxError as read failures, but still do not mutate dirty state,
     /// update WorkbookEditor::last_edit_error(), flush, or reload the
     /// materialized session.
     [[nodiscard]] std::vector<WorksheetCellSnapshot> row_cells(std::uint32_t row) const;
@@ -1540,7 +1541,8 @@ public:
     /// session. This is a sparse column inspection convenience over
     /// sparse_cells(CellRange), not dense column read, column metadata
     /// inspection, column iterator, metadata recalculation, or large-file
-    /// low-memory random access. It does not mutate dirty state, update
+    /// low-memory random access. Invalid column coordinates throw FastXlsxError
+    /// as read failures, but still do not mutate dirty state, update
     /// WorkbookEditor::last_edit_error(), flush, or reload the materialized
     /// session.
     [[nodiscard]] std::vector<WorksheetCellSnapshot> column_cells(

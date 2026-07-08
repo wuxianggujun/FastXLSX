@@ -1025,7 +1025,9 @@ materialized cell count 和 materialized memory estimate；这仍只是 public d
 `column_cells()`、`cell_count()`、`estimated_memory_usage()` 和
 `has_pending_changes()`) are non-flushing sparse-store inspections: they do not
 auto-save, queue Patch handoffs, expose internal `EditPlan` state, synthesize
-dense missing cells, or make clean saved sessions dirty.
+dense missing cells, or make clean saved sessions dirty. Invalid sparse
+snapshot coordinates such as `row_cells(0)` or `column_cells(0)` throw read
+failures without replacing `WorkbookEditor::last_edit_error()`.
 
 ```cpp
 auto editor = fastxlsx::WorkbookEditor::open("small.xlsx", options);

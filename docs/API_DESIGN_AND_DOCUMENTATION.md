@@ -229,7 +229,9 @@ relationships, sharedStrings/styles metadata, or calcChain.
 not flush dirty sessions, increment Patch handoff counts, update
 `WorkbookEditor::last_edit_error()` on read failures, expose internal
 `EditPlan` state, synthesize dense missing cells, or turn clean saved sessions
-dirty.
+dirty. Invalid sparse snapshot coordinates, such as `row_cells(0)` or
+`column_cells(0)`, are read failures with the same no-mutation and
+`last_edit_error()` preservation behavior.
 
 ### 当前能力事实源
 

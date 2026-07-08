@@ -706,7 +706,8 @@ diagnostic, fresh-reopening the saved package and keeping the invalid-read and
 second no-op packages unchanged.
 The invalid-shift no-op save after the recovery output now snapshots both saved
 handles too, including the recovered `E5` row/column views and the preserved
-shift diagnostic.
+shift diagnostic; it also fresh-reopens that no-op package and proves the
+earlier recovery/no-op packages stay byte-stable.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic.

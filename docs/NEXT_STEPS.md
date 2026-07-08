@@ -709,6 +709,10 @@ The invalid-shift no-op save after the recovery output now snapshots both saved
 handles too, including the recovered `E5` row/column views and the preserved
 shift diagnostic; it also fresh-reopens that no-op package and proves the
 earlier recovery/no-op packages stay byte-stable.
+The earlier public-state no-op paths now carry the same prior-output stability
+check: source-style snapshots, row/column read failures, invalid sparse range
+reads, `erase_cell()`, and range erase all prove a second clean no-op save does
+not rewrite the first no-op package.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

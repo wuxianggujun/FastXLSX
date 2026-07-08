@@ -2248,6 +2248,9 @@ non-parser / non-evaluator boundary.
 Stationary formula structural rewrites now pin the same skip-token boundary for
 string literals, structured references, quoted sheet-name tokens, external
 workbook brackets, function calls, and name-like tokens.
+The lightweight `fastxlsx.formula` lane now mirrors that boundary directly for
+structural rewrites, covering function/name-like/R1C1-like text and
+quoted/external qualifier token preservation without touching production logic.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

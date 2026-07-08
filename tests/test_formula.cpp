@@ -495,6 +495,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(B1,LOG10(B1),B1foo,_B1,B1_,R1C1,"B1",Table1[B1]))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"(SUM(C1,LOG10(C1),B1foo,_B1,B1_,R1C1,"B1",Table1[B1]))",
+        "formula structural column insert should preserve function and name-like token boundaries");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"('B1 Sheet'!B1+[B1.xlsx]Sheet1!B1+[Book.xlsx]B1!B1)",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"('B1 Sheet'!C1+[B1.xlsx]Sheet1!C1+[Book.xlsx]B1!C1)",
+        "formula structural column insert should preserve quoted sheet and external workbook token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             "A1+B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 3, 0}),
         "A1+B1",
         "formula structural rewrite should preserve text for zero-count edits");

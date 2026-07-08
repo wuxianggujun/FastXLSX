@@ -2350,6 +2350,10 @@ It now also covers the matching width-limit failure path in clean and dirty
 sessions: rows with 16,385 values are rejected before mutation, source or dirty
 sparse state is preserved, rejected payloads stay out of saved XML, and no-op
 save output remains stable.
+The append failure outputs now also have post-noop reuse coverage: clean
+width-failure, dirty width-failure, and row-limit failure no-op outputs each
+reopen clean, accept a later `F4` text edit, keep the failure and no-op packages
+unchanged, fresh-reopen with `F4`, and byte-stabilize after the follow-up save.
 The same snapshot lane now covers structural row/column shift failure recovery:
 invalid shift spans leave clean sessions copy-original, edge-row/edge-column
 overflow failures preserve dirty `C3` and `XFD1048576` sparse cells, saved XML

@@ -4105,6 +4105,10 @@ void test_generated_source_append_row_width_failure_roundtrip()
             artifact("fastxlsx-workbook-editor-public-snapshot-append-width-clean-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-snapshot-append-width-clean-noop-output.xlsx");
+        const std::filesystem::path reopened_edit_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-clean-reopened-edit-output.xlsx");
+        const std::filesystem::path reopened_edit_noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-clean-reopened-edit-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -4150,6 +4154,9 @@ void test_generated_source_append_row_width_failure_roundtrip()
         clean_reopened.save_as(noop_output);
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clean append width failure no-op save should keep output entries stable");
+        check_reopened_followup_text_edit_at(output, noop_output,
+            reopened_edit_output, reopened_edit_noop_output,
+            "F4", "append-width-clean-reopened-f4");
     }
 
     {
@@ -4157,6 +4164,10 @@ void test_generated_source_append_row_width_failure_roundtrip()
             artifact("fastxlsx-workbook-editor-public-snapshot-append-width-dirty-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-snapshot-append-width-dirty-noop-output.xlsx");
+        const std::filesystem::path reopened_edit_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-dirty-reopened-edit-output.xlsx");
+        const std::filesystem::path reopened_edit_noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-dirty-reopened-edit-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -4213,6 +4224,9 @@ void test_generated_source_append_row_width_failure_roundtrip()
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clean append width dirty no-op save should keep output entries stable");
         check_append_row_width_dirty_output(noop_output);
+        check_reopened_followup_text_edit_at(output, noop_output,
+            reopened_edit_output, reopened_edit_noop_output,
+            "F4", "append-width-dirty-reopened-f4");
     }
 }
 
@@ -4223,6 +4237,10 @@ void test_generated_source_append_row_limit_failure_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-append-row-limit-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-append-row-limit-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-append-row-limit-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-append-row-limit-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4285,6 +4303,9 @@ void test_generated_source_append_row_limit_failure_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean append row-limit no-op save should keep output entries stable");
     check_append_row_limit_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "append-row-limit-reopened-f4");
 }
 
 void test_generated_source_sparse_batch_replacement_roundtrip()

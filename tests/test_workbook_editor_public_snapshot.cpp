@@ -1757,6 +1757,27 @@ void check_invalid_snapshot_reads_preserve_diagnostics(
     fastxlsx::WorksheetEditor& sheet,
     const std::optional<std::string>& mutation_error)
 {
+    const std::size_t cell_count_before = sheet.cell_count();
+    const std::size_t memory_before = sheet.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.try_cell(0, 1); }),
+        "try_cell(row, column) should reject row zero");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.try_cell("a1"); }),
+        "try_cell(A1) should reject lowercase references");
+    check(editor.last_edit_error() == mutation_error,
+        "try_cell invalid reads should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.get_cell(1, 0); }),
+        "get_cell(row, column) should reject column zero");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.get_cell("B2"); }),
+        "get_cell(A1) should reject valid but missing cells");
+    check(editor.last_edit_error() == mutation_error,
+        "get_cell read failures should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.contains_cell(0, 1); }),
+        "contains_cell(row, column) should reject row zero");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.contains_cell("A1:B2"); }),
+        "contains_cell(A1) should reject ranges");
+    check(editor.last_edit_error() == mutation_error,
+        "contains_cell invalid reads should preserve prior last_edit_error");
     check(threw_fastxlsx_error([&sheet] { (void)sheet.row_cells(0); }),
         "row_cells should reject invalid row coordinates");
     check(editor.last_edit_error() == mutation_error,
@@ -1785,6 +1806,10 @@ void check_invalid_snapshot_reads_preserve_diagnostics(
     }), "sparse_cells(batch) should reject invalid coordinates");
     check(editor.last_edit_error() == mutation_error,
         "sparse_cells(batch) invalid read should preserve prior last_edit_error");
+    check(sheet.cell_count() == cell_count_before,
+        "invalid read failures should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == memory_before,
+        "invalid read failures should preserve sparse-store memory estimate");
 }
 
 void test_generated_source_snapshot_edit_roundtrip()

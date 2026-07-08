@@ -2257,9 +2257,11 @@ these snapshot reads throw without dirtying the materialized session or
 replacing `WorkbookEditor::last_edit_error()`.
 The same boundary now has a small standalone public snapshot CTest that creates
 a source workbook through `Workbook`, opens it through `WorkbookEditor`, checks
-`row_cells()` / `column_cells()` snapshots, verifies invalid snapshot reads
-preserve `last_edit_error()`, saves an edit, reopens it, and confirms a clean
-no-op `save_as()` remains byte-stable.
+`try_cell()` / `get_cell()` / `contains_cell()` scalar reads plus
+`row_cells()` / `column_cells()` snapshots, verifies invalid scalar and snapshot
+read failures preserve `last_edit_error()`, sparse counts, and memory estimates,
+saves an edit, reopens it, and confirms a clean no-op `save_as()` remains
+byte-stable.
 That standalone CTest now also covers the other public sparse snapshot overloads:
 full `sparse_cells()`, bounded `CellRange`, strict A1 range strings, and
 coordinate-batch reads all preserve source values, saved edits, requested-order

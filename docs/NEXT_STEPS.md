@@ -5908,6 +5908,11 @@ explicit-default-style formula, save a fresh post-noop output, keep prior
 packages byte-stable, omit `s="0"`, and fresh-reopen the unstyled formula plus
 the untouched tail cell. This remains small-file In-memory style-boundary QA,
 not caller-supplied non-default style migration.
+The sparse-batch full-replacement path now mirrors that post-noop edit/save
+coverage: after the second clean no-op package, the same handle can batch
+replace `A1` with an explicit-default-style formula and insert unstyled `D1`,
+while `B1` remains unstyled, styled source `C1` keeps its `StyleId`, prior
+packages stay byte-stable, and fresh reopen observes the expanded sparse row.
 Styled sparse clear coverage now also includes the range and coordinate-batch
 helpers under the same isolated source-style shard:
 `clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,

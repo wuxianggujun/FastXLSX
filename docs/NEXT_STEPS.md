@@ -752,6 +752,9 @@ same fresh-reopened recovery `A3` projection.
 They now also reacquire those no-op outputs with the original strict
 `WorksheetEditorOptions`, keeping the recovery sparse snapshots within budget
 while the matching-option clean no-op saves remain byte-stable.
+Those matching-option reacquired no-op saves now repeat once more too, requiring
+the second reacquired package to match the first while preserving the saved
+input package and original source bytes.
 The exact-budget `clear_row()` and `clear_column()` release no-op paths now
 pin saved live-handle row/column snapshots for explicit blanks, preserved
 source payloads, recovery cells, and clean materialized diagnostics.

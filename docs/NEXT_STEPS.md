@@ -1307,6 +1307,8 @@ outside-range D4, and erased A2 absence.
 It now mirrors the clean saved-session and fresh-reopen range snapshot checks
 through the string A1 overload, preserving the same row-major in-range order
 across no-op saves.
+It now also rechecks the first no-op package after the second clean no-op save,
+pinning already-emitted A1-string range snapshot outputs as immutable artifacts.
 The coordinate-batch `sparse_cells(span<WorksheetCellReference>)` snapshot path
 is also reopened to verify duplicates, skipped missing cells, later edits, and
 erased source cells survive saved sparse projection cleanly.
@@ -1316,6 +1318,8 @@ inserted D4, and erased A2 absence.
 It now also reuses the original coordinate batch against the clean saved session
 and fresh-reopened outputs, preserving input order and duplicates while skipping
 the erased coordinate across no-op saves.
+It now also rechecks the first no-op package after the second clean no-op save,
+pinning already-emitted coordinate-batch snapshot outputs as immutable artifacts.
 The `used_range()` dirty/empty inspection path is reopened as well, pinning
 clean readback for a saved worksheet whose sparse cells were fully erased after
 diagnostic-preserving reads.
@@ -1324,6 +1328,9 @@ no used range and erased A1/B1/A2 absent.
 It now also calls `used_range()` directly on the same clean saved handle after
 the initial save and both clean no-op saves, preserving the prior diagnostic and
 proving those bounds reads do not re-dirty the materialized session.
+It now also rechecks the first no-op package after the second clean no-op save,
+pinning already-emitted empty-projection `used_range()` outputs as immutable
+artifacts.
 The `row_cells()` / `column_cells()` snapshot path is reopened to verify saved
 row/column ordering, explicit blank cells, source-backed records, later edits,
 and outside-coordinate sparse cells.
@@ -1333,6 +1340,8 @@ It now also reads `row_cells(1)` and `column_cells(1)` directly from the clean
 saved materialized handle after the initial save and both clean no-op saves,
 pinning row/column ordering while proving those snapshot reads do not re-dirty
 the saved session.
+It now also rechecks the first no-op package after the second clean no-op save,
+pinning already-emitted row/column snapshot outputs as immutable artifacts.
 The `contains_cell()` inspection path now also saves and reopens the dirty
 projection, verifying represented blank / inserted / source-backed cells and
 erased source cells after diagnostic-preserving invalid reads.
@@ -1341,6 +1350,9 @@ source values, explicit blank, inserted text, bounds, and erased A2 absence.
 It now also calls `contains_cell()` directly on the same clean saved handle
 after the initial save and both clean no-op saves, preserving the prior
 diagnostic while proving those reads do not re-dirty the materialized session.
+It now also rechecks the first no-op package after the second clean no-op save,
+pinning already-emitted `contains_cell()` projection outputs as immutable
+artifacts.
 The handle-level read-only inspection coverage now also snapshots source names,
 planned names, and the full worksheet catalog around `used_range()`,
 `contains_cell()`, `row_cells()`, `column_cells()`, and invalid

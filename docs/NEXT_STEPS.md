@@ -2311,6 +2311,11 @@ The same standalone snapshot lane now covers whole-store
 explicit blanks, missing interior cells are not synthesized, saved XML omits the
 cleared payloads, reopen preserves row/column blank snapshots, and clean no-op
 save remains byte-stable.
+The same snapshot lane now also covers coordinate-batch
+`clear_cell_values(...)`: selected source-backed and dirty sparse cells become
+explicit blanks, duplicate coordinates are idempotent, missing coordinates are
+not synthesized, non-target dirty/source cells survive, and clean no-op save
+remains byte-stable.
 The same lane now adds the `erase_row()` plus `erase_column()` contrast:
 represented source-backed and dirty sparse records are removed, the remaining
 non-target sparse cell shrinks `used_range()` to a single coordinate, saved XML

@@ -4236,11 +4236,45 @@ void test_generated_source_row_column_replacement_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_row_column_replacement_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column replacement should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column replacement should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column replacement should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column replacement should preserve source-backed values");
+    };
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row(0, {
+            fastxlsx::CellValue::text("row-replacement-invalid-row-leak"),
+        });
+    }), "invalid row replacement should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid row replacement should expose last_edit_error");
+    check_clean_row_column_replacement_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column(0, {
+            fastxlsx::CellValue::text("column-replacement-invalid-column-leak"),
+        });
+    }), "invalid column replacement should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid column replacement should expose last_edit_error");
+    check_clean_row_column_replacement_failure_state();
+
     sheet.set_row(1, {
         fastxlsx::CellValue::text("row-a"),
         fastxlsx::CellValue::blank(),
         fastxlsx::CellValue::number(8.0),
     });
+    check(!editor.last_edit_error().has_value(),
+        "row replacement recovery should clear invalid replacement diagnostics");
     check(sheet.cell_count() == 4,
         "row replacement should replace row one and keep source-backed row two");
     check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
@@ -4280,6 +4314,51 @@ void test_generated_source_row_column_replacement_roundtrip()
             !a3.boolean_value(),
         "column replacement should insert A3 boolean false");
 
+    const auto check_dirty_row_column_replacement_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column replacement should keep the session dirty");
+        check(sheet.cell_count() == 5 &&
+                editor.pending_materialized_cell_count() == 5 &&
+                is_used_range(sheet.used_range(), 1, 1, 3, 3),
+            "invalid dirty row/column replacement should preserve final sparse shape");
+        check(sheet.get_cell("A1").text_value() == "col-a" &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C1").number_value() == 8.0 &&
+                sheet.get_cell("A2").text_value() == "col-b",
+            "invalid dirty row/column replacement should preserve final row values");
+        const fastxlsx::CellValue current_a3 = sheet.get_cell("A3");
+        check(current_a3.kind() == fastxlsx::CellValueKind::Boolean &&
+                !current_a3.boolean_value(),
+            "invalid dirty row/column replacement should preserve final A3 boolean false");
+    };
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row(0, {
+            fastxlsx::CellValue::text("row-replacement-dirty-invalid-row-leak"),
+        });
+    }), "invalid dirty row replacement should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row replacement should expose last_edit_error");
+    check_dirty_row_column_replacement_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column(0, {
+            fastxlsx::CellValue::text("column-replacement-dirty-invalid-column-leak"),
+        });
+    }), "invalid dirty column replacement should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column replacement should expose last_edit_error");
+    check_dirty_row_column_replacement_failure_state();
+
+    sheet.set_column(1, {
+        fastxlsx::CellValue::text("col-a"),
+        fastxlsx::CellValue::text("col-b"),
+        fastxlsx::CellValue::boolean(false),
+    });
+    check(!editor.last_edit_error().has_value(),
+        "column replacement recovery should clear invalid replacement diagnostics");
+    check_dirty_row_column_replacement_failure_state();
+
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
         "row/column replacement save_as should clean the materialized session");
@@ -4308,6 +4387,14 @@ void test_generated_source_row_column_replacement_roundtrip()
         "row/column replacement save_as should omit overwritten source A2 text");
     check_not_contains(data_xml, "row-a",
         "row/column replacement save_as should omit overwritten intermediate A1 text");
+    check_not_contains(data_xml, "row-replacement-invalid",
+        "row/column replacement save_as should omit clean invalid row payloads");
+    check_not_contains(data_xml, "column-replacement-invalid",
+        "row/column replacement save_as should omit clean invalid column payloads");
+    check_not_contains(data_xml, "row-replacement-dirty-invalid",
+        "row/column replacement save_as should omit dirty invalid row payloads");
+    check_not_contains(data_xml, "column-replacement-dirty-invalid",
+        "row/column replacement save_as should omit dirty invalid column payloads");
     check_row_column_replaced_output(output);
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);

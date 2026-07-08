@@ -2456,6 +2456,11 @@ coordinate-batch, strict A1-range, row/column scalar, and row/column range
 clear/erase outputs: each clean no-op output opens as a clean editor source,
 accepts a later `F4` text edit, preserves the baseline/no-op packages,
 fresh-reopens with `F4`, and settles into a byte-stable clean save.
+The append/value snapshot lane now carries the same reuse check for
+`append_row()`, sparse batch replacement, row/A1 `set_cell_value()`, and the
+`contains_cell()` mixed mutation output: each no-op output is reopened clean,
+accepts a later `F4` text edit, keeps the earlier packages unchanged,
+fresh-reopens with `F4`, and byte-stabilizes after the follow-up save.
 The standalone snapshot lane also pins whole-store `erase_cells()`: all
 source-backed and dirty sparse records are removed, `used_range()` becomes
 empty, saved XML projects the empty worksheet dimension without cell records,

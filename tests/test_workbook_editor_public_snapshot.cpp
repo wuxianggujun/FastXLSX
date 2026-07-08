@@ -631,7 +631,7 @@ void check_all_cleared_output(const std::filesystem::path& output)
         "reopened clear-all Audit sheet should remain copy-original");
 }
 
-void check_clear_erase_reopened_edit_at(
+void check_reopened_followup_text_edit_at(
     const std::filesystem::path& baseline_output,
     const std::filesystem::path& noop_output,
     const std::filesystem::path& edit_output,
@@ -642,58 +642,70 @@ void check_clear_erase_reopened_edit_at(
     const auto baseline_entries =
         fastxlsx::test::read_zip_entries(baseline_output);
     check(fastxlsx::test::read_zip_entries(noop_output) == baseline_entries,
-        "clear/erase reopened edit precondition should keep the clean no-op output stable");
+        "reopened follow-up edit precondition should keep the clean no-op output stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
     fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
     check(!reopened.has_pending_changes() && !data.has_pending_changes(),
-        "clear/erase reopened edit should start from a clean materialized session");
+        "reopened follow-up edit should start from a clean materialized session");
     check(!data.try_cell(followup_cell).has_value(),
-        "clear/erase reopened edit should start with the follow-up cell absent");
+        "reopened follow-up edit should start with the follow-up cell absent");
 
     const std::size_t initial_cell_count = data.cell_count();
     data.set_cell(followup_cell,
         fastxlsx::CellValue::text(std::string(followup_text)));
     check(reopened.has_pending_changes() && data.has_pending_changes(),
-        "clear/erase reopened edit should dirty the clean saved output");
+        "reopened follow-up edit should dirty the clean saved output");
     check(data.cell_count() == initial_cell_count + 1 &&
             data.get_cell(followup_cell).text_value() == followup_text,
-        "clear/erase reopened edit should append a new sparse follow-up cell");
+        "reopened follow-up edit should append a new sparse follow-up cell");
 
     reopened.save_as(edit_output);
     check(!data.has_pending_changes(),
-        "clear/erase reopened edit save_as should clean the reused session");
+        "reopened follow-up edit save_as should clean the reused session");
     check(fastxlsx::test::read_zip_entries(baseline_output) == baseline_entries,
-        "clear/erase reopened edit save_as should leave the baseline output unchanged");
+        "reopened follow-up edit save_as should leave the baseline output unchanged");
     check(fastxlsx::test::read_zip_entries(noop_output) == baseline_entries,
-        "clear/erase reopened edit save_as should leave the no-op output unchanged");
+        "reopened follow-up edit save_as should leave the no-op output unchanged");
 
     const auto edit_entries = fastxlsx::test::read_zip_entries(edit_output);
     const std::string& data_xml = edit_entries.at("xl/worksheets/sheet1.xml");
     const std::string followup_cell_xml =
         "r=\"" + std::string(followup_cell) + "\"";
     check_contains(data_xml, followup_cell_xml,
-        "clear/erase reopened edit save_as should write the new follow-up cell");
+        "reopened follow-up edit save_as should write the new follow-up cell");
     check_contains(data_xml, followup_text,
-        "clear/erase reopened edit save_as should persist the new text");
+        "reopened follow-up edit save_as should persist the new text");
 
     fastxlsx::WorkbookEditor edit_reopened =
         fastxlsx::WorkbookEditor::open(edit_output);
     fastxlsx::WorksheetEditor edit_data = edit_reopened.worksheet("Data");
     check(!edit_reopened.has_pending_changes() &&
             !edit_data.has_pending_changes(),
-        "clear/erase reopened edit output should fresh-reopen clean");
+        "reopened follow-up edit output should fresh-reopen clean");
     check(edit_data.cell_count() == initial_cell_count + 1 &&
             edit_data.get_cell(followup_cell).text_value() == followup_text,
-        "clear/erase reopened edit output should keep the follow-up cell");
+        "reopened follow-up edit output should keep the follow-up cell");
     fastxlsx::WorksheetEditor audit = edit_reopened.worksheet("Audit");
     check(audit.cell_count() == 1 &&
             audit.get_cell("A1").text_value() == "untouched",
-        "clear/erase reopened edit output should keep the Audit sheet copy-original");
+        "reopened follow-up edit output should keep the Audit sheet copy-original");
 
     edit_reopened.save_as(edit_noop_output);
     check(fastxlsx::test::read_zip_entries(edit_noop_output) == edit_entries,
-        "clear/erase reopened edit clean save should keep output stable");
+        "reopened follow-up edit clean save should keep output stable");
+}
+
+void check_clear_erase_reopened_edit_at(
+    const std::filesystem::path& baseline_output,
+    const std::filesystem::path& noop_output,
+    const std::filesystem::path& edit_output,
+    const std::filesystem::path& edit_noop_output,
+    std::string_view followup_cell,
+    std::string_view followup_text)
+{
+    check_reopened_followup_text_edit_at(baseline_output, noop_output,
+        edit_output, edit_noop_output, followup_cell, followup_text);
 }
 
 void check_clear_erase_reopened_edit(
@@ -703,7 +715,7 @@ void check_clear_erase_reopened_edit(
     const std::filesystem::path& edit_noop_output,
     std::string_view followup_text)
 {
-    check_clear_erase_reopened_edit_at(baseline_output, noop_output,
+    check_reopened_followup_text_edit_at(baseline_output, noop_output,
         edit_output, edit_noop_output, "D3", followup_text);
 }
 
@@ -4013,6 +4025,10 @@ void test_generated_source_append_row_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-append-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-append-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-append-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-append-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4074,6 +4090,9 @@ void test_generated_source_append_row_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean appended no-op save should keep output entries stable");
     check_appended_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "append-reopened-f4");
 }
 
 void test_generated_source_append_row_width_failure_roundtrip()
@@ -4275,6 +4294,10 @@ void test_generated_source_sparse_batch_replacement_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-batch-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-batch-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-batch-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-batch-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4351,6 +4374,9 @@ void test_generated_source_sparse_batch_replacement_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean sparse batch replacement no-op save should keep output entries stable");
     check_batch_replaced_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "batch-reopened-f4");
 }
 
 void test_generated_source_single_value_roundtrip()
@@ -4360,6 +4386,10 @@ void test_generated_source_single_value_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-single-value-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-single-value-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-single-value-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-single-value-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4430,6 +4460,9 @@ void test_generated_source_single_value_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean single-value no-op save should keep output entries stable");
     check_single_value_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "single-value-reopened-f4");
 }
 
 void test_generated_source_contains_cell_roundtrip()
@@ -4439,6 +4472,10 @@ void test_generated_source_contains_cell_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-contains-cell-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-contains-cell-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-contains-cell-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-contains-cell-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4513,6 +4550,9 @@ void test_generated_source_contains_cell_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean contains-cell no-op save should keep output entries stable");
     check_contains_cell_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "contains-cell-reopened-f4");
 }
 
 void test_generated_source_inspection_roundtrip()

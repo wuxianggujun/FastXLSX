@@ -5950,6 +5950,9 @@ range metadata repair.
 The same range/batch clear regression now also asserts `contains_cell()` reports
 the represented styled and unstyled blank coordinates and keeps missing batch
 coordinates absent across live, fresh-reopen, and clean no-op readback checks.
+It now repeats a second clean no-op `save_as()` as well, requiring byte-identical
+range/batch clear packages, stable public save/catalog snapshots, fresh reopen
+of the cleared sparse cells, and unchanged source bytes.
 Caller-supplied non-default `StyleId` values on `WorksheetEditor::set_cell()`
 are rejected before sparse-store mutation: the public diagnostic is updated,
 the materialized session stays clean, no pending edit is queued, and a later

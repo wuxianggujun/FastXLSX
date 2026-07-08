@@ -744,6 +744,24 @@ void test_rewrite_formula_sheet_references()
         "[Book.xlsx]Old!A1+Old:Other!B2+Table1[Old!C3]",
         "formula sheet rewrite should skip external, 3D, and structured refs");
 
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(
+            R"(Old!A1+"Old!B2)", rewrites),
+        R"('New Name'!A1+"Old!B2)",
+        "formula sheet rewrite should preserve unterminated string token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(
+            "Old!A1+[Old.xlsx", rewrites),
+        "'New Name'!A1+[Old.xlsx",
+        "formula sheet rewrite should preserve unterminated bracket token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(
+            "Old!A1+'Old", rewrites),
+        "'New Name'!A1+'Old",
+        "formula sheet rewrite should preserve unterminated quoted-sheet token text");
+
     check(throws_exception([&] {
         (void)fastxlsx::detail::rewrite_formula_sheet_references(
             "Old!A1",
@@ -752,6 +770,40 @@ void test_rewrite_formula_sheet_references()
                 {"old", "B"},
             });
     }), "formula sheet rewrite should reject ambiguous rewrite rules");
+}
+
+void test_formula_reference_audit_recovery_tokens()
+{
+    const std::vector<fastxlsx::detail::FormulaAuditSheetCatalogEntry> catalog {
+        {"Old", "New"},
+    };
+
+    {
+        const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+            fastxlsx::detail::audit_formula_references(R"(Old!A1+"Old!B2)", catalog);
+        check(audits.size() == 1,
+            "formula audit should ignore references inside unterminated string tokens");
+        check_equal(audits[0].qualified_reference_text, "Old!A1",
+            "formula audit unterminated string surviving reference mismatch");
+    }
+
+    {
+        const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+            fastxlsx::detail::audit_formula_references("Old!A1+[Old.xlsx", catalog);
+        check(audits.size() == 1,
+            "formula audit should ignore references inside unterminated bracket tokens");
+        check_equal(audits[0].qualified_reference_text, "Old!A1",
+            "formula audit unterminated bracket surviving reference mismatch");
+    }
+
+    {
+        const std::vector<fastxlsx::detail::FormulaReferenceAuditFields> audits =
+            fastxlsx::detail::audit_formula_references("Old!A1+'Old", catalog);
+        check(audits.size() == 1,
+            "formula audit should ignore references inside unterminated quoted-sheet tokens");
+        check_equal(audits[0].qualified_reference_text, "Old!A1",
+            "formula audit unterminated quoted-sheet surviving reference mismatch");
+    }
 }
 
 void test_rewrite_formula_sheet_references_accepts_source_and_planned_aliases()
@@ -870,6 +922,7 @@ int main()
         test_scan_workbook_defined_name_formulas();
         test_scan_workbook_defined_name_formulas_rejects_malformed_structure();
         test_rewrite_formula_sheet_references();
+        test_formula_reference_audit_recovery_tokens();
         test_rewrite_formula_sheet_references_accepts_source_and_planned_aliases();
         test_rewrite_formula_sheet_references_matches_case_insensitively();
         test_rewrite_workbook_defined_name_formula_references();

@@ -6964,6 +6964,10 @@ Structural shift failure snapshot coverage now also closes the symmetric
 delete-coordinate preflight gap: clean and dirty `delete_rows(0, 1)` and
 `delete_columns(0, 1)` reject before materialized state changes while preserving
 the existing save/reopen no-pollution checks.
+Formula sheet-rewrite and audit recovery coverage now mirrors that tokenizer
+boundary for rename/formula diagnostics: unterminated string, bracketed, and
+quoted-sheet tokens keep embedded A1-like sheet references untouched while real
+local sheet references before those tokens are still rewritten or audited.
 Single missing-cell value-clear no-ops now cover the scalar cleanup branch too:
 row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
 failures clear diagnostics, preserve read-only or saved-clean sparse state,

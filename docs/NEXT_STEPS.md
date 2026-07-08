@@ -718,7 +718,8 @@ stable materialized counters while keeping the preceding guard/shift output
 packages byte-stable.
 The renamed-summary path now also snapshots both saved handles after its later
 `E5` recovery save, pinning the cleared row-one blanks, `E5` column view, and
-clean rename/materialized summaries.
+clean rename/materialized summaries; that recovery save now also keeps the
+earlier first/no-op/diagnostic no-op output packages byte-stable.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.

@@ -71,6 +71,26 @@ void test_pending_materialized_names_follow_current_catalog_order()
         "pending materialized names should follow current planned catalog order");
 }
 
+void test_pending_materialized_names_ignore_stale_source_names()
+{
+    fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    catalog.record_rename("Data", "Renamed");
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    materialize_session(registry, "Data")
+        .set_cell(1, 1, fastxlsx::CellValue::text("stale-source-dirty"));
+    materialize_session(registry, "Renamed")
+        .set_cell(1, 1, fastxlsx::CellValue::text("current-dirty"));
+    materialize_session(registry, "Other")
+        .set_cell(1, 1, fastxlsx::CellValue::number(3.0));
+
+    check_names(
+        fastxlsx::detail::workbook_editor_pending_materialized_worksheet_names(
+            catalog, registry),
+        {"Renamed", "Other"},
+        "pending materialized names should ignore dirty sessions outside current catalog");
+}
+
 void test_materialized_flush_target_validation_accepts_current_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -84,6 +104,36 @@ void test_materialized_flush_target_validation_accepts_current_names()
 
     fastxlsx::detail::validate_workbook_editor_materialized_flush_targets(
         catalog, projections);
+}
+
+void test_materialized_flush_target_validation_uses_current_catalog_names()
+{
+    fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    catalog.record_rename("Data", "Renamed");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        renamed_projection {
+            fastxlsx::detail::MaterializedWorksheetSheetDataProjection {
+                "Renamed",
+                [](std::string&) { return false; },
+                "A1",
+            },
+        };
+    fastxlsx::detail::validate_workbook_editor_materialized_flush_targets(
+        catalog, renamed_projection);
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        stale_source_projection {
+            fastxlsx::detail::MaterializedWorksheetSheetDataProjection {
+                "Data",
+                [](std::string&) { return false; },
+                "A1",
+            },
+        };
+    check(throws_fastxlsx_error([&] {
+        fastxlsx::detail::validate_workbook_editor_materialized_flush_targets(
+            catalog, stale_source_projection);
+    }), "flush target validation should reject stale source names after rename");
 }
 
 void test_materialized_flush_target_validation_rejects_missing_names()
@@ -109,7 +159,9 @@ int main()
 {
     try {
         test_pending_materialized_names_follow_current_catalog_order();
+        test_pending_materialized_names_ignore_stale_source_names();
         test_materialized_flush_target_validation_accepts_current_names();
+        test_materialized_flush_target_validation_uses_current_catalog_names();
         test_materialized_flush_target_validation_rejects_missing_names();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';

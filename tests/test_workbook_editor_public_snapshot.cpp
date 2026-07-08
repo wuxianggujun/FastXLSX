@@ -444,6 +444,45 @@ void check_styled_snapshot_value_output(
         "reopened Styled column_cells should preserve styled and unstyled cells");
 }
 
+void check_styled_snapshot_followup_output(
+    const std::filesystem::path& output,
+    fastxlsx::StyleId styled_number_style,
+    std::string_view followup_text)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor styled = reopened.worksheet("Styled");
+    check(!reopened.has_pending_changes() && !styled.has_pending_changes(),
+        "reopened Styled follow-up output should start clean");
+    check(styled.cell_count() == 5 &&
+            is_used_range(styled.used_range(), 1, 1, 4, 6),
+        "reopened Styled follow-up output should expose the added F4 bounds");
+
+    const fastxlsx::CellValue a1 = styled.get_cell("A1");
+    check(a1.kind() == fastxlsx::CellValueKind::Number &&
+            a1.number_value() == 9.5 &&
+            a1.has_style() &&
+            a1.style_id().value() == styled_number_style.value(),
+        "reopened Styled follow-up output should preserve source StyleId on A1");
+
+    const fastxlsx::CellValue f4 = styled.get_cell("F4");
+    check(f4.kind() == fastxlsx::CellValueKind::Text &&
+            f4.text_value() == followup_text &&
+            !f4.has_style(),
+        "reopened Styled follow-up output should keep the F4 edit unstyled");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_four =
+        styled.row_cells(4);
+    check(row_four.size() == 1 &&
+            is_unstyled_text_snapshot(row_four[0], 4, 6, followup_text),
+        "reopened Styled follow-up row_cells should expose the F4 edit");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_six =
+        styled.column_cells(6);
+    check(column_six.size() == 1 &&
+            is_unstyled_text_snapshot(column_six[0], 4, 6, followup_text),
+        "reopened Styled follow-up column_cells should expose the F4 edit");
+}
+
 void check_erased_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -631,13 +670,15 @@ void check_all_cleared_output(const std::filesystem::path& output)
         "reopened clear-all Audit sheet should remain copy-original");
 }
 
-void check_reopened_followup_text_edit_at(
+void check_reopened_followup_text_edit_on_sheet(
     const std::filesystem::path& baseline_output,
     const std::filesystem::path& noop_output,
     const std::filesystem::path& edit_output,
     const std::filesystem::path& edit_noop_output,
+    std::string_view worksheet_name,
     std::string_view followup_cell,
-    std::string_view followup_text)
+    std::string_view followup_text,
+    bool expect_audit_sheet)
 {
     const auto baseline_entries =
         fastxlsx::test::read_zip_entries(baseline_output);
@@ -645,7 +686,7 @@ void check_reopened_followup_text_edit_at(
         "reopened follow-up edit precondition should keep the clean no-op output stable");
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor data = reopened.worksheet(worksheet_name);
     check(!reopened.has_pending_changes() && !data.has_pending_changes(),
         "reopened follow-up edit should start from a clean materialized session");
     check(!data.try_cell(followup_cell).has_value(),
@@ -679,21 +720,37 @@ void check_reopened_followup_text_edit_at(
 
     fastxlsx::WorkbookEditor edit_reopened =
         fastxlsx::WorkbookEditor::open(edit_output);
-    fastxlsx::WorksheetEditor edit_data = edit_reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor edit_data =
+        edit_reopened.worksheet(worksheet_name);
     check(!edit_reopened.has_pending_changes() &&
             !edit_data.has_pending_changes(),
         "reopened follow-up edit output should fresh-reopen clean");
     check(edit_data.cell_count() == initial_cell_count + 1 &&
             edit_data.get_cell(followup_cell).text_value() == followup_text,
         "reopened follow-up edit output should keep the follow-up cell");
-    fastxlsx::WorksheetEditor audit = edit_reopened.worksheet("Audit");
-    check(audit.cell_count() == 1 &&
-            audit.get_cell("A1").text_value() == "untouched",
-        "reopened follow-up edit output should keep the Audit sheet copy-original");
+    if (expect_audit_sheet) {
+        fastxlsx::WorksheetEditor audit = edit_reopened.worksheet("Audit");
+        check(audit.cell_count() == 1 &&
+                audit.get_cell("A1").text_value() == "untouched",
+            "reopened follow-up edit output should keep the Audit sheet copy-original");
+    }
 
     edit_reopened.save_as(edit_noop_output);
     check(fastxlsx::test::read_zip_entries(edit_noop_output) == edit_entries,
         "reopened follow-up edit clean save should keep output stable");
+}
+
+void check_reopened_followup_text_edit_at(
+    const std::filesystem::path& baseline_output,
+    const std::filesystem::path& noop_output,
+    const std::filesystem::path& edit_output,
+    const std::filesystem::path& edit_noop_output,
+    std::string_view followup_cell,
+    std::string_view followup_text)
+{
+    check_reopened_followup_text_edit_on_sheet(baseline_output, noop_output,
+        edit_output, edit_noop_output, "Data", followup_cell, followup_text,
+        true);
 }
 
 void check_clear_erase_reopened_edit_at(
@@ -2422,6 +2479,10 @@ void test_generated_source_snapshot_edit_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-noop-output.xlsx");
+    const std::filesystem::path followup_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-followup-output.xlsx");
+    const std::filesystem::path followup_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-followup-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -2487,6 +2548,9 @@ void test_generated_source_snapshot_edit_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean snapshot no-op save should keep output entries stable");
     check_reopened_output(noop_output);
+    check_reopened_followup_text_edit_at(output, noop_output,
+        followup_output, followup_noop_output, "F4",
+        "snapshot-followup-f4");
 }
 
 void test_generated_source_style_snapshot_value_roundtrip()
@@ -2498,6 +2562,10 @@ void test_generated_source_style_snapshot_value_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-source-style-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-source-style-noop-output.xlsx");
+    const std::filesystem::path followup_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-source-style-followup-output.xlsx");
+    const std::filesystem::path followup_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-source-style-followup-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -2574,6 +2642,14 @@ void test_generated_source_style_snapshot_value_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean styled snapshot no-op save should keep output entries stable");
     check_styled_snapshot_value_output(noop_output, styled_number_style);
+    check_reopened_followup_text_edit_on_sheet(output, noop_output,
+        followup_output, followup_noop_output, "Styled", "F4",
+        "styled-snapshot-followup-f4", false);
+    check_styled_snapshot_followup_output(
+        followup_output, styled_number_style, "styled-snapshot-followup-f4");
+    check_styled_snapshot_followup_output(
+        followup_noop_output, styled_number_style,
+        "styled-snapshot-followup-f4");
 }
 
 void test_generated_source_erase_roundtrip()

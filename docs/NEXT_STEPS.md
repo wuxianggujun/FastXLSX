@@ -2266,6 +2266,10 @@ a source workbook through `Workbook`, opens it through `WorkbookEditor`, checks
 read failures preserve `last_edit_error()`, sparse counts, and memory estimates,
 saves an edit, reopens it, and confirms a clean no-op `save_as()` remains
 byte-stable.
+That baseline and the styled-source snapshot lane now also reuse the clean
+no-op output for a later `F4` text edit: original and no-op packages stay
+unchanged, the follow-up output fresh-reopens cleanly, and the styled lane keeps
+the original source `StyleId` while the follow-up save byte-stabilizes.
 That standalone CTest now also covers the other public sparse snapshot overloads:
 full `sparse_cells()`, bounded `CellRange`, strict A1 range strings, and
 coordinate-batch reads all preserve source values, saved edits, requested-order

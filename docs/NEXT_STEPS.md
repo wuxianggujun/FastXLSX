@@ -5931,6 +5931,12 @@ explicit-default-style formula/text/blank/boolean values, preserve A1's source
 byte-stable, omit `s="0"`, and fresh-reopen the expanded row. This remains
 style-preserving value replacement, not caller-supplied non-default style
 migration.
+The value-only column prefix path now mirrors that post-noop evidence: after the
+second clean no-op package, `set_column_values()` can rewrite column A with
+explicit-default-style formula/text/blank/boolean values, preserve A1's source
+`StyleId`, keep newly represented cells unstyled, leave prior packages
+byte-stable, omit `s="0"`, and fresh-reopen the expanded column under the same
+small-file In-memory style boundary.
 Styled sparse clear coverage now also includes the range and coordinate-batch
 helpers under the same isolated source-style shard:
 `clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,

@@ -2414,6 +2414,9 @@ That same helper now also covers targeted-cell Patch diagnostics: targeted
 replacement counts, sheet names, membership checks, and estimated XML bytes are
 read-only public inspections that preserve `last_edit_error()` and catalog
 views.
+The public-state save-state snapshot and clean replacement diagnostics now carry
+those targeted-cell diagnostics too, keeping no-op saves and clean In-memory
+workbook states from silently accumulating queued targeted Patch payloads.
 The formula/definedName rewrite shard now mirrors that helper contract: its
 shared inspection helper snapshots source/planned worksheet names and full
 catalog entries around formula, source-formula, and definedName audit calls,

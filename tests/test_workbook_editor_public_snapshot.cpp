@@ -4612,6 +4612,10 @@ void test_generated_source_structural_shift_noop_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-second-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-dirty-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4681,6 +4685,117 @@ void test_generated_source_structural_shift_noop_roundtrip()
     reopened.save_as(second_output);
     check(fastxlsx::test::read_zip_entries(second_output) == output_entries,
         "clean structural shift no-op save should keep output entries stable");
+
+    sheet.set_cell("C2", fastxlsx::CellValue::text("dirty-shift-noop-c2"));
+    const auto seed_dirty_shift_error = [&editor, &sheet] {
+        check(threw_fastxlsx_error([&sheet] {
+            sheet.set_cell("a1",
+                fastxlsx::CellValue::text("dirty-shift-noop-rejected"));
+        }), "dirty structural shift no-op seed mutation should fail");
+        check(editor.last_edit_error().has_value(),
+            "dirty structural shift no-op seed should expose last_edit_error");
+    };
+    const auto check_dirty_shift_noop_state = [&editor, &sheet] {
+        check(!editor.last_edit_error().has_value(),
+            "dirty structural shift no-op should clear prior edit diagnostics");
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "dirty structural shift no-op should keep the materialized session dirty");
+        check(editor.pending_materialized_worksheet_names() ==
+                std::vector<std::string>({"Data"}) &&
+                editor.pending_materialized_cell_count() == 4 &&
+                editor.estimated_pending_materialized_memory_usage() ==
+                    sheet.estimated_memory_usage(),
+            "dirty structural shift no-op should preserve materialized diagnostics");
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 &&
+                summaries[0].source_name == "Data" &&
+                summaries[0].planned_name == "Data" &&
+                summaries[0].materialized_dirty &&
+                summaries[0].materialized_cell_count == 4 &&
+                summaries[0].estimated_materialized_memory_usage ==
+                    sheet.estimated_memory_usage(),
+            "dirty structural shift no-op should preserve the Data materialized summary");
+        check(sheet.cell_count() == 4 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 3),
+            "dirty structural shift no-op should preserve dirty sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail" &&
+                sheet.get_cell("C2").text_value() == "dirty-shift-noop-c2",
+            "dirty structural shift no-op should preserve dirty sparse values");
+        check(!sheet.try_cell("B2").has_value() &&
+                !sheet.try_cell("J10").has_value(),
+            "dirty structural shift no-op should not synthesize missing sparse cells");
+    };
+    const auto run_dirty_shift_noops =
+        [&seed_dirty_shift_error, &sheet](const auto& check_state) {
+            seed_dirty_shift_error();
+            sheet.insert_rows(3, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.delete_rows(3, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.insert_columns(4, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.delete_columns(4, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.insert_rows(10, 1);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.delete_rows(10, 1);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.insert_columns(10, 1);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.delete_columns(10, 1);
+            check_state();
+        };
+
+    run_dirty_shift_noops(check_dirty_shift_noop_state);
+
+    editor.save_as(dirty_output);
+    check(!sheet.has_pending_changes(),
+        "dirty structural shift no-op save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "dirty structural shift no-op save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty structural shift no-op save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "dirty structural shift no-op save_as should leave the clean no-op output unchanged");
+
+    const auto dirty_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string& dirty_data_xml = dirty_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(dirty_data_xml, "<dimension ref=\"A1:C2\"",
+        "dirty structural shift no-op save_as should expand the worksheet dimension");
+    check_contains(dirty_data_xml, "dirty-shift-noop-c2",
+        "dirty structural shift no-op save_as should persist the dirty cell");
+    check_not_contains(dirty_data_xml, "invalid-shift-noop-payload",
+        "dirty structural shift no-op save_as should omit clean rejected payloads");
+    check_not_contains(dirty_data_xml, "dirty-shift-noop-rejected",
+        "dirty structural shift no-op save_as should omit dirty rejected payloads");
+
+    fastxlsx::WorkbookEditor dirty_reopened = fastxlsx::WorkbookEditor::open(dirty_output);
+    fastxlsx::WorksheetEditor dirty_reopened_data =
+        dirty_reopened.worksheet("Data");
+    check(dirty_reopened_data.cell_count() == 4 &&
+            is_used_range(dirty_reopened_data.used_range(), 1, 1, 2, 3) &&
+            dirty_reopened_data.get_cell("C2").text_value() == "dirty-shift-noop-c2",
+        "reopened dirty structural shift no-op output should expose the dirty cell");
+    dirty_reopened.save_as(dirty_noop_output);
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
+        "dirty structural shift no-op clean save should keep output entries stable");
 }
 
 void test_generated_source_empty_literal_noop_roundtrip()

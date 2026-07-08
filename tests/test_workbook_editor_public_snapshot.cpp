@@ -2015,6 +2015,12 @@ void test_generated_source_snapshot_edit_roundtrip()
         "valid sparse edit should dirty the materialized session");
     check(editor.pending_materialized_cell_count() == 4,
         "valid sparse edit should expose dirty materialized cell count");
+    check_invalid_snapshot_reads_preserve_diagnostics(
+        editor, sheet, std::nullopt);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "invalid dirty snapshot reads should preserve dirty flags");
+    check(editor.pending_materialized_cell_count() == 4,
+        "invalid dirty snapshot reads should preserve dirty materialized cell count");
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

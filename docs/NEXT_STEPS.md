@@ -2286,6 +2286,11 @@ It now also contrasts the value-only row/column prefix writers:
 `set_column_values()` updates only the column prefix while preserving cells beyond
 it, saved XML omits overwritten source/intermediate values, reopen preserves
 row/column snapshots, and clean no-op save remains byte-stable.
+The standalone snapshot lane now also covers `clear_row()` plus
+`clear_column()`: represented source-backed and dirty cells become explicit
+blank records, non-target sparse cells stay intact, saved XML omits cleared
+payloads, reopen preserves row/column blank snapshots, and clean no-op save
+remains byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

@@ -5902,6 +5902,12 @@ public catalog/save-state snapshots stay stable, the second no-op packages are
 byte-identical to the first, source and materialized outputs remain unchanged,
 and fresh reopen still reads unstyled replacement or appended cells plus
 untouched source styles.
+The single-cell full-replacement path now continues past that second clean
+no-op save as well: the same `WorksheetEditor` handle can replace `A1` with an
+explicit-default-style formula, save a fresh post-noop output, keep prior
+packages byte-stable, omit `s="0"`, and fresh-reopen the unstyled formula plus
+the untouched tail cell. This remains small-file In-memory style-boundary QA,
+not caller-supplied non-default style migration.
 Styled sparse clear coverage now also includes the range and coordinate-batch
 helpers under the same isolated source-style shard:
 `clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,

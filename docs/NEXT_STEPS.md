@@ -2421,6 +2421,10 @@ The max-coordinate public-edge shard now mirrors that targeted-cell diagnostic
 coverage in its clean-state helpers, save-state snapshots, and read-only
 inspection checks without changing max-coordinate In-memory projection
 semantics.
+The standalone materialized-session shard now carries the same targeted-cell
+diagnostic preservation checks, so borrowed-handle and materialization recovery
+coverage also proves clean In-memory sessions do not accumulate targeted Patch
+payloads.
 The formula/definedName rewrite shard now mirrors that helper contract: its
 shared inspection helper snapshots source/planned worksheet names and full
 catalog entries around formula, source-formula, and definedName audit calls,

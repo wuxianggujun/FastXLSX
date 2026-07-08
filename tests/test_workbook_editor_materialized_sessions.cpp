@@ -188,6 +188,9 @@ struct WorkbookEditorPublicSaveStateSnapshot {
     std::size_t pending_replacement_cell_count{};
     std::size_t estimated_pending_replacement_memory_usage{};
     std::vector<std::string> pending_replacement_worksheet_names;
+    std::size_t pending_targeted_cell_replacement_count{};
+    std::vector<std::string> pending_targeted_cell_replacement_worksheet_names;
+    std::size_t estimated_pending_targeted_cell_replacement_xml_bytes{};
     std::optional<std::string> last_edit_error;
 };
 
@@ -199,6 +202,9 @@ WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot
         editor.pending_replacement_cell_count(),
         editor.estimated_pending_replacement_memory_usage(),
         editor.pending_replacement_worksheet_names(),
+        editor.pending_targeted_cell_replacement_count(),
+        editor.pending_targeted_cell_replacement_worksheet_names(),
+        editor.estimated_pending_targeted_cell_replacement_xml_bytes(),
         editor.last_edit_error(),
     };
 }
@@ -219,6 +225,15 @@ void check_workbook_editor_public_save_state_preserved(
     check(editor.pending_replacement_worksheet_names()
             == before.pending_replacement_worksheet_names,
         std::string(scenario) + " should preserve pending replacement worksheet names");
+    check(editor.pending_targeted_cell_replacement_count()
+            == before.pending_targeted_cell_replacement_count,
+        std::string(scenario) + " should preserve pending targeted cell replacement count");
+    check(editor.pending_targeted_cell_replacement_worksheet_names()
+            == before.pending_targeted_cell_replacement_worksheet_names,
+        std::string(scenario) + " should preserve pending targeted cell worksheet names");
+    check(editor.estimated_pending_targeted_cell_replacement_xml_bytes()
+            == before.estimated_pending_targeted_cell_replacement_xml_bytes,
+        std::string(scenario) + " should preserve targeted cell XML byte estimate");
     check(editor.last_edit_error() == before.last_edit_error,
         std::string(scenario) + " should not replace or clear last_edit_error");
 }
@@ -246,6 +261,14 @@ void check_workbook_editor_no_replacement_diagnostics(
         prefix + " should not expose replacement memory");
     check(editor.pending_replacement_worksheet_names().empty(),
         prefix + " should not expose replacement sheet names");
+    check(editor.pending_targeted_cell_replacement_count() == 0,
+        prefix + " should not expose targeted cell patches");
+    check(editor.pending_targeted_cell_replacement_worksheet_names().empty(),
+        prefix + " should not expose targeted cell worksheet names");
+    check(editor.estimated_pending_targeted_cell_replacement_xml_bytes() == 0,
+        prefix + " should not expose targeted cell XML bytes");
+    check(!editor.has_pending_targeted_cell_replacement("Data"),
+        prefix + " should not report Data targeted cell patches");
 }
 
 void check_workbook_editor_no_replacement_payload_size_diagnostics(
@@ -307,6 +330,12 @@ void check_public_inspection_preserves_last_edit_error(
     (void)editor.pending_replacement_worksheet_names();
     check_inspection_state("pending_replacement_worksheet_names");
 
+    (void)editor.pending_targeted_cell_replacement_count();
+    check_inspection_state("pending_targeted_cell_replacement_count");
+
+    (void)editor.pending_targeted_cell_replacement_worksheet_names();
+    check_inspection_state("pending_targeted_cell_replacement_worksheet_names");
+
     (void)editor.pending_materialized_worksheet_names();
     check_inspection_state("pending_materialized_worksheet_names");
 
@@ -321,6 +350,12 @@ void check_public_inspection_preserves_last_edit_error(
 
     (void)editor.estimated_pending_replacement_memory_usage();
     check_inspection_state("estimated_pending_replacement_memory_usage");
+
+    (void)editor.has_pending_targeted_cell_replacement("Data");
+    check_inspection_state("has_pending_targeted_cell_replacement");
+
+    (void)editor.estimated_pending_targeted_cell_replacement_xml_bytes();
+    check_inspection_state("estimated_pending_targeted_cell_replacement_xml_bytes");
 
     (void)editor.pending_worksheet_edits();
     check_inspection_state("pending_worksheet_edits");

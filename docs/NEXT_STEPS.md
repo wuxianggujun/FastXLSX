@@ -3056,6 +3056,10 @@ records stay absent across live state, saved output, fresh reopen, and clean
 no-op save, while non-target source records retain their existing value/style
 handles. This is still small-file sparse-store evidence, not worksheet metadata
 repair or style-table migration.
+That compact erase row/column contains regression now also repeats a second
+clean no-op `save_as()` for all four helpers, requiring byte-identical packages,
+stable save/catalog snapshots, unchanged source bytes, and fresh reopen of the
+erased or surviving sparse coordinates.
 The source-style shard also pins the single-cell and `CellRange`
 `erase_cells()` `contains_cell()` path: erased styled source records and erased
 unstyled neighbors stay absent across live/save/reopen/no-op readbacks, the

@@ -5892,6 +5892,10 @@ formula rewrite policy regressions under
 `fastxlsx.workbook_editor_formula_rewrite`. This is test organization and CTest
 budget hygiene only; it does not change public API symbols, runtime behavior,
 formula rewrite semantics, formula evaluation, or dependency graph scope.
+The formula-rewrite shard now also verifies opt-in materialized worksheet
+formula rename rewrite through `WorksheetEditor` save/reopen/no-op output while
+preserving string literals, structured-reference bracket text, external
+workbook refs, 3D sheet ranges, and name-like tokens.
 P8.683 finishes the larger WorkbookEditor test-source split by moving the
 former monolithic `facade`, `source-success`, `source-failure-*`, and
 `materialized` shard bodies into standalone test executables:

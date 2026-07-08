@@ -358,6 +358,26 @@ std::filesystem::path write_formula_reference_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_formula_rewrite_skip_token_source(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::number(2.0)});
+    }
+    {
+        fastxlsx::WorksheetWriter formulas = writer.add_worksheet("Formula");
+        formulas.append_row({fastxlsx::CellView::formula(
+            R"(Data!A1+LOG10(Data!B1)+"Data!C1"+Table1[Data!D1]+[Book.xlsx]Data!E1+Data:Formula!F1+DataName+_Data+Data_)")});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_shared_formula_reference_source(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -1674,6 +1694,94 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
     check(reopened_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
             reopened_noop_formula.text_value() == expected_formula,
         "reopened no-op output should expose the rewritten materialized formula text");
+}
+
+void test_rename_sheet_materialized_formula_rewrite_preserves_skip_tokens()
+{
+    const std::filesystem::path source = write_formula_rewrite_skip_token_source(
+        "fastxlsx-workbook-editor-formula-rewrite-skip-token-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-formula-rewrite-skip-token-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-formula-rewrite-skip-token-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value()
+                == R"(Data!A1+LOG10(Data!B1)+"Data!C1"+Table1[Data!D1]+[Book.xlsx]Data!E1+Data:Formula!F1+DataName+_Data+Data_)",
+        "skip-token formula rewrite fixture should expose the source formula");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "Data", "materialized formula skip-token rewrite success");
+    editor.rename_sheet("Data", "RenamedData", options);
+    check(!editor.last_edit_error().has_value(),
+        "skip-token materialized formula rewrite should clear last_edit_error");
+
+    const std::string expected_formula =
+        R"('RenamedData'!A1+LOG10('RenamedData'!B1)+"Data!C1"+Table1[Data!D1]+[Book.xlsx]Data!E1+Data:Formula!F1+DataName+_Data+Data_)";
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == expected_formula,
+        "skip-token materialized formula rewrite should update only direct local refs");
+    check(formula_sheet.has_pending_changes(),
+        "skip-token materialized formula rewrite should dirty the Formula session");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+    check(count_formula_reference_audits(audits, "RenamedData") == 2,
+        "skip-token formula audit should expose both rewritten local refs");
+    check(count_formula_reference_audits(audits, "Data") == 0,
+        "skip-token formula audit should not report skipped Data-like text as local refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(audits, "[Book.xlsx]Data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "skip-token formula rewrite should preserve external workbook refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(audits, "Data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "skip-token formula rewrite should preserve 3D sheet-range refs");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(formula_sheet_xml, expected_formula,
+        "skip-token formula rewrite save_as should persist the rewritten formula");
+    check_contains(formula_sheet_xml, R"("Data!C1")",
+        "skip-token formula rewrite save_as should preserve string literal text");
+    check_contains(formula_sheet_xml, "Table1[Data!D1]",
+        "skip-token formula rewrite save_as should preserve structured-reference bracket text");
+    check_contains(formula_sheet_xml, "[Book.xlsx]Data!E1",
+        "skip-token formula rewrite save_as should preserve external workbook text");
+    check_contains(formula_sheet_xml, "Data:Formula!F1",
+        "skip-token formula rewrite save_as should preserve 3D sheet-range text");
+    check_contains(formula_sheet_xml, "DataName+_Data+Data_",
+        "skip-token formula rewrite save_as should preserve name-like tokens");
+    check(!formula_sheet.has_pending_changes(),
+        "skip-token formula rewrite save_as should clean the Formula session");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        "reopened skip-token output should expose the rewritten formula");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "skip-token formula rewrite clean no-op save_as should be byte-stable");
+    fastxlsx::WorkbookEditor reopened_noop = fastxlsx::WorkbookEditor::open(noop_output);
+    const fastxlsx::CellValue reopened_noop_formula =
+        reopened_noop.worksheet("Formula").get_cell("A1");
+    check(reopened_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_noop_formula.text_value() == expected_formula,
+        "reopened skip-token no-op output should expose the rewritten formula");
 }
 
 void test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas()
@@ -3020,6 +3128,7 @@ int main()
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
+        test_rename_sheet_materialized_formula_rewrite_preserves_skip_tokens();
         test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
         test_rename_sheet_formula_policy_rewrites_case_varied_local_refs();
         test_rename_sheet_default_preserves_case_varied_formula_refs();

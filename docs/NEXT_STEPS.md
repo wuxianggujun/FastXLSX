@@ -6918,9 +6918,10 @@ guard path: empty `set_cells()`, `append_row()`, `set_cell_values()`,
 `clear_cell_values()`, and coordinate-batch `erase_cells()` clear the guard
 diagnostic, keep sparse diagnostics unchanged, avoid synthesizing missing cells,
 and still save as a copy-original package. The public snapshot shard now also
-keeps the value-only row/column prefix empties in the same clean and dirty
-empty-literal loop, so those no-ops preserve prior dirty materialized
-diagnostics and settle into the existing byte-stable no-op save checks.
+keeps both the initializer-list and explicit empty `std::span` overloads in the
+same clean and dirty no-op loops, including the value-only row/column prefix
+empties, so those no-ops preserve prior dirty materialized diagnostics and
+settle into the existing byte-stable no-op save checks.
 Non-empty missing-only erase no-ops now pin the same cleanup contract:
 `erase_cells(CellRange)`, strict A1 range `erase_cells()`, and coordinate-batch
 `erase_cells()` over absent targets clear the guard diagnostic, preserve sparse

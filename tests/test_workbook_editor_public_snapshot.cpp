@@ -5921,8 +5921,46 @@ void test_generated_source_empty_literal_noop_roundtrip()
         sheet.erase_cells(std::initializer_list<fastxlsx::WorksheetCellReference> {});
         check_state();
     };
+    const auto run_empty_span_noops = [&seed_error, &sheet](const auto& check_state) {
+        seed_error();
+        sheet.append_row(std::span<const fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
+        sheet.set_row(20, std::span<const fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
+        sheet.set_column(20, std::span<const fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
+        sheet.set_cells(std::span<const fastxlsx::WorksheetCellUpdate> {});
+        check_state();
+
+        seed_error();
+        sheet.set_cell_values(std::span<const fastxlsx::WorksheetCellUpdate> {});
+        check_state();
+
+        seed_error();
+        sheet.set_row_values(20, std::span<const fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
+        sheet.set_column_values(20, std::span<const fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
+        sheet.clear_cell_values(std::span<const fastxlsx::WorksheetCellReference> {});
+        check_state();
+
+        seed_error();
+        sheet.erase_cells(std::span<const fastxlsx::WorksheetCellReference> {});
+        check_state();
+    };
 
     run_empty_literal_noops(check_clean_noop_state);
+    run_empty_span_noops(check_clean_noop_state);
 
     editor.save_as(output);
     check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
@@ -5981,6 +6019,7 @@ void test_generated_source_empty_literal_noop_roundtrip()
     };
 
     run_empty_literal_noops(check_dirty_noop_state);
+    run_empty_span_noops(check_dirty_noop_state);
 
     editor.save_as(dirty_output);
     check(!sheet.has_pending_changes(),

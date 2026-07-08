@@ -2363,6 +2363,9 @@ invalid shift spans leave clean sessions copy-original, edge-row/edge-column
 overflow failures preserve dirty `C3` and `XFD1048576` sparse cells, saved XML
 contains only the preserved dirty state, and clean no-op save output remains
 byte-stable.
+The direct structural shift output checks now also verify `row_cells()` and
+`column_cells()` snapshots for every expected shifted cell and every absent old
+coordinate across row/column insert/delete outputs and their follow-up saves.
 The shift/no-op recovery outputs now also have post-noop reuse coverage:
 structural shift no-op, structural shift failure, and empty literal no-op
 outputs in both clean and dirty sessions reopen clean, accept a later `F4` text

@@ -2261,6 +2261,18 @@ bool matches_expected_shift_snapshot(
         matches_expected_shift_value(snapshot.value, expected);
 }
 
+bool contains_expected_shift_snapshot(
+    const std::vector<fastxlsx::WorksheetCellSnapshot>& snapshots,
+    const ExpectedShiftCell& expected)
+{
+    for (const fastxlsx::WorksheetCellSnapshot& snapshot : snapshots) {
+        if (matches_expected_shift_snapshot(snapshot, expected)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void check_structural_shift_output(
     const std::filesystem::path& output,
     const fastxlsx::CellRange& used_range,
@@ -2294,11 +2306,33 @@ void check_structural_shift_output(
                     expected_cells[i].reference.column),
                 expected_cells[i]),
             "reopened structural-shift get_cell should read expected cell value");
+        check(contains_expected_shift_snapshot(
+                data.row_cells(expected_cells[i].reference.row),
+                expected_cells[i]),
+            "reopened structural-shift row_cells should expose expected cells");
+        check(contains_expected_shift_snapshot(
+                data.column_cells(expected_cells[i].reference.column),
+                expected_cells[i]),
+            "reopened structural-shift column_cells should expose expected cells");
     }
 
     for (const fastxlsx::WorksheetCellReference& absent : absent_cells) {
         check(!data.try_cell(absent.row, absent.column).has_value(),
             "reopened structural-shift output should keep old or missing coordinates absent");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_cells =
+            data.row_cells(absent.row);
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_cells =
+            data.column_cells(absent.column);
+        for (const fastxlsx::WorksheetCellSnapshot& snapshot : row_cells) {
+            check(snapshot.reference.row != absent.row ||
+                    snapshot.reference.column != absent.column,
+                "reopened structural-shift row_cells should omit absent coordinates");
+        }
+        for (const fastxlsx::WorksheetCellSnapshot& snapshot : column_cells) {
+            check(snapshot.reference.row != absent.row ||
+                    snapshot.reference.column != absent.column,
+                "reopened structural-shift column_cells should omit absent coordinates");
+        }
     }
 
     fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");

@@ -5921,6 +5921,9 @@ The same shard now verifies that dirty sheetData projections can carry a
 shared-string index provider, so text cells are emitted as stable `t="s"`
 indexes while non-text cells stay value-only; this is projection wiring
 evidence only, not broad sharedStrings migration.
+It also covers the parallel full-worksheet projection path with the same
+provider boundary, including the XML declaration, worksheet root, refreshed
+dimension, shared-string text cells, and value-only numeric cells.
 The follow-up WorkbookEditor facade split keeps the base public facade
 diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
 save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke

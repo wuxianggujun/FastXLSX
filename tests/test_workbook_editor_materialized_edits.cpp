@@ -194,6 +194,58 @@ void test_dirty_sheet_data_projection_uses_shared_string_index_provider()
         "shared-string sheetData projection should not emit inline strings");
 }
 
+void test_dirty_worksheet_projection_uses_shared_string_index_provider()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    materialize_session(registry, "Data")
+        .set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        *registry.try_session("Data");
+    data.set_cell(3, 2, fastxlsx::CellValue::text("appended"));
+    data.set_cell(3, 3, fastxlsx::CellValue::number(9.0));
+
+    auto shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                if (text == "existing") {
+                    return 0;
+                }
+                if (text == "appended") {
+                    return 7;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "unexpected shared string text in worksheet projection test");
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        projections =
+            registry.dirty_worksheet_chunk_sources(shared_string_index_provider);
+
+    check(projections.size() == 1,
+        "shared-string worksheet projection should include dirty session");
+    check(projections[0].planned_name == "Data",
+        "shared-string worksheet projection should preserve planned name");
+
+    auto read_next_chunk = projections[0].read_next_chunk;
+    const std::string xml = read_all_chunks(read_next_chunk);
+    check(xml.find(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            != std::string::npos,
+        "shared-string worksheet projection should emit XML declaration");
+    check(xml.find(R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)")
+            != std::string::npos,
+        "shared-string worksheet projection should emit worksheet root");
+    check(xml.find(R"(<dimension ref="A1:C3"/>)") != std::string::npos,
+        "shared-string worksheet projection should emit sparse dimensions");
+    check(xml.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
+        "shared-string worksheet projection should reuse source string indexes");
+    check(xml.find(R"(<c r="B3" t="s"><v>7</v></c>)") != std::string::npos,
+        "shared-string worksheet projection should emit appended string indexes");
+    check(xml.find(R"(<c r="C3"><v>9</v></c>)") != std::string::npos,
+        "shared-string worksheet projection should leave numeric cells value-only");
+    check(xml.find("inlineStr") == std::string::npos,
+        "shared-string worksheet projection should not emit inline strings");
+}
+
 void test_materialized_flush_target_validation_accepts_current_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -265,6 +317,7 @@ int main()
         test_pending_materialized_names_ignore_stale_source_names();
         test_dirty_sheet_data_projections_include_only_dirty_sessions_and_dimensions();
         test_dirty_sheet_data_projection_uses_shared_string_index_provider();
+        test_dirty_worksheet_projection_uses_shared_string_index_provider();
         test_materialized_flush_target_validation_accepts_current_names();
         test_materialized_flush_target_validation_uses_current_catalog_names();
         test_materialized_flush_target_validation_rejects_missing_names();

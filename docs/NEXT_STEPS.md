@@ -710,7 +710,8 @@ shift diagnostic; it also fresh-reopens that no-op package and proves the
 earlier recovery/no-op packages stay byte-stable.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
-and the preserved guard diagnostic.
+and the preserved guard diagnostic; it also fresh-reopens the no-op package and
+keeps the preceding shift/mutation recovery packages byte-stable.
 The same-sheet guard recovery save now snapshots both saved handles after the
 accepted `E7` write, pinning the `E6`/`E7` column view, clean diagnostics, and
 stable materialized counters.

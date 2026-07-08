@@ -741,6 +741,9 @@ The row/column recovery, styled clear row/column, and erase row/column no-op
 paths now carry the same prior-output stability check, covering represented
 sparse record removal and source-style-preserving clears without changing the
 first clean no-op package.
+The remaining insert/delete row/column no-op shift family now carries the same
+check as well, including value-only and cleared-style variants, so repeated
+clean saves preserve the first no-op package alongside the materialized output.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

@@ -758,6 +758,9 @@ input package and original source bytes.
 The exact-budget `clear_row()` and `clear_column()` release no-op paths now
 pin saved live-handle row/column snapshots for explicit blanks, preserved
 source payloads, recovery cells, and clean materialized diagnostics.
+Their matching-option reacquired no-op saves now repeat once more too, requiring
+the second package to match the first matching-option no-op while preserving the
+saved input package and original source bytes.
 The `erase_rows()` and `erase_columns()` exact memory-budget release paths now
 also reopen the saved outputs with the original strict options, repeat
 byte-stable clean no-op saves, then prove a later small `A3` overwrite can

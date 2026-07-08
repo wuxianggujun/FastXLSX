@@ -7622,6 +7622,11 @@ schema validation.
   - `fastxlsx.workbook_editor.public-retry-projection`
   - `fastxlsx.workbook_editor.public-state`
   - `fastxlsx.workbook_editor.public-state-edits`
+  - `fastxlsx.workbook_editor.public-state-source-style`
+  - `fastxlsx.workbook_editor.public-state-shifts`
+  - `fastxlsx.workbook_editor.public-state-formula-audits`
+  - `fastxlsx.workbook_editor.public-state-reacquire`
+  - `fastxlsx.workbook_editor.public-state-reacquire-guards`
   - `fastxlsx.workbook_editor.public-guards`
   - `fastxlsx.workbook_editor_source_success`
   - `fastxlsx.workbook_editor_source_success_shared_strings`

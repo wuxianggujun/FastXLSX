@@ -5907,6 +5907,9 @@ former monolithic `facade`, `source-success`, `source-failure-*`, and
 shards. This is test layout and CTest budget hygiene only; it does not change
 runtime behavior, public API, package output semantics, source materialization
 policy, materialized-session behavior, or formula/image/docProps features.
+The materialized-sessions shard now also proves both normal and move-assigned
+reflush-after-success paths settle into byte-stable clean no-op `save_as()`
+outputs after the second materialized projection.
 The follow-up WorkbookEditor facade split keeps the base public facade
 diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
 save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke

@@ -2788,6 +2788,8 @@ void test_internal_materialized_session_reflush_after_successful_save_as()
         artifact("fastxlsx-workbook-editor-materialized-reflush-after-success-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-materialized-reflush-after-success-second.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-reflush-after-success-second-noop.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -2825,6 +2827,11 @@ void test_internal_materialized_session_reflush_after_successful_save_as()
         "second successful save_as should not leak the earlier materialized projection");
     check_contains(first_worksheet_xml, "first-before-successful-save",
         "second successful save_as should not rewrite the first output artifact");
+
+    editor.save_as(second_noop_output);
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == second_entries,
+        "clean no-op save_as after reflush should be byte-stable");
 }
 
 void test_internal_materialized_session_move_reflush_after_successful_save_as()
@@ -2839,6 +2846,8 @@ void test_internal_materialized_session_move_reflush_after_successful_save_as()
         artifact("fastxlsx-workbook-editor-materialized-move-reflush-success-first.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-materialized-move-reflush-success-second.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-move-reflush-success-second-noop.xlsx");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -2912,6 +2921,11 @@ void test_internal_materialized_session_move_reflush_after_successful_save_as()
         fastxlsx::test::read_zip_entries(first_output);
     check(first_entries_after_second_save.at("xl/worksheets/sheet1.xml") == first_data_xml,
         "second moved successful save_as should not rewrite the first output worksheet");
+
+    target.save_as(second_noop_output);
+    const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == second_entries,
+        "clean no-op save_as after moved reflush should be byte-stable");
 }
 
 void test_internal_materialized_session_reflush_replaces_prior_projection()

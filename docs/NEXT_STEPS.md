@@ -2278,6 +2278,11 @@ It now also pins the single-cell `set_cell_value()` value-only save/reopen path:
 the row/column overload updates a source-backed cell, the strict A1 overload
 inserts a missing cell, non-target dirty/source cells survive, overwritten source
 payloads are omitted from XML, and clean no-op save remains byte-stable.
+The same standalone snapshot lane now pins `contains_cell()` through a mixed
+save/reopen path: source-backed cells, explicit blanks, inserted-and-shifted
+cells, erased cells, old shifted coordinates, and never-present sparse gaps all
+report the expected represented/missing state before save, after reopen, and
+after a clean no-op save.
 It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,

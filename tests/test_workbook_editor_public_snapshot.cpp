@@ -1220,6 +1220,50 @@ void check_single_value_output(const std::filesystem::path& output)
         "reopened single-value Audit sheet should remain copy-original");
 }
 
+void check_contains_cell_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened contains-cell output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened contains-cell output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened contains-cell Data output should keep the sheet clean");
+    check(data.cell_count() == 3,
+        "reopened contains-cell Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 3),
+        "reopened contains-cell Data output should expose final sparse bounds");
+    check(data.contains_cell(1, 1) &&
+            data.contains_cell("B1") &&
+            data.contains_cell(3, 3),
+        "reopened contains-cell Data output should report represented cells");
+    check(!data.contains_cell("A2") &&
+            !data.contains_cell(2, 3) &&
+            !data.contains_cell("B2"),
+        "reopened contains-cell Data output should report erased and old shifted coordinates as missing");
+    check(data.get_cell("A1").text_value() == "alpha",
+        "reopened contains-cell Data output should keep source-backed A1");
+    check(data.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened contains-cell Data output should keep explicit B1 blank");
+    check(data.get_cell("C3").text_value() == "contains-shifted",
+        "reopened contains-cell Data output should read shifted inserted C3");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 3 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha") &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_text_snapshot(all_cells[2], 3, 3, "contains-shifted"),
+        "reopened contains-cell Data sparse_cells should expose final row-major cells");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened contains-cell Audit sheet should remain copy-original");
+}
+
 void check_value_batch_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -2869,6 +2913,89 @@ void test_generated_source_single_value_roundtrip()
     check_single_value_output(noop_output);
 }
 
+void test_generated_source_contains_cell_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-contains-cell-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-contains-cell-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    check(sheet.contains_cell(1, 1) &&
+            sheet.contains_cell("B1") &&
+            sheet.contains_cell("A2"),
+        "contains-cell roundtrip should report source-backed records");
+    check(!sheet.contains_cell("B2") &&
+            !sheet.contains_cell(3, 3),
+        "contains-cell roundtrip should report missing source cells as absent");
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "contains-cell source reads should not dirty the materialized session");
+
+    sheet.set_cell("C2", fastxlsx::CellValue::text("contains-shifted"));
+    sheet.clear_cell_value("B1");
+    sheet.erase_cell("A2");
+    sheet.insert_rows(2, 1);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "contains-cell mutations should dirty the materialized session");
+    check(sheet.cell_count() == 3,
+        "contains-cell mutations should keep only represented final cells");
+    check(editor.pending_materialized_cell_count() == 3,
+        "contains-cell mutations should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+        "contains-cell mutations should expose final sparse bounds");
+    check(sheet.contains_cell("A1") &&
+            sheet.contains_cell(1, 2) &&
+            sheet.contains_cell("C3"),
+        "contains-cell mutations should report source, blank, and shifted cells");
+    check(!sheet.contains_cell("A2") &&
+            !sheet.contains_cell("C2") &&
+            !sheet.contains_cell("B2"),
+        "contains-cell mutations should report erased, old shifted, and missing cells as absent");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "contains-cell mutations should keep B1 as an explicit blank");
+    check(sheet.get_cell("C3").text_value() == "contains-shifted",
+        "contains-cell mutations should move inserted C2 down to C3");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "contains-cell save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "contains-cell save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "contains-cell save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C3\"",
+        "contains-cell save_as should write final worksheet dimension");
+    check_contains(data_xml, "alpha",
+        "contains-cell save_as should keep source-backed A1");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "contains-cell save_as should write explicit B1 blank");
+    check_contains(data_xml, R"(r="C3")",
+        "contains-cell save_as should write shifted C3 coordinate");
+    check_contains(data_xml, "contains-shifted",
+        "contains-cell save_as should write shifted inserted text");
+    check_not_contains(data_xml, "tail",
+        "contains-cell save_as should omit erased source A2 text");
+    check_not_contains(data_xml, R"(r="A2")",
+        "contains-cell save_as should omit erased A2 coordinate");
+    check_not_contains(data_xml, R"(r="C2")",
+        "contains-cell save_as should omit old shifted C2 coordinate");
+    check_contains_cell_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean contains-cell no-op save should keep output entries stable");
+    check_contains_cell_output(noop_output);
+}
+
 void test_generated_source_sparse_value_batch_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -3577,6 +3704,7 @@ int main()
         test_generated_source_append_row_roundtrip();
         test_generated_source_sparse_batch_replacement_roundtrip();
         test_generated_source_single_value_roundtrip();
+        test_generated_source_contains_cell_roundtrip();
         test_generated_source_sparse_value_batch_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();

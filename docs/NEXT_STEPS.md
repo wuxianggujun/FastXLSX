@@ -2274,6 +2274,10 @@ batches: source-backed cells are updated, non-target dirty cells survive,
 missing coordinates are inserted, duplicate coordinates keep later-wins formula
 payloads, overwritten source and intermediate values are omitted from XML, and
 clean no-op save remains byte-stable.
+It now also pins the single-cell `set_cell_value()` value-only save/reopen path:
+the row/column overload updates a source-backed cell, the strict A1 overload
+inserts a missing cell, non-target dirty/source cells survive, overwritten source
+payloads are omitted from XML, and clean no-op save remains byte-stable.
 It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,

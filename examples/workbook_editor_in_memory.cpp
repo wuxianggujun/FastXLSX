@@ -9,6 +9,9 @@ int main()
         std::filesystem::current_path() / "fastxlsx-editor-source-example.xlsx";
     const auto output =
         std::filesystem::current_path() / "fastxlsx-editor-output-example.xlsx";
+    const auto no_op_output =
+        std::filesystem::current_path() /
+        "fastxlsx-editor-output-noop-example.xlsx";
 
     auto seed = fastxlsx::Workbook::create();
     seed.add_worksheet("Data");
@@ -43,10 +46,22 @@ int main()
 
     editor.save_as(output);
 
+    auto reopened = fastxlsx::WorkbookEditor::open(output);
+    auto reopened_sheet = reopened.worksheet("Data");
+    const auto saved_cells = reopened_sheet.sparse_cells();
+    const auto saved_row_two = reopened_sheet.row_cells(2);
+    const bool saved_has_inserted_row = reopened_sheet.contains_cell("A2");
+    reopened.save_as(no_op_output);
+
     std::cout << "Wrote source " << source.string() << '\n';
     std::cout << "Wrote edited output " << output.string() << '\n';
+    std::cout << "Wrote clean no-op output " << no_op_output.string() << '\n';
     std::cout << "Materialized cells: " << materialized_cells
               << ", estimated materialized bytes: " << estimated_memory << '\n';
+    std::cout << "Reopened sparse cells: " << saved_cells.size()
+              << ", reopened row 2 cells: " << saved_row_two.size()
+              << ", contains A2: "
+              << (saved_has_inserted_row ? "yes" : "no") << '\n';
     if (used_range.has_value()) {
         std::cout << "Used range: R" << used_range->first_row << "C"
                   << used_range->first_column << ":R" << used_range->last_row

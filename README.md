@@ -133,8 +133,9 @@ cmake --build --preset windows-nmake-release --target fastxlsx_workbook_editor_i
   worksheet cell matrix。
 - `examples/workbook_editor_in_memory.cpp` 使用 `WorkbookEditor` /
   `WorksheetEditor`，先生成一个小 source workbook，再打开已有文件、materialize
-  `Data` sheet、执行单元格更新和行插入，最后 `save_as()` 到新文件。它面向
-  small-file In-memory 编辑，不做 metadata repair、relationship repair、
+  `Data` sheet、执行单元格更新和行插入，`save_as()` 到新文件，再重新打开输出做
+  稀疏快照检查和一次 clean no-op `save_as()`。它面向 small-file In-memory 编辑，
+  不做 metadata repair、relationship repair、
   sharedStrings/styles 迁移或大文件随机编辑。
 
 已有 XLSX 文件的 Patch / small-file In-memory 编辑请使用 `WorkbookEditor` /

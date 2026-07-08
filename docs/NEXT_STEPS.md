@@ -18,6 +18,10 @@ indexes or capability slices. The current lane has now opened the first C4/F2
 public `WorksheetEditor` slice under `WorkbookEditor`: small-file
 existing-workbook random cell edits are explicit In-memory mode, and dirty
 materialized worksheet sessions flush through `WorkbookEditor::save_as()`.
+The `workbook_editor_in_memory` example now also demonstrates reopening the
+edited output for sparse/row snapshot inspection and writing a clean no-op
+`save_as()` output; this is small-file In-memory workflow evidence, not in-place
+save or large-file random editing.
 The next editor work should harden this first slice before adding style
 migration, sharedStrings migration, broader workbook-level guardrails, or
 large-file random editing. This slice can now be exercised by the opt-in

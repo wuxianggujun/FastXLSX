@@ -2305,6 +2305,10 @@ inspection convenience end to end: source and dirty sessions preserve requested
 order, duplicate coordinates, and missing-cell skips, invalid literal batches
 remain read failures without overwriting prior diagnostics, and save/reopen plus
 clean no-op save keep the same owning snapshots.
+The invalid snapshot-read helper now also pins workbook-level state stability:
+dirty flags, pending change counts, dirty materialized aggregate diagnostics,
+and worksheet summary counts remain unchanged after failed scalar, range, A1, or
+coordinate-batch reads.
 The same snapshot lane now covers the span-based batch mutator overloads
 together: `set_cells(span)`, `set_cell_values(span)`, `clear_cell_values(span)`,
 and `erase_cells(span)` preserve later-wins / blank / erase semantics through a

@@ -1891,6 +1891,18 @@ void check_invalid_snapshot_reads_preserve_diagnostics(
 {
     const std::size_t cell_count_before = sheet.cell_count();
     const std::size_t memory_before = sheet.estimated_memory_usage();
+    const bool sheet_dirty_before = sheet.has_pending_changes();
+    const bool editor_dirty_before = editor.has_pending_changes();
+    const std::size_t pending_change_count_before =
+        editor.pending_change_count();
+    const std::vector<std::string> pending_materialized_names_before =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t pending_materialized_cell_count_before =
+        editor.pending_materialized_cell_count();
+    const std::size_t pending_materialized_memory_before =
+        editor.estimated_pending_materialized_memory_usage();
+    const std::size_t pending_worksheet_edit_count_before =
+        editor.pending_worksheet_edits().size();
 
     check(threw_fastxlsx_error([&sheet] { (void)sheet.try_cell(0, 1); }),
         "try_cell(row, column) should reject row zero");
@@ -1942,6 +1954,21 @@ void check_invalid_snapshot_reads_preserve_diagnostics(
         "invalid read failures should preserve sparse cell count");
     check(sheet.estimated_memory_usage() == memory_before,
         "invalid read failures should preserve sparse-store memory estimate");
+    check(sheet.has_pending_changes() == sheet_dirty_before &&
+            editor.has_pending_changes() == editor_dirty_before,
+        "invalid read failures should preserve dirty flags");
+    check(editor.pending_change_count() == pending_change_count_before,
+        "invalid read failures should preserve pending change count");
+    check(editor.pending_materialized_worksheet_names() ==
+            pending_materialized_names_before &&
+            editor.pending_materialized_cell_count() ==
+                pending_materialized_cell_count_before &&
+            editor.estimated_pending_materialized_memory_usage() ==
+                pending_materialized_memory_before,
+        "invalid read failures should preserve materialized diagnostics");
+    check(editor.pending_worksheet_edits().size() ==
+            pending_worksheet_edit_count_before,
+        "invalid read failures should preserve worksheet summary diagnostics");
 }
 
 void test_generated_source_snapshot_edit_roundtrip()

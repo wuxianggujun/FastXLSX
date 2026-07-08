@@ -734,6 +734,9 @@ column replacement.
 The value-batch write no-op paths now carry the same prior-output stability for
 styled `set_cell_values()`, row-value writes, styled row-value writes,
 column-value writes, and styled column-value writes.
+The clear/erase-all no-op paths now extend that prior-output stability to
+`clear_cell_values()`, `erase_cells()`, and the erase-all exact memory-budget
+release case: the second clean save must leave the first no-op package unchanged.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

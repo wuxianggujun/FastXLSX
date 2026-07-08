@@ -2346,6 +2346,11 @@ It now also covers the matching width-limit failure path in clean and dirty
 sessions: rows with 16,385 values are rejected before mutation, source or dirty
 sparse state is preserved, rejected payloads stay out of saved XML, and no-op
 save output remains stable.
+The same snapshot lane now covers structural row/column shift failure recovery:
+invalid shift spans leave clean sessions copy-original, edge-row/edge-column
+overflow failures preserve dirty `C3` and `XFD1048576` sparse cells, saved XML
+contains only the preserved dirty state, and clean no-op save output remains
+byte-stable.
 The same standalone lane now also covers `set_row()` plus `set_column()` sparse
 replacement: row replacement can add blanks and new columns, column replacement
 can overwrite source-backed and prior dirty cells, saved XML omits overwritten

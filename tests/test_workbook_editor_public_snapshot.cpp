@@ -5468,6 +5468,183 @@ void test_generated_source_structural_shift_noop_roundtrip()
         "dirty structural shift no-op clean save should keep output entries stable");
 }
 
+void test_generated_source_structural_shift_failure_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-clean-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-clean-noop-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        const auto check_clean_shift_failure_state = [&editor, &sheet] {
+            check(editor.last_edit_error().has_value(),
+                "clean structural shift failure should expose last_edit_error");
+            check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+                "clean structural shift failure should keep the materialized session clean");
+            check(editor.pending_change_count() == 0,
+                "clean structural shift failure should not record pending handoffs");
+            check(editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                "clean structural shift failure should keep dirty materialized diagnostics clear");
+            check(sheet.cell_count() == 3 &&
+                    is_used_range(sheet.used_range(), 1, 1, 2, 2),
+                "clean structural shift failure should preserve source sparse shape");
+            check(sheet.get_cell("A1").text_value() == "alpha" &&
+                    sheet.get_cell("B1").number_value() == 2.0 &&
+                    sheet.get_cell("A2").text_value() == "tail",
+                "clean structural shift failure should preserve source-backed values");
+            check(!sheet.try_cell("A3").has_value() &&
+                    !sheet.try_cell("XFD1048576").has_value(),
+                "clean structural shift failure should not synthesize sparse edge cells");
+        };
+        const auto expect_clean_shift_failure =
+            [&sheet, &check_clean_shift_failure_state](auto&& mutation, const char* message) {
+                check(threw_fastxlsx_error([&mutation] { mutation(); }), message);
+                check_clean_shift_failure_state();
+            };
+
+        check_initial_snapshots(sheet);
+        expect_clean_shift_failure([&sheet] { sheet.insert_rows(0, 1); },
+            "insert_rows should reject row zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_rows(1048576, 2); },
+            "delete_rows should reject row spans past the Excel row limit in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.insert_columns(0, 1); },
+            "insert_columns should reject column zero in a clean session");
+        expect_clean_shift_failure([&sheet] { sheet.delete_columns(16384, 2); },
+            "delete_columns should reject column spans past the Excel column limit in a clean session");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "clean structural shift failure save_as should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "clean structural shift failure save_as should not record handoffs");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "clean structural shift failure save_as should leave the source package unchanged");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "clean structural shift failure save_as should copy source entries");
+        check_initial_snapshots(sheet);
+
+        fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+        fastxlsx::WorksheetEditor reopened_data = reopened.worksheet("Data");
+        check_initial_snapshots(reopened_data);
+
+        reopened.save_as(noop_output);
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "clean structural shift failure no-op save should keep output entries stable");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-dirty-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-dirty-noop-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check_initial_snapshots(sheet);
+        sheet.set_cell("C3", fastxlsx::CellValue::text("dirty-shift-failure-c3"));
+        sheet.set_cell("XFD1048576",
+            fastxlsx::CellValue::text("dirty-shift-failure-edge"));
+
+        const auto check_dirty_shift_failure_state = [&editor, &sheet] {
+            check(sheet.has_pending_changes() && editor.has_pending_changes(),
+                "dirty structural shift failure should keep the materialized session dirty");
+            check(editor.pending_materialized_worksheet_names() ==
+                    std::vector<std::string>({"Data"}) &&
+                    editor.pending_materialized_cell_count() == 5 &&
+                    editor.estimated_pending_materialized_memory_usage() ==
+                        sheet.estimated_memory_usage(),
+                "dirty structural shift failure should preserve materialized diagnostics");
+            check(sheet.cell_count() == 5 &&
+                    is_used_range(sheet.used_range(), 1, 1, 1048576, 16384),
+                "dirty structural shift failure should preserve dirty sparse bounds");
+            check(sheet.get_cell("A1").text_value() == "alpha" &&
+                    sheet.get_cell("B1").number_value() == 2.0 &&
+                    sheet.get_cell("A2").text_value() == "tail" &&
+                    sheet.get_cell("C3").text_value() == "dirty-shift-failure-c3" &&
+                    sheet.get_cell("XFD1048576").text_value() ==
+                        "dirty-shift-failure-edge",
+                "dirty structural shift failure should preserve dirty sparse values");
+            check(!sheet.try_cell("A4").has_value() &&
+                    !sheet.try_cell("XFC1048576").has_value(),
+                "dirty structural shift failure should not synthesize shifted edge cells");
+        };
+        const auto expect_dirty_shift_failure =
+            [&editor, &sheet, &check_dirty_shift_failure_state](
+                auto&& mutation, const char* message) {
+                check(threw_fastxlsx_error([&mutation] { mutation(); }), message);
+                check(editor.last_edit_error().has_value(),
+                    "dirty structural shift failure should expose last_edit_error");
+                check_dirty_shift_failure_state();
+            };
+
+        check_dirty_shift_failure_state();
+        expect_dirty_shift_failure([&sheet] { sheet.insert_rows(1048576, 1); },
+            "insert_rows should reject shifting a dirty edge row past the Excel limit");
+        expect_dirty_shift_failure([&sheet] { sheet.insert_columns(16384, 1); },
+            "insert_columns should reject shifting a dirty edge column past the Excel limit");
+        expect_dirty_shift_failure([&sheet] { sheet.insert_rows(0, 1); },
+            "insert_rows should reject row zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_rows(1048576, 2); },
+            "delete_rows should reject row spans past the Excel row limit in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.insert_columns(0, 1); },
+            "insert_columns should reject column zero in a dirty session");
+        expect_dirty_shift_failure([&sheet] { sheet.delete_columns(16384, 2); },
+            "delete_columns should reject column spans past the Excel column limit in a dirty session");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "dirty structural shift failure save_as should clean the materialized session");
+        check(editor.pending_change_count() == 1,
+            "dirty structural shift failure save_as should record one materialized handoff");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "dirty structural shift failure save_as should leave the source package unchanged");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(data_xml, "<dimension ref=\"A1:XFD1048576\"",
+            "dirty structural shift failure save_as should preserve the dirty edge dimension");
+        check_contains(data_xml, "dirty-shift-failure-c3",
+            "dirty structural shift failure save_as should write the preserved C3 cell");
+        check_contains(data_xml, "dirty-shift-failure-edge",
+            "dirty structural shift failure save_as should write the preserved edge cell");
+        check_not_contains(data_xml, R"(r="A4")",
+            "dirty structural shift failure save_as should not write a rejected shifted row");
+        check_not_contains(data_xml, R"(r="XFC1048576")",
+            "dirty structural shift failure save_as should not write a rejected shifted column");
+
+        const std::vector<ExpectedShiftCell> expected {
+            expected_shift_text(1, 1, "alpha"),
+            expected_shift_number(1, 2, 2.0),
+            expected_shift_text(2, 1, "tail"),
+            expected_shift_text(3, 3, "dirty-shift-failure-c3"),
+            expected_shift_text(1048576, 16384, "dirty-shift-failure-edge"),
+        };
+        const std::vector<fastxlsx::WorksheetCellReference> absent {
+            {4, 1},
+            {1048576, 16383},
+        };
+        check_structural_shift_output(
+            output, fastxlsx::CellRange {1, 1, 1048576, 16384}, expected, absent);
+
+        fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+        reopened.save_as(noop_output);
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "dirty structural shift failure clean save should keep output entries stable");
+        check_structural_shift_output(noop_output,
+            fastxlsx::CellRange {1, 1, 1048576, 16384}, expected, absent);
+    }
+}
+
 void test_generated_source_empty_literal_noop_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -5671,6 +5848,7 @@ int main()
         test_generated_source_insert_columns_roundtrip();
         test_generated_source_delete_columns_roundtrip();
         test_generated_source_structural_shift_noop_roundtrip();
+        test_generated_source_structural_shift_failure_roundtrip();
         test_generated_source_empty_literal_noop_roundtrip();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';

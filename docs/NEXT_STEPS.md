@@ -724,6 +724,9 @@ The earliest dirty-session reuse paths now also pin the second output package
 while writing clean no-op outputs for dirty-state reuse and same-handle reuse.
 The first row/column shift reacquire no-op trio now pins the second output
 package too across base, try-reacquire, and option-mismatch clean saves.
+The remaining guard-side row/column shift reacquire no-op saves now pin that
+same second-output stability for missing-query, invalid-read, invalid-mutation,
+and failed-save recovery paths.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

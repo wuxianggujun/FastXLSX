@@ -5927,6 +5927,9 @@ dimension, shared-string text cells, and value-only numeric cells.
 The failure side of that provider handoff is pinned too: missing index lookups
 from both sheetData-only and full-worksheet callbacks propagate `FastXlsxError`
 while leaving the materialized session dirty for retry.
+The non-text side is covered as well: numeric/boolean-only projections can carry
+a shared-string provider without calling it, emit value-only cells, and leave
+dirty state untouched until the higher-level flush succeeds.
 The follow-up WorkbookEditor facade split keeps the base public facade
 diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
 save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke

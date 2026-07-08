@@ -320,6 +320,88 @@ void test_dirty_worksheet_projection_provider_failure_keeps_session_dirty()
         "failing shared-string worksheet projection should keep session dirty");
 }
 
+void test_dirty_sheet_data_projection_provider_skips_non_text_records()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    materialize_session(registry, "Data")
+        .set_cell(1, 1, fastxlsx::CellValue::number(11.0));
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        *registry.try_session("Data");
+    data.set_cell(2, 2, fastxlsx::CellValue::boolean(false));
+
+    bool provider_called = false;
+    auto shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [&provider_called](std::string_view) -> std::uint32_t {
+                provider_called = true;
+                return 99;
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        projections =
+            registry.dirty_sheet_data_chunk_sources(shared_string_index_provider);
+
+    check(projections.size() == 1,
+        "non-text sheetData projection should include dirty session");
+    check(projections[0].dimension_reference == "A1:B2",
+        "non-text sheetData projection should expose sparse dimensions");
+
+    auto read_next_chunk = projections[0].read_next_chunk;
+    const std::string xml = read_all_chunks(read_next_chunk);
+    check(!provider_called,
+        "non-text sheetData projection should not call shared string provider");
+    check(xml.find(R"(<c r="A1"><v>11</v></c>)") != std::string::npos,
+        "non-text sheetData projection should emit numeric cells");
+    check(xml.find(R"(<c r="B2" t="b"><v>0</v></c>)") != std::string::npos,
+        "non-text sheetData projection should emit boolean cells");
+    check(xml.find(R"(t="s")") == std::string::npos &&
+            xml.find("inlineStr") == std::string::npos,
+        "non-text sheetData projection should not emit text cell encodings");
+    check(data.dirty(),
+        "non-text sheetData projection should not clear dirty state");
+}
+
+void test_dirty_worksheet_projection_provider_skips_non_text_records()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    materialize_session(registry, "Data")
+        .set_cell(1, 1, fastxlsx::CellValue::number(12.0));
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        *registry.try_session("Data");
+    data.set_cell(3, 3, fastxlsx::CellValue::boolean(true));
+
+    bool provider_called = false;
+    auto shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [&provider_called](std::string_view) -> std::uint32_t {
+                provider_called = true;
+                return 99;
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        projections =
+            registry.dirty_worksheet_chunk_sources(shared_string_index_provider);
+
+    check(projections.size() == 1,
+        "non-text worksheet projection should include dirty session");
+
+    auto read_next_chunk = projections[0].read_next_chunk;
+    const std::string xml = read_all_chunks(read_next_chunk);
+    check(!provider_called,
+        "non-text worksheet projection should not call shared string provider");
+    check(xml.find(R"(<dimension ref="A1:C3"/>)") != std::string::npos,
+        "non-text worksheet projection should emit sparse dimensions");
+    check(xml.find(R"(<c r="A1"><v>12</v></c>)") != std::string::npos,
+        "non-text worksheet projection should emit numeric cells");
+    check(xml.find(R"(<c r="C3" t="b"><v>1</v></c>)") != std::string::npos,
+        "non-text worksheet projection should emit boolean cells");
+    check(xml.find(R"(t="s")") == std::string::npos &&
+            xml.find("inlineStr") == std::string::npos,
+        "non-text worksheet projection should not emit text cell encodings");
+    check(data.dirty(),
+        "non-text worksheet projection should not clear dirty state");
+}
+
 void test_materialized_flush_target_validation_accepts_current_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -394,6 +476,8 @@ int main()
         test_dirty_worksheet_projection_uses_shared_string_index_provider();
         test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty();
         test_dirty_worksheet_projection_provider_failure_keeps_session_dirty();
+        test_dirty_sheet_data_projection_provider_skips_non_text_records();
+        test_dirty_worksheet_projection_provider_skips_non_text_records();
         test_materialized_flush_target_validation_accepts_current_names();
         test_materialized_flush_target_validation_uses_current_catalog_names();
         test_materialized_flush_target_validation_rejects_missing_names();

@@ -2311,6 +2311,11 @@ It now also mirrors that contrast for inclusive `erase_rows()` plus
 sparse records, missing cells are not synthesized, the surviving non-target cell
 shrinks `used_range()` to its coordinate, saved XML omits erased cells, and
 clean no-op save remains byte-stable.
+The standalone snapshot lane also pins whole-store `erase_cells()`: all
+source-backed and dirty sparse records are removed, `used_range()` becomes
+empty, saved XML projects the empty worksheet dimension without cell records,
+reopen exposes empty row/column snapshots, and clean no-op save remains
+byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

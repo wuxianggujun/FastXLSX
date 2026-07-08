@@ -2135,6 +2135,11 @@ The original saved handles for those styled `erase_cell()` and `erase_cells()`
 paths now also repeat a second clean no-op save, requiring byte-identical
 packages, stable save/catalog snapshots, unchanged source bytes, and fresh
 reopen of the erased and surviving sparse coordinates.
+The single-cell `erase_cell()` saved-output reacquire path and its styled
+single/range variants now also re-read prior no-op package files after repeated
+clean no-op saves and after the later post-noop dirty handoff, pinning that
+those files themselves remain unchanged rather than only matching cached entry
+snapshots.
 The styled `erase_row()` variant now carries that saved-output handoff too:
 the erased styled row remains absent, the surviving row stays unstyled,
 reacquired no-op saves stay byte-stable, and a post-noop overwrite/save/reopen

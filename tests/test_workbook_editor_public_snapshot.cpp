@@ -70,6 +70,18 @@ bool is_number_snapshot(
         cell.value.number_value() == value;
 }
 
+bool is_boolean_snapshot(
+    const fastxlsx::WorksheetCellSnapshot& cell,
+    std::uint32_t row,
+    std::uint32_t column,
+    bool value)
+{
+    return cell.reference.row == row &&
+        cell.reference.column == column &&
+        cell.value.kind() == fastxlsx::CellValueKind::Boolean &&
+        cell.value.boolean_value() == value;
+}
+
 bool is_blank_snapshot(
     const fastxlsx::WorksheetCellSnapshot& cell,
     std::uint32_t row,
@@ -397,6 +409,61 @@ void check_cleared_output(const std::filesystem::path& output)
         "reopened cleared Audit sheet should remain copy-original");
 }
 
+void check_appended_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened appended output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened appended output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened appended Data output should keep the sheet clean");
+    check(data.cell_count() == 6,
+        "reopened appended Data output should materialize source plus appended cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 3),
+        "reopened appended Data output should expose the appended sparse used range");
+    check(data.get_cell("A3").text_value() == "appended",
+        "reopened appended Data output should read appended A3 text");
+    check(data.get_cell("B3").number_value() == 4.0,
+        "reopened appended Data output should read appended B3 number");
+    const fastxlsx::CellValue reopened_c3 = data.get_cell("C3");
+    check(reopened_c3.kind() == fastxlsx::CellValueKind::Boolean &&
+            reopened_c3.boolean_value(),
+        "reopened appended Data output should read appended C3 boolean");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 6 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(all_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(all_cells[2], 2, 1, "tail") &&
+            is_text_snapshot(all_cells[3], 3, 1, "appended") &&
+            is_number_snapshot(all_cells[4], 3, 2, 4.0) &&
+            is_boolean_snapshot(all_cells[5], 3, 3, true),
+        "reopened appended Data sparse_cells should expose source plus appended row");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        data.row_cells(3);
+    check(row_three.size() == 3 &&
+            is_text_snapshot(row_three[0], 3, 1, "appended") &&
+            is_number_snapshot(row_three[1], 3, 2, 4.0) &&
+            is_boolean_snapshot(row_three[2], 3, 3, true),
+        "reopened appended Data row_cells should expose the appended row");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+        data.column_cells(3);
+    check(column_three.size() == 1 &&
+            is_boolean_snapshot(column_three[0], 3, 3, true),
+        "reopened appended Data column_cells should expose appended C3");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened appended Audit sheet should remain copy-original");
+}
+
 void check_invalid_snapshot_reads_preserve_diagnostics(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& sheet,
@@ -616,6 +683,76 @@ void test_generated_source_clear_value_roundtrip()
     check_cleared_output(noop_output);
 }
 
+void test_generated_source_append_row_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-append-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-append-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.append_row({
+        fastxlsx::CellValue::text("appended"),
+        fastxlsx::CellValue::number(4.0),
+        fastxlsx::CellValue::boolean(true),
+    });
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "append-row roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 6,
+        "append-row roundtrip should add three represented sparse records");
+    check(editor.pending_materialized_cell_count() == 6,
+        "append-row roundtrip should expose source plus appended dirty materialized cells");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+        "append-row roundtrip should expand the dirty sparse used range");
+    check(sheet.get_cell("A3").text_value() == "appended",
+        "append-row roundtrip should expose appended A3 text");
+    check(sheet.get_cell("B3").number_value() == 4.0,
+        "append-row roundtrip should expose appended B3 number");
+    const fastxlsx::CellValue appended_c3 = sheet.get_cell("C3");
+    check(appended_c3.kind() == fastxlsx::CellValueKind::Boolean &&
+            appended_c3.boolean_value(),
+        "append-row roundtrip should expose appended C3 boolean");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        sheet.row_cells(3);
+    check(row_three.size() == 3 &&
+            is_text_snapshot(row_three[0], 3, 1, "appended") &&
+            is_number_snapshot(row_three[1], 3, 2, 4.0) &&
+            is_boolean_snapshot(row_three[2], 3, 3, true),
+        "append-row roundtrip should expose the appended row snapshot");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "append-row roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "append-row roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "append-row roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C3\"",
+        "append-row roundtrip save_as should expand the worksheet dimension");
+    check_contains(data_xml, "appended",
+        "append-row roundtrip save_as should write appended text");
+    check_contains(data_xml, R"(<c r="B3"><v>4</v></c>)",
+        "append-row roundtrip save_as should write appended number");
+    check_contains(data_xml, R"(<c r="C3" t="b"><v>1</v></c>)",
+        "append-row roundtrip save_as should write appended boolean");
+    check_appended_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean appended no-op save should keep output entries stable");
+    check_appended_output(noop_output);
+}
+
 } // namespace
 
 int main()
@@ -624,6 +761,7 @@ int main()
         test_generated_source_snapshot_edit_roundtrip();
         test_generated_source_erase_roundtrip();
         test_generated_source_clear_value_roundtrip();
+        test_generated_source_append_row_roundtrip();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

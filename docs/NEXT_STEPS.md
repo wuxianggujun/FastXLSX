@@ -2272,6 +2272,10 @@ The same standalone CTest now contrasts `clear_cell_value()` with erase:
 source-backed cells become explicit blank records, `used_range()` and dirty
 materialized cell counts stay stable, dirty `save_as()` writes blank `<c>` cells,
 reopened snapshots keep those blanks, and clean no-op save output is stable.
+It now also pins `append_row()` on the same public snapshot lane: appending a
+text/number/boolean row expands sparse bounds, saves and reopens all appended
+cells, leaves the source package unchanged, and keeps the clean no-op output
+byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

@@ -2255,6 +2255,11 @@ The public `WorksheetEditor` wording now also spells out the existing
 `row_cells()` / `column_cells()` invalid-coordinate read-failure boundary:
 these snapshot reads throw without dirtying the materialized session or
 replacing `WorkbookEditor::last_edit_error()`.
+The same boundary now has a small standalone public snapshot CTest that creates
+a source workbook through `Workbook`, opens it through `WorkbookEditor`, checks
+`row_cells()` / `column_cells()` snapshots, verifies invalid snapshot reads
+preserve `last_edit_error()`, saves an edit, reopens it, and confirms a clean
+no-op `save_as()` remains byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

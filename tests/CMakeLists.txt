@@ -1124,10 +1124,12 @@ add_fastxlsx_workbook_editor_source_success_test(
 add_fastxlsx_workbook_editor_standalone_test(source_failures test_workbook_editor_source_failures.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(materialized_sessions test_workbook_editor_materialized_sessions.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_patch_cells test_workbook_editor_public_patch_cells.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_snapshot test_workbook_editor_public_snapshot.cpp 60)
 
 add_dependencies(
     fastxlsx_workbook_editor_tests
     fastxlsx_workbook_editor_public_patch_cells_tests
+    fastxlsx_workbook_editor_public_snapshot_tests
 )
 
 add_fastxlsx_workbook_editor_target(

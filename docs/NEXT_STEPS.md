@@ -764,6 +764,10 @@ output packages after later saves: max-cells and memory-budget budget-release,
 missing-erase, blank-overwrite, last-error recovery, and mixed diagnostic
 recovery all prove the first no-op package remains unchanged after the second
 no-op and post-noop save.
+The blank-overwrite guardrail same-editor no-op saves now also pin the clean
+diagnostic surface directly: max-cells and memory-budget first/second no-op
+outputs keep replacement diagnostics empty and clear `last_edit_error()` while
+preserving the already byte-stable packages.
 The same prior-output check now covers the adjacent source-load and recovery
 no-op family: shift memory guard failure, exact shift-budget recovery scenarios,
 options-guard recovery, memory-budget source-load recovery, and successful

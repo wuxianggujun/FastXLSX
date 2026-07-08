@@ -5905,6 +5905,14 @@ void test_generated_source_empty_literal_noop_roundtrip()
         check_state();
 
         seed_error();
+        sheet.set_row_values(20, std::initializer_list<fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
+        sheet.set_column_values(20, std::initializer_list<fastxlsx::CellValue> {});
+        check_state();
+
+        seed_error();
         sheet.clear_cell_values(
             std::initializer_list<fastxlsx::WorksheetCellReference> {});
         check_state();

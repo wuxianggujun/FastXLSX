@@ -2288,6 +2288,11 @@ inspection convenience end to end: source and dirty sessions preserve requested
 order, duplicate coordinates, and missing-cell skips, invalid literal batches
 remain read failures without overwriting prior diagnostics, and save/reopen plus
 clean no-op save keep the same owning snapshots.
+The same snapshot lane now covers the span-based batch mutator overloads
+together: `set_cells(span)`, `set_cell_values(span)`, `clear_cell_values(span)`,
+and `erase_cells(span)` preserve later-wins / blank / erase semantics through a
+mixed dirty save, fresh reopen, row/column snapshots, and byte-stable clean
+no-op save.
 It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,

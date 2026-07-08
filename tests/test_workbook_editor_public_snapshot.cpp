@@ -1313,6 +1313,54 @@ void check_sparse_initializer_list_output(const std::filesystem::path& output)
         "reopened sparse initializer-list Audit sheet should remain copy-original");
 }
 
+void check_span_batch_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened span-batch output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened span-batch output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened span-batch Data output should keep the sheet clean");
+    check(data.cell_count() == 4,
+        "reopened span-batch Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 4),
+        "reopened span-batch Data output should expose final sparse bounds");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_text_snapshot(all_cells[0], 1, 1, "span-full-a") &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_blank_snapshot(all_cells[2], 3, 3) &&
+            is_formula_snapshot(all_cells[3], 3, 4, "A1+B1"),
+        "reopened span-batch Data sparse_cells should expose final row-major cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        data.row_cells(3);
+    check(row_three.size() == 2 &&
+            is_blank_snapshot(row_three[0], 3, 3) &&
+            is_formula_snapshot(row_three[1], 3, 4, "A1+B1"),
+        "reopened span-batch row_cells should expose cleared C3 and retained D3");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+        data.column_cells(2);
+    check(column_two.size() == 1 &&
+            is_blank_snapshot(column_two[0], 1, 2),
+        "reopened span-batch column_cells should expose blank B1 only");
+    check(!data.contains_cell("A2") &&
+            !data.contains_cell("B2") &&
+            !data.contains_cell("E5"),
+        "reopened span-batch output should keep erased and missing span targets absent");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened span-batch Audit sheet should remain copy-original");
+}
+
 void check_value_batch_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -3159,6 +3207,147 @@ void test_generated_source_sparse_initializer_list_roundtrip()
     check_sparse_initializer_list_output(noop_output);
 }
 
+void test_generated_source_span_batch_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-span-batch-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-span-batch-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+
+    const std::array<fastxlsx::WorksheetCellUpdate, 4> full_updates {{
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("span-full-a")},
+        {fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::CellValue::number(6.0)},
+        {fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::CellValue::boolean(true)},
+        {fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::CellValue::text("span-full-later-c3")},
+    }};
+    sheet.set_cells(std::span<const fastxlsx::WorksheetCellUpdate>(
+        full_updates.data(), full_updates.size()));
+    check(sheet.cell_count() == 5,
+        "span full replacements should keep source cells plus inserted span targets");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+        "span full replacements should expand sparse bounds");
+    check(sheet.get_cell("A1").text_value() == "span-full-a",
+        "span full replacements should overwrite source A1");
+    check(sheet.get_cell("B2").number_value() == 6.0,
+        "span full replacements should insert B2 number");
+    check(sheet.get_cell("C3").text_value() == "span-full-later-c3",
+        "span full replacements should apply duplicate later-wins C3");
+
+    const std::array<fastxlsx::WorksheetCellUpdate, 4> value_updates {{
+        {fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::CellValue::blank()},
+        {fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::CellValue::text("span-value-first-b2")},
+        {fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::CellValue::formula("A1+B1")},
+        {fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::CellValue::formula("A1+B1")},
+    }};
+    sheet.set_cell_values(std::span<const fastxlsx::WorksheetCellUpdate>(
+        value_updates.data(), value_updates.size()));
+    check(sheet.cell_count() == 6,
+        "span value writes should preserve and insert represented sparse cells");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "span value writes should convert source B1 to blank");
+    check(sheet.get_cell("B2").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("B2").text_value() == "A1+B1",
+        "span value writes should apply duplicate later-wins B2 formula");
+    check(sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("D3").text_value() == "A1+B1",
+        "span value writes should insert D3 formula");
+
+    const std::array<fastxlsx::WorksheetCellReference, 2> clear_targets {{
+        fastxlsx::WorksheetCellReference {1, 2},
+        fastxlsx::WorksheetCellReference {3, 3},
+    }};
+    sheet.clear_cell_values(std::span<const fastxlsx::WorksheetCellReference>(
+        clear_targets.data(), clear_targets.size()));
+    check(sheet.cell_count() == 6,
+        "span clears should keep represented sparse cell count stable");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "span clears should preserve B1 as explicit blank");
+    check(sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "span clears should convert dirty C3 to blank");
+
+    const std::array<fastxlsx::WorksheetCellReference, 3> erase_targets {{
+        fastxlsx::WorksheetCellReference {2, 1},
+        fastxlsx::WorksheetCellReference {2, 2},
+        fastxlsx::WorksheetCellReference {5, 5},
+    }};
+    sheet.erase_cells(std::span<const fastxlsx::WorksheetCellReference>(
+        erase_targets.data(), erase_targets.size()));
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "span batch mutations should dirty the materialized session");
+    check(sheet.cell_count() == 4,
+        "span batch mutations should expose final represented sparse cells");
+    check(editor.pending_materialized_cell_count() == 4,
+        "span batch mutations should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "span batch mutations should expose final sparse bounds");
+    check(!sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("E5").has_value(),
+        "span erases should remove present targets and ignore missing targets");
+    check(sheet.get_cell("A1").text_value() == "span-full-a",
+        "span batch mutations should keep final A1 text");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "span batch mutations should keep final B1 blank");
+    check(sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Blank,
+        "span batch mutations should keep final C3 blank");
+    check(sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("D3").text_value() == "A1+B1",
+        "span batch mutations should keep final D3 formula");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "span batch save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "span batch save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "span batch save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:D3\"",
+        "span batch save_as should write final worksheet dimension");
+    check_contains(data_xml, "span-full-a",
+        "span batch save_as should write final A1 text");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "span batch save_as should write explicit B1 blank");
+    check_contains(data_xml, R"(<c r="C3"/>)",
+        "span batch save_as should write cleared C3 blank");
+    check_contains(data_xml, R"(<c r="D3"><f>A1+B1</f></c>)",
+        "span batch save_as should write final D3 formula");
+    check_not_contains(data_xml, "alpha",
+        "span batch save_as should omit overwritten source A1 text");
+    check_not_contains(data_xml, "tail",
+        "span batch save_as should omit erased source A2 text");
+    check_not_contains(data_xml, "span-full-later-c3",
+        "span batch save_as should omit cleared intermediate C3 text");
+    check_not_contains(data_xml, "span-value-first-b2",
+        "span batch save_as should omit duplicate intermediate B2 text");
+    check_not_contains(data_xml, R"(r="B2")",
+        "span batch save_as should omit erased B2 coordinate");
+    check_span_batch_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean span batch no-op save should keep output entries stable");
+    check_span_batch_output(noop_output);
+}
+
 void test_generated_source_sparse_value_batch_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -3869,6 +4058,7 @@ int main()
         test_generated_source_single_value_roundtrip();
         test_generated_source_contains_cell_roundtrip();
         test_generated_source_sparse_initializer_list_roundtrip();
+        test_generated_source_span_batch_roundtrip();
         test_generated_source_sparse_value_batch_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();

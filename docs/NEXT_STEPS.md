@@ -741,6 +741,9 @@ column views and erased dirty-cell absence.
 The exact-budget `erase_cells()` release no-op path now pins its saved live
 handle as well, including the lone recovery `A3` row/column views, erased
 source-cell absence, and clean materialized diagnostics.
+It now repeats that clean no-op save too, requiring the second package to match
+the first no-op output, preserving source bytes, and fresh-reopening the
+recovery `A3` projection without reviving erased source cells.
 The range and batch exact-budget `erase_cells()` release no-op paths now share
 that saved-handle coverage for their recovery `A3` cells and clean summaries.
 They now also reacquire those no-op outputs with the original strict

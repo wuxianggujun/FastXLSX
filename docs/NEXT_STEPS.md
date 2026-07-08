@@ -1292,6 +1292,8 @@ remain readable with source-backed `A1` / `B1`, erased `A2`, and inserted `D4`.
 The public shard helper now mirrors the same targeted-cell Patch diagnostics in
 save-state snapshots, clean replacement checks, and read-only inspection
 last-error preservation.
+The public retry shared helper now carries that same targeted-cell diagnostics
+coverage across retry, reacquire, guard, and projection shards.
 The projection recovery saves now also assert that replacement diagnostics stay
 empty and `last_edit_error()` remains clear immediately after the second safe
 save, before the existing XML and fresh-reopen checks.

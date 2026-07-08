@@ -781,6 +781,9 @@ The sparse range and batch `clear_cell_values()` exact-budget release no-op
 paths now carry the same saved-handle row/column snapshot checks for explicit
 blanks, preserved source payloads, recovery cells, and clean materialized
 diagnostics.
+Their matching-option reacquired no-op saves now repeat once more too, requiring
+the second package to match the first matching-option no-op while preserving the
+saved input package and original source bytes.
 They now also reopen the saved outputs with the original strict
 `WorksheetEditorOptions`, repeat byte-stable clean no-op saves, then prove a
 later smaller `D4` overwrite saves and reopens without reviving cleared payload

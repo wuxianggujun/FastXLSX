@@ -2451,6 +2451,11 @@ It now also mirrors that contrast for inclusive `erase_rows()` plus
 sparse records, missing cells are not synthesized, the surviving non-target cell
 shrinks `used_range()` to its coordinate, saved XML omits erased cells, and
 clean no-op save remains byte-stable.
+The clear/erase snapshot lane now extends fresh-reopen edit reuse to
+coordinate-batch, strict A1-range, row/column scalar, and row/column range
+clear/erase outputs: each clean no-op output opens as a clean editor source,
+accepts a later `F4` text edit, preserves the baseline/no-op packages,
+fresh-reopens with `F4`, and settles into a byte-stable clean save.
 The standalone snapshot lane also pins whole-store `erase_cells()`: all
 source-backed and dirty sparse records are removed, `used_range()` becomes
 empty, saved XML projects the empty worksheet dimension without cell records,

@@ -631,11 +631,12 @@ void check_all_cleared_output(const std::filesystem::path& output)
         "reopened clear-all Audit sheet should remain copy-original");
 }
 
-void check_clear_erase_reopened_edit(
+void check_clear_erase_reopened_edit_at(
     const std::filesystem::path& baseline_output,
     const std::filesystem::path& noop_output,
     const std::filesystem::path& edit_output,
     const std::filesystem::path& edit_noop_output,
+    std::string_view followup_cell,
     std::string_view followup_text)
 {
     const auto baseline_entries =
@@ -647,16 +648,17 @@ void check_clear_erase_reopened_edit(
     fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
     check(!reopened.has_pending_changes() && !data.has_pending_changes(),
         "clear/erase reopened edit should start from a clean materialized session");
-    check(!data.try_cell("D3").has_value(),
-        "clear/erase reopened edit should start with D3 absent");
+    check(!data.try_cell(followup_cell).has_value(),
+        "clear/erase reopened edit should start with the follow-up cell absent");
 
     const std::size_t initial_cell_count = data.cell_count();
-    data.set_cell("D3", fastxlsx::CellValue::text(std::string(followup_text)));
+    data.set_cell(followup_cell,
+        fastxlsx::CellValue::text(std::string(followup_text)));
     check(reopened.has_pending_changes() && data.has_pending_changes(),
         "clear/erase reopened edit should dirty the clean saved output");
     check(data.cell_count() == initial_cell_count + 1 &&
-            data.get_cell("D3").text_value() == followup_text,
-        "clear/erase reopened edit should append a new sparse D3 cell");
+            data.get_cell(followup_cell).text_value() == followup_text,
+        "clear/erase reopened edit should append a new sparse follow-up cell");
 
     reopened.save_as(edit_output);
     check(!data.has_pending_changes(),
@@ -668,8 +670,10 @@ void check_clear_erase_reopened_edit(
 
     const auto edit_entries = fastxlsx::test::read_zip_entries(edit_output);
     const std::string& data_xml = edit_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(data_xml, R"(r="D3")",
-        "clear/erase reopened edit save_as should write the new D3 cell");
+    const std::string followup_cell_xml =
+        "r=\"" + std::string(followup_cell) + "\"";
+    check_contains(data_xml, followup_cell_xml,
+        "clear/erase reopened edit save_as should write the new follow-up cell");
     check_contains(data_xml, followup_text,
         "clear/erase reopened edit save_as should persist the new text");
 
@@ -680,8 +684,8 @@ void check_clear_erase_reopened_edit(
             !edit_data.has_pending_changes(),
         "clear/erase reopened edit output should fresh-reopen clean");
     check(edit_data.cell_count() == initial_cell_count + 1 &&
-            edit_data.get_cell("D3").text_value() == followup_text,
-        "clear/erase reopened edit output should keep the follow-up D3 cell");
+            edit_data.get_cell(followup_cell).text_value() == followup_text,
+        "clear/erase reopened edit output should keep the follow-up cell");
     fastxlsx::WorksheetEditor audit = edit_reopened.worksheet("Audit");
     check(audit.cell_count() == 1 &&
             audit.get_cell("A1").text_value() == "untouched",
@@ -690,6 +694,17 @@ void check_clear_erase_reopened_edit(
     edit_reopened.save_as(edit_noop_output);
     check(fastxlsx::test::read_zip_entries(edit_noop_output) == edit_entries,
         "clear/erase reopened edit clean save should keep output stable");
+}
+
+void check_clear_erase_reopened_edit(
+    const std::filesystem::path& baseline_output,
+    const std::filesystem::path& noop_output,
+    const std::filesystem::path& edit_output,
+    const std::filesystem::path& edit_noop_output,
+    std::string_view followup_text)
+{
+    check_clear_erase_reopened_edit_at(baseline_output, noop_output,
+        edit_output, edit_noop_output, "D3", followup_text);
 }
 
 void check_coordinate_batch_cleared_output(const std::filesystem::path& output)
@@ -2862,6 +2877,10 @@ void test_generated_source_coordinate_batch_clear_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-clear-batch-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-clear-batch-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-clear-batch-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-clear-batch-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -2939,6 +2958,9 @@ void test_generated_source_coordinate_batch_clear_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean coordinate-batch clear no-op save should keep output entries stable");
     check_coordinate_batch_cleared_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "clear-batch-reopened-f4");
 }
 
 void test_generated_source_a1_range_clear_roundtrip()
@@ -2948,6 +2970,10 @@ void test_generated_source_a1_range_clear_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-clear-a1-range-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-clear-a1-range-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-clear-a1-range-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-clear-a1-range-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3024,6 +3050,9 @@ void test_generated_source_a1_range_clear_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean A1-range clear no-op save should keep output entries stable");
     check_a1_range_cleared_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "clear-a1-range-reopened-f4");
 }
 
 void test_generated_source_coordinate_batch_erase_roundtrip()
@@ -3033,6 +3062,10 @@ void test_generated_source_coordinate_batch_erase_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-erase-batch-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-erase-batch-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-erase-batch-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-erase-batch-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3110,6 +3143,9 @@ void test_generated_source_coordinate_batch_erase_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean coordinate-batch erase no-op save should keep output entries stable");
     check_coordinate_batch_erased_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "erase-batch-reopened-f4");
 }
 
 void test_generated_source_a1_range_erase_roundtrip()
@@ -3119,6 +3155,10 @@ void test_generated_source_a1_range_erase_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-erase-a1-range-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-erase-a1-range-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-erase-a1-range-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-erase-a1-range-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3195,6 +3235,9 @@ void test_generated_source_a1_range_erase_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean A1-range erase no-op save should keep output entries stable");
     check_a1_range_erased_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "erase-a1-range-reopened-f4");
 }
 
 void test_generated_source_row_column_clear_roundtrip()
@@ -3204,6 +3247,10 @@ void test_generated_source_row_column_clear_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-clear-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-clear-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-clear-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-clear-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3368,6 +3415,9 @@ void test_generated_source_row_column_clear_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column clear no-op save should keep output entries stable");
     check_row_column_cleared_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-clear-reopened-f4");
 }
 
 void test_generated_source_row_column_range_clear_roundtrip()
@@ -3377,6 +3427,10 @@ void test_generated_source_row_column_range_clear_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-clear-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-clear-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-clear-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-clear-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3565,6 +3619,9 @@ void test_generated_source_row_column_range_clear_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column range clear no-op save should keep output entries stable");
     check_row_column_range_cleared_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-range-clear-reopened-f4");
 }
 
 void test_generated_source_row_column_erase_roundtrip()
@@ -3574,6 +3631,10 @@ void test_generated_source_row_column_erase_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-erase-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-erase-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-erase-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-erase-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3735,6 +3796,9 @@ void test_generated_source_row_column_erase_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column erase no-op save should keep output entries stable");
     check_row_column_erased_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-erase-reopened-f4");
 }
 
 void test_generated_source_row_column_range_erase_roundtrip()
@@ -3744,6 +3808,10 @@ void test_generated_source_row_column_range_erase_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-erase-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-erase-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-erase-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-erase-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -3933,6 +4001,9 @@ void test_generated_source_row_column_range_erase_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean row/column range erase no-op save should keep output entries stable");
     check_row_column_range_erased_output(noop_output);
+    check_clear_erase_reopened_edit_at(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        "F4", "row-column-range-erase-reopened-f4");
 }
 
 void test_generated_source_append_row_roundtrip()

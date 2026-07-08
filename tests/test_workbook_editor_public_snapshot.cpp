@@ -2162,6 +2162,84 @@ void check_structural_shift_output(
         "reopened structural-shift Audit sheet should remain copy-original");
 }
 
+fastxlsx::CellRange expand_shift_range_for_followup_edit(
+    fastxlsx::CellRange used_range)
+{
+    if (used_range.last_row < 4) {
+        used_range.last_row = 4;
+    }
+    if (used_range.last_column < 6) {
+        used_range.last_column = 6;
+    }
+    return used_range;
+}
+
+void check_structural_shift_reopened_edit(
+    const std::filesystem::path& shifted_output,
+    const std::filesystem::path& noop_output,
+    const std::filesystem::path& edit_output,
+    const std::filesystem::path& edit_noop_output,
+    const fastxlsx::CellRange& shifted_range,
+    const std::vector<ExpectedShiftCell>& expected_cells,
+    const std::vector<fastxlsx::WorksheetCellReference>& absent_cells,
+    std::string_view followup_text)
+{
+    const auto shifted_entries = fastxlsx::test::read_zip_entries(shifted_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == shifted_entries,
+        "structural-shift reopened edit precondition should keep the clean no-op output stable");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!reopened.has_pending_changes() && !data.has_pending_changes(),
+        "structural-shift reopened edit should start from a clean materialized session");
+
+    data.set_cell("F4", fastxlsx::CellValue::text(std::string(followup_text)));
+    const fastxlsx::CellRange edited_range =
+        expand_shift_range_for_followup_edit(shifted_range);
+    std::vector<ExpectedShiftCell> edited_expected = expected_cells;
+    edited_expected.push_back(expected_shift_text(4, 6, followup_text));
+
+    check(reopened.has_pending_changes() && data.has_pending_changes(),
+        "structural-shift reopened edit should dirty the clean shifted output");
+    check(data.cell_count() == edited_expected.size() &&
+            is_used_range(data.used_range(), edited_range.first_row,
+                edited_range.first_column, edited_range.last_row,
+                edited_range.last_column) &&
+            data.get_cell("F4").text_value() == followup_text,
+        "structural-shift reopened edit should append a new sparse F4 cell");
+    for (const ExpectedShiftCell& expected : expected_cells) {
+        check(matches_expected_shift_value(
+                data.get_cell(expected.reference.row, expected.reference.column),
+                expected),
+            "structural-shift reopened edit should preserve shifted sparse cells");
+    }
+
+    reopened.save_as(edit_output);
+    check(!data.has_pending_changes(),
+        "structural-shift reopened edit save_as should clean the reused session");
+    check(fastxlsx::test::read_zip_entries(shifted_output) == shifted_entries,
+        "structural-shift reopened edit save_as should leave the shifted output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == shifted_entries,
+        "structural-shift reopened edit save_as should leave the no-op output unchanged");
+
+    const auto edit_entries = fastxlsx::test::read_zip_entries(edit_output);
+    const std::string& data_xml = edit_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, R"(r="F4")",
+        "structural-shift reopened edit save_as should write the new F4 cell");
+    check_contains(data_xml, followup_text,
+        "structural-shift reopened edit save_as should persist the new text");
+    check_structural_shift_output(
+        edit_output, edited_range, edited_expected, absent_cells);
+
+    fastxlsx::WorkbookEditor edit_reopened =
+        fastxlsx::WorkbookEditor::open(edit_output);
+    edit_reopened.save_as(edit_noop_output);
+    check(fastxlsx::test::read_zip_entries(edit_noop_output) == edit_entries,
+        "structural-shift reopened edit clean save should keep output stable");
+    check_structural_shift_output(
+        edit_noop_output, edited_range, edited_expected, absent_cells);
+}
+
 void check_invalid_snapshot_reads_preserve_diagnostics(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& sheet,
@@ -5900,6 +5978,10 @@ void test_generated_source_insert_rows_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-insert-rows-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-insert-rows-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-rows-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-rows-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -5968,6 +6050,10 @@ void test_generated_source_insert_rows_roundtrip()
         "clean insert_rows no-op save should keep output entries stable");
     check_structural_shift_output(
         noop_output, fastxlsx::CellRange {1, 1, 3, 4}, expected, absent);
+    check_structural_shift_reopened_edit(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 4}, expected, absent,
+        "insert-rows-reopened-f4");
 }
 
 void test_generated_source_delete_rows_roundtrip()
@@ -5977,6 +6063,10 @@ void test_generated_source_delete_rows_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-delete-rows-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-delete-rows-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-rows-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-rows-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -6046,6 +6136,10 @@ void test_generated_source_delete_rows_roundtrip()
         "clean delete_rows no-op save should keep output entries stable");
     check_structural_shift_output(
         noop_output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
+    check_structural_shift_reopened_edit(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 3}, expected, absent,
+        "delete-rows-reopened-f4");
 }
 
 void test_generated_source_insert_columns_roundtrip()
@@ -6055,6 +6149,10 @@ void test_generated_source_insert_columns_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-insert-columns-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-insert-columns-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-columns-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-columns-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -6129,6 +6227,10 @@ void test_generated_source_insert_columns_roundtrip()
         "clean insert_columns no-op save should keep output entries stable");
     check_structural_shift_output(
         noop_output, fastxlsx::CellRange {1, 1, 2, 5}, expected, absent);
+    check_structural_shift_reopened_edit(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 5}, expected, absent,
+        "insert-columns-reopened-f4");
 }
 
 void test_generated_source_delete_columns_roundtrip()
@@ -6138,6 +6240,10 @@ void test_generated_source_delete_columns_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-delete-columns-output.xlsx");
     const std::filesystem::path noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-delete-columns-noop-output.xlsx");
+    const std::filesystem::path reopened_edit_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-columns-reopened-edit-output.xlsx");
+    const std::filesystem::path reopened_edit_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-columns-reopened-edit-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -6214,6 +6320,10 @@ void test_generated_source_delete_columns_roundtrip()
         "clean delete_columns no-op save should keep output entries stable");
     check_structural_shift_output(
         noop_output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
+    check_structural_shift_reopened_edit(output, noop_output,
+        reopened_edit_output, reopened_edit_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 3}, expected, absent,
+        "delete-columns-reopened-f4");
 }
 
 void test_generated_source_delete_full_axis_roundtrip()

@@ -1662,6 +1662,12 @@ now run under separate `fastxlsx.workbook_editor.public-state-formula-audits`
 and `fastxlsx.workbook_editor.public-state-reacquire` CTest shards, preserving
 coverage while keeping the base public-state shard within the 60-second timeout
 budget.
+The guardrail, invalid-shift, cross-handle, budget-release, and last-error
+recovery tail of that saved-session matrix now runs under
+`fastxlsx.workbook_editor.public-state-reacquire-guards`. This is test
+organization only: it preserves `--shard=all` coverage and does not change
+`WorksheetEditor` public API behavior, sparse-store semantics, or save_as()
+handoff rules.
 The after-shift delete-column ordering is covered as well: dirty
 `WorksheetEditor::delete_columns()` first moves the styled source-backed formula
 to `C2` as `#REF!+A1`, and a later `request_full_calculation()` preserves

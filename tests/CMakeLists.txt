@@ -1020,6 +1020,9 @@ add_fastxlsx_workbook_editor_shard(
     public-state-reacquire fastxlsx_workbook_editor_public_state_tests 60
 )
 add_fastxlsx_workbook_editor_shard(
+    public-state-reacquire-guards fastxlsx_workbook_editor_public_state_tests 60
+)
+add_fastxlsx_workbook_editor_shard(
     public-guards fastxlsx_workbook_editor_public_guards_tests 60
 )
 add_fastxlsx_workbook_editor_shard(

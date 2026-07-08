@@ -6944,6 +6944,13 @@ coordinate-batch `clear_cell_values()` over absent targets clear the guard
 diagnostic, preserve sparse count/memory, avoid explicit blank or missing-cell
 synthesis, and still save as a copy-original package without leaking the
 rejected replacement payload.
+Range row/column clear/erase snapshot coverage now pins the same preflight
+shape for convenience APIs: clean and dirty `clear_rows()` / `clear_columns()`
+and `erase_rows()` / `erase_columns()` reject reversed, zero-based, and
+overflow bounds before sparse state changes; dirty sessions keep their final
+blank/erased shape after failures, a later valid no-op clears
+`last_edit_error()`, and the saved package still matches the expected
+projection plus byte-stable clean no-op output.
 Single missing-cell value-clear no-ops now cover the scalar cleanup branch too:
 row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
 failures clear diagnostics, preserve read-only or saved-clean sparse state,

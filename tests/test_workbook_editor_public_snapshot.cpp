@@ -3138,10 +3138,52 @@ void test_generated_source_row_column_range_clear_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_range_clear_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column range clear should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column range clear should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column range clear should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column range clear should preserve source-backed values");
+    };
+    const auto expect_clean_range_clear_failure =
+        [&editor, &check_clean_range_clear_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid row/column range clear should expose last_edit_error");
+            check_clean_range_clear_failure_state();
+        };
+    expect_clean_range_clear_failure(
+        [&sheet] { sheet.clear_rows(2, 1); },
+        "invalid clean clear_rows should reject reversed range");
+    expect_clean_range_clear_failure(
+        [&sheet] { sheet.clear_rows(0, 1); },
+        "invalid clean clear_rows should reject row zero");
+    expect_clean_range_clear_failure(
+        [&sheet] { sheet.clear_rows(1, 1048577); },
+        "invalid clean clear_rows should reject row overflow");
+    expect_clean_range_clear_failure(
+        [&sheet] { sheet.clear_columns(2, 1); },
+        "invalid clean clear_columns should reject reversed range");
+    expect_clean_range_clear_failure(
+        [&sheet] { sheet.clear_columns(0, 1); },
+        "invalid clean clear_columns should reject column zero");
+    expect_clean_range_clear_failure(
+        [&sheet] { sheet.clear_columns(1, 16385); },
+        "invalid clean clear_columns should reject column overflow");
+
     sheet.set_cell("C1", fastxlsx::CellValue::text("clear-range-c1"));
     sheet.set_cell("C2", fastxlsx::CellValue::number(9.0));
     sheet.set_cell("B3", fastxlsx::CellValue::text("clear-range-b3"));
     sheet.set_cell("D3", fastxlsx::CellValue::boolean(true));
+    check(!editor.last_edit_error().has_value(),
+        "row/column range clear setup should clear invalid range diagnostics");
     check(sheet.cell_count() == 7,
         "row/column range clear setup should add dirty sparse cells");
     check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
@@ -3181,6 +3223,57 @@ void test_generated_source_row_column_range_clear_roundtrip()
     check(!sheet.try_cell("B2").has_value() &&
             !sheet.try_cell("C3").has_value(),
         "row/column range clear should not synthesize missing cells");
+    const auto check_dirty_range_clear_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column range clear should keep the session dirty");
+        check(sheet.cell_count() == 7 &&
+                editor.pending_materialized_cell_count() == 7,
+            "invalid dirty row/column range clear should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+            "invalid dirty row/column range clear should preserve dirty bounds");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C2").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("D3").boolean_value(),
+            "invalid dirty row/column range clear should preserve dirty values");
+        check(!sheet.try_cell("B2").has_value() &&
+                !sheet.try_cell("C3").has_value(),
+            "invalid dirty row/column range clear should keep missing cells absent");
+    };
+    check_dirty_range_clear_failure_state();
+    const auto expect_dirty_range_clear_failure =
+        [&editor, &check_dirty_range_clear_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid dirty row/column range clear should expose last_edit_error");
+            check_dirty_range_clear_failure_state();
+        };
+    expect_dirty_range_clear_failure(
+        [&sheet] { sheet.clear_rows(2, 1); },
+        "invalid dirty clear_rows should reject reversed range");
+    expect_dirty_range_clear_failure(
+        [&sheet] { sheet.clear_rows(0, 1); },
+        "invalid dirty clear_rows should reject row zero");
+    expect_dirty_range_clear_failure(
+        [&sheet] { sheet.clear_rows(1, 1048577); },
+        "invalid dirty clear_rows should reject row overflow");
+    expect_dirty_range_clear_failure(
+        [&sheet] { sheet.clear_columns(2, 1); },
+        "invalid dirty clear_columns should reject reversed range");
+    expect_dirty_range_clear_failure(
+        [&sheet] { sheet.clear_columns(0, 1); },
+        "invalid dirty clear_columns should reject column zero");
+    expect_dirty_range_clear_failure(
+        [&sheet] { sheet.clear_columns(1, 16385); },
+        "invalid dirty clear_columns should reject column overflow");
+    sheet.clear_columns(2, 3);
+    check(!editor.last_edit_error().has_value(),
+        "row/column range clear recovery no-op should clear invalid diagnostics");
+    check_dirty_range_clear_failure_state();
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -3331,10 +3424,52 @@ void test_generated_source_row_column_range_erase_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_range_erase_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column range erase should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column range erase should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column range erase should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column range erase should preserve source-backed values");
+    };
+    const auto expect_clean_range_erase_failure =
+        [&editor, &check_clean_range_erase_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid row/column range erase should expose last_edit_error");
+            check_clean_range_erase_failure_state();
+        };
+    expect_clean_range_erase_failure(
+        [&sheet] { sheet.erase_rows(2, 1); },
+        "invalid clean erase_rows should reject reversed range");
+    expect_clean_range_erase_failure(
+        [&sheet] { sheet.erase_rows(0, 1); },
+        "invalid clean erase_rows should reject row zero");
+    expect_clean_range_erase_failure(
+        [&sheet] { sheet.erase_rows(1, 1048577); },
+        "invalid clean erase_rows should reject row overflow");
+    expect_clean_range_erase_failure(
+        [&sheet] { sheet.erase_columns(2, 1); },
+        "invalid clean erase_columns should reject reversed range");
+    expect_clean_range_erase_failure(
+        [&sheet] { sheet.erase_columns(0, 1); },
+        "invalid clean erase_columns should reject column zero");
+    expect_clean_range_erase_failure(
+        [&sheet] { sheet.erase_columns(1, 16385); },
+        "invalid clean erase_columns should reject column overflow");
+
     sheet.set_cell("C1", fastxlsx::CellValue::text("erase-range-c1"));
     sheet.set_cell("C2", fastxlsx::CellValue::number(9.0));
     sheet.set_cell("B3", fastxlsx::CellValue::text("erase-range-b3"));
     sheet.set_cell("D3", fastxlsx::CellValue::boolean(true));
+    check(!editor.last_edit_error().has_value(),
+        "row/column range erase setup should clear invalid range diagnostics");
     check(sheet.cell_count() == 7,
         "row/column range erase setup should add dirty sparse cells");
     check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
@@ -3376,6 +3511,60 @@ void test_generated_source_row_column_range_erase_roundtrip()
     check(!sheet.try_cell("B2").has_value() &&
             !sheet.try_cell("C3").has_value(),
         "row/column range erase should not synthesize missing cells");
+    const auto check_dirty_range_erase_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column range erase should keep the session dirty");
+        check(sheet.cell_count() == 1 &&
+                editor.pending_materialized_cell_count() == 1,
+            "invalid dirty row/column range erase should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 3, 4, 3, 4),
+            "invalid dirty row/column range erase should preserve dirty bounds");
+        check(sheet.get_cell("D3").boolean_value(),
+            "invalid dirty row/column range erase should preserve D3");
+        check(sheet.row_cells(1).empty() &&
+                sheet.row_cells(2).empty() &&
+                sheet.column_cells(2).empty() &&
+                sheet.column_cells(3).empty(),
+            "invalid dirty row/column range erase should keep erased snapshots absent");
+        check(!sheet.try_cell("A1").has_value() &&
+                !sheet.try_cell("B1").has_value() &&
+                !sheet.try_cell("C1").has_value() &&
+                !sheet.try_cell("A2").has_value() &&
+                !sheet.try_cell("C2").has_value() &&
+                !sheet.try_cell("B3").has_value(),
+            "invalid dirty row/column range erase should preserve erased coordinates");
+    };
+    check_dirty_range_erase_failure_state();
+    const auto expect_dirty_range_erase_failure =
+        [&editor, &check_dirty_range_erase_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid dirty row/column range erase should expose last_edit_error");
+            check_dirty_range_erase_failure_state();
+        };
+    expect_dirty_range_erase_failure(
+        [&sheet] { sheet.erase_rows(2, 1); },
+        "invalid dirty erase_rows should reject reversed range");
+    expect_dirty_range_erase_failure(
+        [&sheet] { sheet.erase_rows(0, 1); },
+        "invalid dirty erase_rows should reject row zero");
+    expect_dirty_range_erase_failure(
+        [&sheet] { sheet.erase_rows(1, 1048577); },
+        "invalid dirty erase_rows should reject row overflow");
+    expect_dirty_range_erase_failure(
+        [&sheet] { sheet.erase_columns(2, 1); },
+        "invalid dirty erase_columns should reject reversed range");
+    expect_dirty_range_erase_failure(
+        [&sheet] { sheet.erase_columns(0, 1); },
+        "invalid dirty erase_columns should reject column zero");
+    expect_dirty_range_erase_failure(
+        [&sheet] { sheet.erase_columns(1, 16385); },
+        "invalid dirty erase_columns should reject column overflow");
+    sheet.erase_columns(2, 3);
+    check(!editor.last_edit_error().has_value(),
+        "row/column range erase recovery no-op should clear invalid diagnostics");
+    check_dirty_range_erase_failure_state();
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

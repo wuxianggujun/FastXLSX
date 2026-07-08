@@ -2324,6 +2324,10 @@ It now adds the matching coordinate-batch `erase_cells(...)` roundtrip:
 selected source-backed and dirty sparse cells are removed, duplicate
 coordinates stay idempotent, missing coordinates are not synthesized,
 non-target dirty/source cells survive, and clean no-op save remains byte-stable.
+It now also pins strict A1-range `erase_cells("B1:C2")`: only represented cells
+inside the parsed range are removed, missing cells inside the range are not
+synthesized, range-external dirty/source cells survive, and clean no-op save
+remains byte-stable.
 The same lane now adds the `erase_row()` plus `erase_column()` contrast:
 represented source-backed and dirty sparse records are removed, the remaining
 non-target sparse cell shrinks `used_range()` to a single coordinate, saved XML

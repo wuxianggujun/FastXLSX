@@ -2338,7 +2338,10 @@ reopened snapshots keep those blanks, and clean no-op save output is stable.
 It now also pins `append_row()` on the same public snapshot lane: appending a
 text/number/boolean row expands sparse bounds, saves and reopens all appended
 cells, leaves the source package unchanged, and keeps the clean no-op output
-byte-stable.
+byte-stable. The same lane now also covers the row-limit failure recovery path:
+a legal `XFD1048576` dirty edit is preserved when a following `append_row()`
+would exceed Excel's maximum row, rejected payloads stay out of saved XML,
+reopen sees only the edge cell, and the clean no-op output remains stable.
 The same standalone lane now also covers `set_row()` plus `set_column()` sparse
 replacement: row replacement can add blanks and new columns, column replacement
 can overwrite source-backed and prior dirty cells, saved XML omits overwritten

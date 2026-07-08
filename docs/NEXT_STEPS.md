@@ -2281,6 +2281,11 @@ replacement: row replacement can add blanks and new columns, column replacement
 can overwrite source-backed and prior dirty cells, saved XML omits overwritten
 payloads, reopen preserves row/column snapshots, and clean no-op save remains
 byte-stable.
+It now also contrasts the value-only row/column prefix writers:
+`set_row_values()` updates only the row prefix while preserving cells beyond it,
+`set_column_values()` updates only the column prefix while preserving cells beyond
+it, saved XML omits overwritten source/intermediate values, reopen preserves
+row/column snapshots, and clean no-op save remains byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

@@ -502,10 +502,31 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(B1,"B1""B2",B2,Table1[B1]))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"(SUM(C1,"B1""B2",C2,Table1[B1]))",
+        "formula structural column insert should preserve escaped string literal text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"('B1 Sheet'!B1+[B1.xlsx]Sheet1!B1+[Book.xlsx]B1!B1)",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
         R"('B1 Sheet'!C1+[B1.xlsx]Sheet1!C1+[Book.xlsx]B1!C1)",
         "formula structural column insert should preserve quoted sheet and external workbook token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(A:A,$2:$3,Sheet1!$B:$C))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 2}),
+        R"(SUM(A:A,$4:$5,Sheet1!$B:$C))",
+        "formula structural row insert should move whole-row axes and preserve whole-column axes");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM($B:$C,2:3,Sheet1!$2:$3))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 2}),
+        R"(SUM($D:$E,2:3,Sheet1!$2:$3))",
+        "formula structural column insert should move whole-column axes and preserve whole-row axes");
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(

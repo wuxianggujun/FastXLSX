@@ -2342,6 +2342,10 @@ byte-stable. The same lane now also covers the row-limit failure recovery path:
 a legal `XFD1048576` dirty edit is preserved when a following `append_row()`
 would exceed Excel's maximum row, rejected payloads stay out of saved XML,
 reopen sees only the edge cell, and the clean no-op output remains stable.
+It now also covers the matching width-limit failure path in clean and dirty
+sessions: rows with 16,385 values are rejected before mutation, source or dirty
+sparse state is preserved, rejected payloads stay out of saved XML, and no-op
+save output remains stable.
 The same standalone lane now also covers `set_row()` plus `set_column()` sparse
 replacement: row replacement can add blanks and new columns, column replacement
 can overwrite source-backed and prior dirty cells, saved XML omits overwritten

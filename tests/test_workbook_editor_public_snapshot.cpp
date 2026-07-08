@@ -119,6 +119,18 @@ bool is_used_range(
         range->last_column == last_column;
 }
 
+std::vector<fastxlsx::CellValue> make_too_wide_append_row(std::string rejected_text)
+{
+    constexpr std::size_t too_wide_cell_count = 16385;
+    std::vector<fastxlsx::CellValue> values;
+    values.reserve(too_wide_cell_count);
+    values.push_back(fastxlsx::CellValue::text(std::move(rejected_text)));
+    while (values.size() < too_wide_cell_count) {
+        values.push_back(fastxlsx::CellValue::blank());
+    }
+    return values;
+}
+
 template <typename Callable>
 bool threw_fastxlsx_error(Callable&& callable)
 {
@@ -1138,6 +1150,47 @@ void check_append_row_limit_output(const std::filesystem::path& output)
     check(audit.cell_count() == 1 &&
             audit.get_cell("A1").text_value() == "untouched",
         "reopened append row-limit Audit sheet should remain copy-original");
+}
+
+void check_append_row_width_dirty_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened append width dirty output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened append width dirty output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened append width dirty Data output should keep the sheet clean");
+    check(data.cell_count() == 4,
+        "reopened append width dirty Data output should materialize source plus dirty cell");
+    check(is_used_range(data.used_range(), 1, 1, 3, 3),
+        "reopened append width dirty Data output should expose the dirty sparse used range");
+    check(data.get_cell("C3").text_value() == "append-width-dirty-kept",
+        "reopened append width dirty Data output should read the preserved dirty cell");
+    check(!data.try_cell("A4").has_value(),
+        "reopened append width dirty Data output should not expose rejected append values");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(all_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(all_cells[2], 2, 1, "tail") &&
+            is_text_snapshot(all_cells[3], 3, 3, "append-width-dirty-kept"),
+        "reopened append width dirty Data sparse_cells should expose source plus dirty cell");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        data.row_cells(3);
+    check(row_three.size() == 1 &&
+            is_text_snapshot(row_three[0], 3, 3, "append-width-dirty-kept"),
+        "reopened append width dirty Data row_cells should expose the dirty C3 cell");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened append width dirty Audit sheet should remain copy-original");
 }
 
 void check_batch_replaced_output(const std::filesystem::path& output)
@@ -3171,6 +3224,127 @@ void test_generated_source_append_row_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean appended no-op save should keep output entries stable");
     check_appended_output(noop_output);
+}
+
+void test_generated_source_append_row_width_failure_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-clean-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-clean-noop-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        std::vector<fastxlsx::CellValue> too_wide =
+            make_too_wide_append_row("append-width-clean-rejected");
+
+        check_initial_snapshots(sheet);
+        check(threw_fastxlsx_error([&sheet, &too_wide] {
+            sheet.append_row(too_wide);
+        }), "append_row should reject more than 16384 values in a clean session");
+        check(editor.last_edit_error().has_value(),
+            "append_row clean width failure should expose last_edit_error");
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "append_row clean width failure should keep the materialized session clean");
+        check(editor.pending_change_count() == 0,
+            "append_row clean width failure should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "append_row clean width failure should preserve source sparse shape");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row clean width failure should not expose rejected appended values");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "append_row clean width failure save_as should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "append_row clean width failure save_as should not record handoffs");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row clean width failure save_as should leave the source package unchanged");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row clean width failure save_as should copy source entries");
+        const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_not_contains(data_xml, "append-width-clean-rejected",
+            "append_row clean width failure save_as should omit rejected payloads");
+        check_not_contains(data_xml, R"(r="A3")",
+            "append_row clean width failure save_as should not synthesize rejected A3");
+        fastxlsx::WorkbookEditor clean_reopened = fastxlsx::WorkbookEditor::open(output);
+        fastxlsx::WorksheetEditor clean_data = clean_reopened.worksheet("Data");
+        check_initial_snapshots(clean_data);
+
+        clean_reopened.save_as(noop_output);
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "clean append width failure no-op save should keep output entries stable");
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-dirty-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-append-width-dirty-noop-output.xlsx");
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        std::vector<fastxlsx::CellValue> too_wide =
+            make_too_wide_append_row("append-width-dirty-rejected");
+
+        check_initial_snapshots(sheet);
+        sheet.set_cell("C3", fastxlsx::CellValue::text("append-width-dirty-kept"));
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "append_row dirty width setup should dirty the materialized session");
+        check(sheet.cell_count() == 4 &&
+                editor.pending_materialized_cell_count() == 4 &&
+                is_used_range(sheet.used_range(), 1, 1, 3, 3),
+            "append_row dirty width setup should expose source plus dirty C3");
+
+        check(threw_fastxlsx_error([&sheet, &too_wide] {
+            sheet.append_row(too_wide);
+        }), "append_row should reject more than 16384 values in a dirty session");
+        check(editor.last_edit_error().has_value(),
+            "append_row dirty width failure should expose last_edit_error");
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "append_row dirty width failure should keep the session dirty");
+        check(sheet.cell_count() == 4 &&
+                editor.pending_materialized_cell_count() == 4 &&
+                is_used_range(sheet.used_range(), 1, 1, 3, 3),
+            "append_row dirty width failure should preserve dirty sparse shape");
+        check(sheet.get_cell("C3").text_value() == "append-width-dirty-kept",
+            "append_row dirty width failure should preserve the dirty C3 cell");
+        check(!sheet.try_cell("A4").has_value(),
+            "append_row dirty width failure should not expose rejected appended values");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "append_row dirty width failure save_as should clean the materialized session");
+        check(editor.pending_change_count() == 1,
+            "append_row dirty width failure save_as should record one materialized handoff");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row dirty width failure save_as should leave the source package unchanged");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(data_xml, "<dimension ref=\"A1:C3\"",
+            "append_row dirty width failure save_as should write the dirty worksheet dimension");
+        check_contains(data_xml, "append-width-dirty-kept",
+            "append_row dirty width failure save_as should write the preserved dirty cell");
+        check_not_contains(data_xml, "append-width-dirty-rejected",
+            "append_row dirty width failure save_as should omit rejected payloads");
+        check_not_contains(data_xml, R"(r="A4")",
+            "append_row dirty width failure save_as should not synthesize rejected A4");
+        check_append_row_width_dirty_output(output);
+
+        fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+        reopened.save_as(noop_output);
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "clean append width dirty no-op save should keep output entries stable");
+        check_append_row_width_dirty_output(noop_output);
+    }
 }
 
 void test_generated_source_append_row_limit_failure_roundtrip()
@@ -5480,6 +5654,7 @@ int main()
         test_generated_source_row_column_erase_roundtrip();
         test_generated_source_row_column_range_erase_roundtrip();
         test_generated_source_append_row_roundtrip();
+        test_generated_source_append_row_width_failure_roundtrip();
         test_generated_source_append_row_limit_failure_roundtrip();
         test_generated_source_sparse_batch_replacement_roundtrip();
         test_generated_source_single_value_roundtrip();

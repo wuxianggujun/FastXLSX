@@ -714,7 +714,8 @@ and the preserved guard diagnostic; it also fresh-reopens the no-op package and
 keeps the preceding shift/mutation recovery packages byte-stable.
 The same-sheet guard recovery save now snapshots both saved handles after the
 accepted `E7` write, pinning the `E6`/`E7` column view, clean diagnostics, and
-stable materialized counters.
+stable materialized counters while keeping the preceding guard/shift output
+packages byte-stable.
 The renamed-summary path now also snapshots both saved handles after its later
 `E5` recovery save, pinning the cleared row-one blanks, `E5` column view, and
 clean rename/materialized summaries.

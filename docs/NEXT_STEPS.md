@@ -2359,6 +2359,11 @@ invalid shift spans leave clean sessions copy-original, edge-row/edge-column
 overflow failures preserve dirty `C3` and `XFD1048576` sparse cells, saved XML
 contains only the preserved dirty state, and clean no-op save output remains
 byte-stable.
+The shift/no-op recovery outputs now also have post-noop reuse coverage:
+structural shift no-op, structural shift failure, and empty literal no-op
+outputs in both clean and dirty sessions reopen clean, accept a later `F4` text
+edit, keep the original and no-op packages unchanged, fresh-reopen with `F4`,
+and byte-stabilize after the follow-up save.
 The same standalone lane now also covers `set_row()` plus `set_column()` sparse
 replacement: row replacement can add blanks and new columns, column replacement
 can overwrite source-backed and prior dirty cells, saved XML omits overwritten

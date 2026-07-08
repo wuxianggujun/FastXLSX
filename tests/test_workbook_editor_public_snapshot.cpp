@@ -6790,10 +6790,18 @@ void test_generated_source_structural_shift_noop_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-second-output.xlsx");
+    const std::filesystem::path followup_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-followup-output.xlsx");
+    const std::filesystem::path followup_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-followup-noop-output.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-dirty-noop-output.xlsx");
+    const std::filesystem::path dirty_followup_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-dirty-followup-output.xlsx");
+    const std::filesystem::path dirty_followup_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-shift-noop-dirty-followup-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -6869,6 +6877,8 @@ void test_generated_source_structural_shift_noop_roundtrip()
     reopened.save_as(second_output);
     check(fastxlsx::test::read_zip_entries(second_output) == output_entries,
         "clean structural shift no-op save should keep output entries stable");
+    check_reopened_followup_text_edit_at(output, second_output,
+        followup_output, followup_noop_output, "F4", "shift-noop-followup-f4");
 
     sheet.set_cell("C2", fastxlsx::CellValue::text("dirty-shift-noop-c2"));
     const auto seed_dirty_shift_error = [&editor, &sheet] {
@@ -6996,6 +7006,9 @@ void test_generated_source_structural_shift_noop_roundtrip()
     dirty_reopened.save_as(dirty_noop_output);
     check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
         "dirty structural shift no-op clean save should keep output entries stable");
+    check_reopened_followup_text_edit_at(dirty_output, dirty_noop_output,
+        dirty_followup_output, dirty_followup_noop_output, "F4",
+        "dirty-shift-noop-followup-f4");
 }
 
 void test_generated_source_structural_shift_failure_roundtrip()
@@ -7008,6 +7021,10 @@ void test_generated_source_structural_shift_failure_roundtrip()
             artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-clean-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-clean-noop-output.xlsx");
+        const std::filesystem::path followup_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-clean-followup-output.xlsx");
+        const std::filesystem::path followup_noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-clean-followup-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -7089,6 +7106,9 @@ void test_generated_source_structural_shift_failure_roundtrip()
         reopened.save_as(noop_output);
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "clean structural shift failure no-op save should keep output entries stable");
+        check_reopened_followup_text_edit_at(output, noop_output,
+            followup_output, followup_noop_output, "F4",
+            "clean-shift-failure-followup-f4");
     }
 
     {
@@ -7096,6 +7116,10 @@ void test_generated_source_structural_shift_failure_roundtrip()
             artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-dirty-output.xlsx");
         const std::filesystem::path noop_output =
             artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-dirty-noop-output.xlsx");
+        const std::filesystem::path followup_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-dirty-followup-output.xlsx");
+        const std::filesystem::path followup_noop_output =
+            artifact("fastxlsx-workbook-editor-public-snapshot-shift-failure-dirty-followup-noop-output.xlsx");
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
         fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -7212,6 +7236,9 @@ void test_generated_source_structural_shift_failure_roundtrip()
             "dirty structural shift failure clean save should keep output entries stable");
         check_structural_shift_output(noop_output,
             fastxlsx::CellRange {1, 1, 1048576, 16384}, expected, absent);
+        check_reopened_followup_text_edit_at(output, noop_output,
+            followup_output, followup_noop_output, "F4",
+            "dirty-shift-failure-followup-f4");
     }
 }
 
@@ -7222,10 +7249,18 @@ void test_generated_source_empty_literal_noop_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-second-output.xlsx");
+    const std::filesystem::path followup_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-followup-output.xlsx");
+    const std::filesystem::path followup_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-followup-noop-output.xlsx");
     const std::filesystem::path dirty_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-dirty-output.xlsx");
     const std::filesystem::path dirty_noop_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-dirty-noop-output.xlsx");
+    const std::filesystem::path dirty_followup_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-dirty-followup-output.xlsx");
+    const std::filesystem::path dirty_followup_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-dirty-followup-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -7362,6 +7397,9 @@ void test_generated_source_empty_literal_noop_roundtrip()
     reopened.save_as(second_output);
     check(fastxlsx::test::read_zip_entries(second_output) == output_entries,
         "clean empty literal no-op save should keep output entries stable");
+    check_reopened_followup_text_edit_at(output, second_output,
+        followup_output, followup_noop_output, "F4",
+        "empty-literal-noop-followup-f4");
 
     sheet.set_cell("C2", fastxlsx::CellValue::text("empty-noop-dirty"));
     const auto check_dirty_noop_state = [&editor, &sheet] {
@@ -7427,6 +7465,9 @@ void test_generated_source_empty_literal_noop_roundtrip()
     dirty_reopened.save_as(dirty_noop_output);
     check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
         "dirty empty literal no-op clean save should keep output entries stable");
+    check_reopened_followup_text_edit_at(dirty_output, dirty_noop_output,
+        dirty_followup_output, dirty_followup_noop_output, "F4",
+        "dirty-empty-literal-noop-followup-f4");
 }
 
 } // namespace

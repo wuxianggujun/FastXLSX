@@ -1353,6 +1353,72 @@ void check_inspection_output(const std::filesystem::path& output)
         "reopened inspection Audit sheet should remain copy-original");
 }
 
+void check_catalog_inspection_output(
+    const std::filesystem::path& output, bool has_dirty_edit)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened catalog inspection output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened catalog inspection output should not expose pending handoffs");
+    check(reopened.worksheet_names() == std::vector<std::string>({"Data", "Audit"}),
+        "reopened catalog inspection output should expose planned worksheet names");
+    check(reopened.source_worksheet_names() ==
+            std::vector<std::string>({"Data", "Audit"}),
+        "reopened catalog inspection output should expose source worksheet names");
+    check(reopened.has_worksheet("Data") &&
+            reopened.has_worksheet("Audit") &&
+            !reopened.has_worksheet("Missing"),
+        "reopened catalog inspection output should answer planned worksheet probes");
+    check(reopened.has_source_worksheet("Data") &&
+            reopened.has_source_worksheet("Audit") &&
+            !reopened.has_source_worksheet("Missing"),
+        "reopened catalog inspection output should answer source worksheet probes");
+
+    std::optional<fastxlsx::WorksheetEditor> data =
+        reopened.try_worksheet("Data");
+    std::optional<fastxlsx::WorksheetEditor> audit =
+        reopened.try_worksheet("Audit");
+    check(data.has_value() && audit.has_value(),
+        "reopened catalog inspection output should reacquire existing sheets");
+    check(!reopened.try_worksheet("Missing").has_value(),
+        "reopened catalog inspection output should return nullopt for a missing sheet");
+    check(data->name() == "Data" && audit->name() == "Audit",
+        "reopened catalog inspection output should keep handle names");
+    check(!data->has_pending_changes() &&
+            !audit->has_pending_changes() &&
+            !reopened.has_pending_changes(),
+        "reopened catalog inspection reads should keep sessions clean");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "reopened catalog inspection reads should not expose dirty materialized diagnostics");
+
+    const std::size_t expected_cells = has_dirty_edit ? 4u : 3u;
+    check(data->cell_count() == expected_cells,
+        "reopened catalog inspection Data output should expose expected sparse cell count");
+    check(is_used_range(data->used_range(), 1, 1, 2, has_dirty_edit ? 3u : 2u),
+        "reopened catalog inspection Data output should expose expected sparse bounds");
+    check(data->get_cell("A1").text_value() == "alpha" &&
+            data->get_cell("B1").number_value() == 2.0 &&
+            data->get_cell("A2").text_value() == "tail",
+        "reopened catalog inspection Data output should preserve source-backed cells");
+    if (has_dirty_edit) {
+        check(data->get_cell("C2").text_value() == "catalog-dirty",
+            "reopened catalog inspection Data output should expose the saved dirty cell");
+    } else {
+        check(!data->try_cell("C2").has_value(),
+            "reopened catalog inspection clean output should not synthesize C2");
+    }
+    check(audit->cell_count() == 1 &&
+            audit->get_cell("A1").text_value() == "untouched",
+        "reopened catalog inspection Audit sheet should remain copy-original");
+    check(!data->has_pending_changes() &&
+            !audit->has_pending_changes() &&
+            !reopened.has_pending_changes(),
+        "reopened catalog inspection cell reads should keep sessions clean");
+}
+
 void check_sparse_initializer_list_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -3329,6 +3395,102 @@ void test_generated_source_inspection_roundtrip()
     check_inspection_output(noop_output);
 }
 
+void test_generated_source_catalog_inspection_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path clean_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-catalog-clean-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-catalog-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-catalog-dirty-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.worksheet_names() == std::vector<std::string>({"Data", "Audit"}),
+        "catalog inspection should expose planned source worksheet names");
+    check(editor.source_worksheet_names() ==
+            std::vector<std::string>({"Data", "Audit"}),
+        "catalog inspection should expose original source worksheet names");
+    check(editor.has_worksheet("Data") &&
+            editor.has_worksheet("Audit") &&
+            !editor.has_worksheet("Missing"),
+        "catalog inspection should answer planned worksheet probes");
+    check(editor.has_source_worksheet("Data") &&
+            editor.has_source_worksheet("Audit") &&
+            !editor.has_source_worksheet("Missing"),
+        "catalog inspection should answer source worksheet probes");
+
+    std::optional<fastxlsx::WorksheetEditor> data =
+        editor.try_worksheet("Data");
+    std::optional<fastxlsx::WorksheetEditor> audit =
+        editor.try_worksheet("Audit");
+    check(data.has_value() && audit.has_value(),
+        "catalog inspection should acquire existing worksheets through try_worksheet");
+    check(!editor.try_worksheet("Missing").has_value(),
+        "catalog inspection should return nullopt for a missing worksheet");
+    check(data->name() == "Data" && audit->name() == "Audit",
+        "catalog inspection should keep worksheet handle names");
+    check(data->get_cell("A1").text_value() == "alpha" &&
+            audit->get_cell("A1").text_value() == "untouched",
+        "catalog inspection should read source-backed worksheet handles");
+    check(!data->has_pending_changes() &&
+            !audit->has_pending_changes() &&
+            !editor.has_pending_changes(),
+        "catalog inspection should not dirty materialized sessions");
+    check(editor.pending_change_count() == 0 &&
+            editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "catalog inspection should not expose pending materialized diagnostics");
+
+    editor.save_as(clean_output);
+    check(!data->has_pending_changes() &&
+            !audit->has_pending_changes() &&
+            !editor.has_pending_changes(),
+        "catalog clean save_as should keep materialized sessions clean");
+    check(editor.pending_change_count() == 0,
+        "catalog clean save_as should not record a handoff");
+    check(fastxlsx::test::read_zip_entries(clean_output) == source_entries,
+        "catalog clean save_as should copy the source package entries");
+    check_catalog_inspection_output(clean_output, false);
+
+    data->set_cell("C2", fastxlsx::CellValue::text("catalog-dirty"));
+    check(data->has_pending_changes() && editor.has_pending_changes(),
+        "catalog post-clean edit should dirty the reused materialized handle");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string>({"Data"}),
+        "catalog post-clean edit should expose dirty Data materialized diagnostics");
+    check(editor.pending_materialized_cell_count() == 4,
+        "catalog post-clean edit should expose dirty sparse cell count");
+
+    editor.save_as(dirty_output);
+    check(!data->has_pending_changes(),
+        "catalog dirty save_as should clean the reused materialized handle");
+    check(editor.pending_change_count() == 1,
+        "catalog dirty save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "catalog dirty save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(clean_output) == source_entries,
+        "catalog dirty save_as should leave the clean no-op output unchanged");
+
+    const auto dirty_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string& data_xml = dirty_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C2\"",
+        "catalog dirty save_as should expand the worksheet dimension");
+    check_contains(data_xml, "catalog-dirty",
+        "catalog dirty save_as should write the dirty C2 text");
+    check_not_contains(data_xml, R"(r="D2")",
+        "catalog dirty save_as should not synthesize unrelated cells");
+    check_catalog_inspection_output(dirty_output, true);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(dirty_output);
+    reopened.save_as(dirty_noop_output);
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
+        "catalog dirty clean no-op save should keep output entries stable");
+    check_catalog_inspection_output(dirty_noop_output, true);
+}
+
 void test_generated_source_sparse_initializer_list_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -4294,6 +4456,7 @@ int main()
         test_generated_source_single_value_roundtrip();
         test_generated_source_contains_cell_roundtrip();
         test_generated_source_inspection_roundtrip();
+        test_generated_source_catalog_inspection_roundtrip();
         test_generated_source_sparse_initializer_list_roundtrip();
         test_generated_source_span_batch_roundtrip();
         test_generated_source_sparse_value_batch_roundtrip();

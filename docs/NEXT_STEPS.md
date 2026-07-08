@@ -2290,6 +2290,11 @@ save/reopen lane: `name()`, `try_cell()`, `get_cell()`, `contains_cell()`,
 `used_range()`, `estimated_memory_usage()`, and requested sparse snapshots stay
 non-dirty over source and dirty sessions, preserve dirty materialized diagnostics,
 and reopen cleanly after the dirty save plus byte-stable no-op save.
+The same standalone snapshot lane now also batches workbook catalog inspection:
+`worksheet_names()`, `source_worksheet_names()`, `has_worksheet()`,
+`has_source_worksheet()`, and `try_worksheet()` stay read-only over a generated
+source workbook, a copy-original clean save, a later reused-handle dirty
+`WorksheetEditor` save, fresh reopen, and byte-stable clean no-op save.
 It now also covers the `sparse_cells(initializer_list<WorksheetCellReference>)`
 inspection convenience end to end: source and dirty sessions preserve requested
 order, duplicate coordinates, and missing-cell skips, invalid literal batches

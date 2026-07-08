@@ -2260,6 +2260,10 @@ a source workbook through `Workbook`, opens it through `WorkbookEditor`, checks
 `row_cells()` / `column_cells()` snapshots, verifies invalid snapshot reads
 preserve `last_edit_error()`, saves an edit, reopens it, and confirms a clean
 no-op `save_as()` remains byte-stable.
+That standalone CTest now also covers the other public sparse snapshot overloads:
+full `sparse_cells()`, bounded `CellRange`, strict A1 range strings, and
+coordinate-batch reads all preserve source values, saved edits, requested-order
+batch semantics, and prior diagnostics on invalid read failures.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

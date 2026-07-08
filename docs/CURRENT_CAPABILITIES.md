@@ -72,7 +72,8 @@
   represented sparse row/column shifts、
   strict uppercase A1 convenience overloads、
   `cell_count()`、`estimated_memory_usage()` 和 dirty-session `save_as()` auto-flush。
-  Invalid row/column snapshot coordinates throw read failures without replacing
+  Invalid snapshot row/column coordinates, ranges, A1 range strings, and
+  coordinate-batch entries throw read failures without replacing
   `WorkbookEditor::last_edit_error()` or dirtying the materialized session.
 - `set_cells()` and `set_cell_values()` batch inputs are preflighted, allow duplicate
   coordinates, and apply later-wins ordering. `set_cell()` / `set_cells()` /

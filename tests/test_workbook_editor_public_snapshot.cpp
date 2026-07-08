@@ -3,10 +3,13 @@
 
 #include "zip_test_utils.hpp"
 
+#include <array>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -41,6 +44,30 @@ void check_not_contains(
     if (haystack.find(needle) != std::string::npos) {
         throw TestFailure(message);
     }
+}
+
+bool is_text_snapshot(
+    const fastxlsx::WorksheetCellSnapshot& cell,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view text)
+{
+    return cell.reference.row == row &&
+        cell.reference.column == column &&
+        cell.value.kind() == fastxlsx::CellValueKind::Text &&
+        cell.value.text_value() == text;
+}
+
+bool is_number_snapshot(
+    const fastxlsx::WorksheetCellSnapshot& cell,
+    std::uint32_t row,
+    std::uint32_t column,
+    double value)
+{
+    return cell.reference.row == row &&
+        cell.reference.column == column &&
+        cell.value.kind() == fastxlsx::CellValueKind::Number &&
+        cell.value.number_value() == value;
 }
 
 template <typename Callable>
@@ -81,10 +108,53 @@ std::filesystem::path write_generated_source_workbook()
     return source;
 }
 
+void check_initial_sparse_snapshots(fastxlsx::WorksheetEditor& sheet)
+{
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        sheet.sparse_cells();
+    check(all_cells.size() == 3 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(all_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(all_cells[2], 2, 1, "tail"),
+        "generated source sparse_cells should expose row-major source values");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> range_cells =
+        sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    check(range_cells.size() == 3 &&
+            is_text_snapshot(range_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(range_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(range_cells[2], 2, 1, "tail"),
+        "generated source sparse_cells(CellRange) should expose row-major source values");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> a1_range_cells =
+        sheet.sparse_cells("A1:B2");
+    check(a1_range_cells.size() == 3 &&
+            is_text_snapshot(a1_range_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(a1_range_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(a1_range_cells[2], 2, 1, "tail"),
+        "generated source sparse_cells(A1 range) should expose row-major source values");
+
+    const std::array<fastxlsx::WorksheetCellReference, 4> requested_cells {{
+        {2, 1},
+        {1, 2},
+        {3, 3},
+        {2, 1},
+    }};
+    const std::vector<fastxlsx::WorksheetCellSnapshot> batch_cells =
+        sheet.sparse_cells(std::span<const fastxlsx::WorksheetCellReference>(
+            requested_cells.data(), requested_cells.size()));
+    check(batch_cells.size() == 3 &&
+            is_text_snapshot(batch_cells[0], 2, 1, "tail") &&
+            is_number_snapshot(batch_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(batch_cells[2], 2, 1, "tail"),
+        "generated source sparse_cells(batch) should keep requested order, duplicates, and missing-cell skips");
+}
+
 void check_initial_snapshots(fastxlsx::WorksheetEditor& sheet)
 {
     check(sheet.cell_count() == 3,
         "generated source snapshot should materialize three cells");
+    check_initial_sparse_snapshots(sheet);
 
     const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
         sheet.row_cells(1);
@@ -113,6 +183,51 @@ void check_initial_snapshots(fastxlsx::WorksheetEditor& sheet)
         "generated source column_cells should expose column-major source values");
 }
 
+void check_reopened_sparse_snapshots(fastxlsx::WorksheetEditor& data)
+{
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(all_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(all_cells[2], 2, 1, "tail") &&
+            is_text_snapshot(all_cells[3], 2, 3, "snapshot-edit"),
+        "reopened Data sparse_cells should expose row-major saved values");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> range_cells =
+        data.sparse_cells(fastxlsx::CellRange {1, 1, 2, 3});
+    check(range_cells.size() == 4 &&
+            is_text_snapshot(range_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(range_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(range_cells[2], 2, 1, "tail") &&
+            is_text_snapshot(range_cells[3], 2, 3, "snapshot-edit"),
+        "reopened Data sparse_cells(CellRange) should expose saved sparse values");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> a1_range_cells =
+        data.sparse_cells("A1:C2");
+    check(a1_range_cells.size() == 4 &&
+            is_text_snapshot(a1_range_cells[0], 1, 1, "alpha") &&
+            is_number_snapshot(a1_range_cells[1], 1, 2, 2.0) &&
+            is_text_snapshot(a1_range_cells[2], 2, 1, "tail") &&
+            is_text_snapshot(a1_range_cells[3], 2, 3, "snapshot-edit"),
+        "reopened Data sparse_cells(A1 range) should expose saved sparse values");
+
+    const std::array<fastxlsx::WorksheetCellReference, 4> requested_cells {{
+        {2, 3},
+        {1, 1},
+        {3, 2},
+        {2, 3},
+    }};
+    const std::vector<fastxlsx::WorksheetCellSnapshot> batch_cells =
+        data.sparse_cells(std::span<const fastxlsx::WorksheetCellReference>(
+            requested_cells.data(), requested_cells.size()));
+    check(batch_cells.size() == 3 &&
+            is_text_snapshot(batch_cells[0], 2, 3, "snapshot-edit") &&
+            is_text_snapshot(batch_cells[1], 1, 1, "alpha") &&
+            is_text_snapshot(batch_cells[2], 2, 3, "snapshot-edit"),
+        "reopened Data sparse_cells(batch) should expose saved values in requested order");
+}
+
 void check_reopened_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -128,6 +243,7 @@ void check_reopened_output(const std::filesystem::path& output)
         "reopened Data snapshot output should materialize the edited sparse cells");
     check(data.get_cell("C2").text_value() == "snapshot-edit",
         "reopened Data snapshot output should read the saved edit");
+    check_reopened_sparse_snapshots(data);
 
     const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
         data.row_cells(2);
@@ -155,6 +271,41 @@ void check_reopened_output(const std::filesystem::path& output)
     check(audit.cell_count() == 1 &&
             audit.get_cell("A1").text_value() == "untouched",
         "reopened Audit sheet should remain copy-original");
+}
+
+void check_invalid_snapshot_reads_preserve_diagnostics(
+    fastxlsx::WorkbookEditor& editor,
+    fastxlsx::WorksheetEditor& sheet,
+    const std::optional<std::string>& mutation_error)
+{
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.row_cells(0); }),
+        "row_cells should reject invalid row coordinates");
+    check(editor.last_edit_error() == mutation_error,
+        "row_cells invalid read should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.column_cells(0); }),
+        "column_cells should reject invalid column coordinates");
+    check(editor.last_edit_error() == mutation_error,
+        "column_cells invalid read should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&sheet] {
+        (void)sheet.sparse_cells(fastxlsx::CellRange {0, 1, 1, 1});
+    }), "sparse_cells(CellRange) should reject invalid ranges");
+    check(editor.last_edit_error() == mutation_error,
+        "sparse_cells(CellRange) invalid read should preserve prior last_edit_error");
+    check(threw_fastxlsx_error([&sheet] { (void)sheet.sparse_cells("B2:A1"); }),
+        "sparse_cells(A1 range) should reject reversed ranges");
+    check(editor.last_edit_error() == mutation_error,
+        "sparse_cells(A1 range) invalid read should preserve prior last_edit_error");
+
+    const std::array<fastxlsx::WorksheetCellReference, 2> invalid_batch {{
+        {1, 1},
+        {0, 1},
+    }};
+    check(threw_fastxlsx_error([&sheet, &invalid_batch] {
+        (void)sheet.sparse_cells(std::span<const fastxlsx::WorksheetCellReference>(
+            invalid_batch.data(), invalid_batch.size()));
+    }), "sparse_cells(batch) should reject invalid coordinates");
+    check(editor.last_edit_error() == mutation_error,
+        "sparse_cells(batch) invalid read should preserve prior last_edit_error");
 }
 
 void test_generated_source_snapshot_edit_roundtrip()
@@ -185,14 +336,8 @@ void test_generated_source_snapshot_edit_roundtrip()
     check(mutation_error.has_value(),
         "invalid mutation should expose last_edit_error");
 
-    check(threw_fastxlsx_error([&sheet] { (void)sheet.row_cells(0); }),
-        "row_cells should reject invalid row coordinates");
-    check(editor.last_edit_error() == mutation_error,
-        "row_cells invalid read should preserve prior last_edit_error");
-    check(threw_fastxlsx_error([&sheet] { (void)sheet.column_cells(0); }),
-        "column_cells should reject invalid column coordinates");
-    check(editor.last_edit_error() == mutation_error,
-        "column_cells invalid read should preserve prior last_edit_error");
+    check_invalid_snapshot_reads_preserve_diagnostics(
+        editor, sheet, mutation_error);
     check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
         "invalid snapshot reads should leave the session clean");
     check(sheet.cell_count() == 3,

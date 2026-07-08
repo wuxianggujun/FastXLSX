@@ -662,6 +662,10 @@ that clean no-op save too: formula-reference deletion outputs clear dirty
 materialized diagnostics, replacement diagnostics, summaries, and
 `last_edit_error()` before fresh reopen, and their no-op outputs match the
 shifted packages while preserving the `#REF!` formula row/column readback.
+They now also continue past that clean no-op point: later same-handle edits
+save fresh post-noop outputs, leave source/shifted/no-op packages unchanged,
+and fresh reopen keeps both the translated `#REF!` formulas and the later
+cells.
 The row-insert saved-session reacquire no-op path now also covers a moved dirty
 formula and moved dirty tail cell: after `insert_rows()` translates the formula
 and the first `save_as()` flushes it, matching-option reacquire reuses that

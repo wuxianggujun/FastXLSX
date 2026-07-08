@@ -1817,7 +1817,7 @@ auto-flushed materialized sheet and the replacement-only sheet, pinning clean
 readback after mixed summary diagnostics.
 It now repeats the clean no-op save too, preserving the retained replacement
 summary, keeping materialized diagnostics empty, and reopening both worksheets
-from the second output.
+from the second output while keeping the prior mixed-summary outputs byte-stable.
 The materialized-summary move-owner path now saves and reopens the assigned
 editor output, confirming summary ownership transfer persists while discarded
 target materialized edits stay absent.
@@ -6324,6 +6324,9 @@ stable, the clean no-op save preserves public save-state/catalog snapshots,
 emits byte-stable package entries, and reopens both sheets unchanged. This is
 retained-summary save hygiene only, not commit semantics, replacement cleanup,
 metadata repair, or relationship sync.
+That retained replacement-summary path also rechecks the first materialized
+output and first no-op output after the second clean no-op save, proving later
+clean saves do not rewrite already-emitted mixed-summary packages.
 Move-owned aggregate materialized diagnostics now have the same save/no-op
 coverage: moved cell-count and memory diagnostics survive move construction and
 move assignment, the first save clears the aggregate diagnostics and drops the

@@ -1,5 +1,6 @@
 #include <fastxlsx/workbook.hpp>
 #include <fastxlsx/workbook_editor.hpp>
+#include <fastxlsx/streaming_writer.hpp>
 
 #include "zip_test_utils.hpp"
 
@@ -69,6 +70,28 @@ bool is_number_snapshot(
         cell.reference.column == column &&
         cell.value.kind() == fastxlsx::CellValueKind::Number &&
         cell.value.number_value() == value;
+}
+
+bool is_styled_number_snapshot(
+    const fastxlsx::WorksheetCellSnapshot& cell,
+    std::uint32_t row,
+    std::uint32_t column,
+    double value,
+    fastxlsx::StyleId style_id)
+{
+    return is_number_snapshot(cell, row, column, value) &&
+        cell.value.has_style() &&
+        cell.value.style_id().value() == style_id.value();
+}
+
+bool is_unstyled_text_snapshot(
+    const fastxlsx::WorksheetCellSnapshot& cell,
+    std::uint32_t row,
+    std::uint32_t column,
+    std::string_view text)
+{
+    return is_text_snapshot(cell, row, column, text) &&
+        !cell.value.has_style();
 }
 
 bool is_boolean_snapshot(
@@ -166,6 +189,26 @@ std::filesystem::path write_generated_source_workbook()
     audit.append_row({fastxlsx::Cell::text("untouched")});
 
     workbook.save(source);
+    return source;
+}
+
+std::filesystem::path write_generated_styled_snapshot_source_workbook(
+    fastxlsx::StyleId& styled_number_style)
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-snapshot-source-style-source.xlsx");
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+    styled_number_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+
+    fastxlsx::WorksheetWriter styled = writer.add_worksheet("Styled");
+    styled.append_row({
+        fastxlsx::CellView::number(1.25).with_style(styled_number_style),
+        fastxlsx::CellView::text("unstyled-b1"),
+    });
+    styled.append_row({fastxlsx::CellView::text("unstyled-a2")});
+    writer.close();
+
     return source;
 }
 
@@ -336,6 +379,69 @@ void check_reopened_output(const std::filesystem::path& output)
     check(audit.cell_count() == 1 &&
             audit.get_cell("A1").text_value() == "untouched",
         "reopened Audit sheet should remain copy-original");
+}
+
+void check_styled_snapshot_value_output(
+    const std::filesystem::path& output,
+    fastxlsx::StyleId styled_number_style)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened styled snapshot output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened styled snapshot output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor styled = reopened.worksheet("Styled");
+    check(!styled.has_pending_changes(),
+        "reopened Styled snapshot output should keep the sheet clean");
+    check(styled.cell_count() == 4,
+        "reopened Styled snapshot output should expose all represented cells");
+    check(is_used_range(styled.used_range(), 1, 1, 2, 3),
+        "reopened Styled snapshot output should expose the saved sparse bounds");
+
+    const fastxlsx::CellValue a1 = styled.get_cell("A1");
+    check(a1.kind() == fastxlsx::CellValueKind::Number &&
+            a1.number_value() == 9.5 &&
+            a1.has_style() &&
+            a1.style_id().value() == styled_number_style.value(),
+        "reopened Styled snapshot output should preserve source StyleId on A1");
+    const fastxlsx::CellValue b1 = styled.get_cell("B1");
+    check(b1.kind() == fastxlsx::CellValueKind::Text &&
+            b1.text_value() == "unstyled-b1-updated" &&
+            !b1.has_style(),
+        "reopened Styled snapshot output should keep value-only B1 unstyled");
+    const fastxlsx::CellValue c2 = styled.get_cell("C2");
+    check(c2.kind() == fastxlsx::CellValueKind::Text &&
+            c2.text_value() == "new-unstyled-c2" &&
+            !c2.has_style(),
+        "reopened Styled snapshot output should keep inserted C2 unstyled");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        styled.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_styled_number_snapshot(
+                all_cells[0], 1, 1, 9.5, styled_number_style) &&
+            is_unstyled_text_snapshot(
+                all_cells[1], 1, 2, "unstyled-b1-updated") &&
+            is_unstyled_text_snapshot(all_cells[2], 2, 1, "unstyled-a2") &&
+            is_unstyled_text_snapshot(all_cells[3], 2, 3, "new-unstyled-c2"),
+        "reopened Styled sparse_cells should expose style handles and unstyled records");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        styled.row_cells(1);
+    check(row_one.size() == 2 &&
+            is_styled_number_snapshot(
+                row_one[0], 1, 1, 9.5, styled_number_style) &&
+            is_unstyled_text_snapshot(row_one[1], 1, 2, "unstyled-b1-updated"),
+        "reopened Styled row_cells should preserve the styled source handle");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+        styled.column_cells(1);
+    check(column_one.size() == 2 &&
+            is_styled_number_snapshot(
+                column_one[0], 1, 1, 9.5, styled_number_style) &&
+            is_unstyled_text_snapshot(column_one[1], 2, 1, "unstyled-a2"),
+        "reopened Styled column_cells should preserve styled and unstyled cells");
 }
 
 void check_erased_output(const std::filesystem::path& output)
@@ -2144,6 +2250,93 @@ void test_generated_source_snapshot_edit_roundtrip()
     check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
         "clean snapshot no-op save should keep output entries stable");
     check_reopened_output(noop_output);
+}
+
+void test_generated_source_style_snapshot_value_roundtrip()
+{
+    fastxlsx::StyleId styled_number_style;
+    const std::filesystem::path source =
+        write_generated_styled_snapshot_source_workbook(styled_number_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-source-style-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-source-style-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor styled = editor.worksheet("Styled");
+
+    const fastxlsx::CellValue source_a1 = styled.get_cell("A1");
+    check(source_a1.kind() == fastxlsx::CellValueKind::Number &&
+            source_a1.number_value() == 1.25 &&
+            source_a1.has_style() &&
+            source_a1.style_id().value() == styled_number_style.value(),
+        "styled snapshot source should materialize the source StyleId on A1");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> initial_cells =
+        styled.sparse_cells();
+    check(initial_cells.size() == 3 &&
+            is_styled_number_snapshot(
+                initial_cells[0], 1, 1, 1.25, styled_number_style) &&
+            is_unstyled_text_snapshot(initial_cells[1], 1, 2, "unstyled-b1") &&
+            is_unstyled_text_snapshot(initial_cells[2], 2, 1, "unstyled-a2"),
+        "styled snapshot source sparse_cells should expose source styles");
+
+    styled.set_cell_value("A1", fastxlsx::CellValue::number(9.5));
+    styled.set_cell_value(
+        "B1", fastxlsx::CellValue::text("unstyled-b1-updated"));
+    styled.set_cell("C2", fastxlsx::CellValue::text("new-unstyled-c2"));
+
+    check(styled.has_pending_changes() && editor.has_pending_changes(),
+        "styled snapshot value edits should dirty the materialized session");
+    check(editor.pending_materialized_cell_count() == 4,
+        "styled snapshot value edits should expose materialized cell count");
+    check(is_used_range(styled.used_range(), 1, 1, 2, 3),
+        "styled snapshot value edits should expand sparse bounds");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> dirty_cells =
+        styled.sparse_cells();
+    check(dirty_cells.size() == 4 &&
+            is_styled_number_snapshot(
+                dirty_cells[0], 1, 1, 9.5, styled_number_style) &&
+            is_unstyled_text_snapshot(
+                dirty_cells[1], 1, 2, "unstyled-b1-updated") &&
+            is_unstyled_text_snapshot(dirty_cells[2], 2, 1, "unstyled-a2") &&
+            is_unstyled_text_snapshot(dirty_cells[3], 2, 3, "new-unstyled-c2"),
+        "styled snapshot dirty sparse_cells should preserve source StyleId handles");
+
+    editor.save_as(output);
+    check(!styled.has_pending_changes(),
+        "styled snapshot save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "styled snapshot save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled snapshot save_as should leave the source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "styled snapshot save_as should preserve the source styles part");
+    const std::string& sheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_a1_prefix =
+        std::string(R"(<c r="A1" s=")") +
+        std::to_string(styled_number_style.value()) + R"(")";
+    check_contains(sheet_xml, styled_a1_prefix,
+        "styled snapshot save_as should write A1 with the source StyleId");
+    check_contains(sheet_xml, "<v>9.5</v>",
+        "styled snapshot save_as should write the value-only A1 update");
+    check_not_contains(sheet_xml, R"(s="0")",
+        "styled snapshot save_as should not serialize default style handles");
+    check_contains(sheet_xml, "unstyled-b1-updated",
+        "styled snapshot save_as should write value-only B1 text");
+    check_contains(sheet_xml, "new-unstyled-c2",
+        "styled snapshot save_as should write inserted C2 text");
+    check_styled_snapshot_value_output(output, styled_number_style);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean styled snapshot no-op save should keep output entries stable");
+    check_styled_snapshot_value_output(noop_output, styled_number_style);
 }
 
 void test_generated_source_erase_roundtrip()
@@ -5818,6 +6011,7 @@ int main()
 {
     try {
         test_generated_source_snapshot_edit_roundtrip();
+        test_generated_source_style_snapshot_value_roundtrip();
         test_generated_source_erase_roundtrip();
         test_generated_source_erase_all_roundtrip();
         test_generated_source_clear_value_roundtrip();

@@ -6173,6 +6173,13 @@ coordinate-batch snapshots, `row_cells()`, and `column_cells()` all expose the
 source-backed style handle on a styled `A1` value, keep unstyled records
 unstyled, then preserve the same style handle on an explicit blank after
 clear/save/reopen/no-op.
+The lighter public snapshot shard now also carries source-style value-only
+coverage: a writer-generated styled source workbook preserves the materialized
+`StyleId` through `set_cell_value()`, keeps unstyled cells and newly inserted
+cells unstyled, preserves `xl/styles.xml`, fresh-reopens through
+`sparse_cells()`, `row_cells()`, and `column_cells()`, and settles into a
+byte-stable no-op `save_as()`. This is snapshot/readback evidence only, not
+style migration, style merge, or a public style registry for existing files.
 The same source-style snapshot regression now also covers the
 `sparse_cells(initializer_list<WorksheetCellReference>)` convenience overload:
 initializer-list reads expose the styled source handle, skip missing

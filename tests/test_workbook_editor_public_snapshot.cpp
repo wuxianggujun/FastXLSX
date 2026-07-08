@@ -409,6 +409,60 @@ void check_cleared_output(const std::filesystem::path& output)
         "reopened cleared Audit sheet should remain copy-original");
 }
 
+void check_all_cleared_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened clear-all output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened clear-all output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened clear-all Data output should keep the sheet clean");
+    check(data.cell_count() == 4,
+        "reopened clear-all Data output should keep every represented cell");
+    check(is_used_range(data.used_range(), 1, 1, 2, 3),
+        "reopened clear-all Data output should keep sparse bounds");
+    check(data.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened clear-all Data output should keep A1 blank");
+    check(data.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened clear-all Data output should keep B1 blank");
+    check(data.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened clear-all Data output should keep A2 blank");
+    check(data.get_cell("C2").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened clear-all Data output should keep C2 blank");
+    check(!data.try_cell("B2").has_value(),
+        "reopened clear-all Data output should not synthesize B2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_blank_snapshot(all_cells[0], 1, 1) &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_blank_snapshot(all_cells[2], 2, 1) &&
+            is_blank_snapshot(all_cells[3], 2, 3),
+        "reopened clear-all Data sparse_cells should expose row-major blanks");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+        data.row_cells(2);
+    check(row_two.size() == 2 &&
+            is_blank_snapshot(row_two[0], 2, 1) &&
+            is_blank_snapshot(row_two[1], 2, 3),
+        "reopened clear-all Data row_cells should expose sparse row blanks");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+        data.column_cells(3);
+    check(column_three.size() == 1 &&
+            is_blank_snapshot(column_three[0], 2, 3),
+        "reopened clear-all Data column_cells should expose blank C2");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened clear-all Audit sheet should remain copy-original");
+}
+
 void check_row_column_cleared_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -1078,6 +1132,93 @@ void test_generated_source_clear_value_roundtrip()
     check_cleared_output(noop_output);
 }
 
+void test_generated_source_clear_all_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-clear-all-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-clear-all-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C2", fastxlsx::CellValue::boolean(true));
+    check(sheet.cell_count() == 4,
+        "clear-all setup should add one dirty sparse cell");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+        "clear-all setup should expand sparse bounds");
+
+    sheet.clear_cell_values();
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "clear-all roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 4,
+        "clear-all roundtrip should keep represented sparse records");
+    check(editor.pending_materialized_cell_count() == 4,
+        "clear-all roundtrip should expose every blank record in diagnostics");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+        "clear-all roundtrip should keep the sparse used range");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "clear-all roundtrip should convert source-backed A1 to blank");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "clear-all roundtrip should convert source-backed B1 to blank");
+    check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+        "clear-all roundtrip should convert source-backed A2 to blank");
+    check(sheet.get_cell("C2").kind() == fastxlsx::CellValueKind::Blank,
+        "clear-all roundtrip should convert dirty C2 to blank");
+    check(!sheet.try_cell("B2").has_value(),
+        "clear-all roundtrip should not synthesize missing B2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        sheet.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_blank_snapshot(all_cells[0], 1, 1) &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_blank_snapshot(all_cells[2], 2, 1) &&
+            is_blank_snapshot(all_cells[3], 2, 3),
+        "clear-all roundtrip sparse_cells should expose represented blanks");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "clear-all roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "clear-all roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clear-all roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C2\"",
+        "clear-all roundtrip save_as should keep the expanded worksheet dimension");
+    check_contains(data_xml, R"(<c r="A1"/>)",
+        "clear-all roundtrip save_as should project blank A1");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "clear-all roundtrip save_as should project blank B1");
+    check_contains(data_xml, R"(<c r="A2"/>)",
+        "clear-all roundtrip save_as should project blank A2");
+    check_contains(data_xml, R"(<c r="C2"/>)",
+        "clear-all roundtrip save_as should project blank C2");
+    check_not_contains(data_xml, R"(r="B2")",
+        "clear-all roundtrip save_as should not synthesize B2");
+    check_not_contains(data_xml, "alpha",
+        "clear-all roundtrip save_as should omit cleared source A1 text");
+    check_not_contains(data_xml, "tail",
+        "clear-all roundtrip save_as should omit cleared source A2 text");
+    check_not_contains(data_xml, "<v>2",
+        "clear-all roundtrip save_as should omit cleared source B1 number");
+    check_not_contains(data_xml, R"(<c r="C2" t="b"><v>1</v></c>)",
+        "clear-all roundtrip save_as should omit cleared dirty C2 boolean");
+    check_all_cleared_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean clear-all no-op save should keep output entries stable");
+    check_all_cleared_output(noop_output);
+}
+
 void test_generated_source_row_column_clear_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -1737,6 +1878,7 @@ int main()
         test_generated_source_snapshot_edit_roundtrip();
         test_generated_source_erase_roundtrip();
         test_generated_source_clear_value_roundtrip();
+        test_generated_source_clear_all_roundtrip();
         test_generated_source_row_column_clear_roundtrip();
         test_generated_source_row_column_range_clear_roundtrip();
         test_generated_source_row_column_erase_roundtrip();

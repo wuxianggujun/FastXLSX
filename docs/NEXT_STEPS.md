@@ -2291,6 +2291,11 @@ The standalone snapshot lane now also covers `clear_row()` plus
 blank records, non-target sparse cells stay intact, saved XML omits cleared
 payloads, reopen preserves row/column blank snapshots, and clean no-op save
 remains byte-stable.
+The same lane now adds the `erase_row()` plus `erase_column()` contrast:
+represented source-backed and dirty sparse records are removed, the remaining
+non-target sparse cell shrinks `used_range()` to a single coordinate, saved XML
+omits erased cells and payloads, reopen exposes only the survivor, and clean
+no-op save remains byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

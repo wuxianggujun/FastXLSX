@@ -692,6 +692,9 @@ no-op saves.
 Its base matching-option reacquired no-op save now also repeats once more,
 requiring the second package to match the first matching-option no-op while
 leaving the saved output, first no-op output, and source package unchanged.
+The option-mismatch and missing-query no-op saves in that path now also reuse
+the saved-handle snapshot and fresh-reopen checks, while proving earlier no-op
+packages stay byte-stable.
 The invalid-read no-op save in that exact-budget release path now also snapshots
 both the original and matching-option reacquired handles: full sparse ordering,
 row-one blanks, column-one blanks, saved `D4`, missing `E5`, and clean

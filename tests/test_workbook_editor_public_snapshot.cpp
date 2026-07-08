@@ -6225,6 +6225,10 @@ void test_generated_source_delete_full_axis_roundtrip()
             "fastxlsx-workbook-editor-public-snapshot-delete-full-" + axis + "-output.xlsx");
         const std::filesystem::path noop_output = artifact(
             "fastxlsx-workbook-editor-public-snapshot-delete-full-" + axis + "-noop-output.xlsx");
+        const std::filesystem::path post_output = artifact(
+            "fastxlsx-workbook-editor-public-snapshot-delete-full-" + axis + "-post-output.xlsx");
+        const std::filesystem::path post_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-snapshot-delete-full-" + axis + "-post-noop-output.xlsx");
         const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -6291,6 +6295,50 @@ void test_generated_source_delete_full_axis_roundtrip()
         check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
             "delete full-axis clean no-op save should keep output entries stable");
         check_all_erased_output(noop_output);
+
+        const std::string post_text = "delete-full-" + axis + "-post-b2";
+        sheet.set_cell("B2", fastxlsx::CellValue::text(post_text));
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "delete full-axis post-noop edit should re-dirty the saved materialized session");
+        check(sheet.cell_count() == 1 &&
+                is_used_range(sheet.used_range(), 2, 2, 2, 2) &&
+                sheet.get_cell("B2").text_value() == post_text,
+            "delete full-axis post-noop edit should reuse the empty sparse store");
+
+        editor.save_as(post_output);
+        check(!sheet.has_pending_changes(),
+            "delete full-axis post-noop save_as should clean the reused session");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "delete full-axis post-noop save_as should leave the source package unchanged");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete full-axis post-noop save_as should leave the empty output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "delete full-axis post-noop save_as should leave the empty no-op output unchanged");
+
+        const auto post_entries = fastxlsx::test::read_zip_entries(post_output);
+        const std::string& post_data_xml = post_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_data_xml, R"(<dimension ref="B2"/>)",
+            "delete full-axis post-noop save_as should write the single-cell dimension");
+        check_contains(post_data_xml, R"(r="B2")",
+            "delete full-axis post-noop save_as should write the new B2 cell");
+        check_contains(post_data_xml, post_text,
+            "delete full-axis post-noop save_as should persist the new text");
+        check_not_contains(post_data_xml, "alpha",
+            "delete full-axis post-noop save_as should not restore source A1 text");
+        check_not_contains(post_data_xml, "tail",
+            "delete full-axis post-noop save_as should not restore source A2 text");
+        check_not_contains(post_data_xml, dirty_text,
+            "delete full-axis post-noop save_as should not restore deleted dirty text");
+
+        fastxlsx::WorkbookEditor post_reopened = fastxlsx::WorkbookEditor::open(post_output);
+        fastxlsx::WorksheetEditor post_data = post_reopened.worksheet("Data");
+        check(post_data.cell_count() == 1 &&
+                is_used_range(post_data.used_range(), 2, 2, 2, 2) &&
+                post_data.get_cell("B2").text_value() == post_text,
+            "delete full-axis post-noop output should fresh-reopen with the new B2 cell");
+        post_reopened.save_as(post_noop_output);
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_entries,
+            "delete full-axis post-noop clean save should keep the reused output stable");
     };
 
     run_case(false);

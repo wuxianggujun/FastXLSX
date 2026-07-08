@@ -2381,6 +2381,10 @@ It now also covers maximum legal delete spans for both axes:
 source-backed plus dirty sparse cells, save as an empty sheetData projection,
 fresh-reopen as an empty sparse store, and keep the follow-up no-op save
 byte-stable.
+That same full-axis delete regression now continues from the clean saved handle:
+a later `B2` edit reuses the empty sparse store, saves as a fresh single-cell
+worksheet, keeps the source/empty/no-op packages unchanged, fresh-reopens, and
+settles into another byte-stable no-op save.
 That structural-shift snapshot lane now also covers the clean no-op group in one
 case: zero-count row/column shifts clear prior diagnostics, target-outside
 row/column shifts leave source-backed cells unchanged, no missing sparse cells

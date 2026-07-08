@@ -2410,6 +2410,10 @@ guardrail failures, failed replacements, failed renames, and failed
 materialized mutations keep source/planned names and workbook catalog entries
 stable while preserving the prior `last_edit_error()`, including across
 source/materialized/defined-name formula audit calls.
+That same helper now also covers targeted-cell Patch diagnostics: targeted
+replacement counts, sheet names, membership checks, and estimated XML bytes are
+read-only public inspections that preserve `last_edit_error()` and catalog
+views.
 The formula/definedName rewrite shard now mirrors that helper contract: its
 shared inspection helper snapshots source/planned worksheet names and full
 catalog entries around formula, source-formula, and definedName audit calls,

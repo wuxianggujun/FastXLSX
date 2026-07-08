@@ -1294,6 +1294,8 @@ save-state snapshots, clean replacement checks, and read-only inspection
 last-error preservation.
 The public retry shared helper now carries that same targeted-cell diagnostics
 coverage across retry, reacquire, guard, and projection shards.
+The facade shared helper now mirrors those targeted-cell diagnostics across the
+core, save-as, rename, images, and smoke facade shards.
 The projection recovery saves now also assert that replacement diagnostics stay
 empty and `last_edit_error()` remains clear immediately after the second safe
 save, before the existing XML and fresh-reopen checks.

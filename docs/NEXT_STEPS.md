@@ -717,6 +717,9 @@ The next early public-state group now carries that same check too: invalid A1
 range mutations, invalid cell reads, empty `append_row()`, empty `set_row()`,
 and empty `set_column()` all prove the first no-op package remains unchanged
 after a repeated clean no-op save.
+The follow-on public-state no-op group now does the same for empty
+`set_row_values()` / `set_column_values()`, styled `erase_column()` /
+`erase_columns()`, and renamed shift reacquire saves.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

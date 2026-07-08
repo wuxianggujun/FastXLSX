@@ -3527,12 +3527,13 @@ The single-sheet and multi-sheet materialized reopen/modify/no-op loops now
 also fresh-reopen their prior no-op outputs after later third-stage saves,
 pinning that subsequent edits do not corrupt already-written clean no-op files.
 The baseline multi-sheet materialized no-op path now repeats the clean no-op
-save too, keeping all live handles clean, package entries byte-stable, sources
-unchanged, and both worksheets freshly reopenable from the second no-op output.
+save too, keeping all live handles clean, package entries byte-stable, the
+first no-op output unchanged, sources unchanged, and both worksheets freshly
+reopenable from the second no-op output.
 The matching failed-save retry path now repeats the clean no-op save as well,
-proving rejected source overwrite recovery leaves later no-op packages
-byte-stable while staged Patch handoff state and fresh two-sheet readback stay
-unchanged.
+proving rejected source overwrite recovery leaves first and later no-op
+packages byte-stable while staged Patch handoff state and fresh two-sheet
+readback stay unchanged.
 The multi-sheet retry reopen/modify/no-op loop now repeats its clean no-op save
 before the later third-stage edits too, proving both no-op packages remain
 readable and byte-stable after subsequent materialized edits are flushed.

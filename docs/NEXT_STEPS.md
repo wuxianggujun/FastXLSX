@@ -2305,6 +2305,11 @@ The same public snapshot lane now covers the structural-shift group together:
 move or remove represented source-backed and dirty sparse cells, refresh saved
 dimensions, omit old shifted coordinates, reopen with stable snapshots, and keep
 clean no-op saves byte-stable.
+That structural-shift snapshot lane now also covers the clean no-op group in one
+case: zero-count row/column shifts clear prior diagnostics, target-outside
+row/column shifts leave source-backed cells unchanged, no missing sparse cells
+are synthesized, `save_as()` copies the original package entries, and a second
+clean save stays byte-stable.
 The standalone snapshot lane now also covers `clear_row()` plus
 `clear_column()`: represented source-backed and dirty cells become explicit
 blank records, non-target sparse cells stay intact, saved XML omits cleared

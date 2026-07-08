@@ -784,8 +784,9 @@ blank/source/recovery views.
 They now also cover same-editor matching-option reacquire plus clean no-op
 saves, proving both saved handles stay clean and package entries remain stable.
 Those matching-option no-op saves now repeat once more too, requiring the
-second package to match the first matching-option no-op while preserving the
-saved input package and original source bytes.
+second package to match the first matching-option no-op while the first
+matching-option no-op output, saved input package, and original source bytes
+remain unchanged.
 Those multi-row and multi-column exact memory-budget release paths now also
 reopen their saved outputs with the original strict options, repeat byte-stable
 clean no-op saves, then prove a later smaller `D4` overwrite saves and reopens
@@ -795,8 +796,9 @@ paths now carry the same saved-handle row/column snapshot checks for explicit
 blanks, preserved source payloads, recovery cells, and clean materialized
 diagnostics.
 Their matching-option reacquired no-op saves now repeat once more too, requiring
-the second package to match the first matching-option no-op while preserving the
-saved input package and original source bytes.
+the second package to match the first matching-option no-op while the first
+matching-option no-op output, saved input package, and original source bytes
+remain unchanged.
 They now also reopen the saved outputs with the original strict
 `WorksheetEditorOptions`, repeat byte-stable clean no-op saves, then prove a
 later smaller `D4` overwrite saves and reopens without reviving cleared payload

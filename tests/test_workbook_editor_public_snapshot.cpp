@@ -1353,6 +1353,75 @@ void check_inspection_output(const std::filesystem::path& output)
         "reopened inspection Audit sheet should remain copy-original");
 }
 
+bool is_catalog_entry(
+    const fastxlsx::WorkbookEditorWorksheetCatalogEntry& entry,
+    std::string_view source_name,
+    std::string_view planned_name,
+    bool renamed)
+{
+    return entry.source_name == source_name &&
+        entry.planned_name == planned_name &&
+        entry.renamed == renamed;
+}
+
+void check_generated_source_catalog(const fastxlsx::WorkbookEditor& editor)
+{
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog =
+        editor.worksheet_catalog();
+    check(catalog.size() == 2 &&
+            is_catalog_entry(catalog[0], "Data", "Data", false) &&
+            is_catalog_entry(catalog[1], "Audit", "Audit", false),
+        "catalog inspection diagnostics should expose the source-to-planned catalog");
+}
+
+void check_clean_catalog_materialized_diagnostics(
+    const fastxlsx::WorkbookEditor& editor)
+{
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "catalog inspection clean diagnostics should not expose dirty materialized sessions");
+    check(editor.pending_worksheet_edits().empty(),
+        "catalog inspection clean diagnostics should not expose worksheet edit summaries");
+    check_generated_source_catalog(editor);
+}
+
+void check_dirty_catalog_materialized_diagnostics(
+    const fastxlsx::WorkbookEditor& editor,
+    std::size_t expected_memory)
+{
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string>({"Data"}),
+        "catalog inspection dirty diagnostics should expose Data as dirty");
+    check(editor.pending_materialized_cell_count() == 4,
+        "catalog inspection dirty diagnostics should expose dirty sparse cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_memory,
+        "catalog inspection dirty diagnostics should expose dirty sparse memory");
+
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+        editor.pending_worksheet_edits();
+    check(summaries.size() == 1,
+        "catalog inspection dirty diagnostics should expose one worksheet summary");
+    const fastxlsx::WorkbookEditorWorksheetEditSummary& summary = summaries[0];
+    check(summary.source_name == "Data" &&
+            summary.planned_name == "Data" &&
+            !summary.renamed,
+        "catalog inspection dirty summary should keep source/planned Data names");
+    check(!summary.sheet_data_replaced &&
+            summary.replacement_cell_count == 0 &&
+            summary.estimated_replacement_memory_usage == 0,
+        "catalog inspection dirty summary should not expose whole-sheet replacement state");
+    check(!summary.targeted_cells_replaced &&
+            summary.targeted_cell_replacement_count == 0 &&
+            summary.estimated_targeted_cell_replacement_xml_bytes == 0,
+        "catalog inspection dirty summary should not expose targeted-cell replacement state");
+    check(summary.materialized_dirty &&
+            summary.materialized_cell_count == 4 &&
+            summary.estimated_materialized_memory_usage == expected_memory,
+        "catalog inspection dirty summary should expose materialized Data state");
+    check_generated_source_catalog(editor);
+}
+
 void check_catalog_inspection_output(
     const std::filesystem::path& output, bool has_dirty_edit)
 {
@@ -1389,10 +1458,7 @@ void check_catalog_inspection_output(
             !audit->has_pending_changes() &&
             !reopened.has_pending_changes(),
         "reopened catalog inspection reads should keep sessions clean");
-    check(reopened.pending_materialized_worksheet_names().empty() &&
-            reopened.pending_materialized_cell_count() == 0 &&
-            reopened.estimated_pending_materialized_memory_usage() == 0,
-        "reopened catalog inspection reads should not expose dirty materialized diagnostics");
+    check_clean_catalog_materialized_diagnostics(reopened);
 
     const std::size_t expected_cells = has_dirty_edit ? 4u : 3u;
     check(data->cell_count() == expected_cells,
@@ -3420,6 +3486,7 @@ void test_generated_source_catalog_inspection_roundtrip()
             editor.has_source_worksheet("Audit") &&
             !editor.has_source_worksheet("Missing"),
         "catalog inspection should answer source worksheet probes");
+    check_clean_catalog_materialized_diagnostics(editor);
 
     std::optional<fastxlsx::WorksheetEditor> data =
         editor.try_worksheet("Data");
@@ -3443,6 +3510,7 @@ void test_generated_source_catalog_inspection_roundtrip()
             editor.pending_materialized_cell_count() == 0 &&
             editor.estimated_pending_materialized_memory_usage() == 0,
         "catalog inspection should not expose pending materialized diagnostics");
+    check_clean_catalog_materialized_diagnostics(editor);
 
     editor.save_as(clean_output);
     check(!data->has_pending_changes() &&
@@ -3451,6 +3519,7 @@ void test_generated_source_catalog_inspection_roundtrip()
         "catalog clean save_as should keep materialized sessions clean");
     check(editor.pending_change_count() == 0,
         "catalog clean save_as should not record a handoff");
+    check_clean_catalog_materialized_diagnostics(editor);
     check(fastxlsx::test::read_zip_entries(clean_output) == source_entries,
         "catalog clean save_as should copy the source package entries");
     check_catalog_inspection_output(clean_output, false);
@@ -3463,12 +3532,15 @@ void test_generated_source_catalog_inspection_roundtrip()
         "catalog post-clean edit should expose dirty Data materialized diagnostics");
     check(editor.pending_materialized_cell_count() == 4,
         "catalog post-clean edit should expose dirty sparse cell count");
+    const std::size_t dirty_memory = data->estimated_memory_usage();
+    check_dirty_catalog_materialized_diagnostics(editor, dirty_memory);
 
     editor.save_as(dirty_output);
     check(!data->has_pending_changes(),
         "catalog dirty save_as should clean the reused materialized handle");
     check(editor.pending_change_count() == 1,
         "catalog dirty save_as should record one materialized handoff");
+    check_clean_catalog_materialized_diagnostics(editor);
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "catalog dirty save_as should leave the source package unchanged");
     check(fastxlsx::test::read_zip_entries(clean_output) == source_entries,
@@ -3486,6 +3558,7 @@ void test_generated_source_catalog_inspection_roundtrip()
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(dirty_output);
     reopened.save_as(dirty_noop_output);
+    check_clean_catalog_materialized_diagnostics(reopened);
     check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
         "catalog dirty clean no-op save should keep output entries stable");
     check_catalog_inspection_output(dirty_noop_output, true);

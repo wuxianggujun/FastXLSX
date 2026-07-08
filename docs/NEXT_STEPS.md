@@ -2295,6 +2295,11 @@ The same standalone snapshot lane now also batches workbook catalog inspection:
 `has_source_worksheet()`, and `try_worksheet()` stay read-only over a generated
 source workbook, a copy-original clean save, a later reused-handle dirty
 `WorksheetEditor` save, fresh reopen, and byte-stable clean no-op save.
+It now also pins the catalog lane's materialized diagnostics:
+`pending_materialized_worksheet_names()`, aggregate dirty cell count / memory,
+`pending_worksheet_edits()`, and `worksheet_catalog()` report the dirty `Data`
+session before flush, clear after save/reopen/no-op, and keep source/planned
+catalog entries stable without adding replacement diagnostics.
 It now also covers the `sparse_cells(initializer_list<WorksheetCellReference>)`
 inspection convenience end to end: source and dirty sessions preserve requested
 order, duplicate coordinates, and missing-cell skips, invalid literal batches

@@ -3043,8 +3043,44 @@ void test_generated_source_row_column_clear_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_scalar_clear_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column scalar clear should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column scalar clear should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column scalar clear should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column scalar clear should preserve source-backed values");
+    };
+    const auto expect_clean_scalar_clear_failure =
+        [&editor, &check_clean_scalar_clear_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid row/column scalar clear should expose last_edit_error");
+            check_clean_scalar_clear_failure_state();
+        };
+    expect_clean_scalar_clear_failure(
+        [&sheet] { sheet.clear_row(0); },
+        "invalid clean clear_row should reject row zero");
+    expect_clean_scalar_clear_failure(
+        [&sheet] { sheet.clear_row(1048577); },
+        "invalid clean clear_row should reject row overflow");
+    expect_clean_scalar_clear_failure(
+        [&sheet] { sheet.clear_column(0); },
+        "invalid clean clear_column should reject column zero");
+    expect_clean_scalar_clear_failure(
+        [&sheet] { sheet.clear_column(16385); },
+        "invalid clean clear_column should reject column overflow");
+
     sheet.set_cell("C1", fastxlsx::CellValue::text("clear-row-c1"));
     sheet.set_cell("C2", fastxlsx::CellValue::number(9.0));
+    check(!editor.last_edit_error().has_value(),
+        "row/column clear setup should clear invalid scalar diagnostics");
     check(sheet.cell_count() == 5,
         "row/column clear setup should add C1 and C2 sparse cells");
     check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
@@ -3085,6 +3121,48 @@ void test_generated_source_row_column_clear_roundtrip()
         "clear_column should preserve non-target C2 number");
     check(!sheet.try_cell("B2").has_value(),
         "row/column clear should not synthesize missing B2");
+    const auto check_dirty_scalar_clear_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column scalar clear should keep the session dirty");
+        check(sheet.cell_count() == 5 &&
+                editor.pending_materialized_cell_count() == 5,
+            "invalid dirty row/column scalar clear should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+            "invalid dirty row/column scalar clear should preserve dirty bounds");
+        check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C2").number_value() == 9.0,
+            "invalid dirty row/column scalar clear should preserve dirty values");
+        check(!sheet.try_cell("B2").has_value(),
+            "invalid dirty row/column scalar clear should keep missing B2 absent");
+    };
+    check_dirty_scalar_clear_failure_state();
+    const auto expect_dirty_scalar_clear_failure =
+        [&editor, &check_dirty_scalar_clear_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid dirty row/column scalar clear should expose last_edit_error");
+            check_dirty_scalar_clear_failure_state();
+        };
+    expect_dirty_scalar_clear_failure(
+        [&sheet] { sheet.clear_row(0); },
+        "invalid dirty clear_row should reject row zero");
+    expect_dirty_scalar_clear_failure(
+        [&sheet] { sheet.clear_row(1048577); },
+        "invalid dirty clear_row should reject row overflow");
+    expect_dirty_scalar_clear_failure(
+        [&sheet] { sheet.clear_column(0); },
+        "invalid dirty clear_column should reject column zero");
+    expect_dirty_scalar_clear_failure(
+        [&sheet] { sheet.clear_column(16385); },
+        "invalid dirty clear_column should reject column overflow");
+    sheet.clear_column(1);
+    check(!editor.last_edit_error().has_value(),
+        "row/column scalar clear recovery no-op should clear invalid diagnostics");
+    check_dirty_scalar_clear_failure_state();
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -3335,8 +3413,44 @@ void test_generated_source_row_column_erase_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_scalar_erase_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column scalar erase should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column scalar erase should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column scalar erase should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column scalar erase should preserve source-backed values");
+    };
+    const auto expect_clean_scalar_erase_failure =
+        [&editor, &check_clean_scalar_erase_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid row/column scalar erase should expose last_edit_error");
+            check_clean_scalar_erase_failure_state();
+        };
+    expect_clean_scalar_erase_failure(
+        [&sheet] { sheet.erase_row(0); },
+        "invalid clean erase_row should reject row zero");
+    expect_clean_scalar_erase_failure(
+        [&sheet] { sheet.erase_row(1048577); },
+        "invalid clean erase_row should reject row overflow");
+    expect_clean_scalar_erase_failure(
+        [&sheet] { sheet.erase_column(0); },
+        "invalid clean erase_column should reject column zero");
+    expect_clean_scalar_erase_failure(
+        [&sheet] { sheet.erase_column(16385); },
+        "invalid clean erase_column should reject column overflow");
+
     sheet.set_cell("C1", fastxlsx::CellValue::text("erase-row-c1"));
     sheet.set_cell("C2", fastxlsx::CellValue::number(9.0));
+    check(!editor.last_edit_error().has_value(),
+        "row/column erase setup should clear invalid scalar diagnostics");
     check(sheet.cell_count() == 5,
         "row/column erase setup should add C1 and C2 sparse cells");
     check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
@@ -3373,6 +3487,51 @@ void test_generated_source_row_column_erase_roundtrip()
         "erase_column should remove source-backed A2");
     check(!sheet.try_cell("B2").has_value(),
         "row/column erase should not synthesize missing B2");
+    const auto check_dirty_scalar_erase_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column scalar erase should keep the session dirty");
+        check(sheet.cell_count() == 1 &&
+                editor.pending_materialized_cell_count() == 1,
+            "invalid dirty row/column scalar erase should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 2, 3, 2, 3),
+            "invalid dirty row/column scalar erase should preserve dirty bounds");
+        check(sheet.get_cell("C2").number_value() == 9.0,
+            "invalid dirty row/column scalar erase should preserve C2");
+        check(sheet.row_cells(1).empty() &&
+                sheet.column_cells(1).empty(),
+            "invalid dirty row/column scalar erase should keep erased snapshots absent");
+        check(!sheet.try_cell("A1").has_value() &&
+                !sheet.try_cell("B1").has_value() &&
+                !sheet.try_cell("C1").has_value() &&
+                !sheet.try_cell("A2").has_value() &&
+                !sheet.try_cell("B2").has_value(),
+            "invalid dirty row/column scalar erase should preserve erased coordinates");
+    };
+    check_dirty_scalar_erase_failure_state();
+    const auto expect_dirty_scalar_erase_failure =
+        [&editor, &check_dirty_scalar_erase_failure_state](
+            const auto& action, const char* message) {
+            check(threw_fastxlsx_error(action), message);
+            check(editor.last_edit_error().has_value(),
+                "invalid dirty row/column scalar erase should expose last_edit_error");
+            check_dirty_scalar_erase_failure_state();
+        };
+    expect_dirty_scalar_erase_failure(
+        [&sheet] { sheet.erase_row(0); },
+        "invalid dirty erase_row should reject row zero");
+    expect_dirty_scalar_erase_failure(
+        [&sheet] { sheet.erase_row(1048577); },
+        "invalid dirty erase_row should reject row overflow");
+    expect_dirty_scalar_erase_failure(
+        [&sheet] { sheet.erase_column(0); },
+        "invalid dirty erase_column should reject column zero");
+    expect_dirty_scalar_erase_failure(
+        [&sheet] { sheet.erase_column(16385); },
+        "invalid dirty erase_column should reject column overflow");
+    sheet.erase_column(1);
+    check(!editor.last_edit_error().has_value(),
+        "row/column scalar erase recovery no-op should clear invalid diagnostics");
+    check_dirty_scalar_erase_failure_state();
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),

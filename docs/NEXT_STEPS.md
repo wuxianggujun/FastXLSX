@@ -6951,6 +6951,11 @@ overflow bounds before sparse state changes; dirty sessions keep their final
 blank/erased shape after failures, a later valid no-op clears
 `last_edit_error()`, and the saved package still matches the expected
 projection plus byte-stable clean no-op output.
+Scalar row/column clear/erase snapshot coverage now mirrors that guardrail for
+`clear_row()` / `clear_column()` and `erase_row()` / `erase_column()`: clean
+and dirty zero/overflow coordinates fail before sparse state changes, preserve
+the final blank/erased projections, clear `last_edit_error()` through a later
+valid no-op, and still save the expected byte-stable no-op outputs.
 Single missing-cell value-clear no-ops now cover the scalar cleanup branch too:
 row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
 failures clear diagnostics, preserve read-only or saved-clean sparse state,

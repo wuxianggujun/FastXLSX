@@ -2245,6 +2245,9 @@ shifts use the same narrow formula translator for `$` absolute anchors,
 A1-style ranges, sheet-qualified references, whole-row/whole-column ranges, and
 quoted / structured-reference skip cases while preserving the existing
 non-parser / non-evaluator boundary.
+Stationary formula structural rewrites now pin the same skip-token boundary for
+string literals, structured references, quoted sheet-name tokens, external
+workbook brackets, function calls, and name-like tokens.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

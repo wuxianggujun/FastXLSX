@@ -2276,6 +2276,11 @@ It now also pins `append_row()` on the same public snapshot lane: appending a
 text/number/boolean row expands sparse bounds, saves and reopens all appended
 cells, leaves the source package unchanged, and keeps the clean no-op output
 byte-stable.
+The same standalone lane now also covers `set_row()` plus `set_column()` sparse
+replacement: row replacement can add blanks and new columns, column replacement
+can overwrite source-backed and prior dirty cells, saved XML omits overwritten
+payloads, reopen preserves row/column snapshots, and clean no-op save remains
+byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

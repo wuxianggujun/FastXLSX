@@ -464,6 +464,69 @@ void check_appended_output(const std::filesystem::path& output)
         "reopened appended Audit sheet should remain copy-original");
 }
 
+void check_row_column_replaced_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened row/column output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened row/column output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened row/column Data output should keep the sheet clean");
+    check(data.cell_count() == 5,
+        "reopened row/column Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 3),
+        "reopened row/column Data output should expose final sparse bounds");
+    check(data.get_cell("A1").text_value() == "col-a",
+        "reopened row/column Data output should read replaced A1");
+    check(data.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column Data output should keep explicit B1 blank");
+    check(data.get_cell("C1").number_value() == 8.0,
+        "reopened row/column Data output should read retained C1 number");
+    check(data.get_cell("A2").text_value() == "col-b",
+        "reopened row/column Data output should read replaced A2");
+    const fastxlsx::CellValue a3 = data.get_cell("A3");
+    check(a3.kind() == fastxlsx::CellValueKind::Boolean &&
+            !a3.boolean_value(),
+        "reopened row/column Data output should read inserted A3 boolean false");
+    check(!data.try_cell("B2").has_value() &&
+            !data.try_cell("C2").has_value(),
+        "reopened row/column Data output should not synthesize missing row-two cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 5 &&
+            is_text_snapshot(all_cells[0], 1, 1, "col-a") &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_number_snapshot(all_cells[2], 1, 3, 8.0) &&
+            is_text_snapshot(all_cells[3], 2, 1, "col-b") &&
+            is_boolean_snapshot(all_cells[4], 3, 1, false),
+        "reopened row/column Data sparse_cells should expose final sparse cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        data.row_cells(1);
+    check(row_one.size() == 3 &&
+            is_text_snapshot(row_one[0], 1, 1, "col-a") &&
+            is_blank_snapshot(row_one[1], 1, 2) &&
+            is_number_snapshot(row_one[2], 1, 3, 8.0),
+        "reopened row/column Data row_cells should expose replaced row one");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+        data.column_cells(1);
+    check(column_one.size() == 3 &&
+            is_text_snapshot(column_one[0], 1, 1, "col-a") &&
+            is_text_snapshot(column_one[1], 2, 1, "col-b") &&
+            is_boolean_snapshot(column_one[2], 3, 1, false),
+        "reopened row/column Data column_cells should expose replaced column one");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened row/column Audit sheet should remain copy-original");
+}
+
 void check_invalid_snapshot_reads_preserve_diagnostics(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& sheet,
@@ -753,6 +816,100 @@ void test_generated_source_append_row_roundtrip()
     check_appended_output(noop_output);
 }
 
+void test_generated_source_row_column_replacement_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_row(1, {
+        fastxlsx::CellValue::text("row-a"),
+        fastxlsx::CellValue::blank(),
+        fastxlsx::CellValue::number(8.0),
+    });
+    check(sheet.cell_count() == 4,
+        "row replacement should replace row one and keep source-backed row two");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+        "row replacement should expand row-one sparse bounds");
+    check(sheet.get_cell("A1").text_value() == "row-a",
+        "row replacement should expose replacement A1");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "row replacement should expose explicit B1 blank");
+    check(sheet.get_cell("C1").number_value() == 8.0,
+        "row replacement should expose replacement C1 number");
+    check(sheet.get_cell("A2").text_value() == "tail",
+        "row replacement should keep non-target source-backed A2");
+
+    sheet.set_column(1, {
+        fastxlsx::CellValue::text("col-a"),
+        fastxlsx::CellValue::text("col-b"),
+        fastxlsx::CellValue::boolean(false),
+    });
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "row/column replacement should dirty the materialized session");
+    check(sheet.cell_count() == 5,
+        "row/column replacement should expose final represented sparse records");
+    check(editor.pending_materialized_cell_count() == 5,
+        "row/column replacement should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+        "row/column replacement should expose final sparse bounds");
+    check(sheet.get_cell("A1").text_value() == "col-a",
+        "column replacement should overwrite row replacement A1");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "column replacement should preserve non-target explicit B1 blank");
+    check(sheet.get_cell("C1").number_value() == 8.0,
+        "column replacement should preserve non-target C1 number");
+    check(sheet.get_cell("A2").text_value() == "col-b",
+        "column replacement should overwrite source-backed A2");
+    const fastxlsx::CellValue a3 = sheet.get_cell("A3");
+    check(a3.kind() == fastxlsx::CellValueKind::Boolean &&
+            !a3.boolean_value(),
+        "column replacement should insert A3 boolean false");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "row/column replacement save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "row/column replacement save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column replacement save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C3\"",
+        "row/column replacement save_as should write final worksheet dimension");
+    check_contains(data_xml, "col-a",
+        "row/column replacement save_as should write replaced A1 text");
+    check_contains(data_xml, "col-b",
+        "row/column replacement save_as should write replaced A2 text");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "row/column replacement save_as should write explicit B1 blank");
+    check_contains(data_xml, R"(<c r="C1"><v>8</v></c>)",
+        "row/column replacement save_as should write retained C1 number");
+    check_contains(data_xml, R"(<c r="A3" t="b"><v>0</v></c>)",
+        "row/column replacement save_as should write inserted A3 boolean false");
+    check_not_contains(data_xml, "alpha",
+        "row/column replacement save_as should omit overwritten source A1 text");
+    check_not_contains(data_xml, "tail",
+        "row/column replacement save_as should omit overwritten source A2 text");
+    check_not_contains(data_xml, "row-a",
+        "row/column replacement save_as should omit overwritten intermediate A1 text");
+    check_row_column_replaced_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean row/column no-op save should keep output entries stable");
+    check_row_column_replaced_output(noop_output);
+}
+
 } // namespace
 
 int main()
@@ -762,6 +919,7 @@ int main()
         test_generated_source_erase_roundtrip();
         test_generated_source_clear_value_roundtrip();
         test_generated_source_append_row_roundtrip();
+        test_generated_source_row_column_replacement_roundtrip();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

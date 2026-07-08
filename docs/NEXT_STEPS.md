@@ -2371,6 +2371,9 @@ byte-stable.
 The direct structural shift output checks now also verify `row_cells()` and
 `column_cells()` snapshots for every expected shifted cell and every absent old
 coordinate across row/column insert/delete outputs and their follow-up saves.
+Those structural-shift follow-up edits now also check live `row_cells()` /
+`column_cells()` before save for the shifted cells plus the newly appended `F4`
+cell, keeping saved-output and in-session snapshot behavior aligned.
 The shift/no-op recovery outputs now also have post-noop reuse coverage:
 structural shift no-op, structural shift failure, and empty literal no-op
 outputs in both clean and dirty sessions reopen clean, accept a later `F4` text

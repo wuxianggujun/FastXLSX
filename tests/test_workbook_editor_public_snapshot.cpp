@@ -2463,11 +2463,17 @@ void check_structural_shift_reopened_edit(
                 edited_range.last_column) &&
             data.get_cell("F4").text_value() == followup_text,
         "structural-shift reopened edit should append a new sparse F4 cell");
-    for (const ExpectedShiftCell& expected : expected_cells) {
+    for (const ExpectedShiftCell& expected : edited_expected) {
         check(matches_expected_shift_value(
                 data.get_cell(expected.reference.row, expected.reference.column),
                 expected),
-            "structural-shift reopened edit should preserve shifted sparse cells");
+            "structural-shift reopened edit should expose expected sparse cells");
+        check(contains_expected_shift_snapshot(
+                data.row_cells(expected.reference.row), expected),
+            "structural-shift reopened edit live row_cells should expose expected cells");
+        check(contains_expected_shift_snapshot(
+                data.column_cells(expected.reference.column), expected),
+            "structural-shift reopened edit live column_cells should expose expected cells");
     }
 
     reopened.save_as(edit_output);

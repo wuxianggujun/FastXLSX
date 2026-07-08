@@ -1979,6 +1979,77 @@ void check_row_column_value_output(const std::filesystem::path& output)
         "reopened row/column value Audit sheet should remain copy-original");
 }
 
+void check_row_column_value_span_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened row/column value span output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened row/column value span output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened row/column value span Data output should keep the sheet clean");
+    check(data.cell_count() == 8,
+        "reopened row/column value span Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 3),
+        "reopened row/column value span Data output should expose final sparse bounds");
+    check(data.get_cell("A1").text_value() == "span-col-a",
+        "reopened row/column value span Data output should read final A1 text");
+    check(data.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column value span Data output should keep B1 blank");
+    check(data.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula &&
+            data.get_cell("C1").text_value() == "A1+B1",
+        "reopened row/column value span Data output should read final C1 formula");
+    check(data.get_cell("A2").text_value() == "span-col-b",
+        "reopened row/column value span Data output should read final A2 text");
+    check(!data.try_cell("B2").has_value(),
+        "reopened row/column value span Data output should keep B2 absent");
+    check(data.get_cell("C2").text_value() == "span-column-value-c2",
+        "reopened row/column value span Data output should read inserted C2 text");
+    check(data.get_cell("A3").text_value() == "span-row-value-a3",
+        "reopened row/column value span Data output should read final A3 text");
+    check(data.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column value span Data output should keep B3 blank");
+    check(data.get_cell("C3").kind() == fastxlsx::CellValueKind::Formula &&
+            data.get_cell("C3").text_value() == "A1+B1",
+        "reopened row/column value span Data output should keep appended C3 formula");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 8 &&
+            is_text_snapshot(all_cells[0], 1, 1, "span-col-a") &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_formula_snapshot(all_cells[2], 1, 3, "A1+B1") &&
+            is_text_snapshot(all_cells[3], 2, 1, "span-col-b") &&
+            is_text_snapshot(all_cells[4], 2, 3, "span-column-value-c2") &&
+            is_text_snapshot(all_cells[5], 3, 1, "span-row-value-a3") &&
+            is_blank_snapshot(all_cells[6], 3, 2) &&
+            is_formula_snapshot(all_cells[7], 3, 3, "A1+B1"),
+        "reopened row/column value span sparse_cells should expose final sparse cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        data.row_cells(3);
+    check(row_three.size() == 3 &&
+            is_text_snapshot(row_three[0], 3, 1, "span-row-value-a3") &&
+            is_blank_snapshot(row_three[1], 3, 2) &&
+            is_formula_snapshot(row_three[2], 3, 3, "A1+B1"),
+        "reopened row/column value span row_cells should expose row three");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+        data.column_cells(3);
+    check(column_three.size() == 3 &&
+            is_formula_snapshot(column_three[0], 1, 3, "A1+B1") &&
+            is_text_snapshot(column_three[1], 2, 3, "span-column-value-c2") &&
+            is_formula_snapshot(column_three[2], 3, 3, "A1+B1"),
+        "reopened row/column value span column_cells should expose column three");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened row/column value span Audit sheet should remain copy-original");
+}
+
 struct ExpectedShiftCell {
     fastxlsx::WorksheetCellReference reference {};
     fastxlsx::CellValueKind kind = fastxlsx::CellValueKind::Blank;
@@ -5145,6 +5216,145 @@ void test_generated_source_row_column_value_roundtrip()
     check_row_column_value_output(noop_output);
 }
 
+void test_generated_source_row_column_value_span_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-span-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-value-span-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    const std::array<fastxlsx::CellValue, 3> append_values {{
+        fastxlsx::CellValue::text("span-append-a3"),
+        fastxlsx::CellValue::number(4.0),
+        fastxlsx::CellValue::formula("A1+B1"),
+    }};
+    sheet.append_row(std::span<const fastxlsx::CellValue>(
+        append_values.data(), append_values.size()));
+    check(!editor.last_edit_error().has_value(),
+        "row/column value span append should keep diagnostics clear");
+    check(sheet.cell_count() == 6 &&
+            is_used_range(sheet.used_range(), 1, 1, 3, 3),
+        "row/column value span append should materialize row three");
+    check(sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("C3").text_value() == "A1+B1",
+        "row/column value span append should write C3 formula");
+
+    const std::array<fastxlsx::CellValue, 3> row_replacements {{
+        fastxlsx::CellValue::text("span-row-a"),
+        fastxlsx::CellValue::blank(),
+        fastxlsx::CellValue::number(8.0),
+    }};
+    sheet.set_row(1, std::span<const fastxlsx::CellValue>(
+        row_replacements.data(), row_replacements.size()));
+    check(sheet.cell_count() == 7,
+        "row/column value span row replacement should add C1");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+            sheet.get_cell("C1").number_value() == 8.0,
+        "row/column value span row replacement should expose row-one values");
+
+    const std::array<fastxlsx::CellValue, 3> column_replacements {{
+        fastxlsx::CellValue::text("span-col-a"),
+        fastxlsx::CellValue::text("span-col-b"),
+        fastxlsx::CellValue::boolean(true),
+    }};
+    sheet.set_column(1, std::span<const fastxlsx::CellValue>(
+        column_replacements.data(), column_replacements.size()));
+    check(sheet.cell_count() == 7,
+        "row/column value span column replacement should keep sparse count stable");
+    check(sheet.get_cell("A1").text_value() == "span-col-a" &&
+            sheet.get_cell("A2").text_value() == "span-col-b",
+        "row/column value span column replacement should expose column-one text");
+    check(sheet.get_cell("A3").kind() == fastxlsx::CellValueKind::Boolean &&
+            sheet.get_cell("A3").boolean_value(),
+        "row/column value span column replacement should write A3 boolean true");
+
+    const std::array<fastxlsx::CellValue, 2> row_value_prefix {{
+        fastxlsx::CellValue::text("span-row-value-a3"),
+        fastxlsx::CellValue::blank(),
+    }};
+    sheet.set_row_values(3, std::span<const fastxlsx::CellValue>(
+        row_value_prefix.data(), row_value_prefix.size()));
+    check(sheet.cell_count() == 7,
+        "row/column value span row value prefix should keep sparse count stable");
+    check(sheet.get_cell("A3").text_value() == "span-row-value-a3" &&
+            sheet.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank &&
+            sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("C3").text_value() == "A1+B1",
+        "row/column value span row value prefix should preserve C3 beyond prefix");
+
+    const std::array<fastxlsx::CellValue, 2> column_value_prefix {{
+        fastxlsx::CellValue::formula("A1+B1"),
+        fastxlsx::CellValue::text("span-column-value-c2"),
+    }};
+    sheet.set_column_values(3, std::span<const fastxlsx::CellValue>(
+        column_value_prefix.data(), column_value_prefix.size()));
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "row/column value span mutations should dirty the materialized session");
+    check(sheet.cell_count() == 8 &&
+            editor.pending_materialized_cell_count() == 8,
+        "row/column value span mutations should expose final dirty sparse count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+        "row/column value span mutations should keep final sparse bounds");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("C1").text_value() == "A1+B1" &&
+            sheet.get_cell("C2").text_value() == "span-column-value-c2" &&
+            sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("C3").text_value() == "A1+B1",
+        "row/column value span column value prefix should update and preserve column three");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "row/column value span save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "row/column value span save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column value span save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C3\"",
+        "row/column value span save_as should write final worksheet dimension");
+    check_contains(data_xml, "span-col-a",
+        "row/column value span save_as should write final A1 text");
+    check_contains(data_xml, "span-col-b",
+        "row/column value span save_as should write final A2 text");
+    check_contains(data_xml, "span-row-value-a3",
+        "row/column value span save_as should write final A3 text");
+    check_contains(data_xml, "span-column-value-c2",
+        "row/column value span save_as should write inserted C2 text");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "row/column value span save_as should write explicit B1 blank");
+    check_contains(data_xml, R"(<c r="B3"/>)",
+        "row/column value span save_as should write explicit B3 blank");
+    check_contains(data_xml, R"(<c r="C1"><f>A1+B1</f></c>)",
+        "row/column value span save_as should write final C1 formula");
+    check_contains(data_xml, R"(<c r="C3"><f>A1+B1</f></c>)",
+        "row/column value span save_as should preserve appended C3 formula");
+    check_not_contains(data_xml, "alpha",
+        "row/column value span save_as should omit overwritten source A1 text");
+    check_not_contains(data_xml, "tail",
+        "row/column value span save_as should omit overwritten source A2 text");
+    check_not_contains(data_xml, "span-append-a3",
+        "row/column value span save_as should omit overwritten appended A3 text");
+    check_not_contains(data_xml, "span-row-a",
+        "row/column value span save_as should omit overwritten row replacement A1 text");
+    check_not_contains(data_xml, R"(<c r="B2")",
+        "row/column value span save_as should keep B2 absent");
+    check_row_column_value_span_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean row/column value span no-op save should keep output entries stable");
+    check_row_column_value_span_output(noop_output);
+}
+
 void test_generated_source_insert_rows_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -6084,6 +6294,7 @@ int main()
         test_generated_source_sparse_value_batch_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();
+        test_generated_source_row_column_value_span_roundtrip();
         test_generated_source_insert_rows_roundtrip();
         test_generated_source_delete_rows_roundtrip();
         test_generated_source_insert_columns_roundtrip();

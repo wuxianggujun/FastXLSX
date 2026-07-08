@@ -6922,6 +6922,12 @@ keeps both the initializer-list and explicit empty `std::span` overloads in the
 same clean and dirty no-op loops, including the value-only row/column prefix
 empties, so those no-ops preserve prior dirty materialized diagnostics and
 settle into the existing byte-stable no-op save checks.
+Non-empty row/column `std::span<const CellValue>` overloads now have matching
+public snapshot evidence too: `append_row()`, `set_row()`, `set_column()`,
+`set_row_values()`, and `set_column_values()` can be mixed in one dirty
+materialized session, preserve beyond-prefix row/column cells, save with a
+single materialized handoff, fresh-reopen through sparse/row/column snapshots,
+and keep the follow-on clean no-op save byte-stable.
 Non-empty missing-only erase no-ops now pin the same cleanup contract:
 `erase_cells(CellRange)`, strict A1 range `erase_cells()`, and coordinate-batch
 `erase_cells()` over absent targets clear the guard diagnostic, preserve sparse

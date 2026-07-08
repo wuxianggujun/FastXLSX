@@ -2343,18 +2343,18 @@ The same standalone lane now also covers `set_row()` plus `set_column()` sparse
 replacement: row replacement can add blanks and new columns, column replacement
 can overwrite source-backed and prior dirty cells, saved XML omits overwritten
 payloads, reopen preserves row/column snapshots, and clean no-op save remains
-byte-stable. The same replacement case now rejects invalid row/column
-coordinates in clean and dirty materialized sessions, preserves sparse state,
-clears diagnostics through valid recovery calls, and keeps rejected payloads out
-of saved XML.
+byte-stable. The same replacement case now rejects row/column zero and
+upper-bound overflow coordinates in clean and dirty materialized sessions,
+preserves sparse state, clears diagnostics through valid recovery calls, and
+keeps rejected payloads out of saved XML.
 It now also contrasts the value-only row/column prefix writers:
 `set_row_values()` updates only the row prefix while preserving cells beyond it,
 `set_column_values()` updates only the column prefix while preserving cells beyond
 it, saved XML omits overwritten source/intermediate values, reopen preserves
 row/column snapshots, and clean no-op save remains byte-stable. The same public
-snapshot case now rejects invalid row/column value-prefix coordinates in clean
-and dirty materialized sessions, preserving sparse state and keeping rejected
-payloads out of saved XML.
+snapshot case now rejects row/column zero and upper-bound overflow
+value-prefix coordinates in clean and dirty materialized sessions, preserving
+sparse state and keeping rejected payloads out of saved XML.
 The same public snapshot lane now covers the structural-shift group together:
 `insert_rows()`, `delete_rows()`, `insert_columns()`, and `delete_columns()`
 move or remove represented source-backed and dirty sparse cells, refresh saved

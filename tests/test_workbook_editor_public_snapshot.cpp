@@ -4260,12 +4260,30 @@ void test_generated_source_row_column_replacement_roundtrip()
     check_clean_row_column_replacement_failure_state();
 
     check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row(1048577, {
+            fastxlsx::CellValue::text("row-replacement-invalid-row-overflow-leak"),
+        });
+    }), "invalid row replacement should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid row replacement overflow should expose last_edit_error");
+    check_clean_row_column_replacement_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
         sheet.set_column(0, {
             fastxlsx::CellValue::text("column-replacement-invalid-column-leak"),
         });
     }), "invalid column replacement should reject column zero");
     check(editor.last_edit_error().has_value(),
         "invalid column replacement should expose last_edit_error");
+    check_clean_row_column_replacement_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column(16385, {
+            fastxlsx::CellValue::text("column-replacement-invalid-column-overflow-leak"),
+        });
+    }), "invalid column replacement should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid column replacement overflow should expose last_edit_error");
     check_clean_row_column_replacement_failure_state();
 
     sheet.set_row(1, {
@@ -4342,12 +4360,30 @@ void test_generated_source_row_column_replacement_roundtrip()
     check_dirty_row_column_replacement_failure_state();
 
     check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row(1048577, {
+            fastxlsx::CellValue::text("row-replacement-dirty-invalid-row-overflow-leak"),
+        });
+    }), "invalid dirty row replacement should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row replacement overflow should expose last_edit_error");
+    check_dirty_row_column_replacement_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
         sheet.set_column(0, {
             fastxlsx::CellValue::text("column-replacement-dirty-invalid-column-leak"),
         });
     }), "invalid dirty column replacement should reject column zero");
     check(editor.last_edit_error().has_value(),
         "invalid dirty column replacement should expose last_edit_error");
+    check_dirty_row_column_replacement_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column(16385, {
+            fastxlsx::CellValue::text("column-replacement-dirty-invalid-column-overflow-leak"),
+        });
+    }), "invalid dirty column replacement should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column replacement overflow should expose last_edit_error");
     check_dirty_row_column_replacement_failure_state();
 
     sheet.set_column(1, {
@@ -4441,12 +4477,30 @@ void test_generated_source_row_column_value_roundtrip()
     check_clean_row_column_value_failure_state();
 
     check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row_values(1048577, {
+            fastxlsx::CellValue::text("row-value-invalid-row-overflow-leak"),
+        });
+    }), "invalid row value prefix should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid row value prefix overflow should expose last_edit_error");
+    check_clean_row_column_value_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
         sheet.set_column_values(0, {
             fastxlsx::CellValue::text("column-value-invalid-column-leak"),
         });
     }), "invalid column value prefix should reject column zero");
     check(editor.last_edit_error().has_value(),
         "invalid column value prefix should expose last_edit_error");
+    check_clean_row_column_value_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column_values(16385, {
+            fastxlsx::CellValue::text("column-value-invalid-column-overflow-leak"),
+        });
+    }), "invalid column value prefix should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid column value prefix overflow should expose last_edit_error");
     check_clean_row_column_value_failure_state();
 
     sheet.set_cell("C1", fastxlsx::CellValue::number(7.0));
@@ -4527,12 +4581,30 @@ void test_generated_source_row_column_value_roundtrip()
     check_dirty_row_column_value_failure_state();
 
     check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row_values(1048577, {
+            fastxlsx::CellValue::text("row-value-dirty-invalid-row-overflow-leak"),
+        });
+    }), "invalid dirty row value prefix should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row value prefix overflow should expose last_edit_error");
+    check_dirty_row_column_value_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
         sheet.set_column_values(0, {
             fastxlsx::CellValue::text("column-value-dirty-invalid-column-leak"),
         });
     }), "invalid dirty column value prefix should reject column zero");
     check(editor.last_edit_error().has_value(),
         "invalid dirty column value prefix should expose last_edit_error");
+    check_dirty_row_column_value_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column_values(16385, {
+            fastxlsx::CellValue::text("column-value-dirty-invalid-column-overflow-leak"),
+        });
+    }), "invalid dirty column value prefix should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column value prefix overflow should expose last_edit_error");
     check_dirty_row_column_value_failure_state();
 
     sheet.set_column_values(1, {

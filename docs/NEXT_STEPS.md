@@ -698,10 +698,12 @@ packages stay byte-stable.
 The invalid-read no-op save in that exact-budget release path now also snapshots
 both the original and matching-option reacquired handles: full sparse ordering,
 row-one blanks, column-one blanks, saved `D4`, missing `E5`, and clean
-materialized diagnostics stay stable.
+materialized diagnostics stay stable. It now fresh-reopens that no-op output and
+keeps the earlier missing-query and second no-op packages byte-stable too.
 The invalid-mutation no-op save in that exact-budget release path now reuses
 those saved-handle snapshots while preserving the expected invalid-reference
-diagnostic.
+diagnostic, fresh-reopening the saved package and keeping the invalid-read and
+second no-op packages unchanged.
 The invalid-shift no-op save after the recovery output now snapshots both saved
 handles too, including the recovered `E5` row/column views and the preserved
 shift diagnostic.

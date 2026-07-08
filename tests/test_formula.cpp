@@ -509,6 +509,24 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(B1+"B1)", FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"(C1+"B1)",
+        "formula structural column insert should preserve unterminated string token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "B1+[B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        "C1+[B1",
+        "formula structural column insert should preserve unterminated bracket token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "B1+'B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        "C1+'B1",
+        "formula structural column insert should preserve unterminated quoted-sheet token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             "A1+B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 3, 0}),
         "A1+B1",
         "formula structural rewrite should preserve text for zero-count edits");

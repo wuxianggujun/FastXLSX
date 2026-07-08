@@ -6956,6 +6956,10 @@ Scalar row/column clear/erase snapshot coverage now mirrors that guardrail for
 and dirty zero/overflow coordinates fail before sparse state changes, preserve
 the final blank/erased projections, clear `last_edit_error()` through a later
 valid no-op, and still save the expected byte-stable no-op outputs.
+Formula structural rewrite coverage now also ties the tokenizer recovery
+boundary to row/column edit rewriting: unterminated string, bracketed, and
+quoted-sheet tokens preserve their embedded A1-like text while real references
+before those tokens still shift.
 Single missing-cell value-clear no-ops now cover the scalar cleanup branch too:
 row/column and strict A1 `clear_cell_value()` calls after same-sheet guard
 failures clear diagnostics, preserve read-only or saved-clean sparse state,

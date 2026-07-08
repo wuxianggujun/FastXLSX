@@ -2307,6 +2307,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
             artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-row-ref-formula-noop.xlsx");
         const std::filesystem::path post_noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-row-ref-formula-post-noop.xlsx");
+        const std::filesystem::path final_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-row-ref-formula-final-noop.xlsx");
 
         fastxlsx::WorksheetEditorOptions options;
         options.max_cells = 8;
@@ -2523,6 +2525,54 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
                 post_noop_row_three[1].value.text_value() ==
                     "delete-row-ref-formula-post-noop",
             "delete-row ref formula post-noop row_cells should expose formula and later edit");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_final_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_final_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(final_noop_output);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+                !matching.has_pending_changes(),
+            "delete-row ref formula final no-op save should keep all recovery handles clean");
+        check_retry_reacquire_safe_save_clean_state(
+            editor, 5, "delete-row ref formula final no-op save");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_final_noop,
+            "delete-row ref formula final no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_final_noop,
+            "delete-row ref formula final no-op save");
+        const auto final_noop_entries =
+            fastxlsx::test::read_zip_entries(final_noop_output);
+        check(final_noop_entries == post_noop_entries,
+            "delete-row ref formula final no-op output should match the post-noop output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "delete-row ref formula final no-op save should leave the source package unchanged");
+        check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+            "delete-row ref formula final no-op save should leave the second output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete-row ref formula final no-op save should leave the first no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "delete-row ref formula final no-op save should leave the post-noop output unchanged");
+
+        fastxlsx::WorkbookEditor final_noop_editor =
+            fastxlsx::WorkbookEditor::open(final_noop_output);
+        fastxlsx::WorksheetEditor final_noop_sheet =
+            final_noop_editor.worksheet("Data", options);
+        check_retry_reopened_clean_state(
+            final_noop_editor, final_noop_sheet,
+            "delete-row ref formula final no-op reopened output");
+        const fastxlsx::CellValue final_noop_formula =
+            final_noop_sheet.get_cell("C3");
+        check(final_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                final_noop_formula.text_value() == "#REF!+A:A+#REF!+B3",
+            "delete-row ref formula final no-op reopened output should read back #REF! translation");
+        check(final_noop_sheet.get_cell("D3").text_value() ==
+                "delete-row-ref-formula-post-noop",
+            "delete-row ref formula final no-op reopened output should keep the later edit");
+        check_retry_cell_range_equals(final_noop_sheet.used_range(), 1, 1, 3, 4,
+            "delete-row ref formula final no-op reopened output should keep expanded sparse range");
     }
 
     {
@@ -2536,6 +2586,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
             artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-column-ref-formula-noop.xlsx");
         const std::filesystem::path post_noop_output =
             artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-column-ref-formula-post-noop.xlsx");
+        const std::filesystem::path final_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-rename-back-failed-save-delete-column-ref-formula-final-noop.xlsx");
 
         fastxlsx::WorksheetEditorOptions options;
         options.max_cells = 8;
@@ -2777,6 +2829,59 @@ void test_public_worksheet_editor_rename_back_failed_save_as_delete_ref_formula_
                 post_noop_row_one[2].value.text_value() ==
                     "delete-column-ref-formula-post-noop",
             "delete-column ref formula post-noop row_cells should expose number, formula, and later edit");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_final_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_final_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(final_noop_output);
+        check(!sheet.has_pending_changes() && !reacquired.has_pending_changes() &&
+                !matching.has_pending_changes(),
+            "delete-column ref formula final no-op save should keep all recovery handles clean");
+        check_retry_reacquire_safe_save_clean_state(
+            editor, 5, "delete-column ref formula final no-op save");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_final_noop,
+            "delete-column ref formula final no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_final_noop,
+            "delete-column ref formula final no-op save");
+        const auto final_noop_entries =
+            fastxlsx::test::read_zip_entries(final_noop_output);
+        check(final_noop_entries == post_noop_entries,
+            "delete-column ref formula final no-op output should match the post-noop output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "delete-column ref formula final no-op save should leave the source package unchanged");
+        check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+            "delete-column ref formula final no-op save should leave the second output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete-column ref formula final no-op save should leave the first no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "delete-column ref formula final no-op save should leave the post-noop output unchanged");
+
+        fastxlsx::WorkbookEditor final_noop_editor =
+            fastxlsx::WorkbookEditor::open(final_noop_output);
+        fastxlsx::WorksheetEditor final_noop_sheet =
+            final_noop_editor.worksheet("Data", options);
+        check_retry_reopened_clean_state(
+            final_noop_editor, final_noop_sheet,
+            "delete-column ref formula final no-op reopened output");
+        const fastxlsx::CellValue final_noop_number =
+            final_noop_sheet.get_cell("A1");
+        check(final_noop_number.kind() == fastxlsx::CellValueKind::Number &&
+                final_noop_number.number_value() == 1.0,
+            "delete-column ref formula final no-op reopened output should keep shifted source number");
+        const fastxlsx::CellValue final_noop_formula =
+            final_noop_sheet.get_cell("C1");
+        check(final_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                final_noop_formula.text_value() == "#REF!+#REF!+1:1+C2",
+            "delete-column ref formula final no-op reopened output should read back #REF! translation");
+        check(final_noop_sheet.get_cell("D1").text_value() ==
+                "delete-column-ref-formula-post-noop",
+            "delete-column ref formula final no-op reopened output should keep the later edit");
+        check_retry_cell_range_equals(final_noop_sheet.used_range(), 1, 1, 1, 4,
+            "delete-column ref formula final no-op reopened output should keep expanded sparse range");
     }
 }
 

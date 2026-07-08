@@ -666,6 +666,10 @@ They now also continue past that clean no-op point: later same-handle edits
 save fresh post-noop outputs, leave source/shifted/no-op packages unchanged,
 and fresh reopen keeps both the translated `#REF!` formulas and the later
 cells.
+Those post-noop outputs now settle through one more clean no-op save as well,
+requiring byte-identical final no-op packages, stable public save/catalog
+snapshots, unchanged prior artifacts, and fresh reopen of the translated
+`#REF!` formulas plus later cells.
 The row-insert saved-session reacquire no-op path now also covers a moved dirty
 formula and moved dirty tail cell: after `insert_rows()` translates the formula
 and the first `save_as()` flushes it, matching-option reacquire reuses that

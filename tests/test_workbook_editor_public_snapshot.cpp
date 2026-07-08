@@ -4330,8 +4330,42 @@ void test_generated_source_row_column_value_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_row_column_value_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column value prefix should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column value prefix should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column value prefix should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column value prefix should preserve source-backed values");
+    };
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row_values(0, {
+            fastxlsx::CellValue::text("row-value-invalid-row-leak"),
+        });
+    }), "invalid row value prefix should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid row value prefix should expose last_edit_error");
+    check_clean_row_column_value_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column_values(0, {
+            fastxlsx::CellValue::text("column-value-invalid-column-leak"),
+        });
+    }), "invalid column value prefix should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid column value prefix should expose last_edit_error");
+    check_clean_row_column_value_failure_state();
+
     sheet.set_cell("C1", fastxlsx::CellValue::number(7.0));
     sheet.set_cell("A3", fastxlsx::CellValue::boolean(false));
+    check(!editor.last_edit_error().has_value(),
+        "row/column value setup should clear invalid prefix diagnostics");
     check(sheet.cell_count() == 5,
         "row/column value roundtrip setup should add C1 and A3 sparse cells");
     check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
@@ -4377,6 +4411,51 @@ void test_generated_source_row_column_value_roundtrip()
     check(sheet.get_cell("C1").number_value() == 7.0,
         "column value prefix should preserve non-target C1 number");
 
+    const auto check_dirty_row_column_value_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column value prefix should keep the session dirty");
+        check(sheet.cell_count() == 5 &&
+                editor.pending_materialized_cell_count() == 5,
+            "invalid dirty row/column value prefix should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+            "invalid dirty row/column value prefix should preserve dirty bounds");
+        check(sheet.get_cell("A1").text_value() == "value-col-a" &&
+                sheet.get_cell("A2").text_value() == "value-col-b" &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C1").number_value() == 7.0,
+            "invalid dirty row/column value prefix should preserve dirty values");
+        const fastxlsx::CellValue dirty_a3 = sheet.get_cell("A3");
+        check(dirty_a3.kind() == fastxlsx::CellValueKind::Boolean &&
+                !dirty_a3.boolean_value(),
+            "invalid dirty row/column value prefix should preserve A3 beyond prefix");
+    };
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_row_values(0, {
+            fastxlsx::CellValue::text("row-value-dirty-invalid-row-leak"),
+        });
+    }), "invalid dirty row value prefix should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row value prefix should expose last_edit_error");
+    check_dirty_row_column_value_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_column_values(0, {
+            fastxlsx::CellValue::text("column-value-dirty-invalid-column-leak"),
+        });
+    }), "invalid dirty column value prefix should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column value prefix should expose last_edit_error");
+    check_dirty_row_column_value_failure_state();
+
+    sheet.set_column_values(1, {
+        fastxlsx::CellValue::text("value-col-a"),
+        fastxlsx::CellValue::text("value-col-b"),
+    });
+    check(!editor.last_edit_error().has_value(),
+        "row/column value recovery prefix should clear invalid diagnostics");
+    check_dirty_row_column_value_failure_state();
+
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
         "row/column value save_as should clean the materialized session");
@@ -4405,6 +4484,14 @@ void test_generated_source_row_column_value_roundtrip()
         "row/column value save_as should omit overwritten source A2 text");
     check_not_contains(data_xml, "value-row-a",
         "row/column value save_as should omit overwritten intermediate A1 text");
+    check_not_contains(data_xml, "row-value-invalid",
+        "row/column value save_as should omit clean invalid row payloads");
+    check_not_contains(data_xml, "column-value-invalid",
+        "row/column value save_as should omit clean invalid column payloads");
+    check_not_contains(data_xml, "row-value-dirty-invalid",
+        "row/column value save_as should omit dirty invalid row payloads");
+    check_not_contains(data_xml, "column-value-dirty-invalid",
+        "row/column value save_as should omit dirty invalid column payloads");
     check_row_column_value_output(output);
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);

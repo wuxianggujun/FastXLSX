@@ -759,6 +759,11 @@ earlier first/no-op/diagnostic no-op output packages byte-stable.
 The remaining no-op diagnostics gap is now closed for missing-erase guardrail
 recovery and materialized last-error replacement recovery outputs: those clean
 no-op saves also keep replacement diagnostics empty.
+Those guardrail/diagnostic repeated-noop paths now also re-read the prior
+output packages after later saves: max-cells and memory-budget budget-release,
+missing-erase, blank-overwrite, last-error recovery, and mixed diagnostic
+recovery all prove the first no-op package remains unchanged after the second
+no-op and post-noop save.
 The retry guard reopened-output helper now checks the same complete clean
 diagnostic surface after saved/no-op recovery outputs: no pending summaries,
 no materialized names/count/memory, no replacement diagnostics, and no

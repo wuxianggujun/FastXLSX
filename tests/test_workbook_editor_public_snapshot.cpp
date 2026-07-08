@@ -482,6 +482,79 @@ void check_row_column_cleared_output(const std::filesystem::path& output)
         "reopened row/column clear Audit sheet should remain copy-original");
 }
 
+void check_row_column_range_cleared_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened row/column range clear output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened row/column range clear output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened row/column range clear Data output should keep the sheet clean");
+    check(data.cell_count() == 7,
+        "reopened row/column range clear Data output should keep represented blanks");
+    check(is_used_range(data.used_range(), 1, 1, 3, 4),
+        "reopened row/column range clear Data output should preserve sparse bounds");
+    check(data.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column range clear Data output should keep A1 blank");
+    check(data.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column range clear Data output should keep B1 blank");
+    check(data.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column range clear Data output should keep C1 blank");
+    check(data.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column range clear Data output should keep A2 blank");
+    check(data.get_cell("C2").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column range clear Data output should keep C2 blank");
+    check(data.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened row/column range clear Data output should keep B3 blank");
+    const fastxlsx::CellValue d3 = data.get_cell("D3");
+    check(d3.kind() == fastxlsx::CellValueKind::Boolean &&
+            d3.boolean_value(),
+        "reopened row/column range clear Data output should retain D3");
+    check(!data.try_cell("B2").has_value() &&
+            !data.try_cell("C3").has_value(),
+        "reopened row/column range clear Data output should not synthesize missing cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 7 &&
+            is_blank_snapshot(all_cells[0], 1, 1) &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_blank_snapshot(all_cells[2], 1, 3) &&
+            is_blank_snapshot(all_cells[3], 2, 1) &&
+            is_blank_snapshot(all_cells[4], 2, 3) &&
+            is_blank_snapshot(all_cells[5], 3, 2) &&
+            is_boolean_snapshot(all_cells[6], 3, 4, true),
+        "reopened row/column range clear Data sparse_cells should expose blanks plus D3");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        data.row_cells(3);
+    check(row_three.size() == 2 &&
+            is_blank_snapshot(row_three[0], 3, 2) &&
+            is_boolean_snapshot(row_three[1], 3, 4, true),
+        "reopened row/column range clear Data row_cells should retain row-three D3");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+        data.column_cells(2);
+    check(column_two.size() == 2 &&
+            is_blank_snapshot(column_two[0], 1, 2) &&
+            is_blank_snapshot(column_two[1], 3, 2),
+        "reopened row/column range clear Data column_cells should expose blank column two");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+        data.column_cells(4);
+    check(column_four.size() == 1 &&
+            is_boolean_snapshot(column_four[0], 3, 4, true),
+        "reopened row/column range clear Data column_cells should retain D3");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened row/column range clear Audit sheet should remain copy-original");
+}
+
 void check_row_column_erased_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -1036,6 +1109,110 @@ void test_generated_source_row_column_clear_roundtrip()
     check_row_column_cleared_output(noop_output);
 }
 
+void test_generated_source_row_column_range_clear_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-clear-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-clear-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C1", fastxlsx::CellValue::text("clear-range-c1"));
+    sheet.set_cell("C2", fastxlsx::CellValue::number(9.0));
+    sheet.set_cell("B3", fastxlsx::CellValue::text("clear-range-b3"));
+    sheet.set_cell("D3", fastxlsx::CellValue::boolean(true));
+    check(sheet.cell_count() == 7,
+        "row/column range clear setup should add dirty sparse cells");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "row/column range clear setup should expand sparse bounds");
+
+    sheet.clear_rows(1, 2);
+    check(sheet.cell_count() == 7,
+        "clear_rows should keep represented sparse records");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_rows should convert source-backed A1 to blank");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_rows should convert source-backed B1 to blank");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_rows should convert dirty C1 to blank");
+    check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_rows should convert source-backed A2 to blank");
+    check(sheet.get_cell("C2").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_rows should convert dirty C2 to blank");
+    check(sheet.get_cell("B3").text_value() == "clear-range-b3",
+        "clear_rows should leave non-target B3 untouched");
+    check(sheet.get_cell("D3").boolean_value(),
+        "clear_rows should leave non-target D3 untouched");
+
+    sheet.clear_columns(2, 3);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "row/column range clear roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 7,
+        "row/column range clear roundtrip should keep represented sparse records");
+    check(editor.pending_materialized_cell_count() == 7,
+        "row/column range clear roundtrip should expose final dirty materialized count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "row/column range clear roundtrip should keep final sparse bounds");
+    check(sheet.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank,
+        "clear_columns should convert dirty B3 to blank");
+    check(sheet.get_cell("D3").boolean_value(),
+        "clear_columns should preserve non-target D3");
+    check(!sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("C3").has_value(),
+        "row/column range clear should not synthesize missing cells");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "row/column range clear save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "row/column range clear save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column range clear save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:D3\"",
+        "row/column range clear save_as should write final worksheet dimension");
+    check_contains(data_xml, R"(<c r="A1"/>)",
+        "row/column range clear save_as should write blank A1");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "row/column range clear save_as should write blank B1");
+    check_contains(data_xml, R"(<c r="C1"/>)",
+        "row/column range clear save_as should write blank C1");
+    check_contains(data_xml, R"(<c r="A2"/>)",
+        "row/column range clear save_as should write blank A2");
+    check_contains(data_xml, R"(<c r="C2"/>)",
+        "row/column range clear save_as should write blank C2");
+    check_contains(data_xml, R"(<c r="B3"/>)",
+        "row/column range clear save_as should write blank B3");
+    check_contains(data_xml, R"(<c r="D3" t="b"><v>1</v></c>)",
+        "row/column range clear save_as should preserve non-target D3 boolean");
+    check_not_contains(data_xml, "alpha",
+        "row/column range clear save_as should omit cleared source A1 text");
+    check_not_contains(data_xml, "tail",
+        "row/column range clear save_as should omit cleared source A2 text");
+    check_not_contains(data_xml, "clear-range-c1",
+        "row/column range clear save_as should omit cleared dirty C1 text");
+    check_not_contains(data_xml, "clear-range-b3",
+        "row/column range clear save_as should omit cleared dirty B3 text");
+    check_not_contains(data_xml, "<v>2",
+        "row/column range clear save_as should omit cleared source B1 number");
+    check_not_contains(data_xml, "<v>9",
+        "row/column range clear save_as should omit cleared C2 number");
+    check_row_column_range_cleared_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean row/column range clear no-op save should keep output entries stable");
+    check_row_column_range_cleared_output(noop_output);
+}
+
 void test_generated_source_row_column_erase_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -1395,6 +1572,7 @@ int main()
         test_generated_source_erase_roundtrip();
         test_generated_source_clear_value_roundtrip();
         test_generated_source_row_column_clear_roundtrip();
+        test_generated_source_row_column_range_clear_roundtrip();
         test_generated_source_row_column_erase_roundtrip();
         test_generated_source_append_row_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();

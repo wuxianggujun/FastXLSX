@@ -2291,6 +2291,11 @@ The standalone snapshot lane now also covers `clear_row()` plus
 blank records, non-target sparse cells stay intact, saved XML omits cleared
 payloads, reopen preserves row/column blank snapshots, and clean no-op save
 remains byte-stable.
+It now mirrors that public save/reopen lane for inclusive `clear_rows()` plus
+`clear_columns()`: multi-row and multi-column ranges only clear already
+represented sparse records, missing cells are not synthesized, non-target cells
+survive, saved XML keeps explicit blank `<c>` records, and clean no-op save
+remains byte-stable.
 The same lane now adds the `erase_row()` plus `erase_column()` contrast:
 represented source-backed and dirty sparse records are removed, the remaining
 non-target sparse cell shrinks `used_range()` to a single coordinate, saved XML

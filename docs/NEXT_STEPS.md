@@ -731,6 +731,9 @@ The batch and row/column write no-op paths now also prove the first no-op
 package remains unchanged across repeated clean saves for initializer-list
 batch writes, append-row writes, styled append-row writes, row replacement, and
 column replacement.
+The value-batch write no-op paths now carry the same prior-output stability for
+styled `set_cell_values()`, row-value writes, styled row-value writes,
+column-value writes, and styled column-value writes.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

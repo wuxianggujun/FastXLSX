@@ -1605,6 +1605,11 @@ evidence for the original `D2` styled formula and untouched companion sheet.
 The row/column shift and full-calculation shift readback matrix now runs under a
 separate `fastxlsx.workbook_editor.public-state-shifts` CTest shard, preserving
 coverage while giving the base public-state shard more 60-second timeout margin.
+The mutation-heavy write/clear/erase/guardrail half of the baseline
+public-state checks now runs under
+`fastxlsx.workbook_editor.public-state-edits`, keeping the default CTest
+coverage intact while moving the general read/state snapshot shard farther from
+the 60-second timeout boundary.
 Direct row/column shift tests now also pin pre-save dirty summary diagnostics:
 `insert_rows()`, `delete_rows()`, `insert_columns()`, and `delete_columns()`
 verify `pending_worksheet_edits()` reports one dirty `Data` materialized summary
@@ -7610,6 +7615,7 @@ schema validation.
   - `fastxlsx.workbook_editor.public-retry-guards`
   - `fastxlsx.workbook_editor.public-retry-projection`
   - `fastxlsx.workbook_editor.public-state`
+  - `fastxlsx.workbook_editor.public-state-edits`
   - `fastxlsx.workbook_editor.public-guards`
   - `fastxlsx.workbook_editor_source_success`
   - `fastxlsx.workbook_editor_source_success_shared_strings`

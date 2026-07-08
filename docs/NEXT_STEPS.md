@@ -5914,6 +5914,9 @@ The materialized-edits shard now also pins current-catalog targeting for
 materialized handoff helpers: pending dirty names ignore stale source-name
 sessions after rename, and flush target validation accepts only current planned
 sheet names.
+It also covers dirty sheetData projection collection directly: only dirty
+materialized sessions are projected, each projection carries its sparse-store
+dimension reference, and the chunk callback emits sheetData-only XML.
 The follow-up WorkbookEditor facade split keeps the base public facade
 diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
 save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke

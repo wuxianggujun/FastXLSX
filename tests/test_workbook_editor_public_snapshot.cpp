@@ -1264,6 +1264,95 @@ void check_contains_cell_output(const std::filesystem::path& output)
         "reopened contains-cell Audit sheet should remain copy-original");
 }
 
+void check_inspection_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened inspection output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened inspection output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(data.name() == "Data",
+        "reopened inspection Data output should expose the worksheet name");
+    check(!data.has_pending_changes(),
+        "reopened inspection Data output should keep the sheet clean");
+    check(data.cell_count() == 5,
+        "reopened inspection Data output should materialize final sparse cells");
+    check(data.estimated_memory_usage() > 0,
+        "reopened inspection Data output should expose a non-zero memory estimate");
+    check(is_used_range(data.used_range(), 1, 1, 3, 4),
+        "reopened inspection Data output should expose final sparse bounds");
+    check(data.contains_cell("A1") &&
+            data.contains_cell(1, 2) &&
+            data.contains_cell("A2") &&
+            data.contains_cell("D2") &&
+            data.contains_cell(3, 3),
+        "reopened inspection Data output should report represented cells");
+    check(!data.contains_cell("B2") &&
+            !data.contains_cell("C2") &&
+            !data.contains_cell("D3"),
+        "reopened inspection Data output should report sparse gaps as missing");
+
+    const std::optional<fastxlsx::CellValue> a1 = data.try_cell("A1");
+    check(a1.has_value() &&
+            a1->kind() == fastxlsx::CellValueKind::Text &&
+            a1->text_value() == "alpha",
+        "reopened inspection try_cell should read source-backed A1");
+    check(data.get_cell("B1").number_value() == 5.0,
+        "reopened inspection get_cell should read updated B1");
+    check(data.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened inspection get_cell should read cleared A2 as blank");
+    const fastxlsx::CellValue d2 = data.get_cell("D2");
+    check(d2.kind() == fastxlsx::CellValueKind::Formula &&
+            d2.text_value() == "A1+B1",
+        "reopened inspection get_cell should read inserted D2 formula");
+    const std::optional<fastxlsx::CellValue> c3 = data.try_cell("C3");
+    check(c3.has_value() &&
+            c3->kind() == fastxlsx::CellValueKind::Text &&
+            c3->text_value() == "inspection-c3",
+        "reopened inspection try_cell should read inserted C3");
+    check(!data.try_cell("B2").has_value(),
+        "reopened inspection try_cell should skip missing B2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> requested =
+        data.sparse_cells({
+            fastxlsx::WorksheetCellReference {2, 4},
+            fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {2, 4},
+        });
+    check(requested.size() == 5 &&
+            is_formula_snapshot(requested[0], 2, 4, "A1+B1") &&
+            is_blank_snapshot(requested[1], 2, 1) &&
+            is_text_snapshot(requested[2], 1, 1, "alpha") &&
+            is_text_snapshot(requested[3], 3, 3, "inspection-c3") &&
+            is_formula_snapshot(requested[4], 2, 4, "A1+B1"),
+        "reopened inspection sparse_cells batch should preserve requested order, duplicates, and missing skips");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+        data.row_cells(2);
+    check(row_two.size() == 2 &&
+            is_blank_snapshot(row_two[0], 2, 1) &&
+            is_formula_snapshot(row_two[1], 2, 4, "A1+B1"),
+        "reopened inspection row_cells should expose blank A2 and formula D2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+        data.column_cells(4);
+    check(column_four.size() == 1 &&
+            is_formula_snapshot(column_four[0], 2, 4, "A1+B1"),
+        "reopened inspection column_cells should expose formula D2");
+    check(!data.has_pending_changes() && !reopened.has_pending_changes(),
+        "reopened inspection reads should keep the session clean");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened inspection Audit sheet should remain copy-original");
+}
+
 void check_sparse_initializer_list_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -3093,6 +3182,128 @@ void test_generated_source_contains_cell_roundtrip()
     check_contains_cell_output(noop_output);
 }
 
+void test_generated_source_inspection_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-inspection-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-inspection-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(sheet.name() == "Data",
+        "inspection roundtrip should expose the worksheet name");
+    check_initial_snapshots(sheet);
+    const std::size_t source_memory = sheet.estimated_memory_usage();
+    check(source_memory > 0,
+        "inspection source reads should expose a non-zero memory estimate");
+    check(sheet.try_cell("A1").has_value() &&
+            sheet.try_cell("A1")->text_value() == "alpha",
+        "inspection source reads should read source-backed A1");
+    check(sheet.get_cell("B1").number_value() == 2.0,
+        "inspection source reads should read source-backed B1");
+    check(sheet.contains_cell("A2") &&
+            !sheet.contains_cell("C3") &&
+            !sheet.try_cell("B2").has_value(),
+        "inspection source reads should report represented and missing cells");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> source_requested =
+        sheet.sparse_cells({
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 1},
+        });
+    check(source_requested.size() == 3 &&
+            is_text_snapshot(source_requested[0], 2, 1, "tail") &&
+            is_number_snapshot(source_requested[1], 1, 2, 2.0) &&
+            is_text_snapshot(source_requested[2], 2, 1, "tail"),
+        "inspection source sparse_cells batch should keep requested order and skip missing cells");
+    check(sheet.estimated_memory_usage() == source_memory,
+        "inspection source reads should keep the materialized memory estimate stable");
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "inspection source reads should not dirty the materialized session");
+    check(editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "inspection source reads should not expose dirty materialized diagnostics");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("inspection-c3"));
+    sheet.set_cell_value("B1", fastxlsx::CellValue::number(5.0));
+    sheet.clear_cell_value("A2");
+    sheet.set_cell("D2", fastxlsx::CellValue::formula("A1+B1"));
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "inspection mutations should dirty the materialized session");
+    check(sheet.cell_count() == 5,
+        "inspection mutations should expose final represented sparse cells");
+    check(editor.pending_materialized_cell_count() == 5,
+        "inspection mutations should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "inspection mutations should expose final sparse bounds");
+    const std::size_t dirty_memory = sheet.estimated_memory_usage();
+    check(dirty_memory > 0 &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "inspection mutations should expose the active dirty memory estimate");
+    check(sheet.contains_cell("A1") &&
+            sheet.contains_cell("B1") &&
+            sheet.contains_cell("A2") &&
+            sheet.contains_cell("D2") &&
+            sheet.contains_cell("C3"),
+        "inspection dirty reads should report represented source, blank, formula, and inserted cells");
+    check(!sheet.contains_cell("B2") &&
+            !sheet.try_cell("B2").has_value(),
+        "inspection dirty reads should keep missing B2 absent");
+    check(sheet.get_cell("A2").kind() == fastxlsx::CellValueKind::Blank,
+        "inspection dirty reads should see cleared A2 as an explicit blank");
+    check(sheet.get_cell("D2").kind() == fastxlsx::CellValueKind::Formula &&
+            sheet.get_cell("D2").text_value() == "A1+B1",
+        "inspection dirty reads should see inserted D2 formula");
+    check(sheet.estimated_memory_usage() == dirty_memory &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "inspection dirty reads should keep dirty memory diagnostics stable");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "inspection save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "inspection save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "inspection save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:D3\"",
+        "inspection save_as should write final worksheet dimension");
+    check_contains(data_xml, "alpha",
+        "inspection save_as should keep source-backed A1");
+    check_contains(data_xml, "<v>5",
+        "inspection save_as should write updated B1 number");
+    check_contains(data_xml, R"(<c r="A2"/>)",
+        "inspection save_as should write explicit A2 blank");
+    check_contains(data_xml, R"(r="D2")",
+        "inspection save_as should write inserted D2 coordinate");
+    check_contains(data_xml, "A1+B1",
+        "inspection save_as should write inserted D2 formula");
+    check_contains(data_xml, R"(r="C3")",
+        "inspection save_as should write inserted C3 coordinate");
+    check_contains(data_xml, "inspection-c3",
+        "inspection save_as should write inserted C3 text");
+    check_not_contains(data_xml, "<v>2",
+        "inspection save_as should omit overwritten source B1 number");
+    check_not_contains(data_xml, "tail",
+        "inspection save_as should omit cleared source A2 text");
+    check_not_contains(data_xml, R"(r="B2")",
+        "inspection save_as should not synthesize missing B2");
+    check_inspection_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean inspection no-op save should keep output entries stable");
+    check_inspection_output(noop_output);
+}
+
 void test_generated_source_sparse_initializer_list_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -4057,6 +4268,7 @@ int main()
         test_generated_source_sparse_batch_replacement_roundtrip();
         test_generated_source_single_value_roundtrip();
         test_generated_source_contains_cell_roundtrip();
+        test_generated_source_inspection_roundtrip();
         test_generated_source_sparse_initializer_list_roundtrip();
         test_generated_source_span_batch_roundtrip();
         test_generated_source_sparse_value_batch_roundtrip();

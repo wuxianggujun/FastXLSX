@@ -1410,6 +1410,118 @@ void check_row_column_value_output(const std::filesystem::path& output)
         "reopened row/column value Audit sheet should remain copy-original");
 }
 
+struct ExpectedShiftCell {
+    fastxlsx::WorksheetCellReference reference {};
+    fastxlsx::CellValueKind kind = fastxlsx::CellValueKind::Blank;
+    std::string text;
+    double number = 0.0;
+    bool boolean = false;
+};
+
+ExpectedShiftCell expected_shift_text(
+    std::uint32_t row, std::uint32_t column, std::string_view text)
+{
+    return ExpectedShiftCell {
+        fastxlsx::WorksheetCellReference {row, column},
+        fastxlsx::CellValueKind::Text,
+        std::string(text),
+    };
+}
+
+ExpectedShiftCell expected_shift_number(
+    std::uint32_t row, std::uint32_t column, double number)
+{
+    ExpectedShiftCell expected;
+    expected.reference = fastxlsx::WorksheetCellReference {row, column};
+    expected.kind = fastxlsx::CellValueKind::Number;
+    expected.number = number;
+    return expected;
+}
+
+ExpectedShiftCell expected_shift_boolean(
+    std::uint32_t row, std::uint32_t column, bool boolean)
+{
+    ExpectedShiftCell expected;
+    expected.reference = fastxlsx::WorksheetCellReference {row, column};
+    expected.kind = fastxlsx::CellValueKind::Boolean;
+    expected.boolean = boolean;
+    return expected;
+}
+
+bool matches_expected_shift_value(
+    const fastxlsx::CellValue& value,
+    const ExpectedShiftCell& expected)
+{
+    if (value.kind() != expected.kind) {
+        return false;
+    }
+    switch (expected.kind) {
+    case fastxlsx::CellValueKind::Text:
+        return value.text_value() == expected.text;
+    case fastxlsx::CellValueKind::Number:
+        return value.number_value() == expected.number;
+    case fastxlsx::CellValueKind::Boolean:
+        return value.boolean_value() == expected.boolean;
+    default:
+        return false;
+    }
+}
+
+bool matches_expected_shift_snapshot(
+    const fastxlsx::WorksheetCellSnapshot& snapshot,
+    const ExpectedShiftCell& expected)
+{
+    return snapshot.reference.row == expected.reference.row &&
+        snapshot.reference.column == expected.reference.column &&
+        matches_expected_shift_value(snapshot.value, expected);
+}
+
+void check_structural_shift_output(
+    const std::filesystem::path& output,
+    const fastxlsx::CellRange& used_range,
+    const std::vector<ExpectedShiftCell>& expected_cells,
+    const std::vector<fastxlsx::WorksheetCellReference>& absent_cells)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened structural-shift output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened structural-shift output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened structural-shift Data output should keep the sheet clean");
+    check(data.cell_count() == expected_cells.size(),
+        "reopened structural-shift Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), used_range.first_row,
+            used_range.first_column, used_range.last_row, used_range.last_column),
+        "reopened structural-shift Data output should expose final sparse bounds");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == expected_cells.size(),
+        "reopened structural-shift sparse_cells should expose final cell count");
+    for (std::size_t i = 0; i < expected_cells.size(); ++i) {
+        check(matches_expected_shift_snapshot(all_cells[i], expected_cells[i]),
+            "reopened structural-shift sparse_cells should expose expected row-major cells");
+        check(matches_expected_shift_value(
+                data.get_cell(expected_cells[i].reference.row,
+                    expected_cells[i].reference.column),
+                expected_cells[i]),
+            "reopened structural-shift get_cell should read expected cell value");
+    }
+
+    for (const fastxlsx::WorksheetCellReference& absent : absent_cells) {
+        check(!data.try_cell(absent.row, absent.column).has_value(),
+            "reopened structural-shift output should keep old or missing coordinates absent");
+    }
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened structural-shift Audit sheet should remain copy-original");
+}
+
 void check_invalid_snapshot_reads_preserve_diagnostics(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& sheet,
@@ -3043,6 +3155,329 @@ void test_generated_source_row_column_value_roundtrip()
     check_row_column_value_output(noop_output);
 }
 
+void test_generated_source_insert_rows_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-rows-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-rows-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C2", fastxlsx::CellValue::text("insert-row-dirty-c2"));
+    sheet.set_cell("D1", fastxlsx::CellValue::boolean(false));
+    sheet.insert_rows(2, 1);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "insert_rows roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 5,
+        "insert_rows roundtrip should keep represented sparse cell count stable");
+    check(editor.pending_materialized_cell_count() == 5,
+        "insert_rows roundtrip should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "insert_rows roundtrip should expose shifted sparse bounds");
+    check(sheet.get_cell("A3").text_value() == "tail",
+        "insert_rows roundtrip should shift source-backed A2 to A3");
+    check(sheet.get_cell("C3").text_value() == "insert-row-dirty-c2",
+        "insert_rows roundtrip should shift dirty C2 to C3");
+    check(!sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("C2").has_value(),
+        "insert_rows roundtrip should leave old shifted coordinates absent");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "insert_rows roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "insert_rows roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_rows roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:D3\"",
+        "insert_rows roundtrip save_as should write shifted worksheet dimension");
+    check_contains(data_xml, R"(<c r="D1" t="b"><v>0</v></c>)",
+        "insert_rows roundtrip save_as should keep non-target dirty D1");
+    check_contains(data_xml, R"(r="A3")",
+        "insert_rows roundtrip save_as should write shifted source A3");
+    check_contains(data_xml, R"(r="C3")",
+        "insert_rows roundtrip save_as should write shifted dirty C3");
+    check_not_contains(data_xml, R"(r="A2")",
+        "insert_rows roundtrip save_as should omit old source A2 coordinate");
+    check_not_contains(data_xml, R"(r="C2")",
+        "insert_rows roundtrip save_as should omit old dirty C2 coordinate");
+
+    const std::vector<ExpectedShiftCell> expected {
+        expected_shift_text(1, 1, "alpha"),
+        expected_shift_number(1, 2, 2.0),
+        expected_shift_boolean(1, 4, false),
+        expected_shift_text(3, 1, "tail"),
+        expected_shift_text(3, 3, "insert-row-dirty-c2"),
+    };
+    const std::vector<fastxlsx::WorksheetCellReference> absent {
+        {2, 1},
+        {2, 3},
+    };
+    check_structural_shift_output(
+        output, fastxlsx::CellRange {1, 1, 3, 4}, expected, absent);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean insert_rows no-op save should keep output entries stable");
+    check_structural_shift_output(
+        noop_output, fastxlsx::CellRange {1, 1, 3, 4}, expected, absent);
+}
+
+void test_generated_source_delete_rows_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-rows-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-rows-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C3", fastxlsx::CellValue::text("delete-row-dirty-c3"));
+    sheet.set_cell("D1", fastxlsx::CellValue::text("delete-row-removed-d1"));
+    sheet.delete_rows(1, 1);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "delete_rows roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 2,
+        "delete_rows roundtrip should remove target-row records and shift later records");
+    check(editor.pending_materialized_cell_count() == 2,
+        "delete_rows roundtrip should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+        "delete_rows roundtrip should expose shifted sparse bounds");
+    check(sheet.get_cell("A1").text_value() == "tail",
+        "delete_rows roundtrip should shift source-backed A2 to A1");
+    check(sheet.get_cell("C2").text_value() == "delete-row-dirty-c3",
+        "delete_rows roundtrip should shift dirty C3 to C2");
+    check(!sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("C3").has_value() &&
+            !sheet.try_cell("D1").has_value(),
+        "delete_rows roundtrip should omit deleted and old shifted coordinates");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "delete_rows roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "delete_rows roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_rows roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C2\"",
+        "delete_rows roundtrip save_as should write shifted worksheet dimension");
+    check_contains(data_xml, R"(r="A1")",
+        "delete_rows roundtrip save_as should write shifted source A1");
+    check_contains(data_xml, R"(r="C2")",
+        "delete_rows roundtrip save_as should write shifted dirty C2");
+    check_not_contains(data_xml, "alpha",
+        "delete_rows roundtrip save_as should omit deleted source A1 text");
+    check_not_contains(data_xml, "<v>2",
+        "delete_rows roundtrip save_as should omit deleted source B1 number");
+    check_not_contains(data_xml, "delete-row-removed-d1",
+        "delete_rows roundtrip save_as should omit deleted dirty D1 text");
+    check_not_contains(data_xml, R"(r="C3")",
+        "delete_rows roundtrip save_as should omit old dirty C3 coordinate");
+
+    const std::vector<ExpectedShiftCell> expected {
+        expected_shift_text(1, 1, "tail"),
+        expected_shift_text(2, 3, "delete-row-dirty-c3"),
+    };
+    const std::vector<fastxlsx::WorksheetCellReference> absent {
+        {1, 2},
+        {1, 4},
+        {3, 3},
+    };
+    check_structural_shift_output(
+        output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean delete_rows no-op save should keep output entries stable");
+    check_structural_shift_output(
+        noop_output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
+}
+
+void test_generated_source_insert_columns_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-columns-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-insert-columns-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("B2", fastxlsx::CellValue::text("insert-column-dirty-b2"));
+    sheet.set_cell("D1", fastxlsx::CellValue::boolean(true));
+    sheet.insert_columns(2, 1);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "insert_columns roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 5,
+        "insert_columns roundtrip should keep represented sparse cell count stable");
+    check(editor.pending_materialized_cell_count() == 5,
+        "insert_columns roundtrip should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 5),
+        "insert_columns roundtrip should expose shifted sparse bounds");
+    check(sheet.get_cell("C1").number_value() == 2.0,
+        "insert_columns roundtrip should shift source-backed B1 to C1");
+    check(sheet.get_cell("C2").text_value() == "insert-column-dirty-b2",
+        "insert_columns roundtrip should shift dirty B2 to C2");
+    check(sheet.get_cell("E1").boolean_value(),
+        "insert_columns roundtrip should shift dirty D1 to E1");
+    check(!sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("D1").has_value(),
+        "insert_columns roundtrip should leave old shifted coordinates absent");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "insert_columns roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "insert_columns roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "insert_columns roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:E2\"",
+        "insert_columns roundtrip save_as should write shifted worksheet dimension");
+    check_contains(data_xml, R"(<c r="C1"><v>2</v></c>)",
+        "insert_columns roundtrip save_as should write shifted source C1");
+    check_contains(data_xml, "insert-column-dirty-b2",
+        "insert_columns roundtrip save_as should write shifted dirty C2 text");
+    check_contains(data_xml, R"(<c r="E1" t="b"><v>1</v></c>)",
+        "insert_columns roundtrip save_as should write shifted dirty E1 boolean");
+    check_not_contains(data_xml, R"(r="B1")",
+        "insert_columns roundtrip save_as should omit old source B1 coordinate");
+    check_not_contains(data_xml, R"(r="B2")",
+        "insert_columns roundtrip save_as should omit old dirty B2 coordinate");
+    check_not_contains(data_xml, R"(r="D1")",
+        "insert_columns roundtrip save_as should omit old dirty D1 coordinate");
+
+    const std::vector<ExpectedShiftCell> expected {
+        expected_shift_text(1, 1, "alpha"),
+        expected_shift_number(1, 3, 2.0),
+        expected_shift_boolean(1, 5, true),
+        expected_shift_text(2, 1, "tail"),
+        expected_shift_text(2, 3, "insert-column-dirty-b2"),
+    };
+    const std::vector<fastxlsx::WorksheetCellReference> absent {
+        {1, 2},
+        {2, 2},
+        {1, 4},
+    };
+    check_structural_shift_output(
+        output, fastxlsx::CellRange {1, 1, 2, 5}, expected, absent);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean insert_columns no-op save should keep output entries stable");
+    check_structural_shift_output(
+        noop_output, fastxlsx::CellRange {1, 1, 2, 5}, expected, absent);
+}
+
+void test_generated_source_delete_columns_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-columns-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-delete-columns-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C2", fastxlsx::CellValue::text("delete-column-dirty-c2"));
+    sheet.set_cell("D1", fastxlsx::CellValue::text("delete-column-dirty-d1"));
+    sheet.delete_columns(1, 1);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "delete_columns roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 3,
+        "delete_columns roundtrip should remove target-column records and shift later records");
+    check(editor.pending_materialized_cell_count() == 3,
+        "delete_columns roundtrip should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+        "delete_columns roundtrip should expose shifted sparse bounds");
+    check(sheet.get_cell("A1").number_value() == 2.0,
+        "delete_columns roundtrip should shift source-backed B1 to A1");
+    check(sheet.get_cell("B2").text_value() == "delete-column-dirty-c2",
+        "delete_columns roundtrip should shift dirty C2 to B2");
+    check(sheet.get_cell("C1").text_value() == "delete-column-dirty-d1",
+        "delete_columns roundtrip should shift dirty D1 to C1");
+    check(!sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("C2").has_value() &&
+            !sheet.try_cell("D1").has_value(),
+        "delete_columns roundtrip should omit deleted and old shifted coordinates");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "delete_columns roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "delete_columns roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "delete_columns roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:C2\"",
+        "delete_columns roundtrip save_as should write shifted worksheet dimension");
+    check_contains(data_xml, R"(<c r="A1"><v>2</v></c>)",
+        "delete_columns roundtrip save_as should write shifted source A1");
+    check_contains(data_xml, "delete-column-dirty-c2",
+        "delete_columns roundtrip save_as should write shifted dirty B2 text");
+    check_contains(data_xml, "delete-column-dirty-d1",
+        "delete_columns roundtrip save_as should write shifted dirty C1 text");
+    check_not_contains(data_xml, "alpha",
+        "delete_columns roundtrip save_as should omit deleted source A1 text");
+    check_not_contains(data_xml, "tail",
+        "delete_columns roundtrip save_as should omit deleted source A2 text");
+    check_not_contains(data_xml, R"(r="D1")",
+        "delete_columns roundtrip save_as should omit old dirty D1 coordinate");
+    check_not_contains(data_xml, R"(r="C2")",
+        "delete_columns roundtrip save_as should omit old dirty C2 coordinate");
+
+    const std::vector<ExpectedShiftCell> expected {
+        expected_shift_number(1, 1, 2.0),
+        expected_shift_text(1, 3, "delete-column-dirty-d1"),
+        expected_shift_text(2, 2, "delete-column-dirty-c2"),
+    };
+    const std::vector<fastxlsx::WorksheetCellReference> absent {
+        {2, 1},
+        {1, 2},
+        {2, 3},
+        {1, 4},
+    };
+    check_structural_shift_output(
+        output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean delete_columns no-op save should keep output entries stable");
+    check_structural_shift_output(
+        noop_output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
+}
+
 } // namespace
 
 int main()
@@ -3067,6 +3502,10 @@ int main()
         test_generated_source_sparse_value_batch_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();
+        test_generated_source_insert_rows_roundtrip();
+        test_generated_source_delete_rows_roundtrip();
+        test_generated_source_insert_columns_roundtrip();
+        test_generated_source_delete_columns_roundtrip();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

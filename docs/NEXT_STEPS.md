@@ -2300,6 +2300,11 @@ It now also contrasts the value-only row/column prefix writers:
 `set_column_values()` updates only the column prefix while preserving cells beyond
 it, saved XML omits overwritten source/intermediate values, reopen preserves
 row/column snapshots, and clean no-op save remains byte-stable.
+The same public snapshot lane now covers the structural-shift group together:
+`insert_rows()`, `delete_rows()`, `insert_columns()`, and `delete_columns()`
+move or remove represented source-backed and dirty sparse cells, refresh saved
+dimensions, omit old shifted coordinates, reopen with stable snapshots, and keep
+clean no-op saves byte-stable.
 The standalone snapshot lane now also covers `clear_row()` plus
 `clear_column()`: represented source-backed and dirty cells become explicit
 blank records, non-target sparse cells stay intact, saved XML omits cleared

@@ -5917,6 +5917,10 @@ sheet names.
 It also covers dirty sheetData projection collection directly: only dirty
 materialized sessions are projected, each projection carries its sparse-store
 dimension reference, and the chunk callback emits sheetData-only XML.
+The same shard now verifies that dirty sheetData projections can carry a
+shared-string index provider, so text cells are emitted as stable `t="s"`
+indexes while non-text cells stay value-only; this is projection wiring
+evidence only, not broad sharedStrings migration.
 The follow-up WorkbookEditor facade split keeps the base public facade
 diagnostic/state tests in `tests/test_workbook_editor_facade.cpp`, moves
 save-as/no-op, rename/planned-catalog, image-replacement, and end-to-end smoke

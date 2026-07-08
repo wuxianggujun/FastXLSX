@@ -5229,6 +5229,91 @@ void test_generated_source_row_column_value_span_roundtrip()
     fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
 
     check_initial_snapshots(sheet);
+    const auto check_clean_row_column_value_span_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid row/column value span should keep the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid row/column value span should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid row/column value span should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid row/column value span should preserve source-backed values");
+    };
+    const std::array<fastxlsx::CellValue, 1> clean_invalid_values {{
+        fastxlsx::CellValue::text("row-column-value-span-clean-invalid"),
+    }};
+    const auto clean_invalid_span = std::span<const fastxlsx::CellValue>(
+        clean_invalid_values.data(), clean_invalid_values.size());
+
+    std::vector<fastxlsx::CellValue> clean_too_wide_values =
+        make_too_wide_append_row("row-column-value-span-clean-width-invalid");
+    check(threw_fastxlsx_error([&sheet, &clean_too_wide_values] {
+        sheet.append_row(std::span<const fastxlsx::CellValue>(
+            clean_too_wide_values.data(), clean_too_wide_values.size()));
+    }), "invalid clean row/column value span append should reject too many cells");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean row/column value span append should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_row(0, clean_invalid_span);
+    }), "invalid clean row replacement span should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean row replacement span should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_row(1048577, clean_invalid_span);
+    }), "invalid clean row replacement span should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean row replacement span overflow should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_column(0, clean_invalid_span);
+    }), "invalid clean column replacement span should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean column replacement span should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_column(16385, clean_invalid_span);
+    }), "invalid clean column replacement span should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean column replacement span overflow should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_row_values(0, clean_invalid_span);
+    }), "invalid clean row value span should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean row value span should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_row_values(1048577, clean_invalid_span);
+    }), "invalid clean row value span should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean row value span overflow should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_column_values(0, clean_invalid_span);
+    }), "invalid clean column value span should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean column value span should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, clean_invalid_span] {
+        sheet.set_column_values(16385, clean_invalid_span);
+    }), "invalid clean column value span should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid clean column value span overflow should expose last_edit_error");
+    check_clean_row_column_value_span_failure_state();
+
     const std::array<fastxlsx::CellValue, 3> append_values {{
         fastxlsx::CellValue::text("span-append-a3"),
         fastxlsx::CellValue::number(4.0),
@@ -5307,6 +5392,107 @@ void test_generated_source_row_column_value_span_roundtrip()
             sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Formula &&
             sheet.get_cell("C3").text_value() == "A1+B1",
         "row/column value span column value prefix should update and preserve column three");
+    const auto check_dirty_row_column_value_span_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty row/column value span should keep the session dirty");
+        check(sheet.cell_count() == 8 &&
+                editor.pending_materialized_cell_count() == 8,
+            "invalid dirty row/column value span should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 1, 1, 3, 3),
+            "invalid dirty row/column value span should preserve dirty bounds");
+        check(sheet.get_cell("A1").text_value() == "span-col-a" &&
+                sheet.get_cell("A2").text_value() == "span-col-b" &&
+                sheet.get_cell("A3").text_value() == "span-row-value-a3" &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                !sheet.try_cell("B2").has_value() &&
+                sheet.get_cell("B3").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C2").text_value() == "span-column-value-c2",
+            "invalid dirty row/column value span should preserve dirty text and blank cells");
+        check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula &&
+                sheet.get_cell("C1").text_value() == "A1+B1" &&
+                sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Formula &&
+                sheet.get_cell("C3").text_value() == "A1+B1",
+            "invalid dirty row/column value span should preserve dirty formula cells");
+    };
+    check_dirty_row_column_value_span_failure_state();
+
+    const std::array<fastxlsx::CellValue, 1> dirty_invalid_values {{
+        fastxlsx::CellValue::text("row-column-value-span-dirty-invalid"),
+    }};
+    const auto dirty_invalid_span = std::span<const fastxlsx::CellValue>(
+        dirty_invalid_values.data(), dirty_invalid_values.size());
+
+    std::vector<fastxlsx::CellValue> dirty_too_wide_values =
+        make_too_wide_append_row("row-column-value-span-dirty-width-invalid");
+    check(threw_fastxlsx_error([&sheet, &dirty_too_wide_values] {
+        sheet.append_row(std::span<const fastxlsx::CellValue>(
+            dirty_too_wide_values.data(), dirty_too_wide_values.size()));
+    }), "invalid dirty row/column value span append should reject too many cells");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row/column value span append should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_row(0, dirty_invalid_span);
+    }), "invalid dirty row replacement span should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row replacement span should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_row(1048577, dirty_invalid_span);
+    }), "invalid dirty row replacement span should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row replacement span overflow should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_column(0, dirty_invalid_span);
+    }), "invalid dirty column replacement span should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column replacement span should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_column(16385, dirty_invalid_span);
+    }), "invalid dirty column replacement span should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column replacement span overflow should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_row_values(0, dirty_invalid_span);
+    }), "invalid dirty row value span should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row value span should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_row_values(1048577, dirty_invalid_span);
+    }), "invalid dirty row value span should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty row value span overflow should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_column_values(0, dirty_invalid_span);
+    }), "invalid dirty column value span should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column value span should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    check(threw_fastxlsx_error([&sheet, dirty_invalid_span] {
+        sheet.set_column_values(16385, dirty_invalid_span);
+    }), "invalid dirty column value span should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty column value span overflow should expose last_edit_error");
+    check_dirty_row_column_value_span_failure_state();
+
+    sheet.set_column_values(3, std::span<const fastxlsx::CellValue>(
+        column_value_prefix.data(), column_value_prefix.size()));
+    check(!editor.last_edit_error().has_value(),
+        "row/column value span recovery write should clear invalid span diagnostics");
+    check_dirty_row_column_value_span_failure_state();
 
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
@@ -5344,6 +5530,10 @@ void test_generated_source_row_column_value_span_roundtrip()
         "row/column value span save_as should omit overwritten appended A3 text");
     check_not_contains(data_xml, "span-row-a",
         "row/column value span save_as should omit overwritten row replacement A1 text");
+    check_not_contains(data_xml, "row-column-value-span-clean",
+        "row/column value span save_as should omit clean invalid span payloads");
+    check_not_contains(data_xml, "row-column-value-span-dirty",
+        "row/column value span save_as should omit dirty invalid span payloads");
     check_not_contains(data_xml, R"(<c r="B2")",
         "row/column value span save_as should keep B2 absent");
     check_row_column_value_span_output(output);

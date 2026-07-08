@@ -6927,7 +6927,12 @@ public snapshot evidence too: `append_row()`, `set_row()`, `set_column()`,
 `set_row_values()`, and `set_column_values()` can be mixed in one dirty
 materialized session, preserve beyond-prefix row/column cells, save with a
 single materialized handoff, fresh-reopen through sparse/row/column snapshots,
-and keep the follow-on clean no-op save byte-stable.
+and keep the follow-on clean no-op save byte-stable. The same span slice now
+also pins clean and dirty guardrail failures for append width, row/column
+replacement coordinates, and row/column value-prefix coordinates: rejected
+payloads do not mutate sparse state, dirty diagnostics remain intact until a
+valid recovery write clears `last_edit_error()`, and saved XML does not leak the
+rejected values.
 Non-empty missing-only erase no-ops now pin the same cleanup contract:
 `erase_cells(CellRange)`, strict A1 range `erase_cells()`, and coordinate-batch
 `erase_cells()` over absent targets clear the guard diagnostic, preserve sparse

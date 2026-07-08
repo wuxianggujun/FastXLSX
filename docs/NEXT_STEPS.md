@@ -2316,6 +2316,10 @@ The same snapshot lane now also covers coordinate-batch
 explicit blanks, duplicate coordinates are idempotent, missing coordinates are
 not synthesized, non-target dirty/source cells survive, and clean no-op save
 remains byte-stable.
+It now also pins strict A1-range `clear_cell_values("B1:C2")`: only
+represented cells inside the parsed range become blanks, missing cells inside
+the range are not synthesized, range-external dirty/source cells survive, and
+clean no-op save remains byte-stable.
 It now adds the matching coordinate-batch `erase_cells(...)` roundtrip:
 selected source-backed and dirty sparse cells are removed, duplicate
 coordinates stay idempotent, missing coordinates are not synthesized,

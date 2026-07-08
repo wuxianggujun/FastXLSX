@@ -2171,6 +2171,10 @@ the erased styled columns or mutating the earlier saved/no-op packages. That
 final post-noop output now also snapshots sparse, row, and column views for the
 overwritten surviving column cell while the erased columns remain absent; this
 is readback parity, not style migration.
+Those styled row/column erase saved-output reacquire paths now also re-read the
+first and second no-op package files after repeated clean no-op saves and after
+the later post-noop dirty handoff, proving the prior no-op files themselves
+remain unchanged instead of only matching cached entry snapshots.
 The `erase_row()` / `erase_column()` exact-budget release saves now reopen the
 output as well, pinning the inserted replacement coordinates without reviving
 erased source cells.

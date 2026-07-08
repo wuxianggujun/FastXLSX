@@ -2305,6 +2305,11 @@ inspection convenience end to end: source and dirty sessions preserve requested
 order, duplicate coordinates, and missing-cell skips, invalid literal batches
 remain read failures without overwriting prior diagnostics, and save/reopen plus
 clean no-op save keep the same owning snapshots.
+The same initializer-list snapshot case now also rejects invalid literal
+mutation batches for `set_cells()`, `set_cell_values()`, `clear_cell_values()`,
+and `erase_cells()` before applying earlier valid-looking entries, preserving
+both clean and dirty sparse stores and keeping rejected payloads out of saved
+XML.
 The invalid snapshot-read helper now also pins workbook-level state stability
 across clean and dirty materialized sessions: dirty flags, pending change
 counts, dirty materialized aggregate diagnostics, and worksheet summary counts

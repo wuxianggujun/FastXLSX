@@ -3646,6 +3646,64 @@ void test_generated_source_sparse_initializer_list_roundtrip()
     check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
         "sparse initializer-list invalid read should leave the session clean");
 
+    const auto check_clean_initializer_failure_state = [&editor, &sheet] {
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "invalid sparse initializer-list mutator should leave the session clean");
+        check(editor.pending_change_count() == 0,
+            "invalid sparse initializer-list mutator should not record pending handoffs");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "invalid sparse initializer-list mutator should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "invalid sparse initializer-list mutator should preserve source-backed values");
+    };
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_cells({
+            {fastxlsx::WorksheetCellReference {1, 1},
+                fastxlsx::CellValue::text("initializer-list-invalid-full-leak")},
+            {fastxlsx::WorksheetCellReference {0, 1},
+                fastxlsx::CellValue::text("initializer-list-invalid-full-row-zero")},
+        });
+    }), "invalid sparse initializer-list set_cells should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid sparse initializer-list set_cells should expose last_edit_error");
+    check_clean_initializer_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_cell_values({
+            {fastxlsx::WorksheetCellReference {1, 1},
+                fastxlsx::CellValue::text("initializer-list-invalid-value-leak")},
+            {fastxlsx::WorksheetCellReference {1, 0},
+                fastxlsx::CellValue::text("initializer-list-invalid-value-column-zero")},
+        });
+    }), "invalid sparse initializer-list set_cell_values should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid sparse initializer-list set_cell_values should expose last_edit_error");
+    check_clean_initializer_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.clear_cell_values({
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {1048577, 1},
+        });
+    }), "invalid sparse initializer-list clear_cell_values should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid sparse initializer-list clear_cell_values should expose last_edit_error");
+    check_clean_initializer_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.erase_cells({
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {1, 16385},
+        });
+    }), "invalid sparse initializer-list erase_cells should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid sparse initializer-list erase_cells should expose last_edit_error");
+    check_clean_initializer_failure_state();
+
     sheet.set_cell("C1", fastxlsx::CellValue::number(9.0));
     sheet.clear_cell_value("B1");
     sheet.erase_cell("A2");
@@ -3679,6 +3737,76 @@ void test_generated_source_sparse_initializer_list_roundtrip()
             is_text_snapshot(dirty_requested[4], 1, 1, "alpha"),
         "sparse initializer-list dirty snapshot should preserve order, duplicates, and missing skips");
 
+    const auto check_dirty_initializer_failure_state = [&editor, &sheet] {
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "invalid dirty sparse initializer-list mutator should keep the session dirty");
+        check(sheet.cell_count() == 4 &&
+                editor.pending_materialized_cell_count() == 4,
+            "invalid dirty sparse initializer-list mutator should preserve dirty sparse count");
+        check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+            "invalid dirty sparse initializer-list mutator should preserve dirty bounds");
+        check(!sheet.try_cell("A2").has_value(),
+            "invalid dirty sparse initializer-list mutator should keep erased A2 absent");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank &&
+                sheet.get_cell("C1").number_value() == 9.0 &&
+                sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Formula &&
+                sheet.get_cell("D3").text_value() == "A1+C1",
+            "invalid dirty sparse initializer-list mutator should preserve dirty values");
+    };
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_cells({
+            {fastxlsx::WorksheetCellReference {1, 1},
+                fastxlsx::CellValue::text("initializer-list-dirty-invalid-full-leak")},
+            {fastxlsx::WorksheetCellReference {0, 1},
+                fastxlsx::CellValue::text("initializer-list-dirty-invalid-full-row-zero")},
+        });
+    }), "invalid dirty sparse initializer-list set_cells should reject row zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty sparse initializer-list set_cells should expose last_edit_error");
+    check_dirty_initializer_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.set_cell_values({
+            {fastxlsx::WorksheetCellReference {3, 4},
+                fastxlsx::CellValue::text("initializer-list-dirty-invalid-value-leak")},
+            {fastxlsx::WorksheetCellReference {1, 0},
+                fastxlsx::CellValue::text("initializer-list-dirty-invalid-value-column-zero")},
+        });
+    }), "invalid dirty sparse initializer-list set_cell_values should reject column zero");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty sparse initializer-list set_cell_values should expose last_edit_error");
+    check_dirty_initializer_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.clear_cell_values({
+            fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::WorksheetCellReference {1048577, 1},
+        });
+    }), "invalid dirty sparse initializer-list clear_cell_values should reject row overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty sparse initializer-list clear_cell_values should expose last_edit_error");
+    check_dirty_initializer_failure_state();
+
+    check(threw_fastxlsx_error([&sheet] {
+        sheet.erase_cells({
+            fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::WorksheetCellReference {1, 16385},
+        });
+    }), "invalid dirty sparse initializer-list erase_cells should reject column overflow");
+    check(editor.last_edit_error().has_value(),
+        "invalid dirty sparse initializer-list erase_cells should expose last_edit_error");
+    check_dirty_initializer_failure_state();
+
+    sheet.set_cell_values({
+        {fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::CellValue::formula("A1+C1")},
+    });
+    check(!editor.last_edit_error().has_value(),
+        "sparse initializer-list recovery write should clear invalid mutator diagnostics");
+    check_dirty_initializer_failure_state();
+
     editor.save_as(output);
     check(!sheet.has_pending_changes(),
         "sparse initializer-list save_as should clean the materialized session");
@@ -3703,6 +3831,10 @@ void test_generated_source_sparse_initializer_list_roundtrip()
         "sparse initializer-list save_as should omit erased source A2 text");
     check_not_contains(data_xml, "initializer-list-diagnostic-payload",
         "sparse initializer-list save_as should not leak rejected payload");
+    check_not_contains(data_xml, "initializer-list-invalid",
+        "sparse initializer-list save_as should not leak clean invalid mutator payloads");
+    check_not_contains(data_xml, "initializer-list-dirty-invalid",
+        "sparse initializer-list save_as should not leak dirty invalid mutator payloads");
     check_sparse_initializer_list_output(output);
 
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);

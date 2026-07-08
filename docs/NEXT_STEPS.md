@@ -5919,6 +5919,11 @@ explicit-default-style formula/text/blank/boolean cells, keep row 2's source
 `StyleId`, leave prior packages byte-stable, omit `s="0"`, and fresh-reopen the
 expanded row. This remains small-file In-memory style-boundary QA, not
 caller-supplied non-default style migration.
+The column full-replacement path now mirrors the row lane: after the second
+clean no-op package, the same handle can replace column A with
+explicit-default-style formula/text/blank/boolean cells, keep column B's source
+`StyleId`, leave prior packages byte-stable, omit `s="0"`, and fresh-reopen the
+expanded column under the same small-file In-memory boundary.
 Styled sparse clear coverage now also includes the range and coordinate-batch
 helpers under the same isolated source-style shard:
 `clear_cell_values(CellRange)`, strict A1-range `clear_cell_values()`,

@@ -617,6 +617,70 @@ void check_row_column_erased_output(const std::filesystem::path& output)
         "reopened row/column erase Audit sheet should remain copy-original");
 }
 
+void check_row_column_range_erased_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened row/column range erase output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened row/column range erase output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened row/column range erase Data output should keep the sheet clean");
+    check(data.cell_count() == 1,
+        "reopened row/column range erase Data output should keep only D3");
+    check(is_used_range(data.used_range(), 3, 4, 3, 4),
+        "reopened row/column range erase Data output should shrink to D3");
+    const fastxlsx::CellValue d3 = data.get_cell("D3");
+    check(d3.kind() == fastxlsx::CellValueKind::Boolean &&
+            d3.boolean_value(),
+        "reopened row/column range erase Data output should retain D3");
+    check(!data.try_cell("A1").has_value(),
+        "reopened row/column range erase Data output should omit A1");
+    check(!data.try_cell("B1").has_value(),
+        "reopened row/column range erase Data output should omit B1");
+    check(!data.try_cell("C1").has_value(),
+        "reopened row/column range erase Data output should omit C1");
+    check(!data.try_cell("A2").has_value(),
+        "reopened row/column range erase Data output should omit A2");
+    check(!data.try_cell("C2").has_value(),
+        "reopened row/column range erase Data output should omit C2");
+    check(!data.try_cell("B3").has_value(),
+        "reopened row/column range erase Data output should omit B3");
+    check(!data.try_cell("B2").has_value() &&
+            !data.try_cell("C3").has_value(),
+        "reopened row/column range erase Data output should not synthesize missing cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 1 &&
+            is_boolean_snapshot(all_cells[0], 3, 4, true),
+        "reopened row/column range erase Data sparse_cells should expose only D3");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+        data.row_cells(3);
+    check(row_three.size() == 1 &&
+            is_boolean_snapshot(row_three[0], 3, 4, true),
+        "reopened row/column range erase Data row_cells should expose D3");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+        data.column_cells(2);
+    check(column_two.empty(),
+        "reopened row/column range erase Data column_cells should omit column two");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+        data.column_cells(4);
+    check(column_four.size() == 1 &&
+            is_boolean_snapshot(column_four[0], 3, 4, true),
+        "reopened row/column range erase Data column_cells should expose D3");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened row/column range erase Audit sheet should remain copy-original");
+}
+
 void check_appended_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -1302,6 +1366,108 @@ void test_generated_source_row_column_erase_roundtrip()
     check_row_column_erased_output(noop_output);
 }
 
+void test_generated_source_row_column_range_erase_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-erase-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-row-column-range-erase-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C1", fastxlsx::CellValue::text("erase-range-c1"));
+    sheet.set_cell("C2", fastxlsx::CellValue::number(9.0));
+    sheet.set_cell("B3", fastxlsx::CellValue::text("erase-range-b3"));
+    sheet.set_cell("D3", fastxlsx::CellValue::boolean(true));
+    check(sheet.cell_count() == 7,
+        "row/column range erase setup should add dirty sparse cells");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "row/column range erase setup should expand sparse bounds");
+
+    sheet.erase_rows(1, 2);
+    check(sheet.cell_count() == 2,
+        "erase_rows should remove represented sparse records in rows one and two");
+    check(sheet.row_cells(1).empty() &&
+            sheet.row_cells(2).empty(),
+        "erase_rows should remove row-one and row-two snapshots");
+    check(sheet.get_cell("B3").text_value() == "erase-range-b3",
+        "erase_rows should leave non-target B3 untouched");
+    check(sheet.get_cell("D3").boolean_value(),
+        "erase_rows should leave non-target D3 untouched");
+    check(!sheet.try_cell("A1").has_value() &&
+            !sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("C1").has_value() &&
+            !sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("C2").has_value(),
+        "erase_rows should omit source-backed and dirty row-range cells");
+
+    sheet.erase_columns(2, 3);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "row/column range erase roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 1,
+        "row/column range erase roundtrip should remove represented sparse records");
+    check(editor.pending_materialized_cell_count() == 1,
+        "row/column range erase roundtrip should expose final dirty materialized count");
+    check(is_used_range(sheet.used_range(), 3, 4, 3, 4),
+        "row/column range erase roundtrip should shrink final sparse bounds");
+    check(sheet.get_cell("D3").boolean_value(),
+        "erase_columns should preserve non-target D3");
+    check(sheet.column_cells(2).empty() &&
+            sheet.column_cells(3).empty(),
+        "erase_columns should remove target-column snapshots");
+    check(!sheet.try_cell("B3").has_value(),
+        "erase_columns should remove dirty B3");
+    check(!sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("C3").has_value(),
+        "row/column range erase should not synthesize missing cells");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "row/column range erase save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "row/column range erase save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column range erase save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"D3\"",
+        "row/column range erase save_as should shrink the worksheet dimension to D3");
+    check_contains(data_xml, R"(<c r="D3" t="b"><v>1</v></c>)",
+        "row/column range erase save_as should preserve non-target D3 boolean");
+    check_not_contains(data_xml, "alpha",
+        "row/column range erase save_as should omit erased source A1 text");
+    check_not_contains(data_xml, "tail",
+        "row/column range erase save_as should omit erased source A2 text");
+    check_not_contains(data_xml, "erase-range-c1",
+        "row/column range erase save_as should omit erased dirty C1 text");
+    check_not_contains(data_xml, "erase-range-b3",
+        "row/column range erase save_as should omit erased dirty B3 text");
+    check_not_contains(data_xml, "r=\"A1\"",
+        "row/column range erase save_as should omit A1");
+    check_not_contains(data_xml, "r=\"B1\"",
+        "row/column range erase save_as should omit B1");
+    check_not_contains(data_xml, "r=\"C1\"",
+        "row/column range erase save_as should omit C1");
+    check_not_contains(data_xml, "r=\"A2\"",
+        "row/column range erase save_as should omit A2");
+    check_not_contains(data_xml, "r=\"C2\"",
+        "row/column range erase save_as should omit C2");
+    check_not_contains(data_xml, "r=\"B3\"",
+        "row/column range erase save_as should omit B3");
+    check_row_column_range_erased_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean row/column range erase no-op save should keep output entries stable");
+    check_row_column_range_erased_output(noop_output);
+}
+
 void test_generated_source_append_row_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -1574,6 +1740,7 @@ int main()
         test_generated_source_row_column_clear_roundtrip();
         test_generated_source_row_column_range_clear_roundtrip();
         test_generated_source_row_column_erase_roundtrip();
+        test_generated_source_row_column_range_erase_roundtrip();
         test_generated_source_append_row_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();

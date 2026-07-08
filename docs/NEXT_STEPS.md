@@ -2301,6 +2301,11 @@ represented source-backed and dirty sparse records are removed, the remaining
 non-target sparse cell shrinks `used_range()` to a single coordinate, saved XML
 omits erased cells and payloads, reopen exposes only the survivor, and clean
 no-op save remains byte-stable.
+It now also mirrors that contrast for inclusive `erase_rows()` plus
+`erase_columns()`: multi-row and multi-column ranges remove only represented
+sparse records, missing cells are not synthesized, the surviving non-target cell
+shrinks `used_range()` to its coordinate, saved XML omits erased cells, and
+clean no-op save remains byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

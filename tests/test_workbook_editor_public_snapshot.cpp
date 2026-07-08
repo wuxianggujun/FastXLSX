@@ -764,6 +764,11 @@ void check_reopened_followup_text_edit_on_sheet(
     check(data.cell_count() == initial_cell_count + 1 &&
             data.get_cell(followup_cell).text_value() == followup_text,
         "reopened follow-up edit should append a new sparse follow-up cell");
+    check(data.contains_cell(followup_cell),
+        "reopened follow-up edit live contains_cell should report the follow-up cell");
+    check(contains_text_snapshot(data.sparse_cells(),
+            *followup_reference, followup_text),
+        "reopened follow-up edit live sparse_cells should expose the follow-up cell");
     check(contains_text_snapshot(data.row_cells(followup_reference->row),
             *followup_reference, followup_text),
         "reopened follow-up edit live row_cells should expose the follow-up cell");
@@ -798,6 +803,11 @@ void check_reopened_followup_text_edit_on_sheet(
     check(edit_data.cell_count() == initial_cell_count + 1 &&
             edit_data.get_cell(followup_cell).text_value() == followup_text,
         "reopened follow-up edit output should keep the follow-up cell");
+    check(edit_data.contains_cell(followup_cell),
+        "reopened follow-up edit output contains_cell should report the follow-up cell");
+    check(contains_text_snapshot(edit_data.sparse_cells(),
+            *followup_reference, followup_text),
+        "reopened follow-up edit output sparse_cells should expose the follow-up cell");
     check(contains_text_snapshot(edit_data.row_cells(followup_reference->row),
             *followup_reference, followup_text),
         "reopened follow-up edit output row_cells should expose the follow-up cell");
@@ -2463,17 +2473,27 @@ void check_structural_shift_reopened_edit(
                 edited_range.last_column) &&
             data.get_cell("F4").text_value() == followup_text,
         "structural-shift reopened edit should append a new sparse F4 cell");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_cells =
+        data.sparse_cells();
+    check(live_cells.size() == edited_expected.size(),
+        "structural-shift reopened edit live sparse_cells should expose final cell count");
     for (const ExpectedShiftCell& expected : edited_expected) {
         check(matches_expected_shift_value(
                 data.get_cell(expected.reference.row, expected.reference.column),
                 expected),
             "structural-shift reopened edit should expose expected sparse cells");
+        check(contains_expected_shift_snapshot(live_cells, expected),
+            "structural-shift reopened edit live sparse_cells should expose expected cells");
         check(contains_expected_shift_snapshot(
                 data.row_cells(expected.reference.row), expected),
             "structural-shift reopened edit live row_cells should expose expected cells");
         check(contains_expected_shift_snapshot(
                 data.column_cells(expected.reference.column), expected),
             "structural-shift reopened edit live column_cells should expose expected cells");
+    }
+    for (const fastxlsx::WorksheetCellReference& absent : absent_cells) {
+        check(!data.try_cell(absent.row, absent.column).has_value(),
+            "structural-shift reopened edit live state should keep absent coordinates absent");
     }
 
     reopened.save_as(edit_output);

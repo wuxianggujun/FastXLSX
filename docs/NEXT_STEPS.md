@@ -2275,6 +2275,9 @@ through live and fresh-reopened `row_cells()` / `column_cells()` snapshots. This
 extends the existing post-noop reuse evidence across the standalone snapshot
 cases that share that helper, without adding a new API, metadata sync, or
 large-file random editing claim.
+The same shared helper now also checks `contains_cell()` and `sparse_cells()` on
+the live reused session and on the fresh-reopened follow-up output, keeping
+direct reads, full sparse traversal, and row/column sparse traversal aligned.
 That standalone CTest now also covers the other public sparse snapshot overloads:
 full `sparse_cells()`, bounded `CellRange`, strict A1 range strings, and
 coordinate-batch reads all preserve source values, saved edits, requested-order
@@ -2374,6 +2377,9 @@ coordinate across row/column insert/delete outputs and their follow-up saves.
 Those structural-shift follow-up edits now also check live `row_cells()` /
 `column_cells()` before save for the shifted cells plus the newly appended `F4`
 cell, keeping saved-output and in-session snapshot behavior aligned.
+They now also check live full `sparse_cells()` and absent-coordinate reads before
+that save, so the shifted store is inspected through the same public traversal
+surface before and after handoff.
 The shift/no-op recovery outputs now also have post-noop reuse coverage:
 structural shift no-op, structural shift failure, and empty literal no-op
 outputs in both clean and dirty sessions reopen clean, accept a later `F4` text

@@ -727,6 +727,10 @@ package too across base, try-reacquire, and option-mismatch clean saves.
 The remaining guard-side row/column shift reacquire no-op saves now pin that
 same second-output stability for missing-query, invalid-read, invalid-mutation,
 and failed-save recovery paths.
+The batch and row/column write no-op paths now also prove the first no-op
+package remains unchanged across repeated clean saves for initializer-list
+batch writes, append-row writes, styled append-row writes, row replacement, and
+column replacement.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

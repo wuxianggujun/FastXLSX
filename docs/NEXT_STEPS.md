@@ -2384,6 +2384,9 @@ clean save stays byte-stable. The same case now repeats that no-op group over a
 dirty materialized session, preserving dirty diagnostics and sparse values,
 omitting rejected payloads from saved XML, and keeping the clean follow-up save
 byte-stable.
+It now also covers zero-count no-ops at the maximum legal row and column
+boundaries, proving they use the same no-op path without tripping the positive
+shift overflow guards in clean or dirty materialized sessions.
 The standalone snapshot lane now also covers `clear_row()` plus
 `clear_column()`: represented source-backed and dirty cells become explicit
 blank records, non-target sparse cells stay intact, saved XML omits cleared

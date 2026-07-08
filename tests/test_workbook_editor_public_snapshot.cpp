@@ -6248,11 +6248,17 @@ void test_generated_source_structural_shift_noop_roundtrip()
     sheet.delete_rows(2, 0);
     sheet.insert_columns(2, 0);
     sheet.delete_columns(2, 0);
+    sheet.insert_rows(1048576, 0);
+    sheet.delete_rows(1048576, 0);
+    sheet.insert_columns(16384, 0);
+    sheet.delete_columns(16384, 0);
     sheet.insert_rows(10, 1);
     sheet.delete_rows(10, 1);
     sheet.insert_columns(10, 1);
     sheet.delete_columns(10, 1);
 
+    check(!editor.last_edit_error().has_value(),
+        "structural shift no-ops should leave public edit diagnostics clear");
     check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
         "structural shift no-ops should keep the materialized session clean");
     check(editor.pending_change_count() == 0,
@@ -6355,6 +6361,22 @@ void test_generated_source_structural_shift_noop_roundtrip()
 
             seed_dirty_shift_error();
             sheet.delete_columns(4, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.insert_rows(1048576, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.delete_rows(1048576, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.insert_columns(16384, 0);
+            check_state();
+
+            seed_dirty_shift_error();
+            sheet.delete_columns(16384, 0);
             check_state();
 
             seed_dirty_shift_error();

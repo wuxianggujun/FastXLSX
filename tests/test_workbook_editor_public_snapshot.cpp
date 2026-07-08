@@ -1264,6 +1264,55 @@ void check_contains_cell_output(const std::filesystem::path& output)
         "reopened contains-cell Audit sheet should remain copy-original");
 }
 
+void check_sparse_initializer_list_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened sparse initializer-list output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened sparse initializer-list output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened sparse initializer-list Data output should keep the sheet clean");
+    check(data.cell_count() == 4,
+        "reopened sparse initializer-list Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 4),
+        "reopened sparse initializer-list Data output should expose final sparse bounds");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> requested =
+        data.sparse_cells({
+            fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::WorksheetCellReference {1, 3},
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {4, 4},
+        });
+    check(requested.size() == 5 &&
+            is_formula_snapshot(requested[0], 3, 4, "A1+C1") &&
+            is_blank_snapshot(requested[1], 1, 2) &&
+            is_formula_snapshot(requested[2], 3, 4, "A1+C1") &&
+            is_number_snapshot(requested[3], 1, 3, 9.0) &&
+            is_text_snapshot(requested[4], 1, 1, "alpha"),
+        "reopened sparse initializer-list batch should preserve order, duplicates, and missing skips");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 4 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha") &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_number_snapshot(all_cells[2], 1, 3, 9.0) &&
+            is_formula_snapshot(all_cells[3], 3, 4, "A1+C1"),
+        "reopened sparse initializer-list Data sparse_cells should expose final row-major cells");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened sparse initializer-list Audit sheet should remain copy-original");
+}
+
 void check_value_batch_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -2996,6 +3045,120 @@ void test_generated_source_contains_cell_roundtrip()
     check_contains_cell_output(noop_output);
 }
 
+void test_generated_source_sparse_initializer_list_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-sparse-init-list-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-sparse-init-list-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    const std::vector<fastxlsx::WorksheetCellSnapshot> source_requested =
+        sheet.sparse_cells({
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {1, 2},
+        });
+    check(source_requested.size() == 3 &&
+            is_number_snapshot(source_requested[0], 1, 2, 2.0) &&
+            is_text_snapshot(source_requested[1], 1, 1, "alpha") &&
+            is_number_snapshot(source_requested[2], 1, 2, 2.0),
+        "sparse initializer-list source snapshot should preserve order, duplicates, and missing skips");
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "sparse initializer-list source reads should not dirty the materialized session");
+
+    const bool invalid_mutation_failed = threw_fastxlsx_error([&sheet] {
+        sheet.set_cell("a1",
+            fastxlsx::CellValue::text("initializer-list-diagnostic-payload"));
+    });
+    check(invalid_mutation_failed,
+        "sparse initializer-list invalid mutation should seed last_edit_error");
+    const std::optional<std::string> mutation_error = editor.last_edit_error();
+    check(mutation_error.has_value(),
+        "sparse initializer-list invalid mutation should expose last_edit_error");
+    check(threw_fastxlsx_error([&sheet] {
+        (void)sheet.sparse_cells({
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {0, 1},
+        });
+    }), "sparse initializer-list invalid coordinates should throw as read failures");
+    check(editor.last_edit_error() == mutation_error,
+        "sparse initializer-list invalid read should preserve prior diagnostics");
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "sparse initializer-list invalid read should leave the session clean");
+
+    sheet.set_cell("C1", fastxlsx::CellValue::number(9.0));
+    sheet.clear_cell_value("B1");
+    sheet.erase_cell("A2");
+    sheet.set_cell("D3", fastxlsx::CellValue::formula("A1+C1"));
+    check(!editor.last_edit_error().has_value(),
+        "sparse initializer-list valid edits should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "sparse initializer-list mutations should dirty the materialized session");
+    check(sheet.cell_count() == 4,
+        "sparse initializer-list mutations should keep final represented sparse cells");
+    check(editor.pending_materialized_cell_count() == 4,
+        "sparse initializer-list mutations should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "sparse initializer-list mutations should expose final sparse bounds");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> dirty_requested =
+        sheet.sparse_cells({
+            fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::WorksheetCellReference {1, 3},
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {4, 4},
+        });
+    check(dirty_requested.size() == 5 &&
+            is_formula_snapshot(dirty_requested[0], 3, 4, "A1+C1") &&
+            is_blank_snapshot(dirty_requested[1], 1, 2) &&
+            is_formula_snapshot(dirty_requested[2], 3, 4, "A1+C1") &&
+            is_number_snapshot(dirty_requested[3], 1, 3, 9.0) &&
+            is_text_snapshot(dirty_requested[4], 1, 1, "alpha"),
+        "sparse initializer-list dirty snapshot should preserve order, duplicates, and missing skips");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "sparse initializer-list save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "sparse initializer-list save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "sparse initializer-list save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:D3\"",
+        "sparse initializer-list save_as should write final worksheet dimension");
+    check_contains(data_xml, "alpha",
+        "sparse initializer-list save_as should keep source-backed A1");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "sparse initializer-list save_as should write explicit B1 blank");
+    check_contains(data_xml, R"(<c r="C1"><v>9</v></c>)",
+        "sparse initializer-list save_as should write inserted C1 number");
+    check_contains(data_xml, R"(<c r="D3"><f>A1+C1</f></c>)",
+        "sparse initializer-list save_as should write inserted D3 formula");
+    check_not_contains(data_xml, "tail",
+        "sparse initializer-list save_as should omit erased source A2 text");
+    check_not_contains(data_xml, "initializer-list-diagnostic-payload",
+        "sparse initializer-list save_as should not leak rejected payload");
+    check_sparse_initializer_list_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean sparse initializer-list no-op save should keep output entries stable");
+    check_sparse_initializer_list_output(noop_output);
+}
+
 void test_generated_source_sparse_value_batch_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -3705,6 +3868,7 @@ int main()
         test_generated_source_sparse_batch_replacement_roundtrip();
         test_generated_source_single_value_roundtrip();
         test_generated_source_contains_cell_roundtrip();
+        test_generated_source_sparse_initializer_list_roundtrip();
         test_generated_source_sparse_value_batch_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();

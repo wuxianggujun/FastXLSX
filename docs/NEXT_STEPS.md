@@ -2283,6 +2283,11 @@ save/reopen path: source-backed cells, explicit blanks, inserted-and-shifted
 cells, erased cells, old shifted coordinates, and never-present sparse gaps all
 report the expected represented/missing state before save, after reopen, and
 after a clean no-op save.
+It now also covers the `sparse_cells(initializer_list<WorksheetCellReference>)`
+inspection convenience end to end: source and dirty sessions preserve requested
+order, duplicate coordinates, and missing-cell skips, invalid literal batches
+remain read failures without overwriting prior diagnostics, and save/reopen plus
+clean no-op save keep the same owning snapshots.
 It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,

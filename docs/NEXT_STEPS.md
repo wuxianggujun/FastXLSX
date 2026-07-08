@@ -2417,6 +2417,10 @@ views.
 The public-state save-state snapshot and clean replacement diagnostics now carry
 those targeted-cell diagnostics too, keeping no-op saves and clean In-memory
 workbook states from silently accumulating queued targeted Patch payloads.
+The max-coordinate public-edge shard now mirrors that targeted-cell diagnostic
+coverage in its clean-state helpers, save-state snapshots, and read-only
+inspection checks without changing max-coordinate In-memory projection
+semantics.
 The formula/definedName rewrite shard now mirrors that helper contract: its
 shared inspection helper snapshots source/planned worksheet names and full
 catalog entries around formula, source-formula, and definedName audit calls,

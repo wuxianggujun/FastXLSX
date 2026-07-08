@@ -2264,6 +2264,10 @@ That standalone CTest now also covers the other public sparse snapshot overloads
 full `sparse_cells()`, bounded `CellRange`, strict A1 range strings, and
 coordinate-batch reads all preserve source values, saved edits, requested-order
 batch semantics, and prior diagnostics on invalid read failures.
+It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
+shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
+the erased cells and source text, reopened snapshots expose only the survivor,
+the source package remains unchanged, and a clean no-op save stays byte-stable.
 The direct public-state row/column shift saves are also reopened, pinning clean
 readback for shifted sparse coordinates, translated formulas, preserved source
 styles on moved formulas, rich formula-shape translations, out-of-bounds

@@ -70,6 +70,20 @@ bool is_number_snapshot(
         cell.value.number_value() == value;
 }
 
+bool is_used_range(
+    const std::optional<fastxlsx::CellRange>& range,
+    std::uint32_t first_row,
+    std::uint32_t first_column,
+    std::uint32_t last_row,
+    std::uint32_t last_column)
+{
+    return range.has_value() &&
+        range->first_row == first_row &&
+        range->first_column == first_column &&
+        range->last_row == last_row &&
+        range->last_column == last_column;
+}
+
 template <typename Callable>
 bool threw_fastxlsx_error(Callable&& callable)
 {
@@ -154,6 +168,8 @@ void check_initial_snapshots(fastxlsx::WorksheetEditor& sheet)
 {
     check(sheet.cell_count() == 3,
         "generated source snapshot should materialize three cells");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 2),
+        "generated source snapshot should expose the sparse used range");
     check_initial_sparse_snapshots(sheet);
 
     const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
@@ -241,6 +257,8 @@ void check_reopened_output(const std::filesystem::path& output)
         "reopened Data snapshot output should keep the sheet clean");
     check(data.cell_count() == 4,
         "reopened Data snapshot output should materialize the edited sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 2, 3),
+        "reopened Data snapshot output should expose the edited sparse used range");
     check(data.get_cell("C2").text_value() == "snapshot-edit",
         "reopened Data snapshot output should read the saved edit");
     check_reopened_sparse_snapshots(data);
@@ -271,6 +289,52 @@ void check_reopened_output(const std::filesystem::path& output)
     check(audit.cell_count() == 1 &&
             audit.get_cell("A1").text_value() == "untouched",
         "reopened Audit sheet should remain copy-original");
+}
+
+void check_erased_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened erased output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened erased output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened erased Data output should keep the sheet clean");
+    check(data.cell_count() == 1,
+        "reopened erased Data output should materialize only the remaining cell");
+    check(is_used_range(data.used_range(), 1, 1, 1, 1),
+        "reopened erased Data output should shrink the sparse used range");
+    check(data.get_cell("A1").text_value() == "alpha",
+        "reopened erased Data output should keep A1");
+    check(!data.try_cell("B1").has_value(),
+        "reopened erased Data output should omit erased B1");
+    check(!data.try_cell("A2").has_value(),
+        "reopened erased Data output should omit erased A2");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 1 &&
+            is_text_snapshot(all_cells[0], 1, 1, "alpha"),
+        "reopened erased Data sparse_cells should expose only A1");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        data.row_cells(1);
+    check(row_one.size() == 1 &&
+            is_text_snapshot(row_one[0], 1, 1, "alpha"),
+        "reopened erased Data row_cells should expose only A1");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+        data.column_cells(1);
+    check(column_one.size() == 1 &&
+            is_text_snapshot(column_one[0], 1, 1, "alpha"),
+        "reopened erased Data column_cells should expose only A1");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened erased Audit sheet should remain copy-original");
 }
 
 void check_invalid_snapshot_reads_preserve_diagnostics(
@@ -376,12 +440,70 @@ void test_generated_source_snapshot_edit_roundtrip()
     check_reopened_output(noop_output);
 }
 
+void test_generated_source_erase_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-erase-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-erase-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.erase_cell("B1");
+    sheet.erase_cell(2, 1);
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "erase roundtrip should dirty the materialized session");
+    check(sheet.cell_count() == 1,
+        "erase roundtrip should remove represented sparse records");
+    check(editor.pending_materialized_cell_count() == 1,
+        "erase roundtrip should expose the reduced dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 1, 1),
+        "erase roundtrip should shrink the dirty sparse used range");
+    check(!sheet.try_cell("B1").has_value(),
+        "erase roundtrip should remove source-backed B1");
+    check(!sheet.try_cell("A2").has_value(),
+        "erase roundtrip should remove source-backed A2");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "erase roundtrip save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "erase roundtrip save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "erase roundtrip save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1\"",
+        "erase roundtrip save_as should shrink the worksheet dimension");
+    check_contains(data_xml, "alpha",
+        "erase roundtrip save_as should keep the surviving source text");
+    check_not_contains(data_xml, "tail",
+        "erase roundtrip save_as should omit erased source text");
+    check_not_contains(data_xml, "r=\"B1\"",
+        "erase roundtrip save_as should omit erased B1");
+    check_not_contains(data_xml, "r=\"A2\"",
+        "erase roundtrip save_as should omit erased A2");
+    check_erased_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean erased no-op save should keep output entries stable");
+    check_erased_output(noop_output);
+}
+
 } // namespace
 
 int main()
 {
     try {
         test_generated_source_snapshot_edit_roundtrip();
+        test_generated_source_erase_roundtrip();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

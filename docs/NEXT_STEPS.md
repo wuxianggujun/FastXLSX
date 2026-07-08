@@ -759,8 +759,9 @@ recovery `A3` projection without reviving erased source cells.
 The range and batch exact-budget `erase_cells()` release no-op paths now share
 that saved-handle coverage for their recovery `A3` cells and clean summaries.
 They now repeat those same-editor clean no-op saves too, requiring the second
-package to match the first no-op output while preserving source bytes and the
-same fresh-reopened recovery `A3` projection.
+package to match the first no-op output while the first materialized output,
+first no-op output, source bytes, and same fresh-reopened recovery `A3`
+projection remain unchanged.
 They now also reacquire those no-op outputs with the original strict
 `WorksheetEditorOptions`, keeping the recovery sparse snapshots within budget
 while the matching-option clean no-op saves remain byte-stable.

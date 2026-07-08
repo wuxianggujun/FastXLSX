@@ -2269,6 +2269,11 @@ batch saves: duplicate coordinates use later-wins ordering, explicit blanks,
 formulas, and booleans persist through `save_as()`, overwritten source and
 intermediate batch payloads are omitted, reopened row/column snapshots are
 stable, and clean no-op save remains byte-stable.
+It now mirrors that save/reopen path for `set_cell_values()` value-only sparse
+batches: source-backed cells are updated, non-target dirty cells survive,
+missing coordinates are inserted, duplicate coordinates keep later-wins formula
+payloads, overwritten source and intermediate values are omitted from XML, and
+clean no-op save remains byte-stable.
 It now also pins a source-backed `erase_cell()` roundtrip: erased sparse records
 shrink `used_range()` and dirty materialized cell counts, dirty `save_as()` omits
 the erased cells and source text, reopened snapshots expose only the survivor,

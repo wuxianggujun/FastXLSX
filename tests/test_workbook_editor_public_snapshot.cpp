@@ -901,6 +901,73 @@ void check_batch_replaced_output(const std::filesystem::path& output)
         "reopened batch Audit sheet should remain copy-original");
 }
 
+void check_value_batch_output(const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    check(!reopened.has_pending_changes(),
+        "reopened value-batch output should start clean");
+    check(reopened.pending_change_count() == 0,
+        "reopened value-batch output should not expose pending handoffs");
+
+    fastxlsx::WorksheetEditor data = reopened.worksheet("Data");
+    check(!data.has_pending_changes(),
+        "reopened value-batch Data output should keep the sheet clean");
+    check(data.cell_count() == 6,
+        "reopened value-batch Data output should materialize final sparse cells");
+    check(is_used_range(data.used_range(), 1, 1, 3, 4),
+        "reopened value-batch Data output should expose final sparse bounds");
+    check(data.get_cell("A1").text_value() == "value-batch-a",
+        "reopened value-batch Data output should read updated A1");
+    check(data.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "reopened value-batch Data output should keep explicit B1 blank");
+    check(data.get_cell("C1").number_value() == 5.0,
+        "reopened value-batch Data output should preserve non-target dirty C1");
+    check(data.get_cell("A2").text_value() == "tail",
+        "reopened value-batch Data output should keep non-target source A2");
+    const fastxlsx::CellValue c2 = data.get_cell("C2");
+    check(c2.kind() == fastxlsx::CellValueKind::Formula &&
+            c2.text_value() == "A1+B1",
+        "reopened value-batch Data output should read later-wins C2 formula");
+    const fastxlsx::CellValue d3 = data.get_cell("D3");
+    check(d3.kind() == fastxlsx::CellValueKind::Boolean &&
+            d3.boolean_value(),
+        "reopened value-batch Data output should read inserted D3 boolean true");
+    check(!data.try_cell("B2").has_value() &&
+            !data.try_cell("C3").has_value(),
+        "reopened value-batch Data output should not synthesize missing cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> all_cells =
+        data.sparse_cells();
+    check(all_cells.size() == 6 &&
+            is_text_snapshot(all_cells[0], 1, 1, "value-batch-a") &&
+            is_blank_snapshot(all_cells[1], 1, 2) &&
+            is_number_snapshot(all_cells[2], 1, 3, 5.0) &&
+            is_text_snapshot(all_cells[3], 2, 1, "tail") &&
+            is_formula_snapshot(all_cells[4], 2, 3, "A1+B1") &&
+            is_boolean_snapshot(all_cells[5], 3, 4, true),
+        "reopened value-batch Data sparse_cells should expose final row-major cells");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+        data.row_cells(1);
+    check(row_one.size() == 3 &&
+            is_text_snapshot(row_one[0], 1, 1, "value-batch-a") &&
+            is_blank_snapshot(row_one[1], 1, 2) &&
+            is_number_snapshot(row_one[2], 1, 3, 5.0),
+        "reopened value-batch Data row_cells should expose row one");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+        data.column_cells(3);
+    check(column_three.size() == 2 &&
+            is_number_snapshot(column_three[0], 1, 3, 5.0) &&
+            is_formula_snapshot(column_three[1], 2, 3, "A1+B1"),
+        "reopened value-batch Data column_cells should expose column three");
+
+    fastxlsx::WorksheetEditor audit = reopened.worksheet("Audit");
+    check(audit.cell_count() == 1 &&
+            audit.get_cell("A1").text_value() == "untouched",
+        "reopened value-batch Audit sheet should remain copy-original");
+}
+
 void check_row_column_replaced_output(const std::filesystem::path& output)
 {
     fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
@@ -1950,6 +2017,101 @@ void test_generated_source_sparse_batch_replacement_roundtrip()
     check_batch_replaced_output(noop_output);
 }
 
+void test_generated_source_sparse_value_batch_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-value-batch-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-value-batch-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check_initial_snapshots(sheet);
+    sheet.set_cell("C1", fastxlsx::CellValue::number(5.0));
+    check(sheet.cell_count() == 4,
+        "value-batch setup should add one non-target dirty cell");
+    check(is_used_range(sheet.used_range(), 1, 1, 2, 3),
+        "value-batch setup should expand sparse bounds");
+
+    sheet.set_cell_values({
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("value-batch-a")},
+        {fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::CellValue::blank()},
+        {fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::CellValue::text("value-batch-first-c2")},
+        {fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::CellValue::formula("A1+B1")},
+        {fastxlsx::WorksheetCellReference {3, 4},
+            fastxlsx::CellValue::boolean(true)},
+    });
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "sparse value-batch should dirty the materialized session");
+    check(sheet.cell_count() == 6,
+        "sparse value-batch should expose final represented sparse cells");
+    check(editor.pending_materialized_cell_count() == 6,
+        "sparse value-batch should expose final dirty materialized cell count");
+    check(is_used_range(sheet.used_range(), 1, 1, 3, 4),
+        "sparse value-batch should expose final sparse bounds");
+    check(sheet.get_cell("A1").text_value() == "value-batch-a",
+        "sparse value-batch should update source A1");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Blank,
+        "sparse value-batch should convert source B1 to blank");
+    check(sheet.get_cell("C1").number_value() == 5.0,
+        "sparse value-batch should preserve non-target dirty C1");
+    check(sheet.get_cell("A2").text_value() == "tail",
+        "sparse value-batch should preserve non-target source A2");
+    const fastxlsx::CellValue c2 = sheet.get_cell("C2");
+    check(c2.kind() == fastxlsx::CellValueKind::Formula &&
+            c2.text_value() == "A1+B1",
+        "sparse value-batch should use the later duplicate C2 update");
+    const fastxlsx::CellValue d3 = sheet.get_cell("D3");
+    check(d3.kind() == fastxlsx::CellValueKind::Boolean &&
+            d3.boolean_value(),
+        "sparse value-batch should insert D3 boolean true");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "sparse value-batch save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "sparse value-batch save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "sparse value-batch save_as should leave the generated source package unchanged");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(data_xml, "<dimension ref=\"A1:D3\"",
+        "sparse value-batch save_as should write final worksheet dimension");
+    check_contains(data_xml, "value-batch-a",
+        "sparse value-batch save_as should write updated A1 text");
+    check_contains(data_xml, "tail",
+        "sparse value-batch save_as should keep non-target A2 text");
+    check_contains(data_xml, R"(<c r="B1"/>)",
+        "sparse value-batch save_as should write explicit B1 blank");
+    check_contains(data_xml, R"(<c r="C1"><v>5</v></c>)",
+        "sparse value-batch save_as should preserve non-target dirty C1");
+    check_contains(data_xml, R"(<c r="C2"><f>A1+B1</f></c>)",
+        "sparse value-batch save_as should write later-wins C2 formula");
+    check_contains(data_xml, R"(<c r="D3" t="b"><v>1</v></c>)",
+        "sparse value-batch save_as should write inserted D3 boolean true");
+    check_not_contains(data_xml, "alpha",
+        "sparse value-batch save_as should omit overwritten source A1 text");
+    check_not_contains(data_xml, "<v>2",
+        "sparse value-batch save_as should omit overwritten source B1 number");
+    check_not_contains(data_xml, "value-batch-first-c2",
+        "sparse value-batch save_as should omit overwritten duplicate C2 text");
+    check_value_batch_output(output);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    reopened.save_as(noop_output);
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "clean sparse value-batch no-op save should keep output entries stable");
+    check_value_batch_output(noop_output);
+}
+
 void test_generated_source_row_column_replacement_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -2157,6 +2319,7 @@ int main()
         test_generated_source_row_column_range_erase_roundtrip();
         test_generated_source_append_row_roundtrip();
         test_generated_source_sparse_batch_replacement_roundtrip();
+        test_generated_source_sparse_value_batch_roundtrip();
         test_generated_source_row_column_replacement_roundtrip();
         test_generated_source_row_column_value_roundtrip();
     } catch (const std::exception& ex) {

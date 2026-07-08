@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <initializer_list>
 #include <iostream>
 #include <optional>
 #include <span>
@@ -4539,6 +4540,102 @@ void test_generated_source_structural_shift_noop_roundtrip()
         "clean structural shift no-op save should keep output entries stable");
 }
 
+void test_generated_source_empty_literal_noop_roundtrip()
+{
+    const std::filesystem::path source = write_generated_source_workbook();
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-second-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    check_initial_snapshots(sheet);
+
+    const auto seed_error = [&editor, &sheet] {
+        check(threw_fastxlsx_error([&sheet] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("empty-noop-rejected"));
+        }), "empty literal no-op seed mutation should fail");
+        check(editor.last_edit_error().has_value(),
+            "empty literal no-op seed mutation should expose last_edit_error");
+    };
+    const auto check_clean_noop_state = [&editor, &sheet] {
+        check(!editor.last_edit_error().has_value(),
+            "empty literal no-op should clear prior edit diagnostics");
+        check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+            "empty literal no-op should keep the materialized session clean");
+        check(editor.pending_change_count() == 0,
+            "empty literal no-op should not record pending changes");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "empty literal no-op should not expose dirty materialized diagnostics");
+        check(editor.pending_worksheet_edits().empty(),
+            "empty literal no-op should not expose worksheet edit summaries");
+        check(sheet.cell_count() == 3 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 2),
+            "empty literal no-op should preserve source sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail",
+            "empty literal no-op should preserve source-backed values");
+    };
+
+    seed_error();
+    sheet.append_row(std::initializer_list<fastxlsx::CellValue> {});
+    check_clean_noop_state();
+
+    seed_error();
+    sheet.set_row(20, std::initializer_list<fastxlsx::CellValue> {});
+    check_clean_noop_state();
+
+    seed_error();
+    sheet.set_column(20, std::initializer_list<fastxlsx::CellValue> {});
+    check_clean_noop_state();
+
+    seed_error();
+    sheet.set_cells(std::initializer_list<fastxlsx::WorksheetCellUpdate> {});
+    check_clean_noop_state();
+
+    seed_error();
+    sheet.set_cell_values(std::initializer_list<fastxlsx::WorksheetCellUpdate> {});
+    check_clean_noop_state();
+
+    seed_error();
+    sheet.clear_cell_values(
+        std::initializer_list<fastxlsx::WorksheetCellReference> {});
+    check_clean_noop_state();
+
+    seed_error();
+    sheet.erase_cells(std::initializer_list<fastxlsx::WorksheetCellReference> {});
+    check_clean_noop_state();
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
+        "empty literal no-op save_as should keep the session clean");
+    check(editor.pending_change_count() == 0,
+        "empty literal no-op save_as should not record materialized handoffs");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "empty literal no-op save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "empty literal no-op save_as should copy original package entries");
+    check_initial_snapshots(sheet);
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_data = reopened.worksheet("Data");
+    check_initial_snapshots(reopened_data);
+    fastxlsx::WorksheetEditor reopened_audit = reopened.worksheet("Audit");
+    check(reopened_audit.cell_count() == 1 &&
+            reopened_audit.get_cell("A1").text_value() == "untouched",
+        "reopened empty literal no-op Audit sheet should remain copy-original");
+
+    reopened.save_as(second_output);
+    check(fastxlsx::test::read_zip_entries(second_output) == output_entries,
+        "clean empty literal no-op save should keep output entries stable");
+}
+
 } // namespace
 
 int main()
@@ -4573,6 +4670,7 @@ int main()
         test_generated_source_insert_columns_roundtrip();
         test_generated_source_delete_columns_roundtrip();
         test_generated_source_structural_shift_noop_roundtrip();
+        test_generated_source_empty_literal_noop_roundtrip();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

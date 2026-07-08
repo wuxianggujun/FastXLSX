@@ -689,6 +689,9 @@ tail, row/column views, and new post-noop cell.
 The `clear_cell_values()` memory-budget release saved-session path now extends
 that no-op diagnostics parity to option-mismatch, missing-query, and invalid-read
 no-op saves.
+Its base matching-option reacquired no-op save now also repeats once more,
+requiring the second package to match the first matching-option no-op while
+leaving the saved output, first no-op output, and source package unchanged.
 The invalid-read no-op save in that exact-budget release path now also snapshots
 both the original and matching-option reacquired handles: full sparse ordering,
 row-one blanks, column-one blanks, saved `D4`, missing `E5`, and clean

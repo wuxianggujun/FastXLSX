@@ -6216,6 +6216,87 @@ void test_generated_source_delete_columns_roundtrip()
         noop_output, fastxlsx::CellRange {1, 1, 2, 3}, expected, absent);
 }
 
+void test_generated_source_delete_full_axis_roundtrip()
+{
+    const auto run_case = [](bool delete_columns) {
+        const std::string axis = delete_columns ? "columns" : "rows";
+        const std::filesystem::path source = write_generated_source_workbook();
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-snapshot-delete-full-" + axis + "-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-snapshot-delete-full-" + axis + "-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check_initial_snapshots(sheet);
+        const std::string dirty_text = "delete-full-" + axis + "-dirty-c3";
+        sheet.set_cell("C3", fastxlsx::CellValue::text(dirty_text));
+        check(sheet.cell_count() == 4 &&
+                is_used_range(sheet.used_range(), 1, 1, 3, 3),
+            "delete full-axis setup should add one dirty sparse cell");
+
+        if (delete_columns) {
+            sheet.delete_columns(1, 16384);
+        } else {
+            sheet.delete_rows(1, 1048576);
+        }
+
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "delete full-axis roundtrip should dirty the materialized session");
+        check(sheet.cell_count() == 0 &&
+                editor.pending_materialized_cell_count() == 0,
+            "delete full-axis roundtrip should remove every represented sparse record");
+        check(!sheet.used_range().has_value(),
+            "delete full-axis roundtrip should leave no sparse bounds");
+        check(!sheet.try_cell("A1").has_value() &&
+                !sheet.try_cell("B1").has_value() &&
+                !sheet.try_cell("A2").has_value() &&
+                !sheet.try_cell("C3").has_value(),
+            "delete full-axis roundtrip should remove source-backed and dirty cells");
+        check(sheet.sparse_cells().empty() &&
+                sheet.row_cells(1).empty() &&
+                sheet.row_cells(3).empty() &&
+                sheet.column_cells(1).empty() &&
+                sheet.column_cells(3).empty(),
+            "delete full-axis roundtrip snapshots should stay empty");
+
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "delete full-axis roundtrip save_as should clean the materialized session");
+        check(editor.pending_change_count() == 1,
+            "delete full-axis roundtrip save_as should record one materialized handoff");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "delete full-axis roundtrip save_as should leave the generated source package unchanged");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        const std::string& data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(data_xml, R"(<dimension ref="A1"/>)",
+            "delete full-axis roundtrip save_as should project an empty worksheet dimension");
+        check_not_contains(data_xml, R"(<c r=")",
+            "delete full-axis roundtrip save_as should not write cell records");
+        check_not_contains(data_xml, "alpha",
+            "delete full-axis roundtrip save_as should omit source A1 text");
+        check_not_contains(data_xml, "tail",
+            "delete full-axis roundtrip save_as should omit source A2 text");
+        check_not_contains(data_xml, "<v>2",
+            "delete full-axis roundtrip save_as should omit source B1 number");
+        check_not_contains(data_xml, dirty_text,
+            "delete full-axis roundtrip save_as should omit dirty C3 text");
+        check_all_erased_output(output);
+
+        fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+        reopened.save_as(noop_output);
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "delete full-axis clean no-op save should keep output entries stable");
+        check_all_erased_output(noop_output);
+    };
+
+    run_case(false);
+    run_case(true);
+}
+
 void test_generated_source_structural_shift_noop_roundtrip()
 {
     const std::filesystem::path source = write_generated_source_workbook();
@@ -6899,6 +6980,7 @@ int main()
         test_generated_source_delete_rows_roundtrip();
         test_generated_source_insert_columns_roundtrip();
         test_generated_source_delete_columns_roundtrip();
+        test_generated_source_delete_full_axis_roundtrip();
         test_generated_source_structural_shift_noop_roundtrip();
         test_generated_source_structural_shift_failure_roundtrip();
         test_generated_source_empty_literal_noop_roundtrip();

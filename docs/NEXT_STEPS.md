@@ -2376,6 +2376,11 @@ The same public snapshot lane now covers the structural-shift group together:
 move or remove represented source-backed and dirty sparse cells, refresh saved
 dimensions, omit old shifted coordinates, reopen with stable snapshots, and keep
 clean no-op saves byte-stable.
+It now also covers maximum legal delete spans for both axes:
+`delete_rows(1, 1048576)` and `delete_columns(1, 16384)` remove all represented
+source-backed plus dirty sparse cells, save as an empty sheetData projection,
+fresh-reopen as an empty sparse store, and keep the follow-up no-op save
+byte-stable.
 That structural-shift snapshot lane now also covers the clean no-op group in one
 case: zero-count row/column shifts clear prior diagnostics, target-outside
 row/column shifts leave source-backed cells unchanged, no missing sparse cells

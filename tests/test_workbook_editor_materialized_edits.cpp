@@ -246,6 +246,80 @@ void test_dirty_worksheet_projection_uses_shared_string_index_provider()
         "shared-string worksheet projection should not emit inline strings");
 }
 
+void test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    materialize_session(registry, "Data")
+        .set_cell(1, 1, fastxlsx::CellValue::text("known"));
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        *registry.try_session("Data");
+    data.set_cell(1, 2, fastxlsx::CellValue::text("missing"));
+
+    auto shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                if (text == "known") {
+                    return 0;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "missing shared string index in sheetData projection test");
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        projections =
+            registry.dirty_sheet_data_chunk_sources(shared_string_index_provider);
+
+    check(projections.size() == 1,
+        "failing shared-string sheetData projection should still be created");
+    check(data.dirty(),
+        "failing shared-string sheetData projection should start dirty");
+
+    auto read_next_chunk = projections[0].read_next_chunk;
+    check(throws_fastxlsx_error([&] {
+        const std::string ignored = read_all_chunks(read_next_chunk);
+        (void)ignored;
+    }), "failing shared-string sheetData projection should propagate provider errors");
+    check(data.dirty(),
+        "failing shared-string sheetData projection should keep session dirty");
+}
+
+void test_dirty_worksheet_projection_provider_failure_keeps_session_dirty()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    materialize_session(registry, "Data")
+        .set_cell(1, 1, fastxlsx::CellValue::text("known"));
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        *registry.try_session("Data");
+    data.set_cell(2, 1, fastxlsx::CellValue::text("missing"));
+
+    auto shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                if (text == "known") {
+                    return 0;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "missing shared string index in worksheet projection test");
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        projections =
+            registry.dirty_worksheet_chunk_sources(shared_string_index_provider);
+
+    check(projections.size() == 1,
+        "failing shared-string worksheet projection should still be created");
+    check(data.dirty(),
+        "failing shared-string worksheet projection should start dirty");
+
+    auto read_next_chunk = projections[0].read_next_chunk;
+    check(throws_fastxlsx_error([&] {
+        const std::string ignored = read_all_chunks(read_next_chunk);
+        (void)ignored;
+    }), "failing shared-string worksheet projection should propagate provider errors");
+    check(data.dirty(),
+        "failing shared-string worksheet projection should keep session dirty");
+}
+
 void test_materialized_flush_target_validation_accepts_current_names()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -318,6 +392,8 @@ int main()
         test_dirty_sheet_data_projections_include_only_dirty_sessions_and_dimensions();
         test_dirty_sheet_data_projection_uses_shared_string_index_provider();
         test_dirty_worksheet_projection_uses_shared_string_index_provider();
+        test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty();
+        test_dirty_worksheet_projection_provider_failure_keeps_session_dirty();
         test_materialized_flush_target_validation_accepts_current_names();
         test_materialized_flush_target_validation_uses_current_catalog_names();
         test_materialized_flush_target_validation_rejects_missing_names();

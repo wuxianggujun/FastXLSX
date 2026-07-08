@@ -2419,6 +2419,11 @@ The same standalone snapshot lane now covers whole-store
 explicit blanks, missing interior cells are not synthesized, saved XML omits the
 cleared payloads, reopen preserves row/column blank snapshots, and clean no-op
 save remains byte-stable.
+The basic clear/erase snapshot outputs now also have fresh-reopen edit reuse:
+single-cell erase, erase-all, clear-value, and clear-all no-op outputs each
+open as clean editor sources, accept a later `D3` text edit, preserve their
+baseline/no-op packages unchanged, fresh-reopen with `D3`, and settle into a
+byte-stable clean save.
 The same snapshot lane now also covers coordinate-batch
 `clear_cell_values(...)`: selected source-backed and dirty sparse cells become
 explicit blanks, duplicate coordinates are idempotent, missing coordinates are

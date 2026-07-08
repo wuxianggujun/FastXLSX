@@ -1289,6 +1289,9 @@ clean no-op `save_as()`, confirms byte-stable output and unchanged source
 package bytes, and reopens that no-op output. A1 overload edit coverage now also
 reopens the second no-op output, verifying repeated byte-stable no-op saves
 remain readable with source-backed `A1` / `B1`, erased `A2`, and inserted `D4`.
+The public shard helper now mirrors the same targeted-cell Patch diagnostics in
+save-state snapshots, clean replacement checks, and read-only inspection
+last-error preservation.
 The projection recovery saves now also assert that replacement diagnostics stay
 empty and `last_edit_error()` remains clear immediately after the second safe
 save, before the existing XML and fresh-reopen checks.

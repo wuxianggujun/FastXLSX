@@ -657,14 +657,11 @@ The basic delete-row and delete-column reacquire paths now mirror that no-op
 save gate: the no-op packages match their shifted outputs, source bytes remain
 unchanged, public snapshots stay stable, and fresh reopen preserves the shifted
 source-backed cells, dirty tails, translated formulas, and row/column views.
-The delete-row and delete-column `#REF!` formula reacquire saves now share that
-helper as well, proving formula-reference deletion outputs clear dirty
+The delete-row and delete-column `#REF!` formula reacquire paths now repeat
+that clean no-op save too: formula-reference deletion outputs clear dirty
 materialized diagnostics, replacement diagnostics, summaries, and
-`last_edit_error()` before fresh reopen.
-Their no-op and fresh-reopened outputs now share the complete clean diagnostics
-gate too: clean workbook/worksheet handles, empty dirty materialized names,
-cell counts, memory estimates, and summaries, no replacement diagnostics, and
-no `last_edit_error` before the existing value and row/column snapshot readback.
+`last_edit_error()` before fresh reopen, and their no-op outputs match the
+shifted packages while preserving the `#REF!` formula row/column readback.
 The row-insert saved-session reacquire no-op path now also covers a moved dirty
 formula and moved dirty tail cell: after `insert_rows()` translates the formula
 and the first `save_as()` flushes it, matching-option reacquire reuses that

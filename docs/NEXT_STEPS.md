@@ -713,6 +713,10 @@ The earlier public-state no-op paths now carry the same prior-output stability
 check: source-style snapshots, row/column read failures, invalid sparse range
 reads, `erase_cell()`, and range erase all prove a second clean no-op save does
 not rewrite the first no-op package.
+The next early public-state group now carries that same check too: invalid A1
+range mutations, invalid cell reads, empty `append_row()`, empty `set_row()`,
+and empty `set_column()` all prove the first no-op package remains unchanged
+after a repeated clean no-op save.
 The same-sheet guard no-op save in that clear-all exact-budget path now carries
 the same saved-handle snapshot coverage for shifted `E6`, absent `E5`/`E7`,
 and the preserved guard diagnostic; it also fresh-reopens the no-op package and

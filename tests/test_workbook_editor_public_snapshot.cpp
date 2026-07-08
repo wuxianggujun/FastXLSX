@@ -4547,6 +4547,10 @@ void test_generated_source_empty_literal_noop_roundtrip()
         artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-output.xlsx");
     const std::filesystem::path second_output =
         artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-second-output.xlsx");
+    const std::filesystem::path dirty_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output =
+        artifact("fastxlsx-workbook-editor-public-snapshot-empty-literal-noop-dirty-noop-output.xlsx");
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -4581,35 +4585,38 @@ void test_generated_source_empty_literal_noop_roundtrip()
                 sheet.get_cell("A2").text_value() == "tail",
             "empty literal no-op should preserve source-backed values");
     };
+    const auto run_empty_literal_noops = [&seed_error, &sheet](const auto& check_state) {
+        seed_error();
+        sheet.append_row(std::initializer_list<fastxlsx::CellValue> {});
+        check_state();
 
-    seed_error();
-    sheet.append_row(std::initializer_list<fastxlsx::CellValue> {});
-    check_clean_noop_state();
+        seed_error();
+        sheet.set_row(20, std::initializer_list<fastxlsx::CellValue> {});
+        check_state();
 
-    seed_error();
-    sheet.set_row(20, std::initializer_list<fastxlsx::CellValue> {});
-    check_clean_noop_state();
+        seed_error();
+        sheet.set_column(20, std::initializer_list<fastxlsx::CellValue> {});
+        check_state();
 
-    seed_error();
-    sheet.set_column(20, std::initializer_list<fastxlsx::CellValue> {});
-    check_clean_noop_state();
+        seed_error();
+        sheet.set_cells(std::initializer_list<fastxlsx::WorksheetCellUpdate> {});
+        check_state();
 
-    seed_error();
-    sheet.set_cells(std::initializer_list<fastxlsx::WorksheetCellUpdate> {});
-    check_clean_noop_state();
+        seed_error();
+        sheet.set_cell_values(std::initializer_list<fastxlsx::WorksheetCellUpdate> {});
+        check_state();
 
-    seed_error();
-    sheet.set_cell_values(std::initializer_list<fastxlsx::WorksheetCellUpdate> {});
-    check_clean_noop_state();
+        seed_error();
+        sheet.clear_cell_values(
+            std::initializer_list<fastxlsx::WorksheetCellReference> {});
+        check_state();
 
-    seed_error();
-    sheet.clear_cell_values(
-        std::initializer_list<fastxlsx::WorksheetCellReference> {});
-    check_clean_noop_state();
+        seed_error();
+        sheet.erase_cells(std::initializer_list<fastxlsx::WorksheetCellReference> {});
+        check_state();
+    };
 
-    seed_error();
-    sheet.erase_cells(std::initializer_list<fastxlsx::WorksheetCellReference> {});
-    check_clean_noop_state();
+    run_empty_literal_noops(check_clean_noop_state);
 
     editor.save_as(output);
     check(!sheet.has_pending_changes() && !editor.has_pending_changes(),
@@ -4634,6 +4641,70 @@ void test_generated_source_empty_literal_noop_roundtrip()
     reopened.save_as(second_output);
     check(fastxlsx::test::read_zip_entries(second_output) == output_entries,
         "clean empty literal no-op save should keep output entries stable");
+
+    sheet.set_cell("C2", fastxlsx::CellValue::text("empty-noop-dirty"));
+    const auto check_dirty_noop_state = [&editor, &sheet] {
+        check(!editor.last_edit_error().has_value(),
+            "dirty empty literal no-op should clear prior edit diagnostics");
+        check(sheet.has_pending_changes() && editor.has_pending_changes(),
+            "dirty empty literal no-op should keep the materialized session dirty");
+        check(editor.pending_materialized_worksheet_names() ==
+                std::vector<std::string>({"Data"}) &&
+                editor.pending_materialized_cell_count() == 4 &&
+                editor.estimated_pending_materialized_memory_usage() ==
+                    sheet.estimated_memory_usage(),
+            "dirty empty literal no-op should preserve dirty materialized diagnostics");
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1 &&
+                summaries[0].source_name == "Data" &&
+                summaries[0].planned_name == "Data" &&
+                summaries[0].materialized_dirty &&
+                summaries[0].materialized_cell_count == 4 &&
+                summaries[0].estimated_materialized_memory_usage ==
+                    sheet.estimated_memory_usage(),
+            "dirty empty literal no-op should preserve the Data materialized summary");
+        check(sheet.cell_count() == 4 &&
+                is_used_range(sheet.used_range(), 1, 1, 2, 3),
+            "dirty empty literal no-op should preserve dirty sparse shape");
+        check(sheet.get_cell("A1").text_value() == "alpha" &&
+                sheet.get_cell("B1").number_value() == 2.0 &&
+                sheet.get_cell("A2").text_value() == "tail" &&
+                sheet.get_cell("C2").text_value() == "empty-noop-dirty",
+            "dirty empty literal no-op should preserve dirty sparse values");
+    };
+
+    run_empty_literal_noops(check_dirty_noop_state);
+
+    editor.save_as(dirty_output);
+    check(!sheet.has_pending_changes(),
+        "dirty empty literal no-op save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "dirty empty literal no-op save_as should record one materialized handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty empty literal no-op save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "dirty empty literal no-op save_as should leave the clean no-op output unchanged");
+
+    const auto dirty_entries = fastxlsx::test::read_zip_entries(dirty_output);
+    const std::string& dirty_data_xml = dirty_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(dirty_data_xml, "<dimension ref=\"A1:C2\"",
+        "dirty empty literal no-op save_as should expand the worksheet dimension");
+    check_contains(dirty_data_xml, "empty-noop-dirty",
+        "dirty empty literal no-op save_as should persist the dirty cell");
+    check_not_contains(dirty_data_xml, "empty-noop-rejected",
+        "dirty empty literal no-op save_as should not leak rejected payloads");
+
+    fastxlsx::WorkbookEditor dirty_reopened = fastxlsx::WorkbookEditor::open(dirty_output);
+    fastxlsx::WorksheetEditor dirty_reopened_data =
+        dirty_reopened.worksheet("Data");
+    check(dirty_reopened_data.cell_count() == 4 &&
+            is_used_range(dirty_reopened_data.used_range(), 1, 1, 2, 3) &&
+            dirty_reopened_data.get_cell("C2").text_value() == "empty-noop-dirty",
+        "reopened dirty empty literal no-op output should expose the dirty cell");
+    dirty_reopened.save_as(dirty_noop_output);
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == dirty_entries,
+        "dirty empty literal no-op clean save should keep output entries stable");
 }
 
 } // namespace

@@ -2312,8 +2312,9 @@ remain unchanged after failed scalar, range, A1, or coordinate-batch reads.
 The same standalone snapshot lane now also batches empty literal no-op mutation
 overloads: empty `append_row()`, missing-row/column empty replacements, empty
 full/value batch replacements, empty value clears, and empty erases clear prior
-diagnostics, keep the materialized session clean, and save as a byte-stable
-copy-original package.
+diagnostics in clean and dirty sessions, keep clean sessions copy-original,
+preserve dirty materialized diagnostics and sparse values, and keep clean
+follow-up saves byte-stable.
 The same snapshot lane now covers the span-based batch mutator overloads
 together: `set_cells(span)`, `set_cell_values(span)`, `clear_cell_values(span)`,
 and `erase_cells(span)` preserve later-wins / blank / erase semantics through a

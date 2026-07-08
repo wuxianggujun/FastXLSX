@@ -1823,7 +1823,8 @@ editor output, confirming summary ownership transfer persists while discarded
 target materialized edits stay absent.
 It now repeats a second clean no-op save too, keeping materialized diagnostics
 empty, preserving both source packages, and reopening the assigned output again
-with only the moved dirty payload.
+with only the moved dirty payload while keeping the prior assigned/no-op outputs
+byte-stable.
 The A1 single-cell overload save path is reopened to verify inserted D4 text,
 source-backed cells, refreshed bounds, and erased A2 after save.
 The `get_cell()` / `try_cell()` explicit-blank path now saves and reopens D4,
@@ -6313,6 +6314,9 @@ save-state/catalog snapshots, keeps diagnostics empty, emits byte-stable
 package entries, and reopens both sheets unchanged. This is summary diagnostics
 hygiene only, not rollback, moved-handle semantics, metadata repair, or
 relationship sync.
+That summary move-owner path also rechecks the prior assigned output and first
+no-op output after the second clean no-op save, proving later clean saves do not
+rewrite already-emitted packages.
 Mixed materialized/replacement summaries now also have that no-op save pin:
 after dirty `Data` materialized edits are saved beside a queued `Untouched`
 replacement, the materialized summary clears, the replacement summary remains

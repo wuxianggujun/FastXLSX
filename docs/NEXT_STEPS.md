@@ -1245,6 +1245,9 @@ empty and `last_edit_error()` remains clear immediately after the second safe
 save, before the existing XML and fresh-reopen checks.
 Explicit blank coverage now mirrors that second-no-op readback shape for
 source-backed `A1` / `B1` / `A2`, explicit blank `D4`, and missing `E5`.
+A1 overload, explicit blank, and A1-range mutation coverage now also re-read
+the first no-op package after the second clean no-op save, proving repeated
+clean saves do not rewrite already-emitted read/query outputs.
 Single-cell erase coverage now also reopens its second no-op output, verifying
 the shrunk `A1:B1` projection, source-backed `A1` / `B1`, and erased `A2`
 absence.
@@ -1279,6 +1282,8 @@ source-backed, blank, inserted, and erased sparse cells cleanly.
 Its second no-op output also fresh-reopens with the same sparse count, bounds,
 post-snapshot A1 edit, source-backed B1, explicit B3 blank, inserted D4, and
 erased A2 absence.
+It now also rechecks the first no-op package after the second clean no-op save,
+pinning already-emitted full sparse snapshot outputs as immutable artifacts.
 It now also calls full `sparse_cells()` directly on the same clean saved handle
 after the initial save and both clean no-op saves, pinning row-major full sparse
 snapshots while proving those reads do not re-dirty the materialized session.
@@ -1288,6 +1293,8 @@ survive, and erased source cells stay absent after save.
 Its second no-op output now also fresh-reopens with the same sparse count,
 bounds, source-backed A1, post-snapshot B1 edit, explicit B3 blank, in-range C3,
 outside-range D4, and erased A2 absence.
+It now also rechecks the first no-op package after that second clean no-op save,
+pinning already-emitted bounded sparse snapshot outputs as immutable artifacts.
 It now also reruns the same `CellRange` snapshot against the clean saved session
 and fresh-reopened outputs, pinning row-major in-range snapshots across no-op
 saves without including outside-range cells.

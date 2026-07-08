@@ -2425,6 +2425,10 @@ The standalone materialized-session shard now carries the same targeted-cell
 diagnostic preservation checks, so borrowed-handle and materialization recovery
 coverage also proves clean In-memory sessions do not accumulate targeted Patch
 payloads.
+The core WorkbookEditor shard now mirrors the same targeted-cell diagnostic
+checks in its shared public-state helpers, keeping core move/clean/failure
+coverage aligned with the In-memory shards without widening Patch or
+materialized-session behavior.
 The formula/definedName rewrite shard now mirrors that helper contract: its
 shared inspection helper snapshots source/planned worksheet names and full
 catalog entries around formula, source-formula, and definedName audit calls,

@@ -96,6 +96,12 @@ The source-success max-coordinate shard now also fresh-reopens compact
 erase/no-op outputs, restores `XFD1048576` for inline text, formula, error,
 scalar/blank, empty-inline, shared-string, and rich shared-string sources, and
 requires the restored outputs' clean no-op saves to stay byte-identical.
+The public-state append-row path now also carries dirty error-cell evidence:
+`append_row()` can add an opaque error token beside text, number, formula, and
+explicit blank cells, save it as `t="e"`, reopen it through public sparse
+snapshots, and keep repeated no-op saves byte-stable. This remains scalar
+error-cell projection, not semantic error-token validation or formula
+evaluation.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

@@ -150,6 +150,10 @@ shifts in an ordinary non-renamed session: snapshots captured before
 `insert_rows()` / `insert_columns()` keep their original coordinates and values,
 while the live store, saved package, and clean reopen expose only the shifted
 coordinates.
+Delete-side snapshot ownership now also covers a mixed source-backed + dirty
+session: snapshots captured before `delete_rows()` / `delete_columns()` keep
+their original coordinates and values, while the live store, saved package, and
+clean reopen expose only the surviving shifted cells.
 Public dirty-state coverage now also treats `used_range()`, `row_cells()`, and
 `column_cells()` as read-only inspection APIs in clean, failed-mutation, and
 dirty materialized sessions: these reads do not dirty clean sessions, do not

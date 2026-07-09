@@ -16,8 +16,9 @@
   `remove_worksheet()` 只修改待生成 workbook 中的 sheet buffer，不编辑已有 XLSX。
 - 诊断边界：`cell_count()` 和 `estimated_memory_usage()` 是 buffered creation path 的近似观测值，
   不是进程 RSS、硬内存预算、save-time peak 或 large-export progress API。
-- `CellValue::error()` 接受非空 opaque Excel error token 并拒绝空 payload；
-  它不按 Excel error enum 做语义校验。
+- `CellValue::formula()` 接受非空公式文本并拒绝空 payload；`CellValue::error()`
+  接受非空 opaque Excel error token 并拒绝空 payload。两者都不做公式求值、
+  calcChain rebuild 或 Excel error enum 语义校验。
 
 ### Streaming New Workbook Writer
 

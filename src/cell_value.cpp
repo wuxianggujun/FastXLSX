@@ -76,6 +76,10 @@ CellValue CellValue::boolean(bool value)
 
 CellValue CellValue::formula(std::string value)
 {
+    if (value.empty()) {
+        throw FastXlsxError("cell value formula payload must be non-empty");
+    }
+
     CellValue cell;
     cell.kind_ = CellValueKind::Formula;
     cell.text_value_ = std::move(value);

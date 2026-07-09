@@ -237,6 +237,9 @@ void test_cell_value_public_boundary()
         [] { (void)fastxlsx::CellValue::number(-std::numeric_limits<double>::infinity()); },
         "CellValue should reject negative infinite numeric payloads");
     check_fastxlsx_error(
+        [] { (void)fastxlsx::CellValue::formula(""); },
+        "CellValue should reject empty formula payloads");
+    check_fastxlsx_error(
         [] { (void)fastxlsx::CellValue::error(""); },
         "CellValue should reject empty error payloads");
 }

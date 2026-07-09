@@ -488,6 +488,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A2:B3+B4:A1",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
+        "#REF!:#REF!+B2:A1",
+        "formula structural row delete should ref fully deleted range endpoints and preserve surviving reversed ranges");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "B1:C2+D2:B1",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 2}),
+        "#REF!:#REF!+B2:#REF!",
+        "formula structural column delete should ref fully deleted range endpoints and preserve reversed endpoint order");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             "B4:A2",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 1}),
         "B5:A3",
@@ -565,10 +579,24 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1048576:B1048576",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 1048576, 1}),
+        "#REF!:#REF!",
+        "formula structural row insert should ref range endpoints shifted past Excel bounds");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             "XFD1048576+$XFD$1048576+XFD:XFD+Sheet1!XFD1048576",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 16384, 1}),
         "#REF!+#REF!+#REF!+Sheet1!#REF!",
         "formula structural column insert should ref column references shifted past Excel bounds");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "XFD1:XFD2",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 16384, 1}),
+        "#REF!:#REF!",
+        "formula structural column insert should ref range endpoints shifted past Excel bounds");
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(

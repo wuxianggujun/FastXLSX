@@ -561,6 +561,10 @@ the combined shifted sparse state.
 It now also checks duplicate requested-coordinate sparse reads, the empty
 inserted row/column gaps, and the shifted row-three / column-three snapshots on
 the same clean retry handles.
+The exact source-overwrite failed-save retry branch now mirrors that helper
+coverage across the clean original/reacquired handles and fresh retry/no-op
+reopens, matching the path-equivalent branch's scalar and snapshot observer
+evidence without changing production logic.
 The path-equivalent failed-save retry path now mirrors that evidence: a rejected
 path-equivalent source-overwrite save keeps the dirty shifted session and source
 bytes intact, the safe retry/no-op output remains reusable, and a later `C3`

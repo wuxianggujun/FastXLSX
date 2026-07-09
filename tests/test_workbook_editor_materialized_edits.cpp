@@ -695,6 +695,8 @@ void test_materialized_flush_rejects_stale_targets_without_clearing_dirty()
     const MaterializedFlushSourcePackage source =
         write_materialized_flush_source_package(
             "fastxlsx-workbook-editor-materialized-flush-stale-source.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
 
@@ -717,11 +719,29 @@ void test_materialized_flush_rejects_stale_targets_without_clearing_dirty()
 
     const std::filesystem::path output = fastxlsx::test::artifact_path(
         "fastxlsx-workbook-editor-materialized-flush-stale-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-stale-noop-output.xlsx");
     editor.save_as(output);
     const std::string worksheet =
         read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
     check(worksheet == source.worksheet,
         "rejected materialized flush should leave PackageEditor output unmodified");
+    check(read_stored_package_entries(output) == source_entries,
+        "rejected materialized flush should keep the whole output package source-copy");
+    check(missing.dirty(),
+        "rejected materialized flush save should keep the stale session dirty");
+    check(registry.dirty_session_count() == 1,
+        "rejected materialized flush save should preserve dirty diagnostics");
+
+    editor.save_as(noop_output);
+    check(read_stored_package_entries(noop_output) == source_entries,
+        "rejected materialized flush no-op save should stay source-copy");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "rejected materialized flush no-op save should not mutate the source package");
+    check(missing.dirty(),
+        "rejected materialized flush no-op save should keep the stale session dirty");
+    check(registry.dirty_session_count() == 1,
+        "rejected materialized flush no-op save should preserve dirty diagnostics");
 }
 
 void test_materialized_flush_appends_shared_strings_projection()

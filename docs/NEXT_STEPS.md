@@ -44,6 +44,9 @@ Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only
 sharedStrings, and duplicate-appended sharedStrings handoff paths.
+The stale-target flush rejection path now mirrors that save stability on the
+failure side: both the first safe output and the repeated no-op output stay
+source-copy while the stale dirty session and dirty diagnostics remain intact.
 The public source-success sharedStrings shard now also pins dirty text reuse
 through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text

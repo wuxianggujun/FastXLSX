@@ -474,6 +474,34 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1:B4+C2:D5",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
+        "A1:B2+#REF!:D3",
+        "formula structural row delete should rewrite cell-range endpoints independently");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1:D2+B3:E4",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 2}),
+        "A1:B2+#REF!:C4",
+        "formula structural column delete should rewrite cell-range endpoints independently");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "B4:A2",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 1}),
+        "B5:A3",
+        "formula structural row insert should preserve reversed range endpoint order");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "D2:B1",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        "E2:C1",
+        "formula structural column insert should preserve reversed range endpoint order");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(SUM('O''Brien'!A2,[Book.xlsx]Sheet1!A4,Table1[A2],"A2"))",
             FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
         R"(SUM('O''Brien'!#REF!,[Book.xlsx]Sheet1!A2,Table1[A2],"A2"))",

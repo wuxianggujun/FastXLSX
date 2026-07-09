@@ -86,6 +86,9 @@
   full/range/requested `sparse_cells()` snapshots remain stable across the same
   recovery path; public pending materialized/replacement worksheet-name observers
   also stay empty in the clean saved-output recovery path.
+  Default Data overwrite recovery outputs also carry full/range/requested sparse
+  snapshots, duplicate requested coordinates, skipped rejected/gap coordinates,
+  and empty gap row/column reads after strict-option rematerialization.
 - `set_cells()` and `set_cell_values()` batch inputs are preflighted, allow duplicate
   coordinates, and apply later-wins ordering. `set_cell()` / `set_cells()` /
   `set_row()` / `set_column()` are full sparse replacements and drop prior source

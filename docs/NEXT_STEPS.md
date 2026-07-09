@@ -1132,6 +1132,10 @@ no-op family: shift memory guard failure, exact shift-budget recovery scenarios,
 options-guard recovery, memory-budget source-load recovery, and successful
 mutation recovery after memory-budget / max-cells failures all re-read the
 first no-op package after the second no-op save.
+The default Data overwrite reopened-output helper now also carries the same
+snapshot observer parity for those recovery paths: full/range/requested sparse
+views, duplicate requested `A2`, skipped rejected `D4` / gap coordinates, and
+empty row/column gaps stay clean after strict-option rematerialization.
 The retry guard reopened-output helper now checks the same complete clean
 diagnostic surface after saved/no-op recovery outputs: no pending summaries,
 no materialized names/count/memory, no replacement diagnostics, and no

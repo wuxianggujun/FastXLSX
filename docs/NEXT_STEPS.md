@@ -2392,9 +2392,10 @@ or exceeding the original `max_cells` guardrail.
 The last-edit-error diagnostic replacement path is also reopened after invalid
 reference, memory-budget, and invalid-coordinate failures to pin clean public
 state plus rejected-payload absence after the later successful overwrite.
-Its saved-output readback now also snapshots `sparse_cells()` row-major ordering
-beside the existing row/column views, so the recovered `A1`, source-backed `B1`,
-and source-backed `A2` cells are checked through every reused output helper.
+Its saved-output readback now also snapshots full, `CellRange`, A1-range, and
+coordinate-batch `sparse_cells()` views beside the existing row/column views, so
+the recovered `A1`, source-backed `B1`, and source-backed `A2` cells are checked
+through every reused output helper while missing rejected `D4` is skipped.
 It now repeats that recovered clean no-op save too, proving the replacement
 diagnostic stays clear, package entries remain stable, source bytes are
 unchanged, and the second output still reopens with only the successful value.
@@ -2408,9 +2409,10 @@ reviving stale `last_edit_error()` diagnostics or rejected payloads.
 The mixed public-edit diagnostic recovery path also reopens the saved output to
 verify copy-original `Data` state and replacement-only `Untouched` state after
 failed replacement, rename, and materialized mutation attempts.
-That readback now also snapshots `sparse_cells()` for both sheets, pinning the
-copy-original `Data` row-major state and replacement-only `Untouched!A1` sparse
-state beside the existing row/column checks.
+That readback now also snapshots full, `CellRange`, A1-range, and coordinate-batch
+`sparse_cells()` for both sheets, pinning the copy-original `Data` row-major
+state and replacement-only `Untouched!A1` sparse state beside the existing
+row/column checks while skipping missing rejected coordinates.
 It now repeats that clean no-op save as well, preserving public summaries,
 keeping `last_edit_error()` clear, proving output entries stable, and reopening
 the second output with the same recovered worksheet split.

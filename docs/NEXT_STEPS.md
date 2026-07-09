@@ -1119,6 +1119,10 @@ The missing-erase and blank-overwrite guardrail helpers now mirror that
 snapshot coverage for their shared clean handle paths: range sparse reads,
 requested duplicate `A2`, skipped rejected `D4` / gap coordinates, and empty
 gap row/column observers stay stable across saved/reopened/no-op handles.
+Their reopened-output helpers now mirror those snapshot observers too, so clean
+saved packages re-materialized with the same strict options expose full/range/
+requested sparse views, skipped rejected/gap coordinates, duplicate requested
+cells, and empty row/column gaps without dirtying the editor.
 The blank-overwrite guardrail same-editor no-op saves now also pin the clean
 diagnostic surface directly: max-cells and memory-budget first/second no-op
 outputs keep replacement diagnostics empty and clear `last_edit_error()` while

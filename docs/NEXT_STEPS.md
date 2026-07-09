@@ -52,6 +52,9 @@ both sheetData-only and full worksheet projection paths can be retried with a
 recovered provider while keeping the dirty session diagnostics intact.
 The internal failed-save reflush path now also requires the later safe output to
 settle into a byte-stable no-op save while leaving the source package unchanged.
+The adjacent failed-save baseline now pins the same source-preservation and
+byte-stable no-op contract before flush, after explicit flush, and after the
+later safe output.
 The public source-success sharedStrings shard now also pins dirty text reuse
 through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text

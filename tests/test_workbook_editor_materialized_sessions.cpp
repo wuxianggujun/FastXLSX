@@ -2619,7 +2619,10 @@ void test_internal_materialized_session_failed_save_as_preserves_dirty_and_flush
         artifact("fastxlsx-workbook-editor-materialized-save-failure-directory-output");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-save-failure-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-save-failure-noop-output.xlsx");
     std::filesystem::create_directories(directory_output);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -2635,6 +2638,8 @@ void test_internal_materialized_session_failed_save_as_preserves_dirty_and_flush
         editor, 1, 0, "failed save_as before flush");
     check(!editor.last_edit_error().has_value(),
         "failed save_as before flush should not create public last_edit_error");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed save_as before flush should not mutate the source package");
 
     fastxlsx::detail::testing_workbook_editor_flush_materialized_sessions_to_patch_plan(editor);
 
@@ -2649,6 +2654,8 @@ void test_internal_materialized_session_failed_save_as_preserves_dirty_and_flush
         editor, 0, 1, "failed save_as after flush");
     check(!editor.last_edit_error().has_value(),
         "failed save_as after flush should not create public last_edit_error");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed save_as after flush should not mutate the source package");
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
@@ -2657,6 +2664,15 @@ void test_internal_materialized_session_failed_save_as_preserves_dirty_and_flush
         "valid save_as after failed saves should write the materialized projection");
     check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
         "valid save_as after failed saves should keep refreshed sparse-store dimension");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "valid save_as after failed saves should not mutate the source package");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after failed saves should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after failed saves should not mutate the source package");
 }
 
 void test_internal_materialized_session_reflush_after_failed_save_as()

@@ -108,6 +108,12 @@ insert/delete rows and columns move surviving `t="e"` cells in the materialized
 source error records, fresh-reopen through public sparse views, and keep clean
 no-op saves byte-stable. This remains value projection for small-file
 In-memory editing, not metadata repair or semantic error-token validation.
+Source-backed scalar cells now have the same structural shift evidence:
+insert/delete rows and columns move blank, boolean, numeric, and inline-string
+source cells through the materialized sparse store, drop deleted source scalar
+records, save/reopen through public row/column snapshots, and keep clean no-op
+saves byte-stable without introducing sharedStrings. This remains small-file
+In-memory value projection, not sharedStrings migration or metadata repair.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

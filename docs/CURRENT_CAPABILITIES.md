@@ -120,7 +120,9 @@
   Clean saved/retry outputs, including exact failed-save retry outputs, for shifted
   materialized sessions can be reacquired through scalar and snapshot read observers
   without re-dirtying the session, including duplicate requested sparse reads and
-  empty shifted row/column gaps.
+  empty shifted row/column gaps; memory-budget failures during formula-shift preflight
+  also preserve the original full/range/requested sparse snapshots and row/column
+  observers across live failed handles and reopened clean/no-op outputs.
 - Source materialization supports blank, numeric, boolean, scalar `t="str"`,
   opaque error `t="e"`, formula, plain inline text, simple inline rich text
   flattened to text, and workbook-backed shared-string cells. Missing or empty

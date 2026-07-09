@@ -156,6 +156,30 @@ bool stored_package_has_entry(
     return entries.find(std::string(entry_name)) != entries.end();
 }
 
+std::map<std::string, std::string> read_stored_package_entries(
+    const std::filesystem::path& path)
+{
+    return fastxlsx::test::read_stored_zip_entries(path);
+}
+
+void check_materialized_flush_noop_save_is_stable(
+    fastxlsx::detail::PackageEditor& editor,
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry& registry,
+    const std::filesystem::path& output,
+    const std::filesystem::path& noop_output,
+    const char* byte_stable_message,
+    const char* clean_registry_message)
+{
+    const std::map<std::string, std::string> output_entries =
+        read_stored_package_entries(output);
+
+    editor.save_as(noop_output);
+    check(read_stored_package_entries(noop_output) == output_entries,
+        byte_stable_message);
+    check(registry.dirty_session_count() == 0,
+        clean_registry_message);
+}
+
 void test_pending_materialized_names_follow_current_catalog_order()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other", "Clean"});
@@ -613,6 +637,8 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
     const MaterializedFlushSourcePackage source =
         write_materialized_flush_source_package(
             "fastxlsx-workbook-editor-materialized-flush-source.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
 
@@ -637,6 +663,8 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
 
     const std::filesystem::path output = fastxlsx::test::artifact_path(
         "fastxlsx-workbook-editor-materialized-flush-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-noop-output.xlsx");
     editor.save_as(output);
     const std::string worksheet =
         read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
@@ -649,6 +677,17 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
         "materialized flush should project numeric sparse cells");
     check(!stored_package_has_entry(output, "xl/sharedStrings.xml"),
         "materialized flush without source sharedStrings should not create sharedStrings");
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "materialized flush no-op save should keep output byte-stable",
+        "materialized flush no-op save should keep registry clean");
+    check(!data.dirty(),
+        "materialized flush no-op save should keep the flushed session clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "materialized flush no-op save should not mutate the source package");
 }
 
 void test_materialized_flush_rejects_stale_targets_without_clearing_dirty()
@@ -691,6 +730,8 @@ void test_materialized_flush_appends_shared_strings_projection()
         write_materialized_flush_source_package(
             "fastxlsx-workbook-editor-materialized-flush-shared-source.xlsx",
             true);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
 
@@ -713,6 +754,8 @@ void test_materialized_flush_appends_shared_strings_projection()
 
     const std::filesystem::path output = fastxlsx::test::artifact_path(
         "fastxlsx-workbook-editor-materialized-flush-shared-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-noop-output.xlsx");
     editor.save_as(output);
     const std::string worksheet =
         read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
@@ -735,6 +778,17 @@ void test_materialized_flush_appends_shared_strings_projection()
     check(shared_strings.find(R"(<si><t>existing</t></si><si><t>new-shared</t></si>)")
             != std::string::npos,
         "sharedStrings materialized flush should append only missing text");
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "sharedStrings materialized flush no-op save should keep output byte-stable",
+        "sharedStrings materialized flush no-op save should keep registry clean");
+    check(!data.dirty(),
+        "sharedStrings materialized flush no-op save should keep the flushed session clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "sharedStrings materialized flush no-op save should not mutate the source package");
 }
 
 void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
@@ -743,6 +797,8 @@ void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
         write_materialized_flush_source_package(
             "fastxlsx-workbook-editor-materialized-flush-shared-existing-source.xlsx",
             true);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
 
@@ -763,6 +819,8 @@ void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
 
     const std::filesystem::path output = fastxlsx::test::artifact_path(
         "fastxlsx-workbook-editor-materialized-flush-shared-existing-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-existing-noop-output.xlsx");
     editor.save_as(output);
     const std::string worksheet =
         read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
@@ -775,6 +833,17 @@ void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
         "existing-only sharedStrings flush should not fall back to inline text");
     check(shared_strings == source.shared_strings,
         "existing-only sharedStrings flush should not rewrite the sharedStrings part");
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "existing-only sharedStrings flush no-op save should keep output byte-stable",
+        "existing-only sharedStrings flush no-op save should keep registry clean");
+    check(!data.dirty(),
+        "existing-only sharedStrings flush no-op save should keep the flushed session clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "existing-only sharedStrings flush no-op save should not mutate the source package");
 }
 
 void test_materialized_flush_deduplicates_appended_shared_strings()
@@ -783,6 +852,8 @@ void test_materialized_flush_deduplicates_appended_shared_strings()
         write_materialized_flush_source_package(
             "fastxlsx-workbook-editor-materialized-flush-shared-duplicate-source.xlsx",
             true);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
     fastxlsx::detail::PackageEditor editor =
         fastxlsx::detail::PackageEditor::open(source.path);
 
@@ -805,6 +876,8 @@ void test_materialized_flush_deduplicates_appended_shared_strings()
 
     const std::filesystem::path output = fastxlsx::test::artifact_path(
         "fastxlsx-workbook-editor-materialized-flush-shared-duplicate-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-duplicate-noop-output.xlsx");
     editor.save_as(output);
     const std::string worksheet =
         read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
@@ -824,6 +897,17 @@ void test_materialized_flush_deduplicates_appended_shared_strings()
     check(shared_strings.find(R"(<si><t>existing</t></si><si><t>repeat-new</t></si>)")
             != std::string::npos,
         "duplicate sharedStrings flush should append each new text only once");
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "duplicate sharedStrings flush no-op save should keep output byte-stable",
+        "duplicate sharedStrings flush no-op save should keep registry clean");
+    check(!data.dirty(),
+        "duplicate sharedStrings flush no-op save should keep the flushed session clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "duplicate sharedStrings flush no-op save should not mutate the source package");
 }
 
 } // namespace

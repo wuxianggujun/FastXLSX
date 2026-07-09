@@ -40,6 +40,10 @@ dirty diagnostics, append-only sharedStrings projection, existing-string reuse
 without rewriting the table, and duplicate appended text de-duplication. This is
 WorksheetEditor small-file in-memory persistence evidence, not broad
 sharedStrings migration or metadata repair.
+Those internal flush tests now also require repeated `save_as()` outputs to
+stay byte-identical after the dirty sessions are cleared, while preserving the
+source package across inline, appended sharedStrings, existing-only
+sharedStrings, and duplicate-appended sharedStrings handoff paths.
 The public source-success sharedStrings shard now also pins dirty text reuse
 through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text

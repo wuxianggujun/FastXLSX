@@ -80,6 +80,10 @@ moving the formula cell.
 The public source-success formulas shard now also exercises dirty formula saves
 that require XML escaping across ordinary, cached-result, and shared-formula
 materialized outputs, with clean no-op save and fresh reopen checks.
+It now also pins direct mutations of source formula records across ordinary,
+shared, array, and dataTable source shapes: value overwrite, full replacement,
+explicit blank clear, and erase all drop stale formula metadata/cached values
+without mutating the source package.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

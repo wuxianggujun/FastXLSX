@@ -721,6 +721,165 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         "cached-result formula post-noop reuse no-op output");
 }
 
+void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-direct-formula-source-mutation-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-direct-formula-source-mutation-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-direct-formula-source-mutation-noop-output.xlsx");
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1"><f>A2+1</f><v>999</v></c>)"
+        R"(<c r="B1"><f t="shared" ref="B1:C1" si="70" ca="1">A1+1</f><v>111</v></c>)"
+        R"(<c r="C1"><f t="shared" si="70" aca="1"/><v>222</v></c>)"
+        R"(<c r="D1"><f t="array" ref="D1:E1" ca="1">SUM(A1:B1)</f><v>333</v></c>)"
+        R"(<c r="E1"><f t="array" ref="D1:E1"/><v>444</v></c>)"
+        R"(<c r="F1"><f t="dataTable" ref="F1:G1" dt2D="1" r1="A1">A1+2</f><v>555</v></c>)"
+        R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>666</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> ordinary_formula = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> shared_follower = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> array_formula = sheet.try_cell("D1");
+    const std::optional<fastxlsx::CellValue> array_cached = sheet.try_cell("E1");
+    const std::optional<fastxlsx::CellValue> datatable_formula = sheet.try_cell("F1");
+    const std::optional<fastxlsx::CellValue> datatable_cached = sheet.try_cell("G1");
+    check(ordinary_formula.has_value()
+            && ordinary_formula->kind() == fastxlsx::CellValueKind::Formula
+            && ordinary_formula->text_value() == "A2+1",
+        "direct formula source mutation setup should materialize ordinary formulas");
+    check(shared_follower.has_value()
+            && shared_follower->kind() == fastxlsx::CellValueKind::Formula
+            && shared_follower->text_value() == "B1+1",
+        "direct formula source mutation setup should translate shared followers");
+    check(array_formula.has_value() && array_formula->kind() == fastxlsx::CellValueKind::Formula
+            && array_formula->text_value() == "SUM(A1:B1)",
+        "direct formula source mutation setup should flatten array formula text");
+    check(array_cached.has_value() && array_cached->kind() == fastxlsx::CellValueKind::Number
+            && array_cached->number_value() == 444.0,
+        "direct formula source mutation setup should read array metadata-only cached values");
+    check(datatable_formula.has_value()
+            && datatable_formula->kind() == fastxlsx::CellValueKind::Formula
+            && datatable_formula->text_value() == "A1+2",
+        "direct formula source mutation setup should flatten dataTable formula text");
+    check(datatable_cached.has_value()
+            && datatable_cached->kind() == fastxlsx::CellValueKind::Number
+            && datatable_cached->number_value() == 666.0,
+        "direct formula source mutation setup should read dataTable metadata-only cached values");
+    check(!sheet.has_pending_changes(),
+        "direct formula source mutation setup should start clean");
+    check(!editor.has_pending_changes(),
+        "direct formula source mutation setup should not dirty WorkbookEditor");
+
+    sheet.set_cell_value("A1", fastxlsx::CellValue::text("ordinary-overwrite"));
+    sheet.set_cell("B1", fastxlsx::CellValue::number(12.5));
+    sheet.clear_cell_value("C1");
+    sheet.erase_cell("D1");
+    sheet.set_cell("E1", fastxlsx::CellValue::formula("A1+B1"));
+    sheet.erase_cell("F1");
+    sheet.clear_cell_value("G1");
+
+    check(sheet.has_pending_changes(),
+        "direct formula source mutations should dirty Data");
+    check(editor.has_pending_changes(),
+        "direct formula source mutations should dirty WorkbookEditor");
+    check(sheet.cell_count() == 5,
+        "direct formula source mutations should remove erased source formula records");
+    check(!sheet.try_cell("D1").has_value(),
+        "direct formula source mutations should erase the array formula cell");
+    check(!sheet.try_cell("F1").has_value(),
+        "direct formula source mutations should erase the dataTable formula cell");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank,
+        "direct formula source mutations should keep cleared shared follower as blank");
+    check(sheet.get_cell("G1").kind() == fastxlsx::CellValueKind::Blank,
+        "direct formula source mutations should keep cleared dataTable fallback as blank");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "direct formula source mutation save should keep Data clean");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>ordinary-overwrite</t></is></c>)",
+        "direct formula source mutation save should overwrite ordinary formula text");
+    check_contains(output_worksheet_xml, R"(<c r="B1"><v>12.5</v></c>)",
+        "direct formula source mutation save should overwrite shared formula base");
+    check_contains(output_worksheet_xml, R"(<c r="C1"/>)",
+        "direct formula source mutation save should persist cleared shared follower blank");
+    check_not_contains(output_worksheet_xml, "<c r=\"D1\"",
+        "direct formula source mutation save should omit erased array formula cell");
+    check_contains(output_worksheet_xml, R"(<c r="E1"><f>A1+B1</f></c>)",
+        "direct formula source mutation save should overwrite array cached fallback");
+    check_not_contains(output_worksheet_xml, "<c r=\"F1\"",
+        "direct formula source mutation save should omit erased dataTable formula cell");
+    check_contains(output_worksheet_xml, R"(<c r="G1"/>)",
+        "direct formula source mutation save should persist cleared dataTable fallback blank");
+    check_not_contains(output_worksheet_xml, R"(t="shared")",
+        "direct formula source mutation save should drop shared formula metadata");
+    check_not_contains(output_worksheet_xml, R"(t="array")",
+        "direct formula source mutation save should drop array formula metadata");
+    check_not_contains(output_worksheet_xml, R"(t="dataTable")",
+        "direct formula source mutation save should drop dataTable formula metadata");
+    check_not_contains(output_worksheet_xml, R"(ca="1")",
+        "direct formula source mutation save should drop calc metadata attributes");
+    check_not_contains(output_worksheet_xml, R"(dt2D="1")",
+        "direct formula source mutation save should drop dataTable attributes");
+    check_not_contains(output_worksheet_xml, "<f>A2+1</f>",
+        "direct formula source mutation save should not revive the ordinary formula");
+    check_not_contains(output_worksheet_xml, "SUM(A1:B1)",
+        "direct formula source mutation save should not revive the array formula");
+    check_not_contains(output_worksheet_xml, "<f>A1+2</f>",
+        "direct formula source mutation save should not revive the dataTable formula");
+    const int stale_cached_values[] = {999, 111, 222, 333, 444, 555, 666};
+    for (const int stale_cached_value : stale_cached_values) {
+        check_not_contains(output_worksheet_xml,
+            "<v>" + std::to_string(stale_cached_value) + "</v>",
+            "direct formula source mutation save should drop stale cached values");
+    }
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "direct formula source mutation save should not mutate the source package");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "direct formula source mutation save should preserve untouched worksheets");
+
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("ordinary-overwrite")},
+        {1, 2, fastxlsx::CellValue::number(12.5)},
+        {1, 3, fastxlsx::CellValue::blank()},
+        {1, 5, fastxlsx::CellValue::formula("A1+B1")},
+        {1, 7, fastxlsx::CellValue::blank()},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 1, 7},
+        expected_cells,
+        "direct formula source mutation output");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "direct formula source mutation no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "direct formula source mutation no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "direct formula source mutation no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 7},
+        expected_cells,
+        "direct formula source mutation no-op output");
+}
+
 void test_public_worksheet_editor_materializes_source_shared_formulas()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -1565,6 +1724,7 @@ int main()
         test_public_worksheet_editor_materializes_source_formulas();
         test_public_worksheet_editor_materializes_source_error_cells();
         test_public_worksheet_editor_ignores_formula_cached_result_types();
+        test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         test_public_worksheet_editor_materializes_office_like_shared_formula_shape();

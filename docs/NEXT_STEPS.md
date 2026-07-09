@@ -116,7 +116,9 @@ structural edit kinds.
 The public stationary-formula shift shard now carries those range-endpoint
 cases through `WorksheetEditor` row/column shifts as well, including fully
 deleted endpoints and Excel-boundary insertions that rewrite to `#REF!` without
-moving the formula cell.
+moving the formula cell. It also carries split-range row/column insertions
+through public `WorksheetEditor` save/reopen/no-op behavior, with whole-axis
+references and `$` marker text preserved in the saved formula.
 The public source-success formulas shard now also exercises dirty formula saves
 that require XML escaping across ordinary, cached-result, and shared-formula
 materialized outputs, with clean no-op save and fresh reopen checks.

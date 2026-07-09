@@ -660,6 +660,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(A2,A3,"A2",Table1[A2],'A2 Sheet'!A2,[Book.xlsx]A2!A3,LOG10(A2),A2foo,_A2,A2_,R1C1))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 1}),
+        R"(SUM(#REF!,A2,"A2",Table1[A2],'A2 Sheet'!#REF!,[Book.xlsx]A2!A2,LOG10(#REF!),A2foo,_A2,A2_,R1C1))",
+        "formula structural row delete should preserve skip-token and name-like boundaries");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(B1,C1,"B1",Table1[B1],'B1 Sheet'!B1,[B1.xlsx]Sheet1!C1,LOG10(B2),B1foo,_B1,B1_,R1C1))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 1}),
+        R"(SUM(#REF!,B1,"B1",Table1[B1],'B1 Sheet'!#REF!,[B1.xlsx]Sheet1!B1,LOG10(#REF!),B1foo,_B1,B1_,R1C1))",
+        "formula structural column delete should preserve skip-token and name-like boundaries");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(SUM(A:A,$2:$3,Sheet1!$B:$C))",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 2}),
         R"(SUM(A:A,$4:$5,Sheet1!$B:$C))",

@@ -173,6 +173,10 @@ The same mixed-marker formula helper coverage now includes row/column deletion:
 deleted coordinates become `#REF!`, later endpoints shift back, and surviving
 absolute marker text remains intact for the WorksheetEditor structural-shift
 foundation.
+Formula structural delete coverage now also pins skip-token boundaries:
+row/column deletions rewrite only real references while preserving string
+literals, structured-reference bracket contents, quoted sheet-name token text,
+external workbook bracket text, and name-like token text.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

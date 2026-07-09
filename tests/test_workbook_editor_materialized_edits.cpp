@@ -390,6 +390,124 @@ void check_reopened_multi_session_unsupported_shared_strings_output(
         "reopened unsupported sharedStrings Other C3 should preserve whitespace");
 }
 
+void check_reopened_single_session_inline_flush_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+
+    check(!editor.has_pending_changes() && !data.has_pending_changes(),
+        "reopened inline materialized flush output should be clean");
+    check(data.cell_count() == 6,
+        "reopened inline materialized flush output should expose six cells");
+    check_text_cell(
+        data, "A1", "inline-a1",
+        "reopened inline materialized flush A1 should expose text");
+    check_number_cell(
+        data, "B2", 22.0,
+        "reopened inline materialized flush B2 should expose the number");
+    check_boolean_cell(
+        data, "C3", true,
+        "reopened inline materialized flush C3 should expose the boolean");
+
+    const auto formula = data.try_cell("D4");
+    check(formula.has_value() &&
+            formula->kind() == fastxlsx::CellValueKind::Formula &&
+            formula->text_value() == "A1&B2<C3",
+        "reopened inline materialized flush D4 should expose formula text");
+    const auto error = data.try_cell("E5");
+    check(error.has_value() && error->kind() == fastxlsx::CellValueKind::Error &&
+            error->text_value() == "#VALUE<&",
+        "reopened inline materialized flush E5 should expose the error token");
+    const auto blank = data.try_cell("F6");
+    check(blank.has_value() && blank->kind() == fastxlsx::CellValueKind::Blank,
+        "reopened inline materialized flush F6 should expose the blank cell");
+}
+
+void check_reopened_single_session_appended_shared_strings_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+
+    check(!editor.has_pending_changes() && !data.has_pending_changes(),
+        "reopened appended sharedStrings single-session output should be clean");
+    check(data.cell_count() == 5,
+        "reopened appended sharedStrings single-session output should expose five cells");
+    check_text_cell(
+        data, "A1", "existing",
+        "reopened appended sharedStrings single-session A1 should expose source text");
+    check_text_cell(
+        data, "B1", "new-shared",
+        "reopened appended sharedStrings single-session B1 should expose appended text");
+    check_text_cell(
+        data, "C1", "escaped <&> shared",
+        "reopened appended sharedStrings single-session C1 should expose escaped text");
+    check_text_cell(
+        data, "D1", "  spaced shared  ",
+        "reopened appended sharedStrings single-session D1 should preserve whitespace");
+    check_number_cell(
+        data, "A2", 9.0,
+        "reopened appended sharedStrings single-session A2 should expose the number");
+}
+
+void check_reopened_single_session_existing_shared_strings_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+
+    check(!editor.has_pending_changes() && !data.has_pending_changes(),
+        "reopened existing-only sharedStrings single-session output should be clean");
+    check(data.cell_count() == 1,
+        "reopened existing-only sharedStrings single-session output should expose one cell");
+    check_text_cell(
+        data, "A1", "existing",
+        "reopened existing-only sharedStrings single-session A1 should expose source text");
+}
+
+void check_reopened_single_session_unsupported_shared_strings_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+
+    check(!editor.has_pending_changes() && !data.has_pending_changes(),
+        "reopened unsupported sharedStrings single-session output should be clean");
+    check(data.cell_count() == 3,
+        "reopened unsupported sharedStrings single-session output should expose three cells");
+    check_text_cell(
+        data, "A1", "existing",
+        "reopened unsupported sharedStrings single-session A1 should expose existing text");
+    check_text_cell(
+        data, "B1", "fallback <&> text",
+        "reopened unsupported sharedStrings single-session B1 should expose fallback text");
+    check_text_cell(
+        data, "C1", "  fallback spaced  ",
+        "reopened unsupported sharedStrings single-session C1 should preserve whitespace");
+}
+
+void check_reopened_single_session_duplicate_shared_strings_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+
+    check(!editor.has_pending_changes() && !data.has_pending_changes(),
+        "reopened duplicate sharedStrings single-session output should be clean");
+    check(data.cell_count() == 3,
+        "reopened duplicate sharedStrings single-session output should expose three cells");
+    check_text_cell(
+        data, "A1", "existing",
+        "reopened duplicate sharedStrings single-session A1 should expose source text");
+    check_text_cell(
+        data, "B1", "repeat-new",
+        "reopened duplicate sharedStrings single-session B1 should expose appended text");
+    check_text_cell(
+        data, "B2", "repeat-new",
+        "reopened duplicate sharedStrings single-session B2 should expose reused appended text");
+}
+
 void test_pending_materialized_names_follow_current_catalog_order()
 {
     fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other", "Clean"});
@@ -981,6 +1099,7 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
         "materialized flush should project blank sparse cells");
     check(!stored_package_has_entry(output, "xl/sharedStrings.xml"),
         "materialized flush without source sharedStrings should not create sharedStrings");
+    check_reopened_single_session_inline_flush_output(output);
     check_materialized_flush_noop_save_is_stable(
         editor,
         registry,
@@ -988,6 +1107,7 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
         noop_output,
         "materialized flush no-op save should keep output byte-stable",
         "materialized flush no-op save should keep registry clean");
+    check_reopened_single_session_inline_flush_output(noop_output);
     check(!data.dirty(),
         "materialized flush no-op save should keep the flushed session clean");
     check(read_stored_package_entries(source.path) == source_entries,
@@ -1180,6 +1300,7 @@ void test_materialized_flush_appends_shared_strings_projection()
         R"(<si><t xml:space="preserve">  spaced shared  </t></si>)";
     check(shared_strings.find(expected_appended_shared_strings) != std::string::npos,
         "sharedStrings materialized flush should append missing text with XML escaping and whitespace preservation");
+    check_reopened_single_session_appended_shared_strings_output(output);
     check_materialized_flush_noop_save_is_stable(
         editor,
         registry,
@@ -1187,6 +1308,7 @@ void test_materialized_flush_appends_shared_strings_projection()
         noop_output,
         "sharedStrings materialized flush no-op save should keep output byte-stable",
         "sharedStrings materialized flush no-op save should keep registry clean");
+    check_reopened_single_session_appended_shared_strings_output(noop_output);
     check(!data.dirty(),
         "sharedStrings materialized flush no-op save should keep the flushed session clean");
     check(read_stored_package_entries(source.path) == source_entries,
@@ -1235,6 +1357,7 @@ void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
         "existing-only sharedStrings flush should not fall back to inline text");
     check(shared_strings == source.shared_strings,
         "existing-only sharedStrings flush should not rewrite the sharedStrings part");
+    check_reopened_single_session_existing_shared_strings_output(output);
     check_materialized_flush_noop_save_is_stable(
         editor,
         registry,
@@ -1242,6 +1365,7 @@ void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
         noop_output,
         "existing-only sharedStrings flush no-op save should keep output byte-stable",
         "existing-only sharedStrings flush no-op save should keep registry clean");
+    check_reopened_single_session_existing_shared_strings_output(noop_output);
     check(!data.dirty(),
         "existing-only sharedStrings flush no-op save should keep the flushed session clean");
     check(read_stored_package_entries(source.path) == source_entries,
@@ -1310,6 +1434,7 @@ void test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_
         "unsupported sharedStrings flush should not write shared string indexes");
     check(shared_strings == unsupported_shared_strings,
         "unsupported sharedStrings flush should preserve source sharedStrings bytes");
+    check_reopened_single_session_unsupported_shared_strings_output(output);
 
     check_materialized_flush_noop_save_is_stable(
         editor,
@@ -1318,6 +1443,7 @@ void test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_
         noop_output,
         "unsupported sharedStrings flush no-op save should keep output byte-stable",
         "unsupported sharedStrings flush no-op save should keep registry clean");
+    check_reopened_single_session_unsupported_shared_strings_output(noop_output);
     check(!data.dirty(),
         "unsupported sharedStrings flush no-op save should keep the flushed session clean");
     check(read_stored_package_entries(source.path) == source_entries,
@@ -1375,6 +1501,7 @@ void test_materialized_flush_deduplicates_appended_shared_strings()
     check(shared_strings.find(R"(<si><t>existing</t></si><si><t>repeat-new</t></si>)")
             != std::string::npos,
         "duplicate sharedStrings flush should append each new text only once");
+    check_reopened_single_session_duplicate_shared_strings_output(output);
     check_materialized_flush_noop_save_is_stable(
         editor,
         registry,
@@ -1382,6 +1509,7 @@ void test_materialized_flush_deduplicates_appended_shared_strings()
         noop_output,
         "duplicate sharedStrings flush no-op save should keep output byte-stable",
         "duplicate sharedStrings flush no-op save should keep registry clean");
+    check_reopened_single_session_duplicate_shared_strings_output(noop_output);
     check(!data.dirty(),
         "duplicate sharedStrings flush no-op save should keep the flushed session clean");
     check(read_stored_package_entries(source.path) == source_entries,

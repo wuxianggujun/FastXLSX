@@ -72,6 +72,13 @@ their dirty and clean no-op outputs through the public `WorkbookEditor` /
 `WorksheetEditor` cell APIs, proving the saved packages can be rematerialized
 as clean small-file sessions after append/reuse/fallback. This is readback
 evidence only, not sharedStrings migration, style migration, or metadata repair.
+The matching single-session materialized flush states now also fresh-reopen
+their dirty and clean no-op outputs through the public cell APIs, covering
+inline text/number/boolean/formula/error/blank output, appended sharedStrings,
+existing-only sharedStrings reuse, unsupported sharedStrings inline fallback,
+and duplicate appended text de-duplication. This is saved-output readback
+evidence only, not sharedStrings migration, style migration, calcChain rebuild,
+or metadata repair.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

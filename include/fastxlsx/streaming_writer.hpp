@@ -725,7 +725,9 @@ public:
     /// FastXLSX writes the formula text and generated workbooks with formula
     /// cells request full recalculation on load through workbook calculation
     /// metadata. It does not parse, evaluate, cache, or maintain
-    /// calculation-chain metadata in the current implementation.
+    /// calculation-chain metadata in the current implementation. Empty formula
+    /// text is rejected by WorksheetWriter::append_row() before row state is
+    /// advanced.
     static CellView formula(std::string_view value) noexcept;
 
     /// Returns a copy of this view with a workbook-owned style id.
@@ -787,8 +789,9 @@ public:
     /// valid for this call.
     ///
     /// @throws FastXlsxError when row/column limits are exceeded, a numeric
-    /// cell value is not finite, row height metadata is non-positive or
-    /// non-finite, or the writer cannot write worksheet XML.
+    /// cell value is not finite, a formula cell has empty text, row height
+    /// metadata is non-positive or non-finite, or the writer cannot write
+    /// worksheet XML.
     void append_row(std::span<const CellView> cells, RowOptions options = {});
 
     /// Appends a row from an initializer list.

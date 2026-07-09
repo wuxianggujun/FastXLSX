@@ -1039,11 +1039,14 @@ void ensure_mutable_worksheet(const detail::WorksheetWriterState* state)
     }
 }
 
-void validate_numeric_cells(std::span<const CellView> cells)
+void validate_cell_payloads(std::span<const CellView> cells)
 {
     for (const CellView& cell : cells) {
         if (cell.type() == CellView::Type::Number && !std::isfinite(cell.number_value())) {
             throw FastXlsxError("numeric values must be finite");
+        }
+        if (cell.type() == CellView::Type::Formula && cell.text_value().empty()) {
+            throw FastXlsxError("formula values must be non-empty");
         }
     }
 }
@@ -2369,7 +2372,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
         && (!std::isfinite(*options.height) || *options.height <= 0.0)) {
         throw FastXlsxError("row height must be positive and finite");
     }
-    validate_numeric_cells(cells);
+    validate_cell_payloads(cells);
     if (state_->workbook != nullptr) {
         const std::uintptr_t owner_token =
             reinterpret_cast<std::uintptr_t>(state_->workbook);

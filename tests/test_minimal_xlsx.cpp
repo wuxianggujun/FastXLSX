@@ -240,6 +240,9 @@ void test_cell_value_public_boundary()
         [] { (void)fastxlsx::CellValue::formula(""); },
         "CellValue should reject empty formula payloads");
     check_fastxlsx_error(
+        [] { (void)fastxlsx::Cell::formula(""); },
+        "Cell should reject empty formula payloads");
+    check_fastxlsx_error(
         [] { (void)fastxlsx::CellValue::error(""); },
         "CellValue should reject empty error payloads");
 }

@@ -556,6 +556,10 @@ void test_streaming_writer_failed_append_preserves_state()
         },
         "append_row should reject NaN before consuming a row number");
 
+    check_fastxlsx_error(
+        [&sheet] { sheet.append_row({fastxlsx::CellView::formula("")}); },
+        "append_row should reject empty formula text before mutating streaming state");
+
     sheet.append_row({fastxlsx::CellView::boolean(true)});
 
     workbook.close();
@@ -578,6 +582,8 @@ void test_streaming_writer_failed_append_preserves_state()
         "failed append should not serialize rejected text cells");
     check(worksheet_xml.find("<f>A1+1</f>") == std::string::npos,
         "failed append should not serialize rejected formulas");
+    check(worksheet_xml.find("<f></f>") == std::string::npos,
+        "failed append should not serialize rejected empty formulas");
 
     const auto& workbook_xml = entries.at("xl/workbook.xml");
     check(workbook_xml.find("<calcPr") == std::string::npos,

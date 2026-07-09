@@ -251,6 +251,10 @@ Cell Cell::boolean(bool value)
 
 Cell Cell::formula(std::string value)
 {
+    if (value.empty()) {
+        throw FastXlsxError("cell formula payload must be non-empty");
+    }
+
     return Cell(Type::Formula, std::move(value));
 }
 

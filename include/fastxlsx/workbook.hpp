@@ -103,6 +103,8 @@ public:
     /// full recalculation on load through workbook calculation metadata.
     /// FastXLSX does not parse formulas, evaluate them, manage calcChain, or
     /// provide cached values in the current implementation.
+    ///
+    /// @throws FastXlsxError if value is empty.
     static Cell formula(std::string value);
 
     /// Returns the stored value kind for the Phase 1 in-memory cell.

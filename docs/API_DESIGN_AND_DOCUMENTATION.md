@@ -110,9 +110,11 @@ CellValue -> 已落地 owning 语义值，适合作为 editor / in-memory / API 
 CellRecord / CellStore -> 已有 internal sparse-store / sheetData emission 首片，不作为 public API 暴露
 ```
 
-`CellValue::formula()` 只接受非空 formula text；它不解析、求值、缓存或重建
-calcChain。`CellValue::error()` 只接受非空 opaque error token；它不把 token
-映射到 Excel error enum，也不做 broader formula/error 语义校验。
+`Cell::formula()`、`CellValue::formula()` 和 streaming `CellView::formula()` 只接受非空
+formula text；`CellView` 因为是 noexcept view，空公式由 `append_row()` 在状态变更前
+拒绝。它们不解析、求值、缓存或重建 calcChain。`CellValue::error()` 只接受非空
+opaque error token；它不把 token 映射到 Excel error enum，也不做 broader
+formula/error 语义校验。
 
 Public API 概念矩阵：
 

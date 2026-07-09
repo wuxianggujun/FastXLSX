@@ -1,11 +1,15 @@
 #include "../src/workbook_editor_materialized_edits.hpp"
+#include "../src/package_editor.hpp"
+#include "zip_test_utils.hpp"
 
 #include <fastxlsx/cell_value.hpp>
 #include <fastxlsx/detail/cell_store.hpp>
 #include <fastxlsx/workbook.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -63,6 +67,89 @@ fastxlsx::detail::MaterializedWorksheetSession& materialize_session(
 {
     fastxlsx::detail::CellStore store;
     return registry.materialize(std::move(planned_name), std::move(store));
+}
+
+struct MaterializedFlushSourcePackage {
+    std::filesystem::path path;
+    std::string worksheet;
+    std::string shared_strings;
+};
+
+MaterializedFlushSourcePackage write_materialized_flush_source_package(
+    std::string_view name,
+    bool with_shared_strings = false)
+{
+    MaterializedFlushSourcePackage source;
+    source.path = fastxlsx::test::artifact_path(name);
+    source.worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    if (with_shared_strings) {
+        source.shared_strings = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+            R"(<si><t>existing</t></si></sst>)";
+    }
+
+    std::string content_types = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)";
+    if (with_shared_strings) {
+        content_types +=
+            R"(<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>)";
+    }
+    content_types += R"(</Types>)";
+
+    std::string workbook_relationships =
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)";
+    if (with_shared_strings) {
+        workbook_relationships +=
+            R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)";
+    }
+    workbook_relationships += R"(</Relationships>)";
+
+    std::map<std::string, std::string> entries;
+    entries.emplace("[Content_Types].xml", std::move(content_types));
+    entries.emplace("_rels/.rels",
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(</Relationships>)");
+    entries.emplace("xl/workbook.xml",
+        R"(<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Data" sheetId="1" r:id="rId1"/></sheets></workbook>)");
+    entries.emplace("xl/_rels/workbook.xml.rels", std::move(workbook_relationships));
+    entries.emplace("xl/worksheets/sheet1.xml", source.worksheet);
+    if (with_shared_strings) {
+        entries.emplace("xl/sharedStrings.xml", source.shared_strings);
+    }
+    fastxlsx::test::write_stored_zip_entries(source.path, entries);
+    return source;
+}
+
+std::string read_stored_package_entry(
+    const std::filesystem::path& path,
+    std::string_view entry_name)
+{
+    const std::map<std::string, std::string> entries =
+        fastxlsx::test::read_stored_zip_entries(path);
+    const auto found = entries.find(std::string(entry_name));
+    if (found == entries.end()) {
+        throw TestFailure("stored package entry not found");
+    }
+    return found->second;
+}
+
+bool stored_package_has_entry(
+    const std::filesystem::path& path,
+    std::string_view entry_name)
+{
+    const std::map<std::string, std::string> entries =
+        fastxlsx::test::read_stored_zip_entries(path);
+    return entries.find(std::string(entry_name)) != entries.end();
 }
 
 void test_pending_materialized_names_follow_current_catalog_order()
@@ -517,6 +604,135 @@ void test_materialized_flush_target_validation_rejects_missing_names()
     }), "flush target validation should reject sheets outside current catalog");
 }
 
+void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
+{
+    const MaterializedFlushSourcePackage source =
+        write_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-source.xlsx");
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("inline-a1"));
+    data.set_cell(2, 2, fastxlsx::CellValue::number(22.0));
+    check(data.dirty(), "materialized flush test should start with a dirty session");
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 1,
+        "materialized flush should report one flushed worksheet");
+    check(!data.dirty(),
+        "materialized flush should clear the flushed session dirty flag");
+    check(registry.dirty_session_count() == 0,
+        "materialized flush should clear registry dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-output.xlsx");
+    editor.save_as(output);
+    const std::string worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    check(worksheet.find(R"(<dimension ref="A1:B2"/>)") != std::string::npos,
+        "materialized flush should update worksheet dimensions from sparse cells");
+    check(worksheet.find(R"(<c r="A1" t="inlineStr"><is><t>inline-a1</t></is></c>)")
+            != std::string::npos,
+        "materialized flush should project text as inline strings without sharedStrings");
+    check(worksheet.find(R"(<c r="B2"><v>22</v></c>)") != std::string::npos,
+        "materialized flush should project numeric sparse cells");
+    check(!stored_package_has_entry(output, "xl/sharedStrings.xml"),
+        "materialized flush without source sharedStrings should not create sharedStrings");
+}
+
+void test_materialized_flush_rejects_stale_targets_without_clearing_dirty()
+{
+    const MaterializedFlushSourcePackage source =
+        write_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-stale-source.xlsx");
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& missing =
+        materialize_session(registry, "Missing");
+    missing.set_cell(1, 1, fastxlsx::CellValue::text("should-not-flush"));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    check(throws_fastxlsx_error([&] {
+        const fastxlsx::detail::WorkbookEditorMaterializedFlushResult ignored =
+            fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+                editor, registry, catalog);
+        (void)ignored;
+    }), "materialized flush should reject dirty sessions outside the current catalog");
+    check(missing.dirty(),
+        "rejected materialized flush should keep the stale session dirty");
+    check(registry.dirty_session_count() == 1,
+        "rejected materialized flush should preserve dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-stale-output.xlsx");
+    editor.save_as(output);
+    const std::string worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    check(worksheet == source.worksheet,
+        "rejected materialized flush should leave PackageEditor output unmodified");
+}
+
+void test_materialized_flush_appends_shared_strings_projection()
+{
+    const MaterializedFlushSourcePackage source =
+        write_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-shared-source.xlsx",
+            true);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("new-shared"));
+    data.set_cell(2, 1, fastxlsx::CellValue::number(9.0));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 1,
+        "sharedStrings materialized flush should report one worksheet");
+    check(!data.dirty(),
+        "sharedStrings materialized flush should clear the dirty session");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-output.xlsx");
+    editor.save_as(output);
+    const std::string worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(worksheet.find(R"(<dimension ref="A1:B2"/>)") != std::string::npos,
+        "sharedStrings materialized flush should update sparse dimensions");
+    check(worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
+        "sharedStrings materialized flush should reuse source string index");
+    check(worksheet.find(R"(<c r="B1" t="s"><v>1</v></c>)") != std::string::npos,
+        "sharedStrings materialized flush should reference appended string index");
+    check(worksheet.find(R"(<c r="A2"><v>9</v></c>)") != std::string::npos,
+        "sharedStrings materialized flush should keep numeric cells value-only");
+    check(worksheet.find("inlineStr") == std::string::npos,
+        "sharedStrings materialized flush should not emit inline text fallback");
+    check(shared_strings.find(R"(count="2")") != std::string::npos &&
+            shared_strings.find(R"(uniqueCount="2")") != std::string::npos,
+        "sharedStrings materialized flush should update source table counts");
+    check(shared_strings.find(R"(<si><t>existing</t></si><si><t>new-shared</t></si>)")
+            != std::string::npos,
+        "sharedStrings materialized flush should append only missing text");
+}
+
 } // namespace
 
 int main()
@@ -535,6 +751,9 @@ int main()
         test_materialized_flush_target_validation_accepts_current_names();
         test_materialized_flush_target_validation_uses_current_catalog_names();
         test_materialized_flush_target_validation_rejects_missing_names();
+        test_materialized_flush_to_patch_plan_clears_dirty_sessions();
+        test_materialized_flush_rejects_stale_targets_without_clearing_dirty();
+        test_materialized_flush_appends_shared_strings_projection();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

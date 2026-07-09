@@ -34,6 +34,11 @@ outputs with ZIP/XML and `openpyxl`, and can optionally invoke the Excel COM
 sidecar for no-repair open checks. This is local compatibility evidence for the
 covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
 not a broad guarantee for unsupported Excel object models.
+The internal materialized save-as bridge now has focused tests for dirty-session
+flush handoff into the Patch plan, stale planned-name rejection without clearing
+dirty diagnostics, and append-only sharedStrings projection. This is
+WorksheetEditor small-file in-memory persistence evidence, not broad
+sharedStrings migration or metadata repair.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

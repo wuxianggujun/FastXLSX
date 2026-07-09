@@ -5710,6 +5710,12 @@ original formula text. This is default audit-only boundary coverage; it is not
 default formula rewrite, non-materialized worksheet rewrite, formula
 evaluation, external link validation, 3D semantics, dependency graphing, or
 calcChain rebuild.
+That default-policy coverage now includes quoted sheet qualifiers too:
+renaming `O'Brien` to a name containing an apostrophe and `&` leaves both
+materialized and non-materialized worksheet formula text unchanged, keeps the
+old escaped qualifier in formula/source audits as a stale source-name risk,
+persists only the XML-escaped workbook catalog rename, and keeps the clean
+no-op save byte-stable for the materialized case.
 P8.661 extends that default audit-only evidence to source worksheet formula
 diagnostics. Without materializing the `Formula` worksheet, default
 `rename_sheet("Data", "Renamed & Data")` followed by

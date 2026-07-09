@@ -889,6 +889,73 @@ void test_source_formula_reference_audits_report_non_materialized_rename_risk()
         "source formula audit should not silently repair non-materialized formulas");
 }
 
+void test_source_formula_reference_audits_report_quoted_default_rename_risk()
+{
+    const std::filesystem::path source = write_formula_reference_source(
+        "fastxlsx-workbook-editor-source-quoted-formula-audit-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-source-quoted-formula-audit-output.xlsx");
+    const std::string original_formula =
+        R"(Data!A1+'Other Sheet'!A1+'O''Brien'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9")";
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.formula_reference_audits().empty(),
+        "quoted source formula audit should start without materialized sessions");
+
+    editor.rename_sheet("O'Brien", "Renamed Quote's & Data");
+    check(editor.formula_reference_audits().empty(),
+        "quoted source formula audit should not materialize worksheet formulas");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> source_audits =
+        editor.source_formula_reference_audits();
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* quoted =
+        find_formula_reference_audit(source_audits, "O'Brien");
+    check(quoted != nullptr,
+        "quoted source formula audit should expose the old quoted sheet reference");
+    if (quoted != nullptr) {
+        check(quoted->matched_current_workbook_sheet &&
+                quoted->matched_source_sheet_name == "O'Brien" &&
+                quoted->matched_planned_sheet_name == "Renamed Quote's & Data",
+            "quoted source formula audit should map the old quoted source name");
+        check(quoted->qualifier_quoted &&
+                quoted->sheet_qualifier_text == "'O''Brien'!" &&
+                quoted->qualified_reference_text == "'O''Brien'!A1",
+            "quoted source formula audit should preserve escaped source qualifier text");
+        check(quoted->references_renamed_source_name &&
+                !quoted->references_planned_sheet_name,
+            "quoted source formula audit should flag the default rename as stale");
+    }
+    check(count_formula_reference_audits(source_audits, "Renamed Quote's & Data") == 0,
+        "quoted source formula audit should not invent planned-name formula refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(source_audits, "[Book.xlsx]Data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "quoted source formula audit should preserve external workbook classification");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(source_audits, "Data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "quoted source formula audit should preserve 3D sheet-range classification");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"),
+        R"(name="Renamed Quote&apos;s &amp; Data")",
+        "quoted source formula audit should persist XML-escaped renamed sheet catalog");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(formula_sheet_xml,
+        R"(<f>Data!A1+'Other Sheet'!A1+'O''Brien'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9"</f>)",
+        "quoted source formula audit should preserve non-materialized formula XML");
+    check_not_contains(formula_sheet_xml, "Renamed Quote",
+        "quoted source formula audit should not rewrite non-materialized formulas");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == original_formula,
+        "reopened quoted source-audit output should expose original formula text");
+}
+
 void test_source_formula_reference_audits_report_case_varied_default_rename_risk()
 {
     const std::filesystem::path source = write_case_varied_formula_reference_source(
@@ -2232,6 +2299,90 @@ void test_rename_sheet_default_preserves_case_varied_formula_refs()
         "reopened default rename output should expose original formula text");
 }
 
+void test_rename_sheet_default_preserves_quoted_formula_refs()
+{
+    const std::filesystem::path source = write_formula_reference_source(
+        "fastxlsx-workbook-editor-quoted-formula-default-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-quoted-formula-default-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-quoted-formula-default-noop-output.xlsx");
+    const std::string original_formula =
+        R"(Data!A1+'Other Sheet'!A1+'O''Brien'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9")";
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value() == original_formula,
+        "quoted default formula fixture should expose the source formula");
+
+    editor.rename_sheet("O'Brien", "Renamed Quote's & Data");
+
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == original_formula,
+        "default quoted rename should preserve materialized formula text");
+    check(!formula_sheet.has_pending_changes(),
+        "default quoted rename should not dirty materialized formula sessions");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> formula_audits =
+        editor.formula_reference_audits();
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* quoted =
+        find_formula_reference_audit(formula_audits, "O'Brien");
+    check(quoted != nullptr,
+        "default quoted rename should audit the stale quoted formula ref");
+    if (quoted != nullptr) {
+        check(quoted->matched_current_workbook_sheet &&
+                quoted->matched_source_sheet_name == "O'Brien" &&
+                quoted->matched_planned_sheet_name == "Renamed Quote's & Data",
+            "default quoted rename formula audit should map the renamed catalog entry");
+        check(quoted->qualifier_quoted &&
+                quoted->sheet_qualifier_text == "'O''Brien'!" &&
+                quoted->qualified_reference_text == "'O''Brien'!A1",
+            "default quoted rename formula audit should keep escaped qualifier text");
+        check(quoted->references_renamed_source_name &&
+                !quoted->references_planned_sheet_name,
+            "default quoted rename formula audit should flag stale source-name text");
+    }
+    check(count_formula_reference_audits(formula_audits, "Renamed Quote's & Data") == 0,
+        "default quoted rename should not report rewritten planned-name formula refs");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(formula_audits, "[Book.xlsx]Data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "default quoted rename should preserve external workbook formula audit classification");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(formula_audits, "Data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "default quoted rename should preserve 3D formula audit classification");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"),
+        R"(name="Renamed Quote&apos;s &amp; Data")",
+        "default quoted rename should persist XML-escaped renamed sheet catalog");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(formula_sheet_xml,
+        R"(<f>Data!A1+'Other Sheet'!A1+'O''Brien'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9"</f>)",
+        "default quoted rename should preserve original materialized formula XML");
+    check_not_contains(formula_sheet_xml, "Renamed Quote",
+        "default quoted rename should not persist rewritten worksheet formula refs");
+    check(!formula_sheet.has_pending_changes(),
+        "default quoted rename save_as should keep the Formula session clean");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "default quoted rename clean no-op save_as should be byte-stable");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == original_formula,
+        "reopened default quoted rename output should expose original formula text");
+}
+
 void test_rename_sheet_chain_formula_policy_rewrites_source_aliases()
 {
     const std::filesystem::path source = write_defined_name_reference_source(
@@ -3210,6 +3361,7 @@ int main()
     try {
         test_formula_reference_audits_report_renamed_source_sheet_risk();
         test_source_formula_reference_audits_report_non_materialized_rename_risk();
+        test_source_formula_reference_audits_report_quoted_default_rename_risk();
         test_source_formula_reference_audits_report_case_varied_default_rename_risk();
         test_source_formula_reference_audits_translate_shared_formula_followers();
         test_defined_name_formula_reference_audits_report_renamed_source_sheet_risk();
@@ -3223,6 +3375,7 @@ int main()
         test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
         test_rename_sheet_formula_policy_rewrites_case_varied_local_refs();
         test_rename_sheet_default_preserves_case_varied_formula_refs();
+        test_rename_sheet_default_preserves_quoted_formula_refs();
         test_rename_sheet_chain_formula_policy_rewrites_source_aliases();
         test_rename_sheet_rewrites_multiple_materialized_formula_sheets_opt_in();
         test_rename_sheet_formula_rewrite_failed_save_as_preserves_state();

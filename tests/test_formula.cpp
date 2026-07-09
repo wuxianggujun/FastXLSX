@@ -241,6 +241,17 @@ void test_tokenize_formula_operator_number_and_recovery_boundaries()
         "formula tokenizer incomplete bracket token kind mismatch");
     check_equal(token_text(incomplete_bracket, bracket_tokens[0]), incomplete_bracket,
         "formula tokenizer incomplete bracket token span mismatch");
+
+    const std::string incomplete_quoted_sheet = "'Broken Sheet";
+    const std::vector<fastxlsx::detail::FormulaToken> quoted_sheet_tokens =
+        fastxlsx::detail::tokenize_formula(incomplete_quoted_sheet);
+    check(quoted_sheet_tokens.size() == 1,
+        "formula tokenizer should preserve incomplete quoted sheet names as one token");
+    check(quoted_sheet_tokens[0].kind == fastxlsx::detail::FormulaTokenKind::QuotedSheetName,
+        "formula tokenizer incomplete quoted sheet token kind mismatch");
+    check_equal(token_text(incomplete_quoted_sheet, quoted_sheet_tokens[0]),
+        incomplete_quoted_sheet,
+        "formula tokenizer incomplete quoted sheet token span mismatch");
 }
 
 void test_formula_reference_qualifier_classifier()
@@ -410,6 +421,13 @@ void test_translate_formula_references()
             fastxlsx::detail::FormulaTranslationDelta {2, 3}),
         "D3+Sheet1!D3+'O''Brien'!D3+[Book.xlsx]Sheet1!D3+Table1[A1]",
         "formula translator should handle sheet-qualified references and skip structured refs");
+
+    check_equal(
+        fastxlsx::detail::translate_formula_references(
+            "A1+#REF!+B2+#N/A",
+            fastxlsx::detail::FormulaTranslationDelta {1, 1}),
+        "B2+#REF!+C3+#N/A",
+        "formula translator should preserve existing error literals");
 }
 
 void test_translate_formula_out_of_bounds()
@@ -471,6 +489,13 @@ void test_rewrite_formula_references_for_structural_edit()
             FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 2}),
         "A1+#REF!+B1+#REF!+B:C",
         "formula structural column delete should ref deleted columns and shift later columns");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1+#REF!+B2+#N/A",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 1, 1}),
+        "B1+#REF!+C2+#N/A",
+        "formula structural column insert should preserve existing error literals");
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(

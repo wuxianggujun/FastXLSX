@@ -201,6 +201,9 @@ The lightweight formula target now also pins structural rewrite token skipping
 for multi-bracket structured references such as `Table1[[#Headers],[B1]]` and
 `Table1[@[B1]]`, so WorksheetEditor row/column shifts do not rewrite embedded
 reference-like text inside those structured-reference tokens.
+It now also pins tokenizer recovery for unterminated quoted sheet-name tokens
+and preserves existing formula error literals such as `#REF!` / `#N/A` while
+translating or structurally rewriting real A1-style references around them.
 The same lightweight formula target now also covers sheet-reference rewrite over
 multi-bracket structured references, keeping embedded `Old!A1`-like text intact
 while still rewriting real local sheet qualifiers in the same formula.

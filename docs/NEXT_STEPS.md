@@ -2656,6 +2656,11 @@ first/last sparse values and scalar `contains_cell()` / `try_cell()` probes
 before and after invalid snapshot reads, including missing-cell probes, so
 read-only inspection cannot hide payload/style drift or dirty the reacquired
 session.
+That same helper now also runs invalid scalar read failures in the saved-output
+recovery path: invalid row/column and A1 `contains_cell()` / `try_cell()` /
+`get_cell()` calls, plus valid-coordinate missing `get_cell()`, leave
+`last_edit_error()`, materialized dirty diagnostics, sparse snapshots, and
+missing-cell probes unchanged.
 The same standalone snapshot lane now also batches empty literal no-op mutation
 overloads: empty `append_row()`, missing-row/column empty replacements, empty
 full/value batch replacements, empty value clears, and empty erases clear prior

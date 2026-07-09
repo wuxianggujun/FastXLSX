@@ -432,9 +432,9 @@ struct WorkbookEditorRenameOptions {
 /// a standalone worksheet projection.
 /// Source materialization is intentionally narrow and mirrors the maintained
 /// source dependency summary in docs/API_DESIGN_AND_DOCUMENTATION.md: supported
-/// blank, numeric/boolean/scalar `t="str"`, formula, plain inline, simple
-/// inline rich text, and workbook-backed shared-string cells materialize into
-/// CellValue variants;
+/// blank, numeric/boolean/scalar `t="str"`, opaque error `t="e"`, formula,
+/// plain inline, simple inline rich text, and workbook-backed shared-string
+/// cells materialize into CellValue variants;
 /// dirty save_as() can reuse and append to an existing safe source
 /// sharedStrings table for text projection, while falling back to inline
 /// strings when the workbook has no table or the source table shape is outside
@@ -473,6 +473,7 @@ struct WorkbookEditorRenameOptions {
 /// preservation, XML repair, namespace repair, relationship repair/pruning,
 /// semantic metadata sync, or large-file low-memory random editing.
 /// Source cells, including blank/scalar cells, scalar `t="str"` string cells,
+/// opaque error `t="e"` cells,
 /// empty inline strings, inlineStr cells without text, simple source inline
 /// rich text runs flattened to plain text, workbook-backed shared string cells
 /// (including simple rich shared string items flattened to plain text), and
@@ -482,7 +483,8 @@ struct WorkbookEditorRenameOptions {
 ///
 /// This first slice writes text through an existing appendable sharedStrings
 /// table when available, otherwise as inline strings. It writes formulas as
-/// formula text, and booleans/numbers as scalar cells. Source `t="str"` scalar string cells are
+/// formula text, error cells as `t="e"` scalar cells, and booleans/numbers as
+/// scalar cells. Source `t="str"` scalar string cells are
 /// materialized as text, and `t="str"` formula cells keep the formula text
 /// while dropping cached values. Workbook-backed source `t="s"` cells are
 /// read through the existing sharedStrings part and materialized as plain text;
@@ -613,7 +615,8 @@ struct WorkbookEditorRenameOptions {
 /// can only materialize from cached scalar `<v>` values when present.
 /// It does not
 /// sort or repair source rows/cells, merge duplicate coordinates, preserve row
-/// or unsupported cell metadata attributes, coerce invalid numeric payloads, migrate
+/// or unsupported cell metadata attributes, coerce invalid numeric payloads,
+/// accept empty or missing source error payloads, migrate
 /// sharedStrings indexes, migrate or merge source style ids, import
 /// unsupported value-wrapper shapes, tolerate non-whitespace source worksheet
 /// text outside wrapper metadata or sheetData, source sheetData text outside

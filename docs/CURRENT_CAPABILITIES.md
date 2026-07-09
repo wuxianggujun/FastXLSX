@@ -101,6 +101,11 @@
   bracketed external-workbook token text, function names, and name-like tokens as lexical formula
   text. These helpers do not synchronize tables, filters, validations, conditional formatting,
   drawings, defined names, relationships, sharedStrings/styles metadata, or calcChain.
+- Source materialization supports blank, numeric, boolean, scalar `t="str"`,
+  opaque error `t="e"`, formula, plain inline text, simple inline rich text
+  flattened to text, and workbook-backed shared-string cells. Missing or empty
+  source error payloads and unsupported date/custom cell types fail during
+  materialization; this is not source-cell repair or type coercion.
 - Guardrail：`WorksheetEditorOptions::max_cells` 和 `memory_budget_bytes` 约束 source materialization
   与后续 sparse-store mutations。它们是 sparse-store estimate guardrails，不是进程 RSS 或 package save peak。
 - 适用边界：small-file random cell editing。该路径不支持 non-default caller-supplied style id 写入、

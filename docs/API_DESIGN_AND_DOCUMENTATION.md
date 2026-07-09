@@ -364,6 +364,12 @@ FastXLSX 可以提供多层 API，但每层都要标明成本。
 - 必须设计 size / memory guardrails，例如 `max_cells`、`memory_budget_bytes`、
   `cell_count()`、`estimated_memory_usage()` 或类似诊断入口；超限时应明确提示调用方
   改用 Streaming 或 Patch。
+- 当前 `WorksheetEditor` source materialization 只覆盖维护中的窄单元格形状：
+  blank、numeric、boolean、scalar `t="str"`、opaque error `t="e"`、formula、
+  plain inline text、simple inline rich text flattened to text，以及
+  workbook-backed shared-string cells。Missing / empty source error payloads、
+  date-like/custom cell types 和 unsupported metadata 仍应 fail-fast，而不是做
+  source-cell repair 或 type coercion。
 
 ## 文件职责边界
 

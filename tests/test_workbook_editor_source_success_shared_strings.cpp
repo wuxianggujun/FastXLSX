@@ -1515,7 +1515,10 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
             auto mutate,
             const fastxlsx::CellRange& expected_range,
             std::span<const ReopenedLazySharedStringsCell> expected_cells,
-            std::span<const ShiftedSharedStringsXmlCell> expected_xml_cells) {
+            std::span<const ShiftedSharedStringsXmlCell> expected_xml_cells,
+            const fastxlsx::CellRange& reopened_range,
+            const ReopenedLazySharedStringsCell& reopened_edit,
+            const ShiftedSharedStringsXmlCell& reopened_edit_xml) {
             const std::string suffix(artifact_suffix);
             const std::string scenario_text(scenario);
             const std::filesystem::path source = write_shift_source(
@@ -1527,6 +1530,12 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
             const std::filesystem::path noop_output = artifact(
                 "fastxlsx-workbook-editor-public-sharedstrings-shift-"
                 + suffix + "-noop-output.xlsx");
+            const std::filesystem::path reopened_output = artifact(
+                "fastxlsx-workbook-editor-public-sharedstrings-shift-"
+                + suffix + "-reopened-output.xlsx");
+            const std::filesystem::path reopened_noop_output = artifact(
+                "fastxlsx-workbook-editor-public-sharedstrings-shift-"
+                + suffix + "-reopened-noop-output.xlsx");
             const auto source_entries = fastxlsx::test::read_zip_entries(source);
             const std::string shared_strings_before =
                 source_entries.at("xl/sharedStrings.xml");
@@ -1596,6 +1605,61 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
                 expected_cells,
                 expected_range,
                 scenario_text + " no-op output");
+
+            fastxlsx::WorkbookEditor reopened_editor =
+                fastxlsx::WorkbookEditor::open(noop_output);
+            fastxlsx::WorksheetEditor reopened_sheet =
+                reopened_editor.worksheet("Data");
+            check(!reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh reopen should start clean");
+            reopened_sheet.set_cell(
+                reopened_edit.row, reopened_edit.column, reopened_edit.value);
+            check(reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh reopen edit should dirty Data");
+            reopened_editor.save_as(reopened_output);
+            const auto reopened_entries =
+                fastxlsx::test::read_zip_entries(reopened_output);
+            const std::string reopened_worksheet_xml =
+                reopened_entries.at("xl/worksheets/sheet1.xml");
+            check_contains(reopened_worksheet_xml,
+                shifted_shared_string_cell_xml(
+                    reopened_edit_xml.reference,
+                    reopened_edit_xml.shared_string_index),
+                scenario_text + " fresh reopen save should write the later shared string edit");
+            check_not_contains(reopened_worksheet_xml, R"(inlineStr)",
+                scenario_text + " fresh reopen save should keep sharedStrings projection");
+            check_contains(reopened_entries.at("xl/sharedStrings.xml"),
+                "<si><t>" + reopened_edit.value.text_value() + "</t></si></sst>",
+                scenario_text + " fresh reopen save should append the later text item");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " fresh reopen save should not mutate its input package");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                scenario_text + " fresh reopen save should not mutate the source package");
+
+            std::vector<ReopenedLazySharedStringsCell> reopened_expected(
+                expected_cells.begin(), expected_cells.end());
+            reopened_expected.push_back(reopened_edit);
+            check_reopened_shared_strings_dirty_output(
+                reopened_output,
+                std::span<const ReopenedLazySharedStringsCell>(
+                    reopened_expected.data(), reopened_expected.size()),
+                reopened_range,
+                scenario_text + " fresh reopen output");
+
+            reopened_editor.save_as(reopened_noop_output);
+            check(!reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh reopen no-op save should keep Data clean");
+            check(fastxlsx::test::read_zip_entries(reopened_noop_output)
+                    == reopened_entries,
+                scenario_text + " fresh reopen no-op save should keep output byte-stable");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " fresh reopen no-op save should not mutate its input package");
+            check_reopened_shared_strings_dirty_output(
+                reopened_noop_output,
+                std::span<const ReopenedLazySharedStringsCell>(
+                    reopened_expected.data(), reopened_expected.size()),
+                reopened_range,
+                scenario_text + " fresh reopen no-op output");
         };
 
     const ReopenedLazySharedStringsCell insert_rows_expected[] = {
@@ -1619,7 +1683,11 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_rows(2, 1); },
         fastxlsx::CellRange {1, 1, 3, 3},
         insert_rows_expected,
-        insert_rows_xml);
+        insert_rows_xml,
+        fastxlsx::CellRange {1, 1, 3, 4},
+        ReopenedLazySharedStringsCell {
+            3, 4, fastxlsx::CellValue::text("insert-rows-reopened")},
+        ShiftedSharedStringsXmlCell {"D3", 7});
 
     const ReopenedLazySharedStringsCell insert_columns_expected[] = {
         {1, 1, fastxlsx::CellValue::text("row1-a")},
@@ -1642,7 +1710,11 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(2, 1); },
         fastxlsx::CellRange {1, 1, 2, 4},
         insert_columns_expected,
-        insert_columns_xml);
+        insert_columns_xml,
+        fastxlsx::CellRange {1, 1, 2, 5},
+        ReopenedLazySharedStringsCell {
+            2, 5, fastxlsx::CellValue::text("insert-columns-reopened")},
+        ShiftedSharedStringsXmlCell {"E2", 7});
 
     const ReopenedLazySharedStringsCell delete_rows_expected[] = {
         {1, 1, fastxlsx::CellValue::text("row2-a")},
@@ -1659,7 +1731,11 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_rows(1, 1); },
         fastxlsx::CellRange {1, 1, 1, 3},
         delete_rows_expected,
-        delete_rows_xml);
+        delete_rows_xml,
+        fastxlsx::CellRange {1, 1, 1, 4},
+        ReopenedLazySharedStringsCell {
+            1, 4, fastxlsx::CellValue::text("delete-rows-reopened")},
+        ShiftedSharedStringsXmlCell {"D1", 7});
 
     const ReopenedLazySharedStringsCell delete_columns_expected[] = {
         {1, 1, fastxlsx::CellValue::text("row1-b")},
@@ -1678,7 +1754,11 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_columns(1, 1); },
         fastxlsx::CellRange {1, 1, 2, 2},
         delete_columns_expected,
-        delete_columns_xml);
+        delete_columns_xml,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        ReopenedLazySharedStringsCell {
+            2, 3, fastxlsx::CellValue::text("delete-columns-reopened")},
+        ShiftedSharedStringsXmlCell {"C2", 7});
 }
 
 void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()

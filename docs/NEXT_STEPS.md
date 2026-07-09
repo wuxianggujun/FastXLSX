@@ -48,7 +48,9 @@ outputs reopen through the public cell/snapshot APIs.
 It also pins source-backed shared-string cells across structural row/column
 shifts: insert/delete rows and columns move the materialized text cells,
 preserve sharedStrings indexes/table bytes on save, keep untouched worksheets
-byte-stable, and keep follow-up no-op saves byte-identical.
+byte-stable, keep follow-up no-op saves byte-identical, and allow the saved
+outputs to be reopened for later text edits that continue appending through the
+sharedStrings table.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

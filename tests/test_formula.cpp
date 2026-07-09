@@ -530,6 +530,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(1:1,2:3,4:5,$5:$6,Sheet1!B:C))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
+        R"(SUM(1:1,#REF!,2:3,$3:$4,Sheet1!B:C))",
+        "formula structural row delete should ref deleted whole-row axes and shift later whole-row axes");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(A:A,B:C,D:E,$E:$F,Sheet1!2:3))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 2}),
+        R"(SUM(A:A,#REF!,B:C,$C:$D,Sheet1!2:3))",
+        "formula structural column delete should ref deleted whole-column axes and shift later whole-column axes");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(B1+"B1)", FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
         R"(C1+"B1)",
         "formula structural column insert should preserve unterminated string token text");

@@ -145,6 +145,11 @@ The source-success structural shift coverage now also checks live dirty
 rich text, and prefixed inline-string cases: `used_range()`, `sparse_cells()`,
 `row_cells()`, `column_cells()`, and direct `get_cell()` all expose the shifted
 materialized state while keeping the editor dirty until `save_as()`.
+Basic `WorksheetEditor` snapshot ownership now also covers later row/column
+shifts in an ordinary non-renamed session: snapshots captured before
+`insert_rows()` / `insert_columns()` keep their original coordinates and values,
+while the live store, saved package, and clean reopen expose only the shifted
+coordinates.
 Public dirty-state coverage now also treats `used_range()`, `row_cells()`, and
 `column_cells()` as read-only inspection APIs in clean, failed-mutation, and
 dirty materialized sessions: these reads do not dirty clean sessions, do not

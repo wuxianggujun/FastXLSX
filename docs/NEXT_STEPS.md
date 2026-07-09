@@ -55,6 +55,9 @@ settle into a byte-stable no-op save while leaving the source package unchanged.
 The adjacent failed-save baseline now pins the same source-preservation and
 byte-stable no-op contract before flush, after explicit flush, and after the
 later safe output.
+The move-assignment reflush paths now share that stability gate: failed-save
+and successful-save reuse both preserve assigned/discarded source packages,
+avoid rewriting prior outputs, and settle into byte-stable no-op saves.
 The public source-success sharedStrings shard now also pins dirty text reuse
 through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text

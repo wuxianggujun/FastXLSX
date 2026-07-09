@@ -2745,7 +2745,11 @@ void test_internal_materialized_session_move_reflush_after_failed_save_as()
         artifact("fastxlsx-workbook-editor-materialized-move-reflush-directory");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-move-reflush-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-move-reflush-noop-output.xlsx");
     std::filesystem::create_directories(directory_output);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -2782,6 +2786,10 @@ void test_internal_materialized_session_move_reflush_after_failed_save_as()
         "directory save_as after moved materialized flush should fail before consuming state");
     check_internal_materialized_session_save_state(
         target, 0, 2, "failed save after moved flush");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "moved failed save should not mutate the assigned source package");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "moved failed save should not mutate the discarded target source package");
 
     fastxlsx::detail::testing_workbook_editor_set_materialized_cell(
         target, "Data", 1, 1,
@@ -2807,6 +2815,19 @@ void test_internal_materialized_session_move_reflush_after_failed_save_as()
         "moved reflush after failed save should not leak discarded target public edit");
     check_not_contains(untouched_xml, "discarded-target-materialized-retry",
         "moved reflush after failed save should not leak discarded target materialized session");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "moved reflush after failed save should not mutate the assigned source package");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "moved reflush after failed save should not mutate the discarded target source package");
+
+    target.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after moved failed-save reflush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after moved failed-save reflush should not mutate the assigned source package");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "clean no-op save_as after moved failed-save reflush should not mutate the discarded target source package");
 }
 
 void test_internal_materialized_session_reflush_after_successful_save_as()
@@ -2878,6 +2899,8 @@ void test_internal_materialized_session_move_reflush_after_successful_save_as()
         artifact("fastxlsx-workbook-editor-materialized-move-reflush-success-second.xlsx");
     const std::filesystem::path second_noop_output =
         artifact("fastxlsx-workbook-editor-materialized-move-reflush-success-second-noop.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -2919,6 +2942,10 @@ void test_internal_materialized_session_move_reflush_after_successful_save_as()
         "first moved successful save_as should not leak discarded target public edit");
     check_not_contains(first_untouched_xml, "discarded-target-materialized-success-reuse",
         "first moved successful save_as should not leak discarded target materialized session");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "first moved successful save_as should not mutate the assigned source package");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "first moved successful save_as should not mutate the discarded target source package");
 
     fastxlsx::detail::testing_workbook_editor_set_materialized_cell(
         target, "Data", 1, 1,
@@ -2946,9 +2973,15 @@ void test_internal_materialized_session_move_reflush_after_successful_save_as()
         "second moved successful save_as should not leak discarded target public edit");
     check_not_contains(second_untouched_xml, "discarded-target-materialized-success-reuse",
         "second moved successful save_as should not leak discarded target materialized session");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "second moved successful save_as should not mutate the assigned source package");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "second moved successful save_as should not mutate the discarded target source package");
 
     const auto first_entries_after_second_save =
         fastxlsx::test::read_zip_entries(first_output);
+    check(first_entries_after_second_save == first_entries,
+        "second moved successful save_as should not rewrite the first output package");
     check(first_entries_after_second_save.at("xl/worksheets/sheet1.xml") == first_data_xml,
         "second moved successful save_as should not rewrite the first output worksheet");
 
@@ -2956,6 +2989,10 @@ void test_internal_materialized_session_move_reflush_after_successful_save_as()
     const auto second_noop_entries = fastxlsx::test::read_zip_entries(second_noop_output);
     check(second_noop_entries == second_entries,
         "clean no-op save_as after moved reflush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after moved reflush should not mutate the assigned source package");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "clean no-op save_as after moved reflush should not mutate the discarded target source package");
 }
 
 void test_internal_materialized_session_reflush_replaces_prior_projection()

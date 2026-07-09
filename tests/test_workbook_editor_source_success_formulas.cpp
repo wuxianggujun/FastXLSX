@@ -311,7 +311,7 @@ void test_public_worksheet_editor_materializes_source_formulas()
         expected_cells,
         "source formula post-dirty no-op output");
 
-    sheet.set_cell("E3", fastxlsx::CellValue::formula("C1&A1"));
+    sheet.set_cell("E3", fastxlsx::CellValue::formula("C1&\"<dirty>\"&A1"));
     check(sheet.has_pending_changes(),
         "source formula post-noop reuse edit should dirty Data");
     check(editor.has_pending_changes(),
@@ -324,8 +324,8 @@ void test_public_worksheet_editor_materializes_source_formulas()
     const std::string& post_noop_reuse_xml =
         post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_reuse_xml,
-        R"(<c r="E3"><f>C1&amp;A1</f></c>)",
-        "source formula post-noop reuse save should include the later formula edit");
+        R"(<c r="E3"><f>C1&amp;"&lt;dirty&gt;"&amp;A1</f></c>)",
+        "source formula post-noop reuse save should include the later escaped formula edit");
     check_not_contains(post_noop_reuse_xml, "<v>999</v>",
         "source formula post-noop reuse save should keep stale cached values omitted");
     check(fastxlsx::test::read_zip_entries(source) == entries,
@@ -341,7 +341,7 @@ void test_public_worksheet_editor_materializes_source_formulas()
         {1, 2, fastxlsx::CellValue::number(3.0)},
         {1, 3, fastxlsx::CellValue::formula("SUM(A1:B1)&\"<ok>\"")},
         {2, 4, fastxlsx::CellValue::text("formula-new-inline")},
-        {3, 5, fastxlsx::CellValue::formula("C1&A1")},
+        {3, 5, fastxlsx::CellValue::formula("C1&\"<dirty>\"&A1")},
     };
     check_reopened_formula_dirty_output(
         post_noop_reuse_output,
@@ -661,7 +661,7 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         expected_cells,
         "cached-result formula post-dirty no-op output");
 
-    sheet.set_cell("E3", fastxlsx::CellValue::formula("A1+D1"));
+    sheet.set_cell("E3", fastxlsx::CellValue::formula("A1&\"<cached>\"&D1"));
     check(sheet.has_pending_changes(),
         "cached-result formula post-noop reuse edit should dirty Data");
     check(editor.has_pending_changes(),
@@ -673,8 +673,9 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         fastxlsx::test::read_zip_entries(post_noop_reuse_output);
     const std::string& post_noop_reuse_xml =
         post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
-    check_contains(post_noop_reuse_xml, R"(<c r="E3"><f>A1+D1</f></c>)",
-        "cached-result formula post-noop reuse save should include the later formula edit");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="E3"><f>A1&amp;"&lt;cached&gt;"&amp;D1</f></c>)",
+        "cached-result formula post-noop reuse save should include the later escaped formula edit");
     check_not_contains(post_noop_reuse_xml, "<v>999</v>",
         "cached-result formula post-noop reuse save should keep numeric cached values omitted");
     check_not_contains(post_noop_reuse_xml, "stale-string",
@@ -697,7 +698,7 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         {1, 3, fastxlsx::CellValue::formula("A1>0")},
         {1, 4, fastxlsx::CellValue::formula("NA()")},
         {2, 4, fastxlsx::CellValue::text("cached-result-types-edit")},
-        {3, 5, fastxlsx::CellValue::formula("A1+D1")},
+        {3, 5, fastxlsx::CellValue::formula("A1&\"<cached>\"&D1")},
     };
     check_reopened_formula_dirty_output(
         post_noop_reuse_output,
@@ -845,7 +846,7 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         expected_cells,
         "shared formula post-dirty no-op output");
 
-    sheet.set_cell("D4", fastxlsx::CellValue::formula("A1&B2"));
+    sheet.set_cell("D4", fastxlsx::CellValue::formula("A1&\"<shared>\"&B2"));
     check(sheet.has_pending_changes(),
         "source shared formula post-noop reuse edit should dirty Data");
     check(editor.has_pending_changes(),
@@ -858,8 +859,8 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
     const std::string& post_noop_reuse_xml =
         post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
     check_contains(post_noop_reuse_xml,
-        R"(<c r="D4"><f>A1&amp;B2</f></c>)",
-        "source shared formula post-noop reuse save should include the later formula edit");
+        R"(<c r="D4"><f>A1&amp;"&lt;shared&gt;"&amp;B2</f></c>)",
+        "source shared formula post-noop reuse save should include the later escaped formula edit");
     check_not_contains(post_noop_reuse_xml, R"(t="shared")",
         "source shared formula post-noop reuse save should keep shared metadata flattened");
     check_not_contains(post_noop_reuse_xml, "<v>999</v>",
@@ -878,7 +879,7 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
         {2, 2, fastxlsx::CellValue::formula(
             R"(B2+C$1+$A2+$A$1+SUM(B2:C2)&"A1"+'Other Sheet'!B2+[Book.xlsx]Sheet1!B2+Table1[A1])")},
         {3, 3, fastxlsx::CellValue::text("shared-formula-new-inline")},
-        {4, 4, fastxlsx::CellValue::formula("A1&B2")},
+        {4, 4, fastxlsx::CellValue::formula("A1&\"<shared>\"&B2")},
     };
     check_reopened_formula_dirty_output(
         post_noop_reuse_output,

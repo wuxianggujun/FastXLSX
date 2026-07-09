@@ -72,6 +72,9 @@ insert-at-boundary structural rewrites that convert row/column references
 shifted past Excel limits to `#REF!`. Cell-range structural coverage now also
 pins endpoint-by-endpoint partial delete behavior and reversed range endpoint
 order preservation.
+The public source-success formulas shard now also exercises dirty formula saves
+that require XML escaping across ordinary, cached-result, and shared-formula
+materialized outputs, with clean no-op save and fresh reopen checks.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

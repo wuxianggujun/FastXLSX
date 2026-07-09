@@ -92,6 +92,11 @@ range mutations: `set_cell_values()`, A1-range `clear_cell_values()`,
 coordinate-list clear, and A1-range `erase_cells()` all keep formula metadata
 and stale cached values dropped across save, no-op, fresh-reopen edit, and
 repeat no-op.
+The same shard now extends that formula metadata boundary to row/column
+convenience mutations: `set_row_values()`, `set_column_values()`,
+inclusive row/column clears, and inclusive row/column erases keep shared,
+array, and dataTable source metadata plus stale cached values from reviving
+across save, no-op, fresh-reopen edit, and repeat no-op.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

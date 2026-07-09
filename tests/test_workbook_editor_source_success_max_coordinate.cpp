@@ -1223,6 +1223,12 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
         const std::filesystem::path erase_noop_output = artifact(
             "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
             + std::string(case_info.name) + "-erase-noop-output.xlsx");
+        const std::filesystem::path fresh_reopen_restore_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
+            + std::string(case_info.name) + "-fresh-reopen-restore-output.xlsx");
+        const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
+            + std::string(case_info.name) + "-fresh-reopen-restore-noop-output.xlsx");
         const std::filesystem::path post_noop_reuse_output = artifact(
             "fastxlsx-workbook-editor-public-source-max-coordinate-scalar-"
             + std::string(case_info.name) + "-post-noop-reuse-output.xlsx");
@@ -1430,6 +1436,21 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
             post_noop_expected_cell_xml = R"(<c r="XFD1048576" t="b"><v>1</v></c>)";
         }
 
+        check_source_max_coordinate_fresh_reopen_restore_after_erase(
+            erase_noop_output,
+            fresh_reopen_restore_output,
+            fresh_reopen_restore_noop_output,
+            source,
+            source_entries,
+            erase_noop_entries,
+            post_noop_expected_edge,
+            post_noop_expected_cell_xml,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string("source max-coordinate scalar ") + std::string(case_info.name)
+                + " fresh-reopen restore");
+
         sheet.set_cell("XFD1048576", post_noop_expected_edge);
         check(sheet.has_pending_changes(),
             "source max-coordinate scalar post-noop reuse edit should dirty the materialized handle");
@@ -1515,6 +1536,12 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
         const std::filesystem::path erase_noop_output = artifact(
             "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
             + std::string(case_info.name) + "-erase-noop-output.xlsx");
+        const std::filesystem::path fresh_reopen_restore_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
+            + std::string(case_info.name) + "-fresh-reopen-restore-output.xlsx");
+        const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
+            + std::string(case_info.name) + "-fresh-reopen-restore-noop-output.xlsx");
         const std::filesystem::path post_noop_reuse_output = artifact(
             "fastxlsx-workbook-editor-public-source-max-coordinate-empty-inline-"
             + std::string(case_info.name) + "-post-noop-reuse-output.xlsx");
@@ -1712,6 +1739,21 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
             post_noop_expected_cell_xml =
                 R"(<c r="XFD1048576" t="inlineStr"><is><t>empty-inline-reused</t></is></c>)";
         }
+
+        check_source_max_coordinate_fresh_reopen_restore_after_erase(
+            erase_noop_output,
+            fresh_reopen_restore_output,
+            fresh_reopen_restore_noop_output,
+            source,
+            source_entries,
+            erase_noop_entries,
+            post_noop_expected_edge,
+            post_noop_expected_cell_xml,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            std::string("source max-coordinate empty inline ") + std::string(case_info.name)
+                + " fresh-reopen restore");
 
         sheet.set_cell("XFD1048576", post_noop_expected_edge);
         check(sheet.has_pending_changes(),

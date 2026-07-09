@@ -61,6 +61,12 @@ same new text across sheets, append sheet-local text once, preserve non-text
 cells as value-only XML, and settle into a byte-stable no-op save. This remains
 append/reuse small-file In-memory handoff evidence, not sharedStrings repair or
 metadata migration.
+The multi-session sharedStrings handoff now also covers the two adjacent table
+states: existing-only dirty text on two sheets reuses the source index without
+rewriting `xl/sharedStrings.xml`, while an unsupported-but-readable source table
+falls back to inline strings on both sheets and preserves the source
+sharedStrings bytes. This is still small-file save-as handoff evidence, not
+sharedStrings repair, migration, pruning, or rebuild.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

@@ -1343,6 +1343,193 @@ void test_materialized_flush_reuses_shared_strings_across_multiple_dirty_session
         "multi-session sharedStrings flush no-op save should not mutate the source package");
 }
 
+void test_materialized_flush_reuses_existing_shared_strings_across_multiple_dirty_sessions()
+{
+    const MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-existing-source.xlsx",
+            true);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::number(7.0));
+
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    other.set_cell(2, 3, fastxlsx::CellValue::boolean(true));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "multi-session existing-only sharedStrings flush should report both worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session existing-only sharedStrings flush should clear both sessions");
+    check(registry.dirty_session_count() == 0,
+        "multi-session existing-only sharedStrings flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-existing-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-existing-noop-output.xlsx");
+    editor.save_as(output);
+
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(data_worksheet.find(R"(<dimension ref="A1:B1"/>)") != std::string::npos,
+        "multi-session existing-only sharedStrings flush should update Data dimensions");
+    check(data_worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)")
+            != std::string::npos,
+        "multi-session existing-only sharedStrings flush should reuse the source index on Data");
+    check(data_worksheet.find(R"(<c r="B1"><v>7</v></c>)") != std::string::npos,
+        "multi-session existing-only sharedStrings flush should keep Data numbers value-only");
+    check(data_worksheet.find("inlineStr") == std::string::npos,
+        "multi-session existing-only sharedStrings flush should not inline Data text");
+
+    check(other_worksheet.find(R"(<dimension ref="A1:C2"/>)") != std::string::npos,
+        "multi-session existing-only sharedStrings flush should update Other dimensions");
+    check(other_worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)")
+            != std::string::npos,
+        "multi-session existing-only sharedStrings flush should reuse the source index on Other");
+    check(other_worksheet.find(R"(<c r="C2" t="b"><v>1</v></c>)")
+            != std::string::npos,
+        "multi-session existing-only sharedStrings flush should keep Other booleans value-only");
+    check(other_worksheet.find("inlineStr") == std::string::npos,
+        "multi-session existing-only sharedStrings flush should not inline Other text");
+    check(shared_strings == source.shared_strings,
+        "multi-session existing-only sharedStrings flush should not rewrite sharedStrings");
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "multi-session existing-only sharedStrings flush no-op save should keep output byte-stable",
+        "multi-session existing-only sharedStrings flush no-op save should keep registry clean");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session existing-only sharedStrings flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "multi-session existing-only sharedStrings flush no-op save should not mutate the source package");
+}
+
+void test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_append_is_unsupported()
+{
+    MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-unsupported-source.xlsx",
+            true);
+    const std::string unsupported_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1" unsupported="preserve-me">)"
+        R"(<si><t>existing</t></si></sst>)";
+    fastxlsx::test::rewrite_package_entry_as_stored(
+        source.path, "xl/sharedStrings.xml", unsupported_shared_strings);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("data <&> text"));
+    data.set_cell(1, 3, fastxlsx::CellValue::text("  data spaced  "));
+
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    other.set_cell(2, 2, fastxlsx::CellValue::text("other <&> text"));
+    other.set_cell(3, 3, fastxlsx::CellValue::text("  other spaced  "));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "multi-session unsupported sharedStrings flush should report both worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session unsupported sharedStrings flush should clear both sessions");
+    check(registry.dirty_session_count() == 0,
+        "multi-session unsupported sharedStrings flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-unsupported-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-unsupported-noop-output.xlsx");
+    editor.save_as(output);
+
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(data_worksheet.find(R"(<dimension ref="A1:C1"/>)") != std::string::npos,
+        "multi-session unsupported sharedStrings flush should update Data dimensions");
+    check(data_worksheet.find(
+              R"(<c r="A1" t="inlineStr"><is><t>existing</t></is></c>)")
+            != std::string::npos,
+        "multi-session unsupported sharedStrings flush should inline existing Data text");
+    check(data_worksheet.find(
+              R"(<c r="B1" t="inlineStr"><is><t>data &lt;&amp;&gt; text</t></is></c>)")
+            != std::string::npos,
+        "multi-session unsupported sharedStrings flush should inline escaped Data text");
+    check(data_worksheet.find(
+              R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve">  data spaced  </t></is></c>)")
+            != std::string::npos,
+        "multi-session unsupported sharedStrings flush should preserve Data whitespace inline");
+    check(data_worksheet.find(R"(t="s")") == std::string::npos,
+        "multi-session unsupported sharedStrings flush should not write Data shared string indexes");
+
+    check(other_worksheet.find(R"(<dimension ref="A1:C3"/>)") != std::string::npos,
+        "multi-session unsupported sharedStrings flush should update Other dimensions");
+    check(other_worksheet.find(
+              R"(<c r="A1" t="inlineStr"><is><t>existing</t></is></c>)")
+            != std::string::npos,
+        "multi-session unsupported sharedStrings flush should inline existing Other text");
+    check(other_worksheet.find(
+              R"(<c r="B2" t="inlineStr"><is><t>other &lt;&amp;&gt; text</t></is></c>)")
+            != std::string::npos,
+        "multi-session unsupported sharedStrings flush should inline escaped Other text");
+    check(other_worksheet.find(
+              R"(<c r="C3" t="inlineStr"><is><t xml:space="preserve">  other spaced  </t></is></c>)")
+            != std::string::npos,
+        "multi-session unsupported sharedStrings flush should preserve Other whitespace inline");
+    check(other_worksheet.find(R"(t="s")") == std::string::npos,
+        "multi-session unsupported sharedStrings flush should not write Other shared string indexes");
+    check(shared_strings == unsupported_shared_strings,
+        "multi-session unsupported sharedStrings flush should preserve source sharedStrings bytes");
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "multi-session unsupported sharedStrings flush no-op save should keep output byte-stable",
+        "multi-session unsupported sharedStrings flush no-op save should keep registry clean");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session unsupported sharedStrings flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "multi-session unsupported sharedStrings flush no-op save should not mutate the source package");
+}
+
 } // namespace
 
 int main()
@@ -1369,6 +1556,8 @@ int main()
         test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_unsupported();
         test_materialized_flush_deduplicates_appended_shared_strings();
         test_materialized_flush_reuses_shared_strings_across_multiple_dirty_sessions();
+        test_materialized_flush_reuses_existing_shared_strings_across_multiple_dirty_sessions();
+        test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_append_is_unsupported();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

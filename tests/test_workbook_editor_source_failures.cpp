@@ -1560,9 +1560,15 @@ void check_public_worksheet_materialization_failure_hygiene(
     std::string_view scenario,
     std::string_view recovery_sheet_name = "Data",
     std::string_view output_entry_name = "xl/worksheets/sheet1.xml",
-    std::string_view target_sheet_name = "Data")
+    std::string_view target_sheet_name = "Data",
+    bool check_clean_noop_recovery = false)
 {
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    std::map<std::string, std::string> source_entries;
+    if (check_clean_noop_recovery) {
+        source_entries = fastxlsx::test::read_zip_entries(source);
+    }
+
     check(editor.has_worksheet("Data"),
         std::string(scenario) + " should preserve planned sheet catalog");
     check(editor.has_source_worksheet("Data"),
@@ -1597,6 +1603,10 @@ void check_public_worksheet_materialization_failure_hygiene(
         recovery_sheet_name);
     check(!editor.has_pending_replacement(std::string(target_sheet_name)),
         std::string(scenario) + " try_worksheet failure should not report a target replacement");
+    if (check_clean_noop_recovery) {
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            std::string(scenario) + " try_worksheet failure should not mutate the source package");
+    }
 
     bool worksheet_failed = false;
     try {
@@ -1619,13 +1629,32 @@ void check_public_worksheet_materialization_failure_hygiene(
         recovery_sheet_name);
     check(!editor.has_pending_replacement(std::string(target_sheet_name)),
         std::string(scenario) + " worksheet failure should not report a target replacement");
+    if (check_clean_noop_recovery) {
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            std::string(scenario) + " worksheet failure should not mutate the source package");
+    }
 
     editor.replace_sheet_data(std::string(recovery_sheet_name),
         {{fastxlsx::CellValue::text(std::string(replacement_text))}});
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    if (check_clean_noop_recovery) {
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            std::string(scenario) + " recovery save_as should not mutate the source package");
+    }
     check_contains(output_entries.at(std::string(output_entry_name)), replacement_text,
         std::string(scenario) + " editor should remain usable after materialization failure");
+    if (check_clean_noop_recovery) {
+        const std::filesystem::path noop_output =
+            output.parent_path()
+            / (output.stem().string() + "-noop" + output.extension().string());
+        editor.save_as(noop_output);
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            std::string(scenario) + " clean no-op save_as after recovery should be byte-stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            std::string(scenario) + " clean no-op save_as after recovery should not mutate the source package");
+    }
 }
 
 void write_binary_file(const std::filesystem::path& path, std::string_view data)
@@ -2205,7 +2234,11 @@ void test_public_worksheet_editor_rejects_invalid_source_shared_string_index()
     check_public_worksheet_materialization_failure_hygiene(source, output,
         "CellStore worksheet loader found a shared string index out of range",
         "usable-after-failure",
-        "out-of-range source shared string index");
+        "out-of-range source shared string index",
+        "Data",
+        "xl/worksheets/sheet1.xml",
+        "Data",
+        true);
 }
 
 void test_public_worksheet_editor_rejects_invalid_source_shared_strings_metadata()
@@ -3637,7 +3670,9 @@ void test_public_worksheet_editor_rejects_malformed_source_worksheet_xml_cleanly
         "usable-after-malformed-source-worksheet",
         "malformed source worksheet XML",
         "Untouched",
-        "xl/worksheets/sheet2.xml");
+        "xl/worksheets/sheet2.xml",
+        "Data",
+        true);
 }
 
 void test_public_worksheet_editor_rejects_source_cell_reference_issues_cleanly()
@@ -3742,7 +3777,8 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
             const std::function<std::filesystem::path(std::string_view)>& write_source,
             const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
             std::string_view expected_diagnostic,
-            std::string_view scenario) {
+            std::string_view scenario,
+            bool check_clean_noop_recovery = false) {
             const std::string source_name =
                 std::string("fastxlsx-workbook-editor-public-source-formula-shape-")
                 + std::string(tag) + "-source.xlsx";
@@ -3759,7 +3795,15 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
             const std::string replacement_text =
                 std::string("usable-after-source-formula-shape-") + std::string(tag);
             check_public_worksheet_materialization_failure_hygiene(
-                source, output, expected_diagnostic, replacement_text, scenario);
+                source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                "Data",
+                "xl/worksheets/sheet1.xml",
+                "Data",
+                check_clean_noop_recovery);
         };
 
     expect_public_formula_materialization_failure(
@@ -3772,7 +3816,8 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
                 R"(<c r="A1"><f/></c>)");
         },
         "CellStore worksheet loader found an empty formula text",
-        "empty source formula");
+        "empty source formula",
+        true);
 
     expect_public_formula_materialization_failure(
         "duplicate-formula",
@@ -3864,7 +3909,8 @@ void test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly()
         [&](std::string_view tag,
             const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
             std::string_view expected_diagnostic,
-            std::string_view scenario) {
+            std::string_view scenario,
+            bool check_clean_noop_recovery = false) {
             const std::string source_name =
                 std::string("fastxlsx-workbook-editor-public-source-inline-shape-")
                 + std::string(tag) + "-source.xlsx";
@@ -3881,7 +3927,15 @@ void test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly()
             const std::string replacement_text =
                 std::string("usable-after-source-inline-shape-") + std::string(tag);
             check_public_worksheet_materialization_failure_hygiene(
-                source, output, expected_diagnostic, replacement_text, scenario);
+                source,
+                output,
+                expected_diagnostic,
+                replacement_text,
+                scenario,
+                "Data",
+                "xl/worksheets/sheet1.xml",
+                "Data",
+                check_clean_noop_recovery);
         };
 
     expect_public_inline_materialization_failure(
@@ -3893,7 +3947,8 @@ void test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly()
                 R"(<c r="A1" t="inlineStr"><is><t>bad &unknown;</t></is></c>)");
         },
         "CellStore worksheet loader found an unknown XML entity reference",
-        "source inline unknown XML entity");
+        "source inline unknown XML entity",
+        true);
 
     expect_public_inline_materialization_failure(
         "text-attributes",
@@ -4149,7 +4204,8 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
             std::string_view expected_diagnostic,
             std::string_view scenario,
             std::string_view recovery_sheet_name = "Data",
-            std::string_view output_entry_name = "xl/worksheets/sheet1.xml") {
+            std::string_view output_entry_name = "xl/worksheets/sheet1.xml",
+            bool check_clean_noop_recovery = false) {
             const std::string source_name =
                 std::string("fastxlsx-workbook-editor-public-source-value-wrapper-")
                 + std::string(tag) + "-source.xlsx";
@@ -4173,7 +4229,9 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
                 replacement_text,
                 scenario,
                 recovery_sheet_name,
-                output_entry_name);
+                output_entry_name,
+                "Data",
+                check_clean_noop_recovery);
         };
 
     expect_public_value_wrapper_materialization_failure(
@@ -4181,7 +4239,10 @@ void test_public_worksheet_editor_rejects_source_value_wrapper_shapes_cleanly()
         worksheet_xml(
             R"(<sheetData><row r="1"><c r="A1"><v foo="1">1</v></c></row></sheetData>)"),
         "CellStore worksheet loader does not load scalar value attributes",
-        "source scalar value attributes");
+        "source scalar value attributes",
+        "Data",
+        "xl/worksheets/sheet1.xml",
+        true);
 
     expect_public_value_wrapper_materialization_failure(
         "duplicate-scalar",

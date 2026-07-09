@@ -165,6 +165,10 @@ unsupported `<f>` attributes, invalid shared formula `si` values, and formulas
 inside shared-string source cells. These cases must fail before materializing
 `WorksheetEditor`, preserve public editor state, and leave the editor usable for
 a recovery sheetData save.
+Representative source-failure recovery paths now also assert source-package
+immutability and byte-stable clean no-op saves after recovery for invalid
+shared-string indexes, malformed worksheet XML, empty formulas, inline text
+entity failures, and scalar value-wrapper attribute failures.
 The lightweight formula target now also pins structural rewrite token skipping
 for multi-bracket structured references such as `Table1[[#Headers],[B1]]` and
 `Table1[@[B1]]`, so WorksheetEditor row/column shifts do not rewrite embedded

@@ -51,6 +51,10 @@ The unsupported sharedStrings append path now has a direct internal flush
 regression too: when the source table is readable but not safe to append, dirty
 materialized text is saved as inline strings and the source sharedStrings bytes
 are preserved instead of repaired.
+The internal flush bridge now also covers multiple dirty materialized worksheet
+sessions in one handoff: both sheets flush, clear diagnostics, write their own
+worksheet XML, avoid creating sharedStrings, and settle into a byte-stable no-op
+save while leaving the source package unchanged.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

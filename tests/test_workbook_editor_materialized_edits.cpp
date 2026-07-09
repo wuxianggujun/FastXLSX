@@ -75,6 +75,12 @@ struct MaterializedFlushSourcePackage {
     std::string shared_strings;
 };
 
+struct MaterializedFlushTwoSheetSourcePackage {
+    std::filesystem::path path;
+    std::string data_worksheet;
+    std::string other_worksheet;
+};
+
 MaterializedFlushSourcePackage write_materialized_flush_source_package(
     std::string_view name,
     bool with_shared_strings = false)
@@ -130,6 +136,47 @@ MaterializedFlushSourcePackage write_materialized_flush_source_package(
     if (with_shared_strings) {
         entries.emplace("xl/sharedStrings.xml", source.shared_strings);
     }
+    fastxlsx::test::write_stored_zip_entries(source.path, entries);
+    return source;
+}
+
+MaterializedFlushTwoSheetSourcePackage write_two_sheet_materialized_flush_source_package(
+    std::string_view name)
+{
+    MaterializedFlushTwoSheetSourcePackage source;
+    source.path = fastxlsx::test::artifact_path(name);
+    source.data_worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    source.other_worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>2</v></c></row></sheetData></worksheet>)";
+
+    std::map<std::string, std::string> entries;
+    entries.emplace("[Content_Types].xml",
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
+        R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
+        R"(<Default Extension="xml" ContentType="application/xml"/>)"
+        R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
+        R"(</Types>)");
+    entries.emplace("_rels/.rels",
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
+        R"(</Relationships>)");
+    entries.emplace("xl/workbook.xml",
+        R"(<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Other" sheetId="2" r:id="rId2"/></sheets></workbook>)");
+    entries.emplace("xl/_rels/workbook.xml.rels",
+        R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
+        R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>)"
+        R"(</Relationships>)");
+    entries.emplace("xl/worksheets/sheet1.xml", source.data_worksheet);
+    entries.emplace("xl/worksheets/sheet2.xml", source.other_worksheet);
     fastxlsx::test::write_stored_zip_entries(source.path, entries);
     return source;
 }
@@ -838,6 +885,74 @@ void test_materialized_flush_rejects_stale_targets_without_clearing_dirty()
         "rejected materialized flush no-op save should preserve dirty diagnostics");
 }
 
+void test_materialized_flush_handles_multiple_dirty_sessions()
+{
+    const MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-two-sheet-source.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(2, 2, fastxlsx::CellValue::text("data-b2"));
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(3, 3, fastxlsx::CellValue::number(33.0));
+    other.set_cell(4, 1, fastxlsx::CellValue::boolean(false));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "multi-session materialized flush should report both dirty worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session materialized flush should clear both dirty sessions");
+    check(registry.dirty_session_count() == 0,
+        "multi-session materialized flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-noop-output.xlsx");
+    editor.save_as(output);
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+
+    check(data_worksheet.find(R"(<dimension ref="B2"/>)") != std::string::npos,
+        "multi-session materialized flush should update Data dimensions");
+    check(data_worksheet.find(R"(<c r="B2" t="inlineStr"><is><t>data-b2</t></is></c>)")
+            != std::string::npos,
+        "multi-session materialized flush should write Data sparse cells");
+    check(other_worksheet.find(R"(<dimension ref="A3:C4"/>)") != std::string::npos,
+        "multi-session materialized flush should update Other dimensions");
+    check(other_worksheet.find(R"(<c r="C3"><v>33</v></c>)") != std::string::npos,
+        "multi-session materialized flush should write Other numeric cells");
+    check(other_worksheet.find(R"(<c r="A4" t="b"><v>0</v></c>)") != std::string::npos,
+        "multi-session materialized flush should write Other boolean cells");
+    check(!stored_package_has_entry(output, "xl/sharedStrings.xml"),
+        "multi-session materialized flush without source sharedStrings should not create sharedStrings");
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "multi-session materialized flush no-op save should keep output byte-stable",
+        "multi-session materialized flush no-op save should keep registry clean");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session materialized flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "multi-session materialized flush no-op save should not mutate the source package");
+}
+
 void test_materialized_flush_appends_shared_strings_projection()
 {
     const MaterializedFlushSourcePackage source =
@@ -1130,6 +1245,7 @@ int main()
         test_materialized_flush_target_validation_rejects_missing_names();
         test_materialized_flush_to_patch_plan_clears_dirty_sessions();
         test_materialized_flush_rejects_stale_targets_without_clearing_dirty();
+        test_materialized_flush_handles_multiple_dirty_sessions();
         test_materialized_flush_appends_shared_strings_projection();
         test_materialized_flush_reuses_existing_shared_strings_without_rewrite();
         test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_unsupported();

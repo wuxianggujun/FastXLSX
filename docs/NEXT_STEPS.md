@@ -102,6 +102,11 @@ shapes: no-argument `clear_cell_values()` keeps every represented coordinate as
 an explicit blank, and no-argument `erase_cells()` omits every source formula
 record, while both paths keep formula metadata and stale cached values dropped
 across save/no-op/fresh-reopen edit/repeat no-op.
+The same shard now pins full-cell replacement conveniences on source formula
+records too: grouped `set_row()`, `set_column()`, `set_cells()`, and
+`append_row()` mutations keep shared, array, and dataTable metadata plus stale
+cached values from reviving across save, no-op, fresh-reopen edit, and repeat
+no-op.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

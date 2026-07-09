@@ -1787,6 +1787,268 @@ void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_meta
         "whole-store formula erase fresh-reopen no-op output");
 }
 
+void test_public_worksheet_editor_full_replacement_formula_source_mutations_drop_metadata()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-full-replacement-formula-source-mutation-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-full-replacement-formula-source-mutation-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-full-replacement-formula-source-mutation-noop-output.xlsx");
+    const std::filesystem::path reopened_output = artifact(
+        "fastxlsx-workbook-editor-public-full-replacement-formula-source-mutation-reopened-output.xlsx");
+    const std::filesystem::path reopened_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-full-replacement-formula-source-mutation-reopened-noop-output.xlsx");
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1"><f>A2+70</f><v>4001</v></c>)"
+        R"(<c r="B1"><f t="shared" ref="B1:C1" si="95" ca="1">A1+70</f><v>4002</v></c>)"
+        R"(<c r="C1"><f t="shared" si="95" aca="1"/><v>4003</v></c>)"
+        R"(<c r="D1"><f t="array" ref="D1:E1" ca="1">SUM(A1:B1)</f><v>4004</v></c>)"
+        R"(<c r="E1"><f t="array" ref="D1:E1"/><v>4005</v></c>)"
+        R"(<c r="F1"><f t="dataTable" ref="F1:G1" dt2D="1" r1="A1">A1+80</f><v>4006</v></c>)"
+        R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>4007</v></c>)"
+        R"(<c r="H1"><f>G1+1</f><v>4008</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const auto check_no_formula_metadata = [](const std::string& worksheet_xml,
+                                              std::string_view scenario) {
+        const std::string prefix(scenario);
+        check_not_contains(worksheet_xml, R"(t="shared")",
+            prefix + " should drop shared formula metadata");
+        check_not_contains(worksheet_xml, R"(t="array")",
+            prefix + " should drop array formula metadata");
+        check_not_contains(worksheet_xml, R"(t="dataTable")",
+            prefix + " should drop dataTable formula metadata");
+        check_not_contains(worksheet_xml, R"(ca="1")",
+            prefix + " should drop calc metadata attributes");
+        check_not_contains(worksheet_xml, R"(aca="1")",
+            prefix + " should drop shared follower metadata attributes");
+        check_not_contains(worksheet_xml, R"(dt2D="1")",
+            prefix + " should drop dataTable attributes");
+        check_not_contains(worksheet_xml, R"(r1="A1")",
+            prefix + " should drop dataTable input metadata");
+        check_not_contains(worksheet_xml, "<f>A2+70</f>",
+            prefix + " should not revive ordinary source formula text");
+        check_not_contains(worksheet_xml, "A1+70",
+            prefix + " should not revive shared source formula text");
+        check_not_contains(worksheet_xml, "SUM(A1:B1)",
+            prefix + " should not revive array formula text");
+        check_not_contains(worksheet_xml, "<f>A1+80</f>",
+            prefix + " should not revive dataTable formula text");
+        check_not_contains(worksheet_xml, "<f>G1+1</f>",
+            prefix + " should not revive overwritten source formula text");
+        for (int stale_cached_value = 4001; stale_cached_value <= 4008; ++stale_cached_value) {
+            check_not_contains(worksheet_xml,
+                "<v>" + std::to_string(stale_cached_value) + "</v>",
+                prefix + " should drop stale cached values");
+        }
+    };
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(sheet.cell_count() == 8,
+        "full-replacement formula source mutation setup should materialize all source records");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("C1").text_value() == "B1+70",
+        "full-replacement formula source mutation setup should translate shared followers");
+    check(sheet.get_cell("D1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("D1").text_value() == "SUM(A1:B1)",
+        "full-replacement formula source mutation setup should flatten array formula text");
+    check(sheet.get_cell("E1").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("E1").number_value() == 4005.0,
+        "full-replacement formula source mutation setup should materialize array cached fallback");
+    check(sheet.get_cell("F1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("F1").text_value() == "A1+80",
+        "full-replacement formula source mutation setup should flatten dataTable formula text");
+    check(sheet.get_cell("G1").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("G1").number_value() == 4007.0,
+        "full-replacement formula source mutation setup should materialize dataTable cached fallback");
+    check(!sheet.has_pending_changes(),
+        "full-replacement formula source mutation setup should start clean");
+    check(!editor.has_pending_changes(),
+        "full-replacement formula source mutation setup should not dirty WorkbookEditor");
+
+    sheet.set_row(1, {fastxlsx::CellValue::text("row-a1"),
+        fastxlsx::CellValue::number(51.0),
+        fastxlsx::CellValue::formula("A1+B1"),
+        fastxlsx::CellValue::formula("A1+C1")});
+    sheet.set_column(4, {fastxlsx::CellValue::formula("A1+C1"),
+        fastxlsx::CellValue::text("column-d2"),
+        fastxlsx::CellValue::number(73.0)});
+    sheet.set_cells({
+        {{1, 1}, fastxlsx::CellValue::text("batch-a1")},
+        {{3, 4}, fastxlsx::CellValue::formula("D1+B1")},
+    });
+    sheet.append_row({
+        fastxlsx::CellValue::text("append-a"),
+        fastxlsx::CellValue::formula("A1+D1"),
+    });
+
+    check(sheet.has_pending_changes(),
+        "full-replacement formula source mutations should dirty Data");
+    check(editor.has_pending_changes(),
+        "full-replacement formula source mutations should dirty WorkbookEditor");
+    check(sheet.cell_count() == 8,
+        "full-replacement formula source mutations should keep the final sparse count");
+    check(!sheet.try_cell("E1").has_value(),
+        "full-replacement formula source mutations should remove array fallback");
+    check(!sheet.try_cell("F1").has_value(),
+        "full-replacement formula source mutations should remove dataTable formula cell");
+    check(!sheet.try_cell("G1").has_value(),
+        "full-replacement formula source mutations should remove dataTable cached fallback");
+    check(!sheet.try_cell("H1").has_value(),
+        "full-replacement formula source mutations should remove tail source formula");
+    check(sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Text
+            && sheet.get_cell("A1").text_value() == "batch-a1",
+        "full-replacement formula source mutations should expose set_cells text overwrite");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("B1").number_value() == 51.0,
+        "full-replacement formula source mutations should preserve set_row number overwrite");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("C1").text_value() == "A1+B1",
+        "full-replacement formula source mutations should preserve set_row formula overwrite");
+    check(sheet.get_cell("D1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("D1").text_value() == "A1+C1",
+        "full-replacement formula source mutations should preserve set_column formula overwrite");
+    check(sheet.get_cell("D2").kind() == fastxlsx::CellValueKind::Text
+            && sheet.get_cell("D2").text_value() == "column-d2",
+        "full-replacement formula source mutations should expose set_column inserted text");
+    check(sheet.get_cell("D3").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("D3").text_value() == "D1+B1",
+        "full-replacement formula source mutations should expose set_cells later formula overwrite");
+    check(sheet.get_cell("A4").kind() == fastxlsx::CellValueKind::Text
+            && sheet.get_cell("A4").text_value() == "append-a",
+        "full-replacement formula source mutations should expose appended text");
+    check(sheet.get_cell("B4").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("B4").text_value() == "A1+D1",
+        "full-replacement formula source mutations should expose appended formula");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "full-replacement formula source mutation save should keep Data clean");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>batch-a1</t></is></c>)",
+        "full-replacement formula source mutation save should persist set_cells text overwrite");
+    check_contains(output_worksheet_xml, R"(<c r="B1"><v>51</v></c>)",
+        "full-replacement formula source mutation save should persist set_row numeric overwrite");
+    check_contains(output_worksheet_xml, R"(<c r="C1"><f>A1+B1</f></c>)",
+        "full-replacement formula source mutation save should persist set_row formula overwrite");
+    check_contains(output_worksheet_xml, R"(<c r="D1"><f>A1+C1</f></c>)",
+        "full-replacement formula source mutation save should persist set_column formula overwrite");
+    check_contains(output_worksheet_xml,
+        R"(<c r="D2" t="inlineStr"><is><t>column-d2</t></is></c>)",
+        "full-replacement formula source mutation save should persist set_column inserted text");
+    check_contains(output_worksheet_xml, R"(<c r="D3"><f>D1+B1</f></c>)",
+        "full-replacement formula source mutation save should persist set_cells formula overwrite");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A4" t="inlineStr"><is><t>append-a</t></is></c>)",
+        "full-replacement formula source mutation save should persist appended text");
+    check_contains(output_worksheet_xml, R"(<c r="B4"><f>A1+D1</f></c>)",
+        "full-replacement formula source mutation save should persist appended formula");
+    check_not_contains(output_worksheet_xml, "<c r=\"E1\"",
+        "full-replacement formula source mutation save should omit removed array fallback");
+    check_not_contains(output_worksheet_xml, "<c r=\"F1\"",
+        "full-replacement formula source mutation save should omit removed dataTable formula");
+    check_not_contains(output_worksheet_xml, "<c r=\"G1\"",
+        "full-replacement formula source mutation save should omit removed dataTable fallback");
+    check_not_contains(output_worksheet_xml, "<c r=\"H1\"",
+        "full-replacement formula source mutation save should omit removed tail formula");
+    check_no_formula_metadata(
+        output_worksheet_xml, "full-replacement formula source mutation save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-replacement formula source mutation save should not mutate the source package");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "full-replacement formula source mutation save should preserve untouched worksheets");
+
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("batch-a1")},
+        {1, 2, fastxlsx::CellValue::number(51.0)},
+        {1, 3, fastxlsx::CellValue::formula("A1+B1")},
+        {1, 4, fastxlsx::CellValue::formula("A1+C1")},
+        {2, 4, fastxlsx::CellValue::text("column-d2")},
+        {3, 4, fastxlsx::CellValue::formula("D1+B1")},
+        {4, 1, fastxlsx::CellValue::text("append-a")},
+        {4, 2, fastxlsx::CellValue::formula("A1+D1")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 4, 4},
+        expected_cells,
+        "full-replacement formula source mutation output");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "full-replacement formula source mutation no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-replacement formula source mutation no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-replacement formula source mutation no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 4, 4},
+        expected_cells,
+        "full-replacement formula source mutation no-op output");
+
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    check(!reopened_sheet.has_pending_changes(),
+        "full-replacement formula source mutation fresh reopen should start clean");
+    reopened_sheet.set_cell("E5", fastxlsx::CellValue::formula("A4+B4"));
+    reopened_editor.save_as(reopened_output);
+    const auto reopened_entries = fastxlsx::test::read_zip_entries(reopened_output);
+    const std::string& reopened_worksheet_xml =
+        reopened_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reopened_worksheet_xml, R"(<c r="E5"><f>A4+B4</f></c>)",
+        "full-replacement formula source mutation fresh-reopen save should include later formula edit");
+    check_no_formula_metadata(
+        reopened_worksheet_xml, "full-replacement formula source mutation fresh-reopen save");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "full-replacement formula source mutation fresh-reopen save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-replacement formula source mutation fresh-reopen save should not mutate its saved input");
+
+    const ReopenedFormulaOutputCell reopened_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("batch-a1")},
+        {1, 2, fastxlsx::CellValue::number(51.0)},
+        {1, 3, fastxlsx::CellValue::formula("A1+B1")},
+        {1, 4, fastxlsx::CellValue::formula("A1+C1")},
+        {2, 4, fastxlsx::CellValue::text("column-d2")},
+        {3, 4, fastxlsx::CellValue::formula("D1+B1")},
+        {4, 1, fastxlsx::CellValue::text("append-a")},
+        {4, 2, fastxlsx::CellValue::formula("A1+D1")},
+        {5, 5, fastxlsx::CellValue::formula("A4+B4")},
+    };
+    check_reopened_formula_dirty_output(
+        reopened_output,
+        fastxlsx::CellRange {1, 1, 5, 5},
+        reopened_expected_cells,
+        "full-replacement formula source mutation fresh-reopen output");
+
+    reopened_editor.save_as(reopened_noop_output);
+    check(!reopened_sheet.has_pending_changes(),
+        "full-replacement formula source mutation fresh-reopen no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(reopened_noop_output) == reopened_entries,
+        "full-replacement formula source mutation fresh-reopen no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "full-replacement formula source mutation fresh-reopen no-op save should not mutate its saved input");
+    check_reopened_formula_dirty_output(
+        reopened_noop_output,
+        fastxlsx::CellRange {1, 1, 5, 5},
+        reopened_expected_cells,
+        "full-replacement formula source mutation fresh-reopen no-op output");
+}
+
 void test_public_worksheet_editor_materializes_source_shared_formulas()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -2635,6 +2897,7 @@ int main()
         test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_row_column_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_whole_store_formula_source_mutations_drop_metadata();
+        test_public_worksheet_editor_full_replacement_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         test_public_worksheet_editor_materializes_office_like_shared_formula_shape();

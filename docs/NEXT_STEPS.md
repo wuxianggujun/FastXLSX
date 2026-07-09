@@ -67,6 +67,11 @@ rewriting `xl/sharedStrings.xml`, while an unsupported-but-readable source table
 falls back to inline strings on both sheets and preserves the source
 sharedStrings bytes. This is still small-file save-as handoff evidence, not
 sharedStrings repair, migration, pruning, or rebuild.
+Those three multi-session sharedStrings handoff states now also fresh-reopen
+their dirty and clean no-op outputs through the public `WorkbookEditor` /
+`WorksheetEditor` cell APIs, proving the saved packages can be rematerialized
+as clean small-file sessions after append/reuse/fallback. This is readback
+evidence only, not sharedStrings migration, style migration, or metadata repair.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

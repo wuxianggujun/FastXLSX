@@ -88,10 +88,11 @@ reuses one newly appended item, clean no-op saves stay byte-identical, and the
 outputs reopen through the public cell/snapshot APIs.
 It also pins source-backed shared-string cells across structural row/column
 shifts: insert/delete rows and columns move the materialized text cells,
-preserve sharedStrings indexes/table bytes on save, keep untouched worksheets
-byte-stable, keep follow-up no-op saves byte-identical, and allow the saved
-outputs to be reopened for later text edits that continue appending through the
-sharedStrings table.
+preserve sharedStrings indexes/table bytes on save, flatten shifted rich text
+and `xml:space` source items consistently, keep untouched worksheets byte-stable,
+keep follow-up no-op saves byte-identical, and allow the saved outputs to be
+reopened for later text edits that continue appending through the sharedStrings
+table.
 The source-success max-coordinate shard now also fresh-reopens compact
 erase/no-op outputs, restores `XFD1048576` for inline text, formula, error,
 scalar/blank, empty-inline, shared-string, and rich shared-string sources, and

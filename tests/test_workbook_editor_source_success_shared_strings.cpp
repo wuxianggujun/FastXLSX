@@ -1504,8 +1504,20 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
             fastxlsx::CellView::text("row2-b"),
             fastxlsx::CellView::text("row2-c")});
         fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
-        untouched.append_row({fastxlsx::CellView::text("keep-shared-shift")});
+        untouched.append_row({fastxlsx::CellView::text("keep-rich-shared-shift")});
         writer.close();
+        const std::string rich_shared_strings =
+            R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="7" uniqueCount="7">)"
+            R"(<si><r><t>row1-</t></r><r><t>A&amp;</t></r><r><t xml:space="preserve"> top </t></r><rPh sb="0" eb="1"><t>ignored-phonetic</t></rPh></si>)"
+            R"(<si><t xml:space="preserve"> row1-b </t></si>)"
+            R"(<si><r><t>row1-C</t></r><r><t xml:space="preserve"> tail</t></r></si>)"
+            R"(<si><t>row2-a</t></si>)"
+            R"(<si><r><t>row2-</t></r><r><t>B&amp;rich</t></r></si>)"
+            R"(<si><t xml:space="preserve">row2-c </t></si>)"
+            R"(<si><t>keep-rich-shared-shift</t></si>)"
+            R"(</sst>)";
+        rewrite_package_entry_as_stored(source, "xl/sharedStrings.xml", rich_shared_strings);
         return source;
     };
 
@@ -1539,6 +1551,12 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
             const auto source_entries = fastxlsx::test::read_zip_entries(source);
             const std::string shared_strings_before =
                 source_entries.at("xl/sharedStrings.xml");
+            check_contains(shared_strings_before,
+                R"(<r><t>row1-</t></r><r><t>A&amp;</t></r>)",
+                scenario_text + " fixture should include rich shared string markup");
+            check_contains(shared_strings_before,
+                R"(<si><t xml:space="preserve"> row1-b </t></si>)",
+                scenario_text + " fixture should include xml:space shared string text");
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
             fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
@@ -1663,12 +1681,12 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         };
 
     const ReopenedLazySharedStringsCell insert_rows_expected[] = {
-        {1, 1, fastxlsx::CellValue::text("row1-a")},
-        {1, 2, fastxlsx::CellValue::text("row1-b")},
-        {1, 3, fastxlsx::CellValue::text("row1-c")},
+        {1, 1, fastxlsx::CellValue::text("row1-A& top ")},
+        {1, 2, fastxlsx::CellValue::text(" row1-b ")},
+        {1, 3, fastxlsx::CellValue::text("row1-C tail")},
         {3, 1, fastxlsx::CellValue::text("row2-a")},
-        {3, 2, fastxlsx::CellValue::text("row2-b")},
-        {3, 3, fastxlsx::CellValue::text("row2-c")},
+        {3, 2, fastxlsx::CellValue::text("row2-B&rich")},
+        {3, 3, fastxlsx::CellValue::text("row2-c ")},
     };
     const ShiftedSharedStringsXmlCell insert_rows_xml[] = {
         {"A1", 0},
@@ -1690,12 +1708,12 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         ShiftedSharedStringsXmlCell {"D3", 7});
 
     const ReopenedLazySharedStringsCell insert_columns_expected[] = {
-        {1, 1, fastxlsx::CellValue::text("row1-a")},
-        {1, 3, fastxlsx::CellValue::text("row1-b")},
-        {1, 4, fastxlsx::CellValue::text("row1-c")},
+        {1, 1, fastxlsx::CellValue::text("row1-A& top ")},
+        {1, 3, fastxlsx::CellValue::text(" row1-b ")},
+        {1, 4, fastxlsx::CellValue::text("row1-C tail")},
         {2, 1, fastxlsx::CellValue::text("row2-a")},
-        {2, 3, fastxlsx::CellValue::text("row2-b")},
-        {2, 4, fastxlsx::CellValue::text("row2-c")},
+        {2, 3, fastxlsx::CellValue::text("row2-B&rich")},
+        {2, 4, fastxlsx::CellValue::text("row2-c ")},
     };
     const ShiftedSharedStringsXmlCell insert_columns_xml[] = {
         {"A1", 0},
@@ -1718,8 +1736,8 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
 
     const ReopenedLazySharedStringsCell delete_rows_expected[] = {
         {1, 1, fastxlsx::CellValue::text("row2-a")},
-        {1, 2, fastxlsx::CellValue::text("row2-b")},
-        {1, 3, fastxlsx::CellValue::text("row2-c")},
+        {1, 2, fastxlsx::CellValue::text("row2-B&rich")},
+        {1, 3, fastxlsx::CellValue::text("row2-c ")},
     };
     const ShiftedSharedStringsXmlCell delete_rows_xml[] = {
         {"A1", 3},
@@ -1738,10 +1756,10 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
         ShiftedSharedStringsXmlCell {"D1", 7});
 
     const ReopenedLazySharedStringsCell delete_columns_expected[] = {
-        {1, 1, fastxlsx::CellValue::text("row1-b")},
-        {1, 2, fastxlsx::CellValue::text("row1-c")},
-        {2, 1, fastxlsx::CellValue::text("row2-b")},
-        {2, 2, fastxlsx::CellValue::text("row2-c")},
+        {1, 1, fastxlsx::CellValue::text(" row1-b ")},
+        {1, 2, fastxlsx::CellValue::text("row1-C tail")},
+        {2, 1, fastxlsx::CellValue::text("row2-B&rich")},
+        {2, 2, fastxlsx::CellValue::text("row2-c ")},
     };
     const ShiftedSharedStringsXmlCell delete_columns_xml[] = {
         {"A1", 1},

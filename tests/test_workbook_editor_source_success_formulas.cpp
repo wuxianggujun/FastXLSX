@@ -731,6 +731,10 @@ void test_public_worksheet_editor_materializes_unresolved_shared_formula_cached_
         "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-output.xlsx");
     const std::filesystem::path dirty_noop_output = artifact(
         "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-dirty-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-post-noop-reuse-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -851,6 +855,69 @@ void test_public_worksheet_editor_materializes_unresolved_shared_formula_cached_
         fastxlsx::CellRange {1, 1, 2, 6},
         expected_cells,
         "unresolved shared formula cached scalar dirty no-op output");
+
+    sheet.set_cell("G3", fastxlsx::CellValue::error("#N/A"));
+    check(sheet.has_pending_changes(),
+        "unresolved shared formula cached scalar post-noop reuse edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "unresolved shared formula cached scalar post-noop reuse edit should dirty WorkbookEditor");
+    editor.save_as(post_noop_reuse_output);
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string& post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<c r="A1"><v>12.5</v></c>)",
+        "unresolved shared formula cached scalar post-noop reuse should keep numeric fallback");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>cached-text</t></is></c>)",
+        "unresolved shared formula cached scalar post-noop reuse should keep string fallback");
+    check_contains(post_noop_reuse_xml, R"(<c r="C1" t="b"><v>1</v></c>)",
+        "unresolved shared formula cached scalar post-noop reuse should keep boolean fallback");
+    check_contains(post_noop_reuse_xml, R"(<c r="D1" t="e"><v>#VALUE!</v></c>)",
+        "unresolved shared formula cached scalar post-noop reuse should keep error fallback");
+    check_contains(post_noop_reuse_xml, R"(<c r="F2"><f>A1+B1</f></c>)",
+        "unresolved shared formula cached scalar post-noop reuse should keep prior formula edit");
+    check_contains(post_noop_reuse_xml, R"(<c r="G3" t="e"><v>#N/A</v></c>)",
+        "unresolved shared formula cached scalar post-noop reuse should include the later error edit");
+    check_not_contains(post_noop_reuse_xml, R"(t="shared")",
+        "unresolved shared formula cached scalar post-noop reuse should keep shared metadata dropped");
+    check_not_contains(post_noop_reuse_xml, R"(si=")",
+        "unresolved shared formula cached scalar post-noop reuse should keep shared indexes dropped");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "unresolved shared formula cached scalar post-noop reuse should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "unresolved shared formula cached scalar post-noop reuse should not mutate prior no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "unresolved shared formula cached scalar post-noop reuse should not mutate prior dirty output");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "unresolved shared formula cached scalar post-noop reuse should not mutate prior dirty no-op output");
+    const ReopenedFormulaOutputCell post_noop_reuse_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(12.5)},
+        {1, 2, fastxlsx::CellValue::text("cached-text")},
+        {1, 3, fastxlsx::CellValue::boolean(true)},
+        {1, 4, fastxlsx::CellValue::error("#VALUE!")},
+        {2, 6, fastxlsx::CellValue::formula("A1+B1")},
+        {3, 7, fastxlsx::CellValue::error("#N/A")},
+    };
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_output,
+        fastxlsx::CellRange {1, 1, 3, 7},
+        post_noop_reuse_cells,
+        "unresolved shared formula cached scalar post-noop reuse output");
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "unresolved shared formula cached scalar post-noop reuse no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "unresolved shared formula cached scalar post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "unresolved shared formula cached scalar post-noop reuse no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        post_noop_reuse_noop_output,
+        fastxlsx::CellRange {1, 1, 3, 7},
+        post_noop_reuse_cells,
+        "unresolved shared formula cached scalar post-noop reuse no-op output");
 }
 
 void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata()

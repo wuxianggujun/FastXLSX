@@ -145,6 +145,9 @@ It now also pins unresolved metadata-only shared formula followers with cached
 scalar values: numeric, `t="str"`, boolean, and error cached payloads
 materialize as ordinary scalar cells, dirty projection drops shared formula
 metadata/indexes, and no-op saves remain byte-stable.
+That cached-scalar path now also re-dirties after the clean no-op, saves a later
+error edit, keeps shared formula metadata dropped, and settles into another
+byte-stable no-op save.
 It now also pins direct mutations of source formula records across ordinary,
 shared, array, and dataTable source shapes: value overwrite, full replacement,
 explicit blank clear, and erase all drop stale formula metadata/cached values

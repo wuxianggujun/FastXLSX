@@ -1082,6 +1082,120 @@ void test_internal_materialized_worksheet_session_shifts_sparse_records()
     }
 }
 
+void test_internal_materialized_worksheet_session_shift_failures_preserve_state()
+{
+    const fastxlsx::StyleId formula_style = fastxlsx::detail::make_source_style_id(12);
+    const auto check_formula_record =
+        [formula_style](const fastxlsx::detail::CellRecord* record,
+            std::string_view text,
+            const char* message) {
+            check(record != nullptr, message);
+            check(record->kind == fastxlsx::CellValueKind::Formula, message);
+            check(record->text_value == text, message);
+            check(record->style_id.has_value()
+                    && record->style_id->value() == formula_style.value(),
+                message);
+        };
+    const auto check_text_record =
+        [](const fastxlsx::detail::CellRecord* record,
+            std::string_view text,
+            const char* message) {
+            check(record != nullptr, message);
+            check(record->kind == fastxlsx::CellValueKind::Text, message);
+            check(record->text_value == text, message);
+        };
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1,
+            fastxlsx::CellValue::formula("A2+A1048576").with_style(formula_style));
+        store.set_cell(1048576, 1, fastxlsx::CellValue::text("edge-row"));
+
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Rows", std::move(store));
+        check_fastxlsx_error(
+            [&session] { session.insert_rows(2, 1); },
+            "materialized insert_rows should reject shifting records past the row limit");
+        check(!session.dirty(),
+            "failed materialized insert_rows should leave a clean session clean");
+        check(session.cell_count() == 2,
+            "failed materialized insert_rows should preserve sparse record count");
+        check_formula_record(session.try_cell(1, 1), "A2+A1048576",
+            "failed materialized insert_rows should preserve stationary formula text");
+        check_text_record(session.try_cell(1048576, 1), "edge-row",
+            "failed materialized insert_rows should preserve the row-limit record");
+        check(session.dimension_reference() == "A1:A1048576",
+            "failed materialized insert_rows should preserve the sparse dimension");
+    }
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1,
+            fastxlsx::CellValue::formula("B1+XFD1").with_style(formula_style));
+        store.set_cell(1, 16384, fastxlsx::CellValue::text("edge-column"));
+
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Columns", std::move(store));
+        check_fastxlsx_error(
+            [&session] { session.insert_columns(2, 1); },
+            "materialized insert_columns should reject shifting records past the column limit");
+        check(!session.dirty(),
+            "failed materialized insert_columns should leave a clean session clean");
+        check(session.cell_count() == 2,
+            "failed materialized insert_columns should preserve sparse record count");
+        check_formula_record(session.try_cell(1, 1), "B1+XFD1",
+            "failed materialized insert_columns should preserve stationary formula text");
+        check_text_record(session.try_cell(1, 16384), "edge-column",
+            "failed materialized insert_columns should preserve the column-limit record");
+        check(session.dimension_reference() == "A1:XFD1",
+            "failed materialized insert_columns should preserve the sparse dimension");
+    }
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "DirtyRows", std::move(store));
+        session.set_cell(2, 1, fastxlsx::CellValue::text("dirty-row"));
+
+        check_fastxlsx_error(
+            [&session] { session.delete_rows(2, 1048576); },
+            "materialized delete_rows should reject row spans beyond the sheet limit");
+        check(session.dirty(),
+            "failed materialized delete_rows should preserve pre-existing dirty state");
+        check(session.cell_count() == 2,
+            "failed materialized delete_rows should preserve dirty sparse count");
+        const fastxlsx::detail::CellRecord* number = session.try_cell(1, 1);
+        check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number
+                && number->number_value == 1.0,
+            "failed materialized delete_rows should preserve source records");
+        check_text_record(session.try_cell(2, 1), "dirty-row",
+            "failed materialized delete_rows should preserve dirty records");
+    }
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "DirtyColumns", std::move(store));
+        session.set_cell(1, 2, fastxlsx::CellValue::text("dirty-column"));
+
+        check_fastxlsx_error(
+            [&session] { session.delete_columns(2, 16384); },
+            "materialized delete_columns should reject column spans beyond the sheet limit");
+        check(session.dirty(),
+            "failed materialized delete_columns should preserve pre-existing dirty state");
+        check(session.cell_count() == 2,
+            "failed materialized delete_columns should preserve dirty sparse count");
+        const fastxlsx::detail::CellRecord* number = session.try_cell(1, 1);
+        check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number
+                && number->number_value == 1.0,
+            "failed materialized delete_columns should preserve source records");
+        check_text_record(session.try_cell(1, 2), "dirty-column",
+            "failed materialized delete_columns should preserve dirty records");
+    }
+}
+
 void test_internal_materialized_worksheet_session_registry()
 {
     fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
@@ -2455,6 +2569,7 @@ int main()
         test_internal_cell_store_guardrails();
         test_internal_materialized_worksheet_session();
         test_internal_materialized_worksheet_session_shifts_sparse_records();
+        test_internal_materialized_worksheet_session_shift_failures_preserve_state();
         test_internal_materialized_worksheet_session_registry();
         test_internal_cell_store_sheet_data_serialization();
         test_internal_cell_store_worksheet_loader();

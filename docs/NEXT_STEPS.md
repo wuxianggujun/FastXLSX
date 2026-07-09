@@ -102,6 +102,11 @@ replace opaque error tokens beside text, number, formula, and explicit blank
 cells, save them as `t="e"`, reopen them through public sparse snapshots, and
 keep repeated no-op saves byte-stable. This remains scalar error-cell
 projection, not semantic error-token validation or formula evaluation.
+Formula structural rewrite coverage now also pins mixed absolute markers:
+row/column insertions shift the affected coordinates in references like `$A2`,
+`B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains
+lexical formula rewrite evidence, not formula evaluation or dependency graph
+scope.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

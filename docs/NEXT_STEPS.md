@@ -1115,6 +1115,10 @@ The budget-release guardrail snapshot helper now also pins range and
 requested-coordinate sparse reads, duplicate requested `D4`, skipped erased/gap
 coordinates, and empty row/column gaps across its clean saved/reopened/no-op
 handles.
+The missing-erase and blank-overwrite guardrail helpers now mirror that
+snapshot coverage for their shared clean handle paths: range sparse reads,
+requested duplicate `A2`, skipped rejected `D4` / gap coordinates, and empty
+gap row/column observers stay stable across saved/reopened/no-op handles.
 The blank-overwrite guardrail same-editor no-op saves now also pin the clean
 diagnostic surface directly: max-cells and memory-budget first/second no-op
 outputs keep replacement diagnostics empty and clear `last_edit_error()` while

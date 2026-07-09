@@ -3001,6 +3001,9 @@ void test_internal_materialized_session_reflush_replaces_prior_projection()
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-reflush-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-reflush-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-reflush-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -3032,6 +3035,15 @@ void test_internal_materialized_session_reflush_replaces_prior_projection()
         "prior materialized flush payload should not leak after reflush");
     check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
         "reflush output should keep the refreshed sparse-store dimension");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "reflush output should not mutate the source package");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after replaced reflush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after replaced reflush should not mutate the source package");
 }
 
 void test_internal_materialized_session_flush_failure_preserves_dirty_state()
@@ -3040,6 +3052,7 @@ void test_internal_materialized_session_flush_failure_preserves_dirty_state()
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-flush-failure-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-flush-failure-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -3059,6 +3072,8 @@ void test_internal_materialized_session_flush_failure_preserves_dirty_state()
         "failed materialized flush should not queue coarse public edit diagnostics");
     check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 2,
         "failed materialized flush should preserve all dirty sessions");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed materialized flush should not mutate the source package");
 
     check(threw_fastxlsx_error([&] { editor.save_as(output); }),
         "public save_as auto-flush should also reject the missing planned-name projection");
@@ -3066,6 +3081,8 @@ void test_internal_materialized_session_flush_failure_preserves_dirty_state()
         "failed save_as auto-flush should not queue partial materialized diagnostics");
     check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 2,
         "failed save_as auto-flush should preserve all dirty sessions");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed save_as auto-flush should not mutate the source package");
 }
 
 void test_internal_materialized_session_flush_uses_planned_name_after_rename()

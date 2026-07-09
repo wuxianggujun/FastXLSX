@@ -527,6 +527,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"($A2+B$2+$C$3+D4:E$5)",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
+        R"(#REF!+#REF!+#REF!+D2:E$3)",
+        "formula structural row delete should preserve mixed absolute markers");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"($B1+B$2+$C$3+D4:$E5)",
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 1}),
+        R"(#REF!+#REF!+$B$3+C4:$D5)",
+        "formula structural column delete should preserve mixed absolute markers");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             "A1+#REF!+B2+#N/A",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 1, 1}),
         "B1+#REF!+C2+#N/A",

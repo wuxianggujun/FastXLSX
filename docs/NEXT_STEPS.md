@@ -160,6 +160,10 @@ row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains
 lexical formula rewrite evidence, not formula evaluation or dependency graph
 scope.
+The same mixed-marker formula helper coverage now includes row/column deletion:
+deleted coordinates become `#REF!`, later endpoints shift back, and surviving
+absolute marker text remains intact for the WorksheetEditor structural-shift
+foundation.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

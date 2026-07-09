@@ -36,7 +36,8 @@ covered fixtures only; it is not a runtime dependency, not default CTest/CI, and
 not a broad guarantee for unsupported Excel object models.
 The internal materialized save-as bridge now has focused tests for dirty-session
 flush handoff into the Patch plan, stale planned-name rejection without clearing
-dirty diagnostics, and append-only sharedStrings projection. This is
+dirty diagnostics, append-only sharedStrings projection, existing-string reuse
+without rewriting the table, and duplicate appended text de-duplication. This is
 WorksheetEditor small-file in-memory persistence evidence, not broad
 sharedStrings migration or metadata repair.
 The generated QA lane includes `generated_rename_materialized`, which renames

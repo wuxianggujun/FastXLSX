@@ -81,13 +81,17 @@ MaterializedFlushSourcePackage write_materialized_flush_source_package(
 {
     MaterializedFlushSourcePackage source;
     source.path = fastxlsx::test::artifact_path(name);
-    source.worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
-        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
-        R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
     if (with_shared_strings) {
+        source.worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>)";
         source.shared_strings = R"(<?xml version="1.0" encoding="UTF-8"?>)"
             R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
             R"(<si><t>existing</t></si></sst>)";
+    } else {
+        source.worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
     }
 
     std::string content_types = R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -733,6 +737,95 @@ void test_materialized_flush_appends_shared_strings_projection()
         "sharedStrings materialized flush should append only missing text");
 }
 
+void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
+{
+    const MaterializedFlushSourcePackage source =
+        write_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-shared-existing-source.xlsx",
+            true);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 1,
+        "existing-only sharedStrings flush should report one worksheet");
+    check(!data.dirty(),
+        "existing-only sharedStrings flush should clear the dirty session");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-existing-output.xlsx");
+    editor.save_as(output);
+    const std::string worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
+        "existing-only sharedStrings flush should reuse the existing string index");
+    check(worksheet.find("inlineStr") == std::string::npos,
+        "existing-only sharedStrings flush should not fall back to inline text");
+    check(shared_strings == source.shared_strings,
+        "existing-only sharedStrings flush should not rewrite the sharedStrings part");
+}
+
+void test_materialized_flush_deduplicates_appended_shared_strings()
+{
+    const MaterializedFlushSourcePackage source =
+        write_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-shared-duplicate-source.xlsx",
+            true);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("repeat-new"));
+    data.set_cell(2, 2, fastxlsx::CellValue::text("repeat-new"));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 1,
+        "duplicate sharedStrings flush should report one worksheet");
+    check(!data.dirty(),
+        "duplicate sharedStrings flush should clear the dirty session");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-duplicate-output.xlsx");
+    editor.save_as(output);
+    const std::string worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
+        "duplicate sharedStrings flush should preserve the existing string index");
+    check(worksheet.find(R"(<c r="B1" t="s"><v>1</v></c>)") != std::string::npos &&
+            worksheet.find(R"(<c r="B2" t="s"><v>1</v></c>)") != std::string::npos,
+        "duplicate sharedStrings flush should reuse one appended string index");
+    check(worksheet.find("inlineStr") == std::string::npos,
+        "duplicate sharedStrings flush should not emit inline text fallback");
+    check(shared_strings.find(R"(count="3")") != std::string::npos &&
+            shared_strings.find(R"(uniqueCount="2")") != std::string::npos,
+        "duplicate sharedStrings flush should count references and unique strings separately");
+    check(shared_strings.find(R"(<si><t>existing</t></si><si><t>repeat-new</t></si>)")
+            != std::string::npos,
+        "duplicate sharedStrings flush should append each new text only once");
+}
+
 } // namespace
 
 int main()
@@ -754,6 +847,8 @@ int main()
         test_materialized_flush_to_patch_plan_clears_dirty_sessions();
         test_materialized_flush_rejects_stale_targets_without_clearing_dirty();
         test_materialized_flush_appends_shared_strings_projection();
+        test_materialized_flush_reuses_existing_shared_strings_without_rewrite();
+        test_materialized_flush_deduplicates_appended_shared_strings();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

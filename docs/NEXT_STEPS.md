@@ -191,6 +191,13 @@ stay clean, pre-existing dirty state remains dirty, sparse records/styles,
 memory estimates, dimensions, and projection XML stay unchanged. This is
 `MaterializedWorksheetSession` small-file In-memory hygiene evidence, not a
 metadata sync or large-file random editing claim.
+Internal registry dirty-handoff coverage now also pins aggregate dirty cell
+counts, dirty memory estimates, planned-name ordering, and standalone
+`sheetData` projections for multiple dirty materialized sessions. Clean
+sessions are skipped, dimensions travel beside each dirty projection, and the
+callbacks emit sparse `sheetData` payloads without a full worksheet wrapper.
+This remains private `WorksheetEditor` save-as handoff evidence, not public
+package editing or metadata repair.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

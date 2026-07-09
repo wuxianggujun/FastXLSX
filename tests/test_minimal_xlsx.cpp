@@ -1365,6 +1365,10 @@ void test_internal_materialized_worksheet_session_registry()
     data_session.set_cell(1, 2, fastxlsx::CellValue::text("dirty"));
     check(registry.dirty_session_count() == 1,
         "dirty materialized worksheet session should be counted by registry");
+    check(registry.dirty_cell_count() == data_session.cell_count(),
+        "dirty materialized worksheet session registry should aggregate dirty cells");
+    check(registry.estimated_dirty_memory_usage() == data_session.estimated_memory_usage(),
+        "dirty materialized worksheet session registry should aggregate dirty memory usage");
     const std::vector<std::string_view> dirty_names = registry.dirty_session_names();
     check(dirty_names.size() == 1 && dirty_names.front() == "Data",
         "dirty materialized worksheet session registry should expose dirty planned names");
@@ -1380,6 +1384,10 @@ void test_internal_materialized_worksheet_session_registry()
         "repeated matching materialization should not import a replacement store");
     check(registry.dirty_session_count() == 1,
         "repeated matching materialization should preserve dirty bookkeeping");
+    check(registry.dirty_cell_count() == data_session.cell_count(),
+        "repeated matching materialization should preserve dirty cell bookkeeping");
+    check(registry.estimated_dirty_memory_usage() == data_session.estimated_memory_usage(),
+        "repeated matching materialization should preserve dirty memory bookkeeping");
 
     fastxlsx::detail::CellStoreOptions mismatched_options;
     mismatched_options.max_cells = 4;
@@ -1431,10 +1439,28 @@ void test_internal_materialized_worksheet_session_registry()
         "second materialized worksheet session should keep its planned sheet name");
     check(registry.dirty_session_count() == 1,
         "clean second materialized session should not change dirty count");
+    check(registry.dirty_cell_count() == data_session.cell_count(),
+        "clean second materialized session should not change dirty cell bookkeeping");
+    check(registry.estimated_dirty_memory_usage() == data_session.estimated_memory_usage(),
+        "clean second materialized session should not change dirty memory bookkeeping");
 
     fastxlsx::detail::CellStore alpha_store(options);
     auto& alpha_session = registry.materialize("Alpha", std::move(alpha_store));
     alpha_session.set_cell(2, 1, fastxlsx::CellValue::boolean(true));
+    check(registry.dirty_session_count() == 2,
+        "second dirty materialized session should update dirty session count");
+    check(registry.dirty_cell_count()
+            == data_session.cell_count() + alpha_session.cell_count(),
+        "second dirty materialized session should update dirty cell count");
+    check(registry.estimated_dirty_memory_usage()
+            == data_session.estimated_memory_usage()
+                + alpha_session.estimated_memory_usage(),
+        "second dirty materialized session should update dirty memory usage");
+    const std::vector<std::string_view> ordered_dirty_names = registry.dirty_session_names();
+    check(ordered_dirty_names.size() == 2 && ordered_dirty_names[0] == "Alpha"
+            && ordered_dirty_names[1] == "Data",
+        "dirty materialized worksheet session names should follow registry planned-name order");
+
     const std::vector<fastxlsx::detail::MaterializedWorksheetProjection> projections =
         registry.dirty_worksheet_chunk_sources();
     check(projections.size() == 2,
@@ -1462,6 +1488,46 @@ void test_internal_materialized_worksheet_session_registry()
         "dirty worksheet projection should preserve prior dirty session payload");
     check(data_projection_xml.find("Other") == std::string::npos,
         "dirty worksheet projections should not include clean session data");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        sheet_data_projections = registry.dirty_sheet_data_chunk_sources();
+    check(sheet_data_projections.size() == 2,
+        "dirty sheetData projections should include only dirty materialized sessions");
+    check(sheet_data_projections[0].planned_name == "Alpha"
+            && sheet_data_projections[1].planned_name == "Data",
+        "dirty sheetData projections should follow registry planned-name order");
+    check(sheet_data_projections[0].dimension_reference == "A2",
+        "dirty sheetData projections should carry each dirty session dimension");
+    check(sheet_data_projections[1].dimension_reference == "A1:B1",
+        "dirty sheetData projections should carry dimensions for mixed source and dirty cells");
+
+    std::string alpha_sheet_data_xml;
+    projection_chunk.clear();
+    while (sheet_data_projections[0].read_next_chunk(projection_chunk)) {
+        alpha_sheet_data_xml += projection_chunk;
+    }
+    check(alpha_sheet_data_xml.find("<worksheet") == std::string::npos,
+        "dirty sheetData projection should not emit a full worksheet wrapper");
+    check(alpha_sheet_data_xml.find(R"(<sheetData>)") != std::string::npos,
+        "dirty sheetData projection should emit standalone sheetData boundaries");
+    check(alpha_sheet_data_xml.find(R"(<c r="A2" t="b"><v>1</v></c>)")
+            != std::string::npos,
+        "dirty sheetData projection should emit the dirty sparse payload");
+
+    std::string data_sheet_data_xml;
+    projection_chunk.clear();
+    while (sheet_data_projections[1].read_next_chunk(projection_chunk)) {
+        data_sheet_data_xml += projection_chunk;
+    }
+    check(data_sheet_data_xml.find("<worksheet") == std::string::npos,
+        "dirty sheetData projection should omit worksheet wrapper for mixed stores");
+    check(data_sheet_data_xml.find(R"(<c r="A1"><v>10</v></c>)") != std::string::npos,
+        "dirty sheetData projection should preserve source sparse payload");
+    check(data_sheet_data_xml.find(R"(<c r="B1" t="inlineStr"><is><t>dirty</t></is></c>)")
+            != std::string::npos,
+        "dirty sheetData projection should preserve dirty sparse payload");
+    check(data_sheet_data_xml.find("Other") == std::string::npos,
+        "dirty sheetData projections should not include clean session data");
 }
 
 void test_internal_cell_store_sheet_data_serialization()

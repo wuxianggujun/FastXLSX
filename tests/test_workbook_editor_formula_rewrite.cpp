@@ -1696,6 +1696,96 @@ void test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in()
         "reopened no-op output should expose the rewritten materialized formula text");
 }
 
+void test_rename_sheet_materialized_formula_rewrite_quoted_qualifier()
+{
+    const std::filesystem::path source = write_formula_reference_source(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-quoted-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-quoted-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-materialized-formula-rewrite-quoted-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor formula_sheet = editor.worksheet("Formula");
+    const fastxlsx::CellValue before = formula_sheet.get_cell("A1");
+    check(before.kind() == fastxlsx::CellValueKind::Formula &&
+            before.text_value().find("'O''Brien'!A1") != std::string::npos,
+        "quoted materialized formula rewrite fixture should expose the quoted source ref");
+
+    fastxlsx::WorkbookEditorRenameOptions options;
+    options.formula_policy =
+        fastxlsx::WorkbookEditorRenameFormulaPolicy::
+            RewriteDefinedNamesAndMaterializedWorksheetFormulas;
+    seed_invalid_rename_last_edit_error(
+        editor, "O'Brien", "quoted materialized formula rewrite success");
+    editor.rename_sheet("O'Brien", "Renamed Quote's & Data", options);
+    check(!editor.last_edit_error().has_value(),
+        "quoted materialized formula rewrite should clear last_edit_error");
+
+    const std::string expected_formula =
+        R"(Data!A1+'Other Sheet'!A1+'Renamed Quote''s & Data'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9")";
+    const fastxlsx::CellValue after = formula_sheet.get_cell("A1");
+    check(after.kind() == fastxlsx::CellValueKind::Formula &&
+            after.text_value() == expected_formula,
+        "quoted materialized formula rewrite should escape the renamed local qualifier");
+    check(formula_sheet.has_pending_changes(),
+        "quoted materialized formula rewrite should dirty the Formula session");
+
+    const std::vector<fastxlsx::WorkbookEditorFormulaReferenceAudit> audits =
+        editor.formula_reference_audits();
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* renamed =
+        find_formula_reference_audit(audits, "Renamed Quote's & Data");
+    check(renamed != nullptr,
+        "quoted formula audit should expose the renamed quoted qualifier");
+    if (renamed != nullptr) {
+        check(renamed->qualifier_quoted &&
+                renamed->sheet_qualifier_text == "'Renamed Quote''s & Data'!" &&
+                renamed->references_planned_sheet_name &&
+                !renamed->references_renamed_source_name,
+            "quoted formula audit should preserve escaped qualifier text and planned-name state");
+    }
+    check(count_formula_reference_audits(audits, "O'Brien") == 0,
+        "quoted formula audit should not leave the old local sheet qualifier");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* external =
+        find_formula_reference_audit(audits, "[Book.xlsx]Data");
+    check(external != nullptr && external->external_workbook_qualifier,
+        "quoted formula rewrite should preserve external workbook references");
+    const fastxlsx::WorkbookEditorFormulaReferenceAudit* sheet_range =
+        find_formula_reference_audit(audits, "Data:Formula");
+    check(sheet_range != nullptr && sheet_range->sheet_range_qualifier,
+        "quoted formula rewrite should preserve 3D sheet-range references");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check_contains(output_entries.at("xl/workbook.xml"),
+        R"(name="Renamed Quote&apos;s &amp; Data")",
+        "quoted materialized formula rewrite should persist XML-escaped catalog name");
+    const std::string formula_sheet_xml = output_entries.at("xl/worksheets/sheet4.xml");
+    check_contains(formula_sheet_xml,
+        R"(<f>Data!A1+'Other Sheet'!A1+'Renamed Quote''s &amp; Data'!A1+[Book.xlsx]Data!A1+Data:Formula!A1+"Data!Z9"</f>)",
+        "quoted materialized formula rewrite should persist XML-escaped formula text");
+    check_not_contains(formula_sheet_xml, "'O''Brien'!A1",
+        "quoted materialized formula rewrite should not persist the old qualifier");
+    check(!formula_sheet.has_pending_changes(),
+        "quoted materialized formula rewrite save_as should clean the Formula session");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "quoted materialized formula rewrite save_as should clear dirty diagnostics");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "quoted materialized formula rewrite clean no-op save_as should be byte-stable");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(noop_output);
+    const fastxlsx::CellValue reopened_formula =
+        reopened.worksheet("Formula").get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == expected_formula,
+        "reopened quoted formula rewrite output should expose the escaped renamed qualifier");
+}
+
 void test_rename_sheet_materialized_formula_rewrite_preserves_skip_tokens()
 {
     const std::filesystem::path source = write_formula_rewrite_skip_token_source(
@@ -3128,6 +3218,7 @@ int main()
         test_rename_sheet_can_rewrite_defined_names_opt_in();
         test_rename_sheet_defined_name_policy_preserves_materialized_formula_cells();
         test_rename_sheet_can_rewrite_materialized_formula_cells_opt_in();
+        test_rename_sheet_materialized_formula_rewrite_quoted_qualifier();
         test_rename_sheet_materialized_formula_rewrite_preserves_skip_tokens();
         test_rename_sheet_combined_policy_rewrites_defined_names_and_materialized_formulas();
         test_rename_sheet_formula_policy_rewrites_case_varied_local_refs();

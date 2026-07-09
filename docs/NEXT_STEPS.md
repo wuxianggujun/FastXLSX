@@ -5693,6 +5693,11 @@ formula text. This is public e2e coverage for the existing opt-in formula text
 policy only; it is not default rename synchronization, non-materialized
 worksheet rewrite, formula evaluation, external link validation, 3D semantics,
 or calcChain rebuild.
+The formula-rewrite shard now also drives a quoted materialized worksheet
+qualifier through that public policy: `O'Brien` can be renamed to a sheet name
+containing an apostrophe and `&`, the formula text is re-escaped as a quoted
+local qualifier, external workbook and 3D references remain unchanged, saved
+XML escapes `&`, and the clean no-op output stays byte-stable.
 P8.660 pins the matching default-policy negative case. The same public
 mixed-case workbook now verifies that default `rename_sheet("Data",
 "Renamed & Data")` only rewrites the workbook sheet catalog: materialized

@@ -204,6 +204,9 @@ reference-like text inside those structured-reference tokens.
 It now also pins tokenizer recovery for unterminated quoted sheet-name tokens
 and preserves existing formula error literals such as `#REF!` / `#N/A` while
 translating or structurally rewriting real A1-style references around them.
+It now also classifies quoted external workbook qualifiers, including quoted
+external 3D sheet ranges, and keeps those external qualifiers out of local
+sheet-name rewrite.
 The same lightweight formula target now also covers sheet-reference rewrite over
 multi-bracket structured references, keeping embedded `Old!A1`-like text intact
 while still rewriting real local sheet qualifiers in the same formula.

@@ -258,11 +258,13 @@ void test_formula_reference_qualifier_classifier()
 {
     const std::string formula =
         "A1+Sheet1!B2+'O''Brien'!C3+[Book.xlsx]Sheet1!D4+"
-        "Sheet1:Sheet2!E5+[Book.xlsx]Sheet1:Sheet2!F6+Table1[A1]";
+        "Sheet1:Sheet2!E5+[Book.xlsx]Sheet1:Sheet2!F6+"
+        "'[Book.xlsx]Old Sheet'!G7+'[Book.xlsx]Old Sheet:Other Sheet'!H8+"
+        "Table1[A1]";
     const std::vector<fastxlsx::detail::FormulaReference> references =
         fastxlsx::detail::scan_formula_references(formula);
 
-    check(references.size() == 6,
+    check(references.size() == 8,
         "formula qualifier classifier should ignore structured reference contents");
 
     {
@@ -318,6 +320,25 @@ void test_formula_reference_qualifier_classifier()
             "formula qualifier classifier should classify external workbook 3D refs");
         check_equal(qualifier.decoded_sheet_name, "[Book.xlsx]Sheet1:Sheet2",
             "formula qualifier classifier external workbook sheet range name mismatch");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[6]);
+        check(qualifier.kind == fastxlsx::detail::FormulaReferenceQualifierKind::ExternalWorkbook,
+            "formula qualifier classifier should classify quoted external workbook refs");
+        check_equal(qualifier.decoded_sheet_name, "[Book.xlsx]Old Sheet",
+            "formula qualifier classifier quoted external workbook name mismatch");
+    }
+
+    {
+        const fastxlsx::detail::FormulaReferenceQualifierClassification qualifier =
+            fastxlsx::detail::classify_formula_reference_qualifier(formula, references[7]);
+        check(qualifier.kind
+                == fastxlsx::detail::FormulaReferenceQualifierKind::ExternalWorkbookSheetRange,
+            "formula qualifier classifier should classify quoted external workbook 3D refs");
+        check_equal(qualifier.decoded_sheet_name, "[Book.xlsx]Old Sheet:Other Sheet",
+            "formula qualifier classifier quoted external workbook 3D name mismatch");
     }
 }
 
@@ -939,9 +960,10 @@ void test_rewrite_formula_sheet_references()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_sheet_references(
-            "[Book.xlsx]Old!A1+Old:Other!B2+Table1[Old!C3]", rewrites),
-        "[Book.xlsx]Old!A1+Old:Other!B2+Table1[Old!C3]",
-        "formula sheet rewrite should skip external, 3D, and structured refs");
+            "[Book.xlsx]Old!A1+'[Book.xlsx]Old Sheet'!C3+Old:Other!B2+Table1[Old!C3]",
+            rewrites),
+        "[Book.xlsx]Old!A1+'[Book.xlsx]Old Sheet'!C3+Old:Other!B2+Table1[Old!C3]",
+        "formula sheet rewrite should skip external, quoted external, 3D, and structured refs");
 
     check_equal(
         fastxlsx::detail::rewrite_formula_sheet_references(

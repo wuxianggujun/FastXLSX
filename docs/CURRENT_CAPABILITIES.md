@@ -84,7 +84,8 @@
   failed read probes, `cell_count()` / `estimated_memory_usage()` / `used_range()`
   remain stable, and represented `row_cells()` / `column_cells()` snapshots plus
   full/range/requested `sparse_cells()` snapshots remain stable across the same
-  recovery path.
+  recovery path; public pending materialized/replacement worksheet-name observers
+  also stay empty in the clean saved-output recovery path.
 - `set_cells()` and `set_cell_values()` batch inputs are preflighted, allow duplicate
   coordinates, and apply later-wins ordering. `set_cell()` / `set_cells()` /
   `set_row()` / `set_column()` are full sparse replacements and drop prior source

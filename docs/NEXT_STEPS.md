@@ -62,6 +62,10 @@ snapshot stability cover those public state observers too.
 The final scalar-probe window now also rechecks used-range/requested
 `sparse_cells()` plus `row_cells()` and `column_cells()`, proving the last
 missing-cell read failure does not disturb traversal snapshots either.
+That final scalar-probe window now also rechecks
+`pending_materialized_worksheet_names()` and
+`pending_replacement_worksheet_names()`, proving the last missing-cell read
+failure does not expose dirty worksheet-name observers on clean saved outputs.
 Invalid snapshot-read recovery now exercises the wider rejection set too:
 reversed and out-of-bounds `CellRange` values, lowercase/overflowing/malformed
 A1 ranges, invalid coordinate batches, and row/column index upper bounds all

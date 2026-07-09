@@ -120,6 +120,12 @@ deleted source records, regenerate dirty output as inline strings, preserve
 untouched worksheets, fresh-reopen through public sparse views, and keep clean
 no-op saves byte-stable without introducing sharedStrings. This remains scalar
 text projection, not formula cached-result semantics or sharedStrings migration.
+Flattened source inline rich text now also has row/column structural shift
+evidence: insert/delete rows and columns move the flattened plain-text values,
+drop deleted rich-text source cells, regenerate dirty output without run
+formatting, phonetic markup, ignored extension text, or sharedStrings, preserve
+untouched worksheets, and keep fresh-reopen no-op saves byte-stable. This
+remains small-file In-memory text projection, not rich-text style preservation.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

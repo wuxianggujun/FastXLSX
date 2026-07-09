@@ -2667,7 +2667,10 @@ void test_internal_materialized_session_reflush_after_failed_save_as()
         artifact("fastxlsx-workbook-editor-materialized-reflush-after-save-failure-directory");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-reflush-after-save-failure-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-reflush-after-save-failure-noop.xlsx");
     std::filesystem::create_directories(directory_output);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -2681,6 +2684,8 @@ void test_internal_materialized_session_reflush_after_failed_save_as()
 
     check(threw_fastxlsx_error([&] { editor.save_as(directory_output); }),
         "save_as to a directory should fail before consuming the staged projection");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed save_as before reflush should not mutate the source package");
 
     check_internal_materialized_session_save_state(
         editor, 0, 1, "failed save_as after initial flush");
@@ -2701,6 +2706,15 @@ void test_internal_materialized_session_reflush_after_failed_save_as()
         "reflush after failed save_as should save the later materialized payload");
     check_not_contains(worksheet_xml, "first-before-failed-save",
         "reflush after failed save_as should replace the earlier staged projection");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "reflush after failed save_as should not mutate the source package");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after failed-save reflush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after failed-save reflush should not mutate the source package");
 }
 
 void test_internal_materialized_session_move_reflush_after_failed_save_as()

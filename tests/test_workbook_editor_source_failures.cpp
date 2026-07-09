@@ -3724,6 +3724,19 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
         return source;
     };
 
+    const auto write_shared_string_source = [](std::string_view name) {
+        const std::filesystem::path source = artifact(name);
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("formula-shape-shared")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-formula-shape")});
+        writer.close();
+        return source;
+    };
+
     const auto expect_public_formula_materialization_failure =
         [](std::string_view tag,
             const std::function<std::filesystem::path(std::string_view)>& write_source,
@@ -3784,6 +3797,18 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
         },
         "CellStore worksheet loader found a formula in an unsupported cell type",
         "formula in unsupported source cell");
+
+    expect_public_formula_materialization_failure(
+        "shared-string-formula",
+        write_shared_string_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="s"><v>0</v></c>)",
+                R"(<c r="A1" t="s"><f>A1+1</f><v>0</v></c>)");
+        },
+        "CellStore worksheet loader found a formula in an unsupported cell type",
+        "formula in shared-string source cell");
 
     expect_public_formula_materialization_failure(
         "missing-materializable-value",

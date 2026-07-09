@@ -123,9 +123,10 @@ It also includes `generated_in_memory_delete_column_formula`, which drives
 left-shifted source cells plus formula reference translation before the same
 save/reopen checks.
 The source-failure shard now also covers formula materialization guardrails for
-unsupported `<f>` attributes and invalid shared formula `si` values. Both cases
-must fail before materializing `WorksheetEditor`, preserve public editor state,
-and leave the editor usable for a recovery sheetData save.
+unsupported `<f>` attributes, invalid shared formula `si` values, and formulas
+inside shared-string source cells. These cases must fail before materializing
+`WorksheetEditor`, preserve public editor state, and leave the editor usable for
+a recovery sheetData save.
 The lightweight formula target now also pins structural rewrite token skipping
 for multi-bracket structured references such as `Table1[[#Headers],[B1]]` and
 `Table1[@[B1]]`, so WorksheetEditor row/column shifts do not rewrite embedded

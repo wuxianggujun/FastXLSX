@@ -507,8 +507,8 @@ void test_dirty_sheet_data_projection_provider_skips_non_text_records()
     fastxlsx::detail::MaterializedWorksheetSession& data =
         *registry.try_session("Data");
     data.set_cell(2, 2, fastxlsx::CellValue::boolean(false));
-    data.set_cell(3, 3, fastxlsx::CellValue::formula("A1+B2"));
-    data.set_cell(4, 4, fastxlsx::CellValue::error("#VALUE!"));
+    data.set_cell(3, 3, fastxlsx::CellValue::formula("A1&B2<C3"));
+    data.set_cell(4, 4, fastxlsx::CellValue::error("#VALUE<&"));
     data.set_cell(5, 5, fastxlsx::CellValue::blank());
 
     bool provider_called = false;
@@ -536,10 +536,10 @@ void test_dirty_sheet_data_projection_provider_skips_non_text_records()
         "non-text sheetData projection should emit numeric cells");
     check(xml.find(R"(<c r="B2" t="b"><v>0</v></c>)") != std::string::npos,
         "non-text sheetData projection should emit boolean cells");
-    check(xml.find(R"(<c r="C3"><f>A1+B2</f></c>)") != std::string::npos,
-        "non-text sheetData projection should emit formula cells");
-    check(xml.find(R"(<c r="D4" t="e"><v>#VALUE!</v></c>)") != std::string::npos,
-        "non-text sheetData projection should emit error cells");
+    check(xml.find(R"(<c r="C3"><f>A1&amp;B2&lt;C3</f></c>)") != std::string::npos,
+        "non-text sheetData projection should emit escaped formula cells");
+    check(xml.find(R"(<c r="D4" t="e"><v>#VALUE&lt;&amp;</v></c>)") != std::string::npos,
+        "non-text sheetData projection should emit escaped error cells");
     check(xml.find(R"(<c r="E5"/>)") != std::string::npos,
         "non-text sheetData projection should emit blank cells");
     check(xml.find(R"(t="s")") == std::string::npos &&
@@ -557,8 +557,8 @@ void test_dirty_worksheet_projection_provider_skips_non_text_records()
     fastxlsx::detail::MaterializedWorksheetSession& data =
         *registry.try_session("Data");
     data.set_cell(3, 3, fastxlsx::CellValue::boolean(true));
-    data.set_cell(4, 4, fastxlsx::CellValue::formula("A1+C3"));
-    data.set_cell(5, 5, fastxlsx::CellValue::error("#N/A"));
+    data.set_cell(4, 4, fastxlsx::CellValue::formula("A1&C3<D4"));
+    data.set_cell(5, 5, fastxlsx::CellValue::error("#N/A<&"));
     data.set_cell(2, 2, fastxlsx::CellValue::blank());
 
     bool provider_called = false;
@@ -588,10 +588,10 @@ void test_dirty_worksheet_projection_provider_skips_non_text_records()
         "non-text worksheet projection should emit blank cells");
     check(xml.find(R"(<c r="C3" t="b"><v>1</v></c>)") != std::string::npos,
         "non-text worksheet projection should emit boolean cells");
-    check(xml.find(R"(<c r="D4"><f>A1+C3</f></c>)") != std::string::npos,
-        "non-text worksheet projection should emit formula cells");
-    check(xml.find(R"(<c r="E5" t="e"><v>#N/A</v></c>)") != std::string::npos,
-        "non-text worksheet projection should emit error cells");
+    check(xml.find(R"(<c r="D4"><f>A1&amp;C3&lt;D4</f></c>)") != std::string::npos,
+        "non-text worksheet projection should emit escaped formula cells");
+    check(xml.find(R"(<c r="E5" t="e"><v>#N/A&lt;&amp;</v></c>)") != std::string::npos,
+        "non-text worksheet projection should emit escaped error cells");
     check(xml.find(R"(t="s")") == std::string::npos &&
             xml.find("inlineStr") == std::string::npos,
         "non-text worksheet projection should not emit text cell encodings");

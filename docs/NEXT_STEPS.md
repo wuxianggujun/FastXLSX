@@ -5229,7 +5229,8 @@ cleanup only; it does not add transaction history, rollback, large-file random
 editing, relationship repair, or formula/metadata synchronization.
 P8.581a extends the materialized dirty projection provider-skip coverage across
 blank, formula, and error cells, proving sharedStrings lookup remains text-only
-while sparse XML output stays value-kind specific.
+while sparse XML output stays value-kind specific and formula/error payloads
+still use XML text escaping.
 P8.582 moves public whole-`<sheetData>` row replacement orchestration behind
 `src/workbook_editor_sheet_data_replacement.*`: the helper owns rows-to-`CellStore`
 projection, input row/cell diagnostics, current-catalog target preflight,

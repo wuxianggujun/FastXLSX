@@ -530,6 +530,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "XFD1048576+$XFD$1048576+1048576:1048576+Sheet1!XFD1048576",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 1048576, 1}),
+        "#REF!+#REF!+#REF!+Sheet1!#REF!",
+        "formula structural row insert should ref row references shifted past Excel bounds");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "XFD1048576+$XFD$1048576+XFD:XFD+Sheet1!XFD1048576",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 16384, 1}),
+        "#REF!+#REF!+#REF!+Sheet1!#REF!",
+        "formula structural column insert should ref column references shifted past Excel bounds");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(SUM(1:1,2:3,4:5,$5:$6,Sheet1!B:C))",
             FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
         R"(SUM(1:1,#REF!,2:3,$3:$4,Sheet1!B:C))",

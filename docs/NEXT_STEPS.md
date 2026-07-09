@@ -203,6 +203,12 @@ provider forwarding: both full worksheet and standalone `sheetData` dirty
 projection enumerations pass the supplied provider through so text cells can be
 emitted as `t="s"` indexes. This is still append/reuse projection plumbing only,
 not broad sharedStrings migration, relationship repair, or content type repair.
+The same internal registry projection lane now pins provider hygiene: value-only
+dirty projections do not call a shared-string provider, provider failures while
+consuming text-cell callbacks preserve dirty registry state and sparse records,
+and fresh full-worksheet or `sheetData` projections can be retried with a new
+provider. This remains callback-level small-file In-memory save-as handoff
+evidence, not sharedStrings repair, atomic save, or transaction rollback.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

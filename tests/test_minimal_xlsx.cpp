@@ -1569,6 +1569,118 @@ void test_internal_materialized_worksheet_session_registry()
         "dirty sheetData shared-string projection should use the supplied provider");
     check(shared_string_data_sheet_data_xml.find("inlineStr") == std::string::npos,
         "dirty sheetData shared-string projection should not emit inline text cells");
+
+    auto drain_projection_xml = [](const auto& projection) {
+        std::string xml;
+        std::string chunk;
+        while (projection.read_next_chunk(chunk)) {
+            xml += chunk;
+        }
+        return xml;
+    };
+
+    auto fail_if_called_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view) -> std::uint32_t {
+                throw fastxlsx::FastXlsxError("shared string provider should not be called");
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        value_only_worksheet_projections =
+            registry.dirty_worksheet_chunk_sources(fail_if_called_provider);
+    check(value_only_worksheet_projections.size() == 2,
+        "dirty worksheet value-only shared-string projections should include dirty sessions");
+    const std::string value_only_worksheet_xml =
+        drain_projection_xml(value_only_worksheet_projections[0]);
+    check(value_only_worksheet_xml.find(R"(<c r="A2" t="b"><v>1</v></c>)")
+            != std::string::npos,
+        "dirty worksheet value-only shared-string projection should not call provider");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        value_only_sheet_data_projections =
+            registry.dirty_sheet_data_chunk_sources(fail_if_called_provider);
+    check(value_only_sheet_data_projections.size() == 2,
+        "dirty sheetData value-only shared-string projections should include dirty sessions");
+    const std::string value_only_sheet_data_xml =
+        drain_projection_xml(value_only_sheet_data_projections[0]);
+    check(value_only_sheet_data_xml.find(R"(<c r="A2" t="b"><v>1</v></c>)")
+            != std::string::npos,
+        "dirty sheetData value-only shared-string projection should not call provider");
+
+    auto throwing_shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                if (text == "dirty") {
+                    throw fastxlsx::FastXlsxError(
+                        "intentional shared string provider failure");
+                }
+                return 99U;
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        failing_worksheet_projections =
+            registry.dirty_worksheet_chunk_sources(throwing_shared_string_index_provider);
+    check_fastxlsx_error(
+        [&drain_projection_xml, &failing_worksheet_projections] {
+            (void)drain_projection_xml(failing_worksheet_projections[1]);
+        },
+        "dirty worksheet shared-string projection should propagate provider failures");
+    check(registry.dirty_session_count() == 2,
+        "failed dirty worksheet shared-string projection should preserve dirty sessions");
+    check(registry.dirty_cell_count()
+            == data_session.cell_count() + alpha_session.cell_count(),
+        "failed dirty worksheet shared-string projection should preserve dirty cell count");
+    const fastxlsx::detail::CellRecord* dirty_text = data_session.try_cell(1, 2);
+    check(dirty_text != nullptr && dirty_text->kind == fastxlsx::CellValueKind::Text
+            && dirty_text->text_value == "dirty",
+        "failed dirty worksheet shared-string projection should preserve dirty text cell");
+
+    auto retry_shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                return text == "dirty" ? 11U : 100U;
+            });
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        retry_worksheet_projections =
+            registry.dirty_worksheet_chunk_sources(retry_shared_string_index_provider);
+    const std::string retry_worksheet_xml =
+        drain_projection_xml(retry_worksheet_projections[1]);
+    check(retry_worksheet_xml.find(R"(<c r="B1" t="s"><v>11</v></c>)")
+            != std::string::npos,
+        "dirty worksheet shared-string projection should be retryable after provider failure");
+    check(retry_worksheet_xml.find("inlineStr") == std::string::npos,
+        "retry dirty worksheet shared-string projection should still avoid inline text");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        failing_sheet_data_projections =
+            registry.dirty_sheet_data_chunk_sources(throwing_shared_string_index_provider);
+    check_fastxlsx_error(
+        [&drain_projection_xml, &failing_sheet_data_projections] {
+            (void)drain_projection_xml(failing_sheet_data_projections[1]);
+        },
+        "dirty sheetData shared-string projection should propagate provider failures");
+    check(registry.dirty_session_count() == 2,
+        "failed dirty sheetData shared-string projection should preserve dirty sessions");
+    check(registry.dirty_cell_count()
+            == data_session.cell_count() + alpha_session.cell_count(),
+        "failed dirty sheetData shared-string projection should preserve dirty cell count");
+
+    auto retry_sheet_data_shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                return text == "dirty" ? 13U : 101U;
+            });
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        retry_sheet_data_projections =
+            registry.dirty_sheet_data_chunk_sources(
+                retry_sheet_data_shared_string_index_provider);
+    const std::string retry_sheet_data_xml =
+        drain_projection_xml(retry_sheet_data_projections[1]);
+    check(retry_sheet_data_xml.find(R"(<c r="B1" t="s"><v>13</v></c>)")
+            != std::string::npos,
+        "dirty sheetData shared-string projection should be retryable after provider failure");
+    check(retry_sheet_data_xml.find("inlineStr") == std::string::npos,
+        "retry dirty sheetData shared-string projection should still avoid inline text");
 }
 
 void test_internal_cell_store_sheet_data_serialization()

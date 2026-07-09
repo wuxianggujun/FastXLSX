@@ -633,6 +633,12 @@ void test_public_worksheet_editor_structural_shift_source_error_cells()
                 scenario_text + " should dirty WorkbookEditor");
             check(sheet.cell_count() == expected_cells.size(),
                 scenario_text + " should expose the shifted error cell count");
+            check_live_formula_shifted_cells(
+                sheet, expected_range, expected_cells, scenario);
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),
@@ -2705,6 +2711,10 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
                 scenario_text + " should expose the expected shifted sparse count");
             check_live_formula_shifted_cells(
                 sheet, expected_range, expected_cells, scenario);
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),

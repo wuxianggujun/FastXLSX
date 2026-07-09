@@ -111,8 +111,9 @@ projection, not semantic error-token validation or formula evaluation.
 Source-backed error cells now also have structural row/column shift evidence:
 insert/delete rows and columns move surviving `t="e"` cells in the materialized
 `WorksheetEditor` sparse store, save them back as error cells, drop deleted
-source error records, fresh-reopen through public sparse views, and keep clean
-no-op saves byte-stable. This remains value projection for small-file
+source error records, expose the shifted live sparse/row/column views before
+save, fresh-reopen through public sparse views, and keep clean no-op saves
+byte-stable. This remains value projection for small-file
 In-memory editing, not metadata repair or semantic error-token validation.
 Source-backed scalar cells now have the same structural shift evidence:
 insert/delete rows and columns move blank, boolean, numeric, and inline-string
@@ -232,9 +233,10 @@ It also pins structural shifts over source formula records in the same focused
 shard: `insert_rows()`, `insert_columns()`, `delete_rows()`, and
 `delete_columns()` move materialized ordinary/shared/array/dataTable formula
 cells, rewrite moved formula text, expose the shifted live sparse/row/column
-views before save, keep formula metadata dropped, omit stale cached `<v>`
-payloads from shifted formula cells, and preserve metadata-only numeric fallback
-cells as ordinary values across save, no-op, fresh-reopen edit, and repeat no-op.
+views before save while keeping the materialized session dirty, keep formula
+metadata dropped, omit stale cached `<v>` payloads from shifted formula cells,
+and preserve metadata-only numeric fallback cells as ordinary values across
+save, no-op, fresh-reopen edit, and repeat no-op.
 Those structural-shift source formula cases now also include moved formula
 cells with A1 ranges, whole-row / whole-column references, string literals, and
 structured-reference text, so the same save/reopen/no-op path covers the narrow

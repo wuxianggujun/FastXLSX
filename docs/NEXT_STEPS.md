@@ -554,6 +554,10 @@ requested-coordinate, row, and column readback for the combined row/column
 shifted source cells across the older handle, reacquired handle, retry handle,
 and fresh reopen. This is handle-inspection parity for the materialized
 handoff, not broader metadata synchronization.
+That same retry snapshot helper now also pins `cell_count()`, `used_range()`,
+`contains_cell()`, `try_cell()`, `get_cell()`, and memory-estimate stability
+across those read-only probes, so clean reused handles stay clean while exposing
+the combined shifted sparse state.
 The path-equivalent failed-save retry path now mirrors that evidence: a rejected
 path-equivalent source-overwrite save keeps the dirty shifted session and source
 bytes intact, the safe retry/no-op output remains reusable, and a later `C3`

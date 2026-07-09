@@ -112,6 +112,8 @@
   bracketed external-workbook token text, function names, and name-like tokens as lexical formula
   text. These helpers do not synchronize tables, filters, validations, conditional formatting,
   drawings, defined names, relationships, sharedStrings/styles metadata, or calcChain.
+  Clean saved/retry outputs for shifted materialized sessions can be reacquired
+  through scalar and snapshot read observers without re-dirtying the session.
 - Source materialization supports blank, numeric, boolean, scalar `t="str"`,
   opaque error `t="e"`, formula, plain inline text, simple inline rich text
   flattened to text, and workbook-backed shared-string cells. Missing or empty

@@ -3233,6 +3233,9 @@ void test_internal_materialized_session_load_guard_failure_preserves_editor_stat
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-load-guard-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-load-guard-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-load-guard-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditorOptions options;
     options.max_replacement_cells = 1;
@@ -3252,15 +3255,26 @@ void test_internal_materialized_session_load_guard_failure_preserves_editor_stat
         "failed materialized source load should leave public pending count unchanged");
     check(!editor.last_edit_error().has_value(),
         "test-hook materialized source load failure should not update public last_edit_error");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed guarded materialized source load should not mutate the source package");
 
     editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("after-load-guard")}});
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "later valid replacement after guarded materialized load should not mutate the source package");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "after-load-guard",
         "editor should remain usable after guarded materialized load failure");
     check_not_contains(worksheet_xml, "placeholder-a1",
         "later valid replacement should not preserve the old source A1 payload");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after guarded materialized load recovery should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after guarded materialized load recovery should not mutate the source package");
 }
 
 void test_internal_materialized_session_memory_guard_failure_preserves_editor_state()
@@ -3269,6 +3283,9 @@ void test_internal_materialized_session_memory_guard_failure_preserves_editor_st
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-memory-guard-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-memory-guard-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-memory-guard-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditorOptions options;
     options.replacement_memory_budget_bytes = 1;
@@ -3286,14 +3303,25 @@ void test_internal_materialized_session_memory_guard_failure_preserves_editor_st
         "failed memory-guarded materialized load should not queue public edit diagnostics");
     check(!editor.last_edit_error().has_value(),
         "memory-guarded test-hook load failure should not update public last_edit_error");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed memory-guarded materialized source load should not mutate the source package");
 
     editor.rename_sheet("Data", "AfterMemoryGuard");
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "later rename after memory-guarded materialized load should not mutate the source package");
     check_contains(output_entries.at("xl/workbook.xml"), R"(name="AfterMemoryGuard")",
         "editor should remain usable for rename after memory-guarded materialized load failure");
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "placeholder-a1",
         "rename after materialized load failure should preserve original worksheet data");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after memory-guarded materialized load recovery should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after memory-guarded materialized load recovery should not mutate the source package");
 }
 
 void test_internal_materialized_session_missing_source_load_preserves_editor_state()
@@ -3302,6 +3330,9 @@ void test_internal_materialized_session_missing_source_load_preserves_editor_sta
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-missing-load-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-missing-load-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-missing-load-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
 
@@ -3325,15 +3356,26 @@ void test_internal_materialized_session_missing_source_load_preserves_editor_sta
         "missing-source materialized load should not add pending replacement names");
     check(!editor.last_edit_error().has_value(),
         "test-hook missing-source load failure should not update public last_edit_error");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed missing-source materialized load should not mutate the source package");
 
     editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("after-missing-load")}});
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "later replacement after missing-source materialized load should not mutate the source package");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "after-missing-load",
         "editor should remain usable after missing-source materialized load failure");
     check_not_contains(worksheet_xml, "placeholder-a1",
         "later valid replacement should not preserve the old source A1 payload");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after missing-source materialized load recovery should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after missing-source materialized load recovery should not mutate the source package");
 }
 
 } // namespace

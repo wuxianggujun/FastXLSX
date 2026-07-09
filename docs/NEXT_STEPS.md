@@ -63,6 +63,9 @@ also pin source-package immutability; the successful replacement side additional
 settles into a byte-stable no-op save.
 Planned-name rename, blank/erase, and repeated materialization flush paths now
 share the same source-package immutability and byte-stable no-op save gate.
+Materialized load guard failures now also pin recovery behavior: max-cell guard,
+memory-budget guard, and missing-source loads leave the source package unchanged
+and the later valid edit settles into a byte-stable no-op save.
 The public source-success sharedStrings shard now also pins dirty text reuse
 through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text

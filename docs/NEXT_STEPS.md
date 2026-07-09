@@ -114,6 +114,12 @@ source cells through the materialized sparse store, drop deleted source scalar
 records, save/reopen through public row/column snapshots, and keep clean no-op
 saves byte-stable without introducing sharedStrings. This remains small-file
 In-memory value projection, not sharedStrings migration or metadata repair.
+Source-backed `t="str"` scalar text cells now also have row/column structural
+shift evidence: insert/delete rows and columns move surviving cells, drop
+deleted source records, regenerate dirty output as inline strings, preserve
+untouched worksheets, fresh-reopen through public sparse views, and keep clean
+no-op saves byte-stable without introducing sharedStrings. This remains scalar
+text projection, not formula cached-result semantics or sharedStrings migration.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

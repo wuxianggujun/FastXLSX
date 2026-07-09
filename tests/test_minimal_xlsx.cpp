@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -1528,6 +1529,46 @@ void test_internal_materialized_worksheet_session_registry()
         "dirty sheetData projection should preserve dirty sparse payload");
     check(data_sheet_data_xml.find("Other") == std::string::npos,
         "dirty sheetData projections should not include clean session data");
+
+    auto shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                return text == "dirty" ? 7U : 99U;
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        shared_string_projections =
+            registry.dirty_worksheet_chunk_sources(shared_string_index_provider);
+    check(shared_string_projections.size() == 2,
+        "dirty worksheet shared-string projections should include dirty sessions");
+    std::string shared_string_data_projection_xml;
+    projection_chunk.clear();
+    while (shared_string_projections[1].read_next_chunk(projection_chunk)) {
+        shared_string_data_projection_xml += projection_chunk;
+    }
+    check(shared_string_data_projection_xml.find(
+              R"(<c r="B1" t="s"><v>7</v></c>)")
+            != std::string::npos,
+        "dirty worksheet shared-string projection should use the supplied provider");
+    check(shared_string_data_projection_xml.find("inlineStr") == std::string::npos,
+        "dirty worksheet shared-string projection should not emit inline text cells");
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        shared_string_sheet_data_projections =
+            registry.dirty_sheet_data_chunk_sources(shared_string_index_provider);
+    check(shared_string_sheet_data_projections.size() == 2,
+        "dirty sheetData shared-string projections should include dirty sessions");
+    std::string shared_string_data_sheet_data_xml;
+    projection_chunk.clear();
+    while (shared_string_sheet_data_projections[1].read_next_chunk(projection_chunk)) {
+        shared_string_data_sheet_data_xml += projection_chunk;
+    }
+    check(shared_string_data_sheet_data_xml.find(
+              R"(<c r="B1" t="s"><v>7</v></c>)")
+            != std::string::npos,
+        "dirty sheetData shared-string projection should use the supplied provider");
+    check(shared_string_data_sheet_data_xml.find("inlineStr") == std::string::npos,
+        "dirty sheetData shared-string projection should not emit inline text cells");
 }
 
 void test_internal_cell_store_sheet_data_serialization()

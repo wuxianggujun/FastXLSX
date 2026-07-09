@@ -198,6 +198,11 @@ sessions are skipped, dimensions travel beside each dirty projection, and the
 callbacks emit sparse `sheetData` payloads without a full worksheet wrapper.
 This remains private `WorksheetEditor` save-as handoff evidence, not public
 package editing or metadata repair.
+That registry handoff coverage now also checks shared-string projection
+provider forwarding: both full worksheet and standalone `sheetData` dirty
+projection enumerations pass the supplied provider through so text cells can be
+emitted as `t="s"` indexes. This is still append/reuse projection plumbing only,
+not broad sharedStrings migration, relationship repair, or content type repair.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

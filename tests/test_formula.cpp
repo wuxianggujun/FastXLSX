@@ -892,6 +892,13 @@ void test_rewrite_formula_sheet_references()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_sheet_references(
+            R"(SUM(Old!A1,Table1[[#Headers],[Old!A1]],Table1[@[Old!B2]],Old!C3))",
+            rewrites),
+        R"(SUM('New Name'!A1,Table1[[#Headers],[Old!A1]],Table1[@[Old!B2]],'New Name'!C3))",
+        "formula sheet rewrite should preserve multi-bracket structured reference text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_sheet_references(
             R"(Old!A1+"Old!B2)", rewrites),
         R"('New Name'!A1+"Old!B2)",
         "formula sheet rewrite should preserve unterminated string token text");

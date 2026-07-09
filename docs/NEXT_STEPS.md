@@ -1136,6 +1136,10 @@ The default Data overwrite reopened-output helper now also carries the same
 snapshot observer parity for those recovery paths: full/range/requested sparse
 views, duplicate requested `A2`, skipped rejected `D4` / gap coordinates, and
 empty row/column gaps stay clean after strict-option rematerialization.
+The matching saved-handle helpers now mirror that observer shape too: default
+Data A1 overwrite and later C3 recovery snapshots pin range/requested sparse
+views, duplicate requested cells, skipped gaps, and empty row/column gaps before
+the clean saved handles are reopened.
 The retry guard reopened-output helper now checks the same complete clean
 diagnostic surface after saved/no-op recovery outputs: no pending summaries,
 no materialized names/count/memory, no replacement diagnostics, and no

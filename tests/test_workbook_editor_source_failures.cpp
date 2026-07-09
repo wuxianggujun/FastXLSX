@@ -3796,6 +3796,30 @@ void test_public_worksheet_editor_rejects_source_formula_shapes_cleanly()
         },
         "CellStore worksheet loader found a formula without a materializable value",
         "formula without a materializable value");
+
+    expect_public_formula_materialization_failure(
+        "unsupported-formula-attribute",
+        write_formula_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1"><f>A1+1</f></c>)",
+                R"(<c r="A1"><f cm="1">A1+1</f></c>)");
+        },
+        "CellStore worksheet loader does not load unsupported formula attributes",
+        "unsupported source formula attribute");
+
+    expect_public_formula_materialization_failure(
+        "invalid-shared-formula-index",
+        write_formula_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1"><f>A1+1</f></c>)",
+                R"(<c r="A1"><f t="shared" si="abc">A1+1</f></c>)");
+        },
+        "CellStore worksheet loader found an invalid shared formula index",
+        "invalid shared formula index");
 }
 
 void test_public_worksheet_editor_rejects_source_inline_text_shapes_cleanly()

@@ -118,6 +118,10 @@ It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same
 save/reopen checks.
+The source-failure shard now also covers formula materialization guardrails for
+unsupported `<f>` attributes and invalid shared formula `si` values. Both cases
+must fail before materializing `WorksheetEditor`, preserve public editor state,
+and leave the editor usable for a recovery sheetData save.
 The same generated QA lane now covers the remaining current shift directions
 with `generated_in_memory_insert_column_formula` and
 `generated_in_memory_delete_row_formula`.

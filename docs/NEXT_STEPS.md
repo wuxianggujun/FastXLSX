@@ -80,6 +80,10 @@ moving the formula cell.
 The public source-success formulas shard now also exercises dirty formula saves
 that require XML escaping across ordinary, cached-result, and shared-formula
 materialized outputs, with clean no-op save and fresh reopen checks.
+It now also pins unresolved metadata-only shared formula followers with cached
+scalar values: numeric, `t="str"`, boolean, and error cached payloads
+materialize as ordinary scalar cells, dirty projection drops shared formula
+metadata/indexes, and no-op saves remain byte-stable.
 It now also pins direct mutations of source formula records across ordinary,
 shared, array, and dataTable source shapes: value overwrite, full replacement,
 explicit blank clear, and erase all drop stale formula metadata/cached values

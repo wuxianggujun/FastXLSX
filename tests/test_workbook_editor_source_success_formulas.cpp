@@ -721,6 +721,138 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
         "cached-result formula post-noop reuse no-op output");
 }
 
+void test_public_worksheet_editor_materializes_unresolved_shared_formula_cached_scalars()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-source.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-noop-output.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-output.xlsx");
+    const std::filesystem::path dirty_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-unresolved-shared-formula-cached-scalars-dirty-noop-output.xlsx");
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1"><f t="shared" si="70"/><v>12.5</v></c>)"
+        R"(<c r="B1" t="str"><f t="shared" si="71"/><v>cached-text</v></c>)"
+        R"(<c r="C1" t="b"><f t="shared" si="72"/><v>1</v></c>)"
+        R"(<c r="D1" t="e"><f t="shared" si="73"/><v>#VALUE!</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> c1 = sheet.try_cell("C1");
+    const std::optional<fastxlsx::CellValue> d1 = sheet.try_cell("D1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
+            && a1->number_value() == 12.5,
+        "unresolved shared formula cached scalar should materialize numeric fallback");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Text
+            && b1->text_value() == "cached-text",
+        "unresolved shared formula cached scalar should materialize t=str fallback");
+    check(c1.has_value() && c1->kind() == fastxlsx::CellValueKind::Boolean
+            && c1->boolean_value(),
+        "unresolved shared formula cached scalar should materialize boolean fallback");
+    check(d1.has_value() && d1->kind() == fastxlsx::CellValueKind::Error
+            && d1->text_value() == "#VALUE!",
+        "unresolved shared formula cached scalar should materialize error fallback");
+    check(!sheet.has_pending_changes(),
+        "unresolved shared formula cached scalar materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "unresolved shared formula cached scalar materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "unresolved shared formula cached scalar materialization should not queue Patch edits");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "unresolved shared formula cached scalar no-op save should keep Data clean");
+    check(!editor.has_pending_changes(),
+        "unresolved shared formula cached scalar no-op save should keep WorkbookEditor clean");
+    check(editor.pending_change_count() == 0,
+        "unresolved shared formula cached scalar no-op save should not queue Patch edits");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == source_entries,
+        "unresolved shared formula cached scalar no-op save should copy source package bytes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "unresolved shared formula cached scalar no-op save should not mutate the source package");
+    const ReopenedFormulaOutputCell noop_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(12.5)},
+        {1, 2, fastxlsx::CellValue::text("cached-text")},
+        {1, 3, fastxlsx::CellValue::boolean(true)},
+        {1, 4, fastxlsx::CellValue::error("#VALUE!")},
+    };
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 4},
+        noop_cells,
+        "unresolved shared formula cached scalar no-op output");
+
+    sheet.set_cell("F2", fastxlsx::CellValue::formula("A1+B1"));
+    check(sheet.has_pending_changes(),
+        "unresolved shared formula cached scalar later formula edit should dirty Data");
+    check(editor.has_pending_changes(),
+        "unresolved shared formula cached scalar later formula edit should dirty WorkbookEditor");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml, R"(<c r="A1"><v>12.5</v></c>)",
+        "dirty projection should write unresolved shared formula numeric fallback as scalar");
+    check_contains(output_worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>cached-text</t></is></c>)",
+        "dirty projection should write unresolved shared formula string fallback as inline text");
+    check_contains(output_worksheet_xml, R"(<c r="C1" t="b"><v>1</v></c>)",
+        "dirty projection should write unresolved shared formula boolean fallback as scalar");
+    check_contains(output_worksheet_xml, R"(<c r="D1" t="e"><v>#VALUE!</v></c>)",
+        "dirty projection should write unresolved shared formula error fallback as scalar");
+    check_contains(output_worksheet_xml, R"(<c r="F2"><f>A1+B1</f></c>)",
+        "dirty projection should include the later formula edit");
+    check_not_contains(output_worksheet_xml, R"(t="shared")",
+        "dirty projection should drop unresolved shared formula metadata");
+    check_not_contains(output_worksheet_xml, R"(si=")",
+        "dirty projection should drop unresolved shared formula indexes");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "unresolved shared formula cached scalar dirty save should not mutate the source package");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "unresolved shared formula cached scalar dirty save should preserve untouched worksheets");
+
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::number(12.5)},
+        {1, 2, fastxlsx::CellValue::text("cached-text")},
+        {1, 3, fastxlsx::CellValue::boolean(true)},
+        {1, 4, fastxlsx::CellValue::error("#VALUE!")},
+        {2, 6, fastxlsx::CellValue::formula("A1+B1")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 2, 6},
+        expected_cells,
+        "unresolved shared formula cached scalar dirty output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "unresolved shared formula cached scalar dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "unresolved shared formula cached scalar dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "unresolved shared formula cached scalar dirty no-op save should not mutate the source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "unresolved shared formula cached scalar dirty no-op save should not mutate prior no-op output");
+    check_reopened_formula_dirty_output(
+        dirty_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 6},
+        expected_cells,
+        "unresolved shared formula cached scalar dirty no-op output");
+}
+
 void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -3205,6 +3337,7 @@ int main()
         test_public_worksheet_editor_materializes_source_formulas();
         test_public_worksheet_editor_materializes_source_error_cells();
         test_public_worksheet_editor_ignores_formula_cached_result_types();
+        test_public_worksheet_editor_materializes_unresolved_shared_formula_cached_scalars();
         test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_row_column_formula_source_mutations_drop_metadata();

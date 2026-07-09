@@ -164,6 +164,11 @@ cells, rewrite moved formula text, keep formula metadata dropped, omit stale
 cached `<v>` payloads from shifted formula cells, and preserve metadata-only
 numeric fallback cells as ordinary values across save, no-op, fresh-reopen edit,
 and repeat no-op.
+Those structural-shift source formula cases now also include moved formula
+cells with A1 ranges, whole-row / whole-column references, string literals, and
+structured-reference text, so the same save/reopen/no-op path covers the narrow
+formula translator boundary without expanding into formula evaluation or
+metadata synchronization.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

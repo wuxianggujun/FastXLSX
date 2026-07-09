@@ -2205,7 +2205,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
             + stale_value(6) + R"(</v></c>)"
             + R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>)"
             + stale_value(7) + R"(</v></c>)"
-            + R"(<c r="H1"><f>G1+1</f><v>)" + stale_value(8) + R"(</v></c>)"
+            + R"(<c r="H1"><f>SUM(G1:H1)+A:A+1:1+"G1"+Table1[G1]</f><v>)"
+            + stale_value(8) + R"(</v></c>)"
             + R"(</row></sheetData></worksheet>)";
         rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
         return source;
@@ -2233,7 +2234,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
             + stale_value(6) + R"(</v></c>)"
             + R"(<c r="G2"><f t="dataTable" ref="F2:G2" ca="1"/><v>)"
             + stale_value(7) + R"(</v></c>)"
-            + R"(<c r="H2"><f>G4+1</f><v>)" + stale_value(8) + R"(</v></c>)"
+            + R"(<c r="H2"><f>SUM(G4:H4)+A:A+4:4+"G4"+Table1[G4]</f><v>)"
+            + stale_value(8) + R"(</v></c>)"
             + R"(</row></sheetData></worksheet>)";
         rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
         return source;
@@ -2261,7 +2263,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
             + stale_value(6) + R"(</v></c>)"
             + R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>)"
             + stale_value(7) + R"(</v></c>)"
-            + R"(<c r="H1"><f>G1+1</f><v>)" + stale_value(8) + R"(</v></c>)"
+            + R"(<c r="H1"><f>SUM(G1:H1)+D:E+1:1+"G1"+Table1[G1]</f><v>)"
+            + stale_value(8) + R"(</v></c>)"
             + R"(</row></sheetData></worksheet>)";
         rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
         return source;
@@ -2413,7 +2416,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
         {2, 5, fastxlsx::CellValue::number(5005.0)},
         {2, 6, fastxlsx::CellValue::formula("A2+100")},
         {2, 7, fastxlsx::CellValue::number(5007.0)},
-        {2, 8, fastxlsx::CellValue::formula("G2+1")},
+        {2, 8, fastxlsx::CellValue::formula(
+            R"(SUM(G2:H2)+A:A+2:2+"G1"+Table1[G1])")},
     };
     run_shift_case("insert-rows",
         "structural insert_rows formula source mutation",
@@ -2435,7 +2439,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
         {1, 6, fastxlsx::CellValue::number(5105.0)},
         {1, 7, fastxlsx::CellValue::formula("B1+100")},
         {1, 8, fastxlsx::CellValue::number(5107.0)},
-        {1, 9, fastxlsx::CellValue::formula("H1+1")},
+        {1, 9, fastxlsx::CellValue::formula(
+            R"(SUM(H1:I1)+B:B+1:1+"G1"+Table1[G1])")},
     };
     run_shift_case("insert-columns",
         "structural insert_columns formula source mutation",
@@ -2457,7 +2462,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
         {1, 5, fastxlsx::CellValue::number(5205.0)},
         {1, 6, fastxlsx::CellValue::formula("A3+100")},
         {1, 7, fastxlsx::CellValue::number(5207.0)},
-        {1, 8, fastxlsx::CellValue::formula("G3+1")},
+        {1, 8, fastxlsx::CellValue::formula(
+            R"(SUM(G3:H3)+A:A+3:3+"G4"+Table1[G4])")},
     };
     run_shift_case("delete-rows",
         "structural delete_rows formula source mutation",
@@ -2478,7 +2484,8 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
         {1, 4, fastxlsx::CellValue::number(5305.0)},
         {1, 5, fastxlsx::CellValue::formula("F1+100")},
         {1, 6, fastxlsx::CellValue::number(5307.0)},
-        {1, 7, fastxlsx::CellValue::formula("F1+1")},
+        {1, 7, fastxlsx::CellValue::formula(
+            R"(SUM(F1:G1)+C:D+1:1+"G1"+Table1[G1])")},
     };
     run_shift_case("delete-columns",
         "structural delete_columns formula source mutation",

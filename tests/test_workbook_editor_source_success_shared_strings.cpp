@@ -1247,6 +1247,109 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
         "source sharedStrings post-dirty edit clean no-op output");
 }
 
+void test_public_worksheet_editor_reuses_duplicate_dirty_shared_strings()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-duplicate-dirty-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-duplicate-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-duplicate-dirty-noop-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("seed-text")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::number(42.0)});
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check(source_entries.find("xl/sharedStrings.xml") != source_entries.end(),
+        "duplicate dirty sharedStrings fixture should start with a sharedStrings part");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "seed-text",
+        "duplicate dirty sharedStrings fixture should materialize source text");
+    check(!sheet.has_pending_changes(),
+        "duplicate dirty sharedStrings materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "duplicate dirty sharedStrings materialization should not dirty the editor");
+
+    sheet.set_cell("B1", fastxlsx::CellValue::text("dirty-repeat"));
+    sheet.set_cell("C2", fastxlsx::CellValue::text("dirty-repeat"));
+    check(sheet.has_pending_changes(),
+        "duplicate dirty sharedStrings edits should dirty Data");
+    check(editor.pending_materialized_cell_count() == 3,
+        "duplicate dirty sharedStrings edits should track all represented cells");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "duplicate dirty sharedStrings save should refresh worksheet dimension");
+    check_contains(worksheet_xml, R"(<c r="A1" t="s"><v>0</v></c>)",
+        "duplicate dirty sharedStrings save should keep source text on its source index");
+    check_contains(worksheet_xml, R"(<c r="B1" t="s"><v>1</v></c>)",
+        "duplicate dirty sharedStrings save should append one index for the first dirty text");
+    check_contains(worksheet_xml, R"(<c r="C2" t="s"><v>1</v></c>)",
+        "duplicate dirty sharedStrings save should reuse the appended index for duplicate dirty text");
+    check_not_contains(worksheet_xml, R"(inlineStr)",
+        "duplicate dirty sharedStrings save should keep the appendable sharedStrings projection");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "duplicate dirty sharedStrings save should preserve untouched sheet bytes");
+
+    const std::string shared_strings_after = output_entries.at("xl/sharedStrings.xml");
+    check_contains(shared_strings_after,
+        R"(<si><t>seed-text</t></si><si><t>dirty-repeat</t></si></sst>)",
+        "duplicate dirty sharedStrings save should append the repeated dirty text once");
+    check_contains(shared_strings_after, R"(count="3")",
+        "duplicate dirty sharedStrings save should count repeated dirty cell references");
+    check_contains(shared_strings_after, R"(uniqueCount="2")",
+        "duplicate dirty sharedStrings save should count only unique shared string items");
+    check(!sheet.has_pending_changes(),
+        "duplicate dirty sharedStrings save should clean Data");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "duplicate dirty sharedStrings save should clear materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "duplicate dirty sharedStrings save");
+    check(!editor.last_edit_error().has_value(),
+        "duplicate dirty sharedStrings save should keep last_edit_error clear");
+
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("seed-text")},
+        {1, 2, fastxlsx::CellValue::text("dirty-repeat")},
+        {2, 3, fastxlsx::CellValue::text("dirty-repeat")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        "duplicate dirty sharedStrings output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "duplicate dirty sharedStrings post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "duplicate dirty sharedStrings post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "duplicate dirty sharedStrings post-dirty no-op save should not mutate the source package");
+    check_reopened_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        "duplicate dirty sharedStrings post-dirty no-op output");
+}
+
 void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()
 {
     struct LegalDeclarationCase {
@@ -2408,6 +2511,7 @@ int main()
         test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_index_cells();
         test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until_index_cells();
         test_public_worksheet_editor_materializes_source_shared_strings();
+        test_public_worksheet_editor_reuses_duplicate_dirty_shared_strings();
         test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations();
         test_public_worksheet_editor_flattens_rich_source_shared_strings();
         test_public_worksheet_editor_materializes_prefixed_source_shared_strings();

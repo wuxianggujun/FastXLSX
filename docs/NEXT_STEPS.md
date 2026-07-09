@@ -40,6 +40,10 @@ dirty diagnostics, append-only sharedStrings projection, existing-string reuse
 without rewriting the table, and duplicate appended text de-duplication. This is
 WorksheetEditor small-file in-memory persistence evidence, not broad
 sharedStrings migration or metadata repair.
+The public source-success sharedStrings shard now also pins duplicate dirty
+text de-duplication through `WorksheetEditor::save_as()`: two materialized cells
+reuse one newly appended sharedStrings item, keep clean no-op saves
+byte-identical, and reopen through the public cell/snapshot APIs.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

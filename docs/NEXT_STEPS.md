@@ -177,6 +177,10 @@ Formula structural delete coverage now also pins skip-token boundaries:
 row/column deletions rewrite only real references while preserving string
 literals, structured-reference bracket contents, quoted sheet-name token text,
 external workbook bracket text, and name-like token text.
+Internal `MaterializedWorksheetSession` coverage now directly pins sparse
+row/column shift mechanics for all four directions: moved formulas are
+translated, stationary formulas are structurally rewritten, source style ids
+survive, and dirty worksheet XML projection exposes the shifted sparse bounds.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

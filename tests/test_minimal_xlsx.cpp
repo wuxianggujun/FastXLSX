@@ -923,6 +923,165 @@ void test_internal_materialized_worksheet_session()
         "materialized worksheet session should detect mismatched rematerialization options");
 }
 
+void test_internal_materialized_worksheet_session_shifts_sparse_records()
+{
+    const fastxlsx::StyleId formula_style = fastxlsx::detail::make_source_style_id(9);
+    const auto collect_worksheet_xml =
+        [](fastxlsx::detail::MaterializedWorksheetSession& session) {
+            auto projection = session.worksheet_chunk_source();
+            std::string xml;
+            std::string chunk;
+            while (projection(chunk)) {
+                xml += chunk;
+            }
+            return xml;
+        };
+    const auto check_formula_record =
+        [formula_style](const fastxlsx::detail::CellRecord* record,
+            std::string_view text,
+            const char* message) {
+            check(record != nullptr, message);
+            check(record->kind == fastxlsx::CellValueKind::Formula, message);
+            check(record->text_value == text, message);
+            check(record->style_id.has_value()
+                    && record->style_id->value() == formula_style.value(),
+                message);
+        };
+    const auto make_store = [formula_style](
+        std::uint32_t stationary_row,
+        std::uint32_t stationary_column,
+        std::string_view stationary_formula,
+        std::uint32_t moving_row,
+        std::uint32_t moving_column,
+        std::string_view moving_formula,
+        std::uint32_t tail_row,
+        std::uint32_t tail_column,
+        std::string_view tail_text) {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(stationary_row, stationary_column,
+            fastxlsx::CellValue::formula(std::string(stationary_formula))
+                .with_style(formula_style));
+        store.set_cell(moving_row, moving_column,
+            fastxlsx::CellValue::formula(std::string(moving_formula))
+                .with_style(formula_style));
+        store.set_cell(tail_row, tail_column,
+            fastxlsx::CellValue::text(std::string(tail_text)));
+        return store;
+    };
+
+    {
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Data",
+            make_store(1, 1, "A2+B1", 2, 2, "A2+B1", 3, 1, "tail-a3"));
+        session.insert_rows(2, 1);
+
+        check(session.dirty(), "materialized insert_rows should dirty shifted records");
+        check(session.cell_count() == 3,
+            "materialized insert_rows should preserve sparse record count");
+        check_formula_record(session.try_cell(1, 1), "A3+B1",
+            "materialized insert_rows should rewrite stationary formula references");
+        check_formula_record(session.try_cell(3, 2), "A3+B2",
+            "materialized insert_rows should translate moved formula references");
+        check(session.try_cell(2, 2) == nullptr,
+            "materialized insert_rows should remove old moved formula coordinate");
+        const fastxlsx::detail::CellRecord* tail = session.try_cell(4, 1);
+        check(tail != nullptr && tail->kind == fastxlsx::CellValueKind::Text &&
+                tail->text_value == "tail-a3",
+            "materialized insert_rows should shift trailing text records");
+        const std::string xml = collect_worksheet_xml(session);
+        check(xml.find(R"(<dimension ref="A1:B4"/>)") != std::string::npos,
+            "materialized insert_rows projection should expose shifted bounds");
+        check(xml.find(R"(<c r="A1" s="9"><f>A3+B1</f></c>)") != std::string::npos,
+            "materialized insert_rows projection should write stationary rewritten formula");
+        check(xml.find(R"(<c r="B3" s="9"><f>A3+B2</f></c>)") != std::string::npos,
+            "materialized insert_rows projection should write moved translated formula");
+        check(xml.find(R"(<c r="A4" t="inlineStr"><is><t>tail-a3</t></is></c>)")
+                != std::string::npos,
+            "materialized insert_rows projection should write shifted text");
+    }
+
+    {
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Data",
+            make_store(1, 1, "A2+A3", 3, 2, "A3+B4", 4, 1, "tail-a4"));
+        session.delete_rows(2, 1);
+
+        check(session.dirty(), "materialized delete_rows should dirty shifted records");
+        check(session.cell_count() == 3,
+            "materialized delete_rows should preserve surviving sparse record count");
+        check_formula_record(session.try_cell(1, 1), "#REF!+A2",
+            "materialized delete_rows should rewrite stationary formula references");
+        check_formula_record(session.try_cell(2, 2), "A2+B3",
+            "materialized delete_rows should translate moved formula references");
+        check(session.try_cell(3, 2) == nullptr,
+            "materialized delete_rows should remove old moved formula coordinate");
+        const fastxlsx::detail::CellRecord* tail = session.try_cell(3, 1);
+        check(tail != nullptr && tail->text_value == "tail-a4",
+            "materialized delete_rows should shift trailing text records");
+        const std::string xml = collect_worksheet_xml(session);
+        check(xml.find(R"(<dimension ref="A1:B3"/>)") != std::string::npos,
+            "materialized delete_rows projection should expose shifted bounds");
+        check(xml.find(R"(<c r="A1" s="9"><f>#REF!+A2</f></c>)") != std::string::npos,
+            "materialized delete_rows projection should write stationary rewritten formula");
+        check(xml.find(R"(<c r="B2" s="9"><f>A2+B3</f></c>)") != std::string::npos,
+            "materialized delete_rows projection should write moved translated formula");
+    }
+
+    {
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Data",
+            make_store(1, 1, "B1+C1", 1, 2, "B1+C1", 2, 3, "tail-c2"));
+        session.insert_columns(2, 1);
+
+        check(session.dirty(), "materialized insert_columns should dirty shifted records");
+        check(session.cell_count() == 3,
+            "materialized insert_columns should preserve sparse record count");
+        check_formula_record(session.try_cell(1, 1), "C1+D1",
+            "materialized insert_columns should rewrite stationary formula references");
+        check_formula_record(session.try_cell(1, 3), "C1+D1",
+            "materialized insert_columns should translate moved formula references");
+        check(session.try_cell(1, 2) == nullptr,
+            "materialized insert_columns should remove old moved formula coordinate");
+        const fastxlsx::detail::CellRecord* tail = session.try_cell(2, 4);
+        check(tail != nullptr && tail->text_value == "tail-c2",
+            "materialized insert_columns should shift trailing text records");
+        const std::string xml = collect_worksheet_xml(session);
+        check(xml.find(R"(<dimension ref="A1:D2"/>)") != std::string::npos,
+            "materialized insert_columns projection should expose shifted bounds");
+        check(xml.find(R"(<c r="A1" s="9"><f>C1+D1</f></c>)") != std::string::npos,
+            "materialized insert_columns projection should write stationary rewritten formula");
+        check(xml.find(R"(<c r="C1" s="9"><f>C1+D1</f></c>)") != std::string::npos,
+            "materialized insert_columns projection should write moved translated formula");
+    }
+
+    {
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Data",
+            make_store(1, 1, "B1+C1", 1, 3, "B1+C1", 2, 4, "tail-d2"));
+        session.delete_columns(2, 1);
+
+        check(session.dirty(), "materialized delete_columns should dirty shifted records");
+        check(session.cell_count() == 3,
+            "materialized delete_columns should preserve surviving sparse record count");
+        check_formula_record(session.try_cell(1, 1), "#REF!+B1",
+            "materialized delete_columns should rewrite stationary formula references");
+        check_formula_record(session.try_cell(1, 2), "A1+B1",
+            "materialized delete_columns should translate moved formula references");
+        check(session.try_cell(1, 3) == nullptr,
+            "materialized delete_columns should remove old moved formula coordinate");
+        const fastxlsx::detail::CellRecord* tail = session.try_cell(2, 3);
+        check(tail != nullptr && tail->text_value == "tail-d2",
+            "materialized delete_columns should shift trailing text records");
+        const std::string xml = collect_worksheet_xml(session);
+        check(xml.find(R"(<dimension ref="A1:C2"/>)") != std::string::npos,
+            "materialized delete_columns projection should expose shifted bounds");
+        check(xml.find(R"(<c r="A1" s="9"><f>#REF!+B1</f></c>)") != std::string::npos,
+            "materialized delete_columns projection should write stationary rewritten formula");
+        check(xml.find(R"(<c r="B1" s="9"><f>A1+B1</f></c>)") != std::string::npos,
+            "materialized delete_columns projection should write moved translated formula");
+    }
+}
+
 void test_internal_materialized_worksheet_session_registry()
 {
     fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
@@ -2295,6 +2454,7 @@ int main()
         test_internal_cell_store_sparse_boundary();
         test_internal_cell_store_guardrails();
         test_internal_materialized_worksheet_session();
+        test_internal_materialized_worksheet_session_shifts_sparse_records();
         test_internal_materialized_worksheet_session_registry();
         test_internal_cell_store_sheet_data_serialization();
         test_internal_cell_store_worksheet_loader();

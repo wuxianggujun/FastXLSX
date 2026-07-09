@@ -854,6 +854,8 @@ void test_materialized_flush_appends_shared_strings_projection()
         materialize_session(registry, "Data");
     data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
     data.set_cell(1, 2, fastxlsx::CellValue::text("new-shared"));
+    data.set_cell(1, 3, fastxlsx::CellValue::text("escaped <&> shared"));
+    data.set_cell(1, 4, fastxlsx::CellValue::text("  spaced shared  "));
     data.set_cell(2, 1, fastxlsx::CellValue::number(9.0));
 
     const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -876,22 +878,30 @@ void test_materialized_flush_appends_shared_strings_projection()
     const std::string shared_strings =
         read_stored_package_entry(output, "xl/sharedStrings.xml");
 
-    check(worksheet.find(R"(<dimension ref="A1:B2"/>)") != std::string::npos,
+    check(worksheet.find(R"(<dimension ref="A1:D2"/>)") != std::string::npos,
         "sharedStrings materialized flush should update sparse dimensions");
     check(worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
         "sharedStrings materialized flush should reuse source string index");
     check(worksheet.find(R"(<c r="B1" t="s"><v>1</v></c>)") != std::string::npos,
         "sharedStrings materialized flush should reference appended string index");
+    check(worksheet.find(R"(<c r="C1" t="s"><v>2</v></c>)") != std::string::npos,
+        "sharedStrings materialized flush should reference escaped appended string index");
+    check(worksheet.find(R"(<c r="D1" t="s"><v>3</v></c>)") != std::string::npos,
+        "sharedStrings materialized flush should reference whitespace appended string index");
     check(worksheet.find(R"(<c r="A2"><v>9</v></c>)") != std::string::npos,
         "sharedStrings materialized flush should keep numeric cells value-only");
     check(worksheet.find("inlineStr") == std::string::npos,
         "sharedStrings materialized flush should not emit inline text fallback");
-    check(shared_strings.find(R"(count="2")") != std::string::npos &&
-            shared_strings.find(R"(uniqueCount="2")") != std::string::npos,
+    check(shared_strings.find(R"(count="4")") != std::string::npos &&
+            shared_strings.find(R"(uniqueCount="4")") != std::string::npos,
         "sharedStrings materialized flush should update source table counts");
-    check(shared_strings.find(R"(<si><t>existing</t></si><si><t>new-shared</t></si>)")
-            != std::string::npos,
-        "sharedStrings materialized flush should append only missing text");
+    const std::string expected_appended_shared_strings =
+        R"(<si><t>existing</t></si>)"
+        R"(<si><t>new-shared</t></si>)"
+        R"(<si><t>escaped &lt;&amp;&gt; shared</t></si>)"
+        R"(<si><t xml:space="preserve">  spaced shared  </t></si>)";
+    check(shared_strings.find(expected_appended_shared_strings) != std::string::npos,
+        "sharedStrings materialized flush should append missing text with XML escaping and whitespace preservation");
     check_materialized_flush_noop_save_is_stable(
         editor,
         registry,

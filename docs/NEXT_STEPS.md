@@ -122,6 +122,10 @@ The source-failure shard now also covers formula materialization guardrails for
 unsupported `<f>` attributes and invalid shared formula `si` values. Both cases
 must fail before materializing `WorksheetEditor`, preserve public editor state,
 and leave the editor usable for a recovery sheetData save.
+The lightweight formula target now also pins structural rewrite token skipping
+for multi-bracket structured references such as `Table1[[#Headers],[B1]]` and
+`Table1[@[B1]]`, so WorksheetEditor row/column shifts do not rewrite embedded
+reference-like text inside those structured-reference tokens.
 The same generated QA lane now covers the remaining current shift directions
 with `generated_in_memory_insert_column_formula` and
 `generated_in_memory_delete_row_formula`.

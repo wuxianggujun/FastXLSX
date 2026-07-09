@@ -544,6 +544,13 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(B1,Table1[[#Headers],[B1]],Table1[@[B1]],B2))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"(SUM(C1,Table1[[#Headers],[B1]],Table1[@[B1]],C2))",
+        "formula structural column insert should preserve multi-bracket structured reference text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(SUM(B1,"B1""B2",B2,Table1[B1]))",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
         R"(SUM(C1,"B1""B2",C2,Table1[B1]))",

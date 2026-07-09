@@ -47,6 +47,9 @@ sharedStrings, and duplicate-appended sharedStrings handoff paths.
 The stale-target flush rejection path now mirrors that save stability on the
 failure side: both the first safe output and the repeated no-op output stay
 source-copy while the stale dirty session and dirty diagnostics remain intact.
+Shared-string projection provider failures now also preserve retryability:
+both sheetData-only and full worksheet projection paths can be retried with a
+recovered provider while keeping the dirty session diagnostics intact.
 The public source-success sharedStrings shard now also pins dirty text reuse
 through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text

@@ -396,6 +396,37 @@ void test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty()
     }), "failing shared-string sheetData projection should propagate provider errors");
     check(data.dirty(),
         "failing shared-string sheetData projection should keep session dirty");
+    check(registry.dirty_session_count() == 1,
+        "failing shared-string sheetData projection should keep dirty diagnostics");
+
+    auto recovery_shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                if (text == "known") {
+                    return 0;
+                }
+                if (text == "missing") {
+                    return 3;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "unexpected shared string text in sheetData projection retry");
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetSheetDataProjection>
+        retry_projections = registry.dirty_sheet_data_chunk_sources(
+            recovery_shared_string_index_provider);
+    check(retry_projections.size() == 1,
+        "retry shared-string sheetData projection should still include dirty session");
+    auto retry_read_next_chunk = retry_projections[0].read_next_chunk;
+    const std::string retry_xml = read_all_chunks(retry_read_next_chunk);
+    check(retry_xml.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
+        "retry shared-string sheetData projection should reuse known string index");
+    check(retry_xml.find(R"(<c r="B1" t="s"><v>3</v></c>)") != std::string::npos,
+        "retry shared-string sheetData projection should use recovered string index");
+    check(data.dirty(),
+        "retry shared-string sheetData projection should keep session dirty");
+    check(registry.dirty_session_count() == 1,
+        "retry shared-string sheetData projection should keep dirty diagnostics");
 }
 
 void test_dirty_worksheet_projection_provider_failure_keeps_session_dirty()
@@ -433,6 +464,39 @@ void test_dirty_worksheet_projection_provider_failure_keeps_session_dirty()
     }), "failing shared-string worksheet projection should propagate provider errors");
     check(data.dirty(),
         "failing shared-string worksheet projection should keep session dirty");
+    check(registry.dirty_session_count() == 1,
+        "failing shared-string worksheet projection should keep dirty diagnostics");
+
+    auto recovery_shared_string_index_provider =
+        std::make_shared<fastxlsx::detail::CellStoreSharedStringIndexProvider>(
+            [](std::string_view text) -> std::uint32_t {
+                if (text == "known") {
+                    return 0;
+                }
+                if (text == "missing") {
+                    return 4;
+                }
+                throw fastxlsx::FastXlsxError(
+                    "unexpected shared string text in worksheet projection retry");
+            });
+
+    const std::vector<fastxlsx::detail::MaterializedWorksheetProjection>
+        retry_projections = registry.dirty_worksheet_chunk_sources(
+            recovery_shared_string_index_provider);
+    check(retry_projections.size() == 1,
+        "retry shared-string worksheet projection should still include dirty session");
+    auto retry_read_next_chunk = retry_projections[0].read_next_chunk;
+    const std::string retry_xml = read_all_chunks(retry_read_next_chunk);
+    check(retry_xml.find(R"(<dimension ref="A1:A2"/>)") != std::string::npos,
+        "retry shared-string worksheet projection should keep sparse dimensions");
+    check(retry_xml.find(R"(<c r="A1" t="s"><v>0</v></c>)") != std::string::npos,
+        "retry shared-string worksheet projection should reuse known string index");
+    check(retry_xml.find(R"(<c r="A2" t="s"><v>4</v></c>)") != std::string::npos,
+        "retry shared-string worksheet projection should use recovered string index");
+    check(data.dirty(),
+        "retry shared-string worksheet projection should keep session dirty");
+    check(registry.dirty_session_count() == 1,
+        "retry shared-string worksheet projection should keep dirty diagnostics");
 }
 
 void test_dirty_sheet_data_projection_provider_skips_non_text_records()

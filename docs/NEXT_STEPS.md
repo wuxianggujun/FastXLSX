@@ -45,6 +45,10 @@ through `WorksheetEditor::save_as()`: materialized cells can reuse an existing
 source sharedStrings item without rewriting the table, duplicate dirty text
 reuses one newly appended item, clean no-op saves stay byte-identical, and the
 outputs reopen through the public cell/snapshot APIs.
+It also pins source-backed shared-string cells across structural row/column
+shifts: insert/delete rows and columns move the materialized text cells,
+preserve sharedStrings indexes/table bytes on save, keep untouched worksheets
+byte-stable, and keep follow-up no-op saves byte-identical.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

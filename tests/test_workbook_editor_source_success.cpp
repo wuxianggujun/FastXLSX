@@ -1910,6 +1910,313 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
         "prefixed inline post-noop reuse no-op output");
 }
 
+void test_public_worksheet_editor_structural_shift_prefixed_source_inline_strings()
+{
+    const auto write_prefixed_inline_shift_source =
+        [](std::string_view name, std::string_view sheet_data) {
+            const std::filesystem::path source = write_two_sheet_source(name);
+            const std::string worksheet_xml =
+                std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+                + R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test">)"
+                + std::string(sheet_data)
+                + R"(</x:worksheet>)";
+            rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+            return source;
+        };
+
+    const auto run_prefixed_inline_shift_case =
+        [&](std::string_view artifact_suffix,
+            std::string_view scenario,
+            const std::filesystem::path& source,
+            std::size_t source_cell_count,
+            auto mutate,
+            const fastxlsx::CellRange& expected_range,
+            std::span<const ReopenedSourceSuccessCell> expected_cells,
+            std::initializer_list<std::string_view> expected_xml_fragments,
+            std::initializer_list<std::string_view> omitted_tokens,
+            const fastxlsx::CellRange& reopened_range,
+            const ReopenedSourceSuccessCell& reopened_edit,
+            std::string_view reopened_edit_xml_fragment) {
+            const std::string artifact_suffix_text(artifact_suffix);
+            const std::string scenario_text(scenario);
+            const std::filesystem::path output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-prefixed-inline-"
+                + artifact_suffix_text + "-output.xlsx");
+            const std::filesystem::path noop_output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-prefixed-inline-"
+                + artifact_suffix_text + "-noop-output.xlsx");
+            const std::filesystem::path reopened_output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-prefixed-inline-"
+                + artifact_suffix_text + "-reopened-output.xlsx");
+            const std::filesystem::path reopened_noop_output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-prefixed-inline-"
+                + artifact_suffix_text + "-reopened-noop-output.xlsx");
+            const auto source_entries = fastxlsx::test::read_zip_entries(source);
+            const std::string& source_worksheet_xml =
+                source_entries.at("xl/worksheets/sheet1.xml");
+            check_contains(source_worksheet_xml, "<x:worksheet",
+                scenario_text + " fixture should use a qualified worksheet root");
+            check_contains(source_worksheet_xml, "<x:is>",
+                scenario_text + " fixture should use qualified inline-string wrappers");
+            check_contains(source_worksheet_xml, "<x:rPr>",
+                scenario_text + " fixture should include prefixed rich text formatting");
+            check_contains(source_worksheet_xml, "ignored-prefixed",
+                scenario_text + " fixture should include ignored prefixed metadata text");
+
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            check(sheet.cell_count() == source_cell_count,
+                scenario_text + " setup should materialize prefixed inline cells");
+            check(!sheet.has_pending_changes(),
+                scenario_text + " setup should start clean");
+            check(!editor.has_pending_changes(),
+                scenario_text + " setup should not dirty WorkbookEditor");
+
+            mutate(sheet);
+
+            check(sheet.has_pending_changes(),
+                scenario_text + " should dirty Data");
+            check(editor.has_pending_changes(),
+                scenario_text + " should dirty WorkbookEditor");
+            check(sheet.cell_count() == expected_cells.size(),
+                scenario_text + " should expose the shifted prefixed inline cell count");
+
+            editor.save_as(output);
+            check(!sheet.has_pending_changes(),
+                scenario_text + " save should keep Data clean");
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            const std::string& output_worksheet_xml =
+                output_entries.at("xl/worksheets/sheet1.xml");
+            check_contains(output_worksheet_xml,
+                R"(<x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:fx="urn:fastxlsx:test">)",
+                scenario_text + " save should preserve the source worksheet wrapper prefix");
+            check_contains(output_worksheet_xml, "<x:dimension",
+                scenario_text + " save should refresh dimension using the source prefix");
+            for (std::string_view expected_xml_fragment : expected_xml_fragments) {
+                check_contains(output_worksheet_xml, expected_xml_fragment,
+                    scenario_text + " save should write shifted prefixed values as plain cells");
+            }
+            for (std::string_view omitted_token : omitted_tokens) {
+                check_not_contains(output_worksheet_xml, omitted_token,
+                    scenario_text + " save should omit deleted prefixed source cells");
+            }
+            check_not_contains(output_worksheet_xml, "<x:c",
+                scenario_text + " save should not preserve source cell element prefixes");
+            check_not_contains(output_worksheet_xml, "<x:is",
+                scenario_text + " save should not preserve source inline-string prefixes");
+            check_not_contains(output_worksheet_xml, "<x:t",
+                scenario_text + " save should not preserve source text element prefixes");
+            check_not_contains(output_worksheet_xml, "<x:r",
+                scenario_text + " save should not preserve source rich-text run prefixes");
+            check_not_contains(output_worksheet_xml, "ignored-prefixed",
+                scenario_text + " save should omit ignored prefixed metadata text");
+            check(output_entries.find("xl/sharedStrings.xml") == output_entries.end(),
+                scenario_text + " save should not introduce sharedStrings");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                scenario_text + " save should not mutate the source package");
+            check(output_entries.at("xl/worksheets/sheet2.xml")
+                    == source_entries.at("xl/worksheets/sheet2.xml"),
+                scenario_text + " save should preserve untouched worksheets");
+            check_reopened_source_success_dirty_output(
+                output, expected_range, expected_cells, scenario);
+
+            editor.save_as(noop_output);
+            check(!sheet.has_pending_changes(),
+                scenario_text + " no-op save should keep Data clean");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " no-op save should keep output byte-stable");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                scenario_text + " no-op save should not mutate the source package");
+            check_reopened_source_success_dirty_output(
+                noop_output, expected_range, expected_cells, scenario_text + " no-op output");
+
+            fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            check(!reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh reopen should start clean");
+            reopened_sheet.set_cell(
+                reopened_edit.row, reopened_edit.column, reopened_edit.value);
+            reopened_editor.save_as(reopened_output);
+            const auto reopened_entries = fastxlsx::test::read_zip_entries(reopened_output);
+            const std::string& reopened_worksheet_xml =
+                reopened_entries.at("xl/worksheets/sheet1.xml");
+            for (std::string_view expected_xml_fragment : expected_xml_fragments) {
+                check_contains(reopened_worksheet_xml, expected_xml_fragment,
+                    scenario_text + " fresh-reopen save should keep shifted prefixed cells");
+            }
+            check_contains(reopened_worksheet_xml, reopened_edit_xml_fragment,
+                scenario_text + " fresh-reopen save should include the later edit");
+            check_not_contains(reopened_worksheet_xml, "<x:c",
+                scenario_text + " fresh-reopen save should keep regenerated cells unprefixed");
+            check_not_contains(reopened_worksheet_xml, "ignored-prefixed",
+                scenario_text + " fresh-reopen save should keep ignored metadata omitted");
+            check(reopened_entries.find("xl/sharedStrings.xml") == reopened_entries.end(),
+                scenario_text + " fresh-reopen save should still avoid sharedStrings");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " fresh-reopen save should not mutate its saved input");
+
+            std::vector<ReopenedSourceSuccessCell> reopened_expected(
+                expected_cells.begin(), expected_cells.end());
+            reopened_expected.push_back(reopened_edit);
+            check_reopened_source_success_dirty_output(
+                reopened_output,
+                reopened_range,
+                std::span<const ReopenedSourceSuccessCell>(
+                    reopened_expected.data(), reopened_expected.size()),
+                scenario_text + " fresh-reopen output");
+
+            reopened_editor.save_as(reopened_noop_output);
+            check(!reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh-reopen no-op save should keep Data clean");
+            check(fastxlsx::test::read_zip_entries(reopened_noop_output)
+                    == reopened_entries,
+                scenario_text + " fresh-reopen no-op save should keep output byte-stable");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " fresh-reopen no-op save should not mutate its saved input");
+            check_reopened_source_success_dirty_output(
+                reopened_noop_output,
+                reopened_range,
+                std::span<const ReopenedSourceSuccessCell>(
+                    reopened_expected.data(), reopened_expected.size()),
+                scenario_text + " fresh-reopen no-op output");
+        };
+
+    constexpr std::string_view insert_source_sheet_data =
+        R"(<x:sheetData><x:row r="1">)"
+        R"(<x:c r="A1" t="inlineStr"><x:is><x:t>prefixed-a</x:t></x:is></x:c>)"
+        R"(<x:c r="C1" t="inlineStr"><x:is><x:t xml:space="preserve"> spaced </x:t></x:is></x:c>)"
+        R"(</x:row><x:row r="2">)"
+        R"(<x:c r="B2" t="inlineStr"><x:is>)"
+        R"(<x:r><x:rPr><x:b/></x:rPr><x:t>rich-</x:t></x:r>)"
+        R"(<x:r><x:t>tail</x:t></x:r>)"
+        R"(<x:rPh sb="0" eb="1"><x:t>ignored-prefixed-phonetic</x:t></x:rPh>)"
+        R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:t>ignored-prefixed-ext</x:t></fx:opaque></x:ext></x:extLst>)"
+        R"(</x:is></x:c>)"
+        R"(</x:row></x:sheetData>)";
+    const ReopenedSourceSuccessCell insert_rows_expected[] = {
+        {2, 1, fastxlsx::CellValue::text("prefixed-a")},
+        {2, 3, fastxlsx::CellValue::text(" spaced ")},
+        {3, 2, fastxlsx::CellValue::text("rich-tail")},
+    };
+    run_prefixed_inline_shift_case("insert-rows",
+        "structural insert_rows prefixed inline source shift",
+        write_prefixed_inline_shift_source(
+            "fastxlsx-workbook-editor-public-structural-insert-rows-prefixed-inline-source.xlsx",
+            insert_source_sheet_data),
+        3,
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_rows(1, 1); },
+        fastxlsx::CellRange {2, 1, 3, 3},
+        insert_rows_expected,
+        {
+            R"(<c r="A2" t="inlineStr"><is><t>prefixed-a</t></is></c>)",
+            R"(<c r="C2" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c>)",
+            R"(<c r="B3" t="inlineStr"><is><t>rich-tail</t></is></c>)",
+        },
+        {},
+        fastxlsx::CellRange {2, 1, 4, 4},
+        ReopenedSourceSuccessCell {4, 4, fastxlsx::CellValue::text("later prefixed & <row>")},
+        R"(<c r="D4" t="inlineStr"><is><t>later prefixed &amp; &lt;row&gt;</t></is></c>)");
+
+    const ReopenedSourceSuccessCell insert_columns_expected[] = {
+        {1, 2, fastxlsx::CellValue::text("prefixed-a")},
+        {1, 4, fastxlsx::CellValue::text(" spaced ")},
+        {2, 3, fastxlsx::CellValue::text("rich-tail")},
+    };
+    run_prefixed_inline_shift_case("insert-columns",
+        "structural insert_columns prefixed inline source shift",
+        write_prefixed_inline_shift_source(
+            "fastxlsx-workbook-editor-public-structural-insert-columns-prefixed-inline-source.xlsx",
+            insert_source_sheet_data),
+        3,
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(1, 1); },
+        fastxlsx::CellRange {1, 2, 2, 4},
+        insert_columns_expected,
+        {
+            R"(<c r="B1" t="inlineStr"><is><t>prefixed-a</t></is></c>)",
+            R"(<c r="D1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c>)",
+            R"(<c r="C2" t="inlineStr"><is><t>rich-tail</t></is></c>)",
+        },
+        {},
+        fastxlsx::CellRange {1, 2, 3, 5},
+        ReopenedSourceSuccessCell {3, 5, fastxlsx::CellValue::text("later prefixed & <column>")},
+        R"(<c r="E3" t="inlineStr"><is><t>later prefixed &amp; &lt;column&gt;</t></is></c>)");
+
+    constexpr std::string_view delete_rows_source_sheet_data =
+        R"(<x:sheetData><x:row r="1">)"
+        R"(<x:c r="A1" t="inlineStr"><x:is><x:r><x:rPr><x:b/></x:rPr><x:t>deleted-prefixed-row</x:t></x:r></x:is></x:c>)"
+        R"(</x:row><x:row r="2">)"
+        R"(<x:c r="A2" t="inlineStr"><x:is><x:t>prefixed-a</x:t></x:is></x:c>)"
+        R"(<x:c r="C2" t="inlineStr"><x:is><x:t xml:space="preserve"> spaced </x:t></x:is></x:c>)"
+        R"(</x:row><x:row r="3">)"
+        R"(<x:c r="B3" t="inlineStr"><x:is>)"
+        R"(<x:r><x:rPr><x:b/></x:rPr><x:t>rich-</x:t></x:r>)"
+        R"(<x:r><x:t>tail</x:t></x:r>)"
+        R"(<x:rPh sb="0" eb="1"><x:t>ignored-prefixed-phonetic</x:t></x:rPh>)"
+        R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:t>ignored-prefixed-ext</x:t></fx:opaque></x:ext></x:extLst>)"
+        R"(</x:is></x:c>)"
+        R"(</x:row></x:sheetData>)";
+    const ReopenedSourceSuccessCell delete_rows_expected[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-a")},
+        {1, 3, fastxlsx::CellValue::text(" spaced ")},
+        {2, 2, fastxlsx::CellValue::text("rich-tail")},
+    };
+    run_prefixed_inline_shift_case("delete-rows",
+        "structural delete_rows prefixed inline source shift",
+        write_prefixed_inline_shift_source(
+            "fastxlsx-workbook-editor-public-structural-delete-rows-prefixed-inline-source.xlsx",
+            delete_rows_source_sheet_data),
+        4,
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_rows(1, 1); },
+        fastxlsx::CellRange {1, 1, 2, 3},
+        delete_rows_expected,
+        {
+            R"(<c r="A1" t="inlineStr"><is><t>prefixed-a</t></is></c>)",
+            R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c>)",
+            R"(<c r="B2" t="inlineStr"><is><t>rich-tail</t></is></c>)",
+        },
+        {"deleted-prefixed-row"},
+        fastxlsx::CellRange {1, 1, 3, 4},
+        ReopenedSourceSuccessCell {3, 4, fastxlsx::CellValue::text("later prefixed & <delete-row>")},
+        R"(<c r="D3" t="inlineStr"><is><t>later prefixed &amp; &lt;delete-row&gt;</t></is></c>)");
+
+    constexpr std::string_view delete_columns_source_sheet_data =
+        R"(<x:sheetData><x:row r="1">)"
+        R"(<x:c r="A1" t="inlineStr"><x:is><x:r><x:rPr><x:b/></x:rPr><x:t>deleted-prefixed-column</x:t></x:r></x:is></x:c>)"
+        R"(<x:c r="B1" t="inlineStr"><x:is><x:t>prefixed-a</x:t></x:is></x:c>)"
+        R"(<x:c r="D1" t="inlineStr"><x:is><x:t xml:space="preserve"> spaced </x:t></x:is></x:c>)"
+        R"(</x:row><x:row r="2">)"
+        R"(<x:c r="C2" t="inlineStr"><x:is>)"
+        R"(<x:r><x:rPr><x:b/></x:rPr><x:t>rich-</x:t></x:r>)"
+        R"(<x:r><x:t>tail</x:t></x:r>)"
+        R"(<x:rPh sb="0" eb="1"><x:t>ignored-prefixed-phonetic</x:t></x:rPh>)"
+        R"(<x:extLst><x:ext uri="{fastxlsx-test}"><fx:opaque><x:t>ignored-prefixed-ext</x:t></fx:opaque></x:ext></x:extLst>)"
+        R"(</x:is></x:c>)"
+        R"(</x:row></x:sheetData>)";
+    const ReopenedSourceSuccessCell delete_columns_expected[] = {
+        {1, 1, fastxlsx::CellValue::text("prefixed-a")},
+        {1, 3, fastxlsx::CellValue::text(" spaced ")},
+        {2, 2, fastxlsx::CellValue::text("rich-tail")},
+    };
+    run_prefixed_inline_shift_case("delete-columns",
+        "structural delete_columns prefixed inline source shift",
+        write_prefixed_inline_shift_source(
+            "fastxlsx-workbook-editor-public-structural-delete-columns-prefixed-inline-source.xlsx",
+            delete_columns_source_sheet_data),
+        4,
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_columns(1, 1); },
+        fastxlsx::CellRange {1, 1, 2, 3},
+        delete_columns_expected,
+        {
+            R"(<c r="A1" t="inlineStr"><is><t>prefixed-a</t></is></c>)",
+            R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve"> spaced </t></is></c>)",
+            R"(<c r="B2" t="inlineStr"><is><t>rich-tail</t></is></c>)",
+        },
+        {"deleted-prefixed-column"},
+        fastxlsx::CellRange {1, 1, 3, 4},
+        ReopenedSourceSuccessCell {3, 4, fastxlsx::CellValue::text("later prefixed & <delete-column>")},
+        R"(<c r="D3" t="inlineStr"><is><t>later prefixed &amp; &lt;delete-column&gt;</t></is></c>)");
+}
+
 void test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled()
 {
     const std::filesystem::path source =
@@ -3439,6 +3746,7 @@ int main()
         test_public_worksheet_editor_flattens_source_inline_rich_text();
         test_public_worksheet_editor_structural_shift_source_inline_rich_text();
         test_public_worksheet_editor_materializes_prefixed_source_inline_strings();
+        test_public_worksheet_editor_structural_shift_prefixed_source_inline_strings();
         test_public_worksheet_editor_materializes_source_default_style_attribute_as_unstyled();
         test_public_worksheet_editor_materializes_empty_source_worksheets();
         test_public_worksheet_editor_preserves_source_wrapper_metadata_on_dirty_sheet_data_flush();

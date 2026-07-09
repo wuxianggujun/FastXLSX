@@ -126,6 +126,13 @@ drop deleted rich-text source cells, regenerate dirty output without run
 formatting, phonetic markup, ignored extension text, or sharedStrings, preserve
 untouched worksheets, and keep fresh-reopen no-op saves byte-stable. This
 remains small-file In-memory text projection, not rich-text style preservation.
+Prefixed source inline strings now have the same structural shift evidence:
+insert/delete rows and columns move values materialized through local-name
+parsing, preserve `xml:space` text, flatten prefixed rich runs, drop deleted
+source records, keep the prefixed worksheet wrapper, regenerate sheetData cells
+without source element prefixes or ignored extension text, and keep clean no-op
+saves byte-stable. This remains namespace-tolerant value projection, not
+namespace repair or rich-text style preservation.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

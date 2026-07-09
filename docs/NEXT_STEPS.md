@@ -150,6 +150,11 @@ Public dirty-state coverage now also treats `used_range()`, `row_cells()`, and
 dirty materialized sessions: these reads do not dirty clean sessions, do not
 replace `last_edit_error()`, and do not queue a materialized handoff before
 `save_as()`.
+The same-handle save path now also inspects the clean saved `WorksheetEditor`
+handle after the first save, after a second dirty save, and after the follow-up
+no-op save: `used_range()`, `sparse_cells()`, `row_cells()`,
+`column_cells()`, and `try_cell()` all expose saved state without re-dirtying
+the handle or materialized diagnostics.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

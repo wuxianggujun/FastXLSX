@@ -516,6 +516,20 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1:B3+C1:D2",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 1}),
+        "A1:B4+C1:D3",
+        "formula structural row insert should rewrite range endpoints independently when insertion splits a range");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            "A1:D2+C3:E4",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 2}),
+        "A1:F2+E3:G4",
+        "formula structural column insert should rewrite range endpoints independently when insertion splits a range");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(SUM('O''Brien'!A2,[Book.xlsx]Sheet1!A4,Table1[A2],"A2"))",
             FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 2}),
         R"(SUM('O''Brien'!#REF!,[Book.xlsx]Sheet1!A2,Table1[A2],"A2"))",
@@ -583,6 +597,20 @@ void test_rewrite_formula_references_for_structural_edit()
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 2}),
         R"(SUM($D:$E,2:3,Sheet1!$2:$3))",
         "formula structural column insert should move whole-column axes and preserve whole-row axes");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(1:3,Sheet1!$1:$3,A:A))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 1}),
+        R"(SUM(1:4,Sheet1!$1:$4,A:A))",
+        "formula structural row insert should expand whole-row axes when insertion splits the axis range");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"(SUM(A:D,Sheet1!$A:$D,1:1))",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 2}),
+        R"(SUM(A:F,Sheet1!$A:$F,1:1))",
+        "formula structural column insert should expand whole-column axes when insertion splits the axis range");
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(

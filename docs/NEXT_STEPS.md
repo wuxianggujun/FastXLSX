@@ -108,9 +108,11 @@ insert-at-boundary structural rewrites that convert row/column references
 shifted past Excel limits to `#REF!`. Cell-range structural coverage now also
 pins endpoint-by-endpoint partial delete behavior, fully deleted range
 endpoints, reversed range endpoint order preservation, and range endpoints
-shifted past Excel limits. The helper now also locks escaped quoted sheet-name
-token preservation and zero-count no-op behavior across all structural edit
-kinds.
+shifted past Excel limits. It now also covers insertions that split cell ranges
+and whole-axis ranges, preserving the lower endpoint while moving the affected
+upper endpoint and `$` marker text. The helper now also locks escaped quoted
+sheet-name token preservation and zero-count no-op behavior across all
+structural edit kinds.
 The public stationary-formula shift shard now carries those range-endpoint
 cases through `WorksheetEditor` row/column shifts as well, including fully
 deleted endpoints and Excel-boundary insertions that rewrite to `#REF!` without

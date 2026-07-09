@@ -84,6 +84,10 @@ CellValue CellValue::formula(std::string value)
 
 CellValue CellValue::error(std::string value)
 {
+    if (value.empty()) {
+        throw FastXlsxError("cell value error payload must be non-empty");
+    }
+
     CellValue cell;
     cell.kind_ = CellValueKind::Error;
     cell.text_value_ = std::move(value);

@@ -14,8 +14,9 @@ namespace fastxlsx {
 /// long-lived CellStore representation, does not imply random worksheet editing
 /// is implemented, and does not make large worksheet paths DOM-based. Formula
 /// values are stored as text only; FastXLSX does not parse, evaluate, cache, or
-/// rebuild calculation-chain metadata through this type. Error values carry an
-/// opaque source token only; FastXLSX does not validate Excel error semantics.
+/// rebuild calculation-chain metadata through this type. Error values carry a
+/// non-empty opaque source token only; FastXLSX does not validate Excel error
+/// semantics.
 enum class CellValueKind {
     Blank,
     Number,
@@ -62,8 +63,11 @@ public:
 
     /// Creates an owning opaque Excel error token value, such as "#VALUE!".
     ///
-    /// The token is stored as text and is not parsed, validated, evaluated, or
-    /// mapped to an Excel error enum by FastXLSX.
+    /// The token must be non-empty. It is stored as text and is not parsed,
+    /// semantically validated, evaluated, or mapped to an Excel error enum by
+    /// FastXLSX.
+    ///
+    /// @throws FastXlsxError if value is empty.
     static CellValue error(std::string value);
 
     /// Returns a copy of this value with an explicit workbook-local style id.

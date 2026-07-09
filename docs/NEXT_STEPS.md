@@ -7621,8 +7621,10 @@ and fresh reopen still reads the `t="e"` error cells beside later edits.
 The same source error cell path now also has a read-only clean no-op
 `save_as()` gate before the later edit: source error cells stay clean, copy the
 source package bytes unchanged, fresh-reopen through public sparse views, and
-leave the source package untouched. This remains scalar error-cell readback and
-copy-original evidence, not error-token validation or formula evaluation.
+leave the source package untouched. Public `CellValue::error()` now also rejects
+empty caller tokens at the owning value boundary. This remains scalar error-cell
+readback and copy-original evidence plus a non-empty token guard, not semantic
+error-token validation or formula evaluation.
 The source error cell path now also has post-noop reuse evidence: after the
 byte-stable post-dirty no-op save, the same borrowed `WorksheetEditor` can write
 another error cell, preserve source/prior packages, fresh-reopen through public

@@ -40,6 +40,9 @@ dirty diagnostics, append-only sharedStrings projection, existing-string reuse
 without rewriting the table, and duplicate appended text de-duplication. This is
 WorksheetEditor small-file in-memory persistence evidence, not broad
 sharedStrings migration or metadata repair.
+Saved-output diagnostic recovery now also pins represented `get_cell()` payloads
+before and after invalid scalar/snapshot reads, proving those failures do not
+hide value/style drift or dirty the reacquired materialized session.
 The inline materialized flush path now also verifies the final saved worksheet
 XML for text, number, boolean, escaped formula, escaped error, and explicit blank
 sparse records after the dirty session is flushed into the Patch plan.

@@ -57,6 +57,10 @@ snapshot stability cover those public state observers too.
 The final scalar-probe window now also rechecks used-range/requested
 `sparse_cells()` plus `row_cells()` and `column_cells()`, proving the last
 missing-cell read failure does not disturb traversal snapshots either.
+Invalid snapshot-read recovery now exercises the wider rejection set too:
+reversed and out-of-bounds `CellRange` values, lowercase/overflowing/malformed
+A1 ranges, invalid coordinate batches, and row/column index upper bounds all
+fail without dirtying the clean saved session.
 The inline materialized flush path now also verifies the final saved worksheet
 XML for text, number, boolean, escaped formula, escaped error, and explicit blank
 sparse records after the dirty session is flushed into the Patch plan.

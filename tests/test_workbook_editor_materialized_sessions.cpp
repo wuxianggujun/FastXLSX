@@ -3091,6 +3091,9 @@ void test_internal_materialized_session_flush_uses_planned_name_after_rename()
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-flush-renamed-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-flush-renamed-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-flush-renamed-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     editor.rename_sheet("Data", "RenamedData");
@@ -3107,6 +3110,8 @@ void test_internal_materialized_session_flush_uses_planned_name_after_rename()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "materialized flush after rename should not mutate the source package");
     check_contains(output_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
         "materialized flush after rename should preserve the planned catalog name");
     check_not_contains(output_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -3116,6 +3121,13 @@ void test_internal_materialized_session_flush_uses_planned_name_after_rename()
     check_contains(output_entries.at("xl/worksheets/sheet1.xml"),
         R"(<dimension ref="A1:B2"/>)",
         "materialized flush after rename should keep refreshed sparse-store dimension");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after renamed materialized flush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after renamed materialized flush should not mutate the source package");
 }
 
 void test_internal_materialized_session_blank_and_erase_projection()
@@ -3124,6 +3136,9 @@ void test_internal_materialized_session_blank_and_erase_projection()
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-erase-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-erase-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-erase-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -3147,6 +3162,8 @@ void test_internal_materialized_session_blank_and_erase_projection()
 
     editor.save_as(output);
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "blank/erase materialized flush should not mutate the source package");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, R"(<row r="1"><c r="A1"/><c r="B1"><v>1</v></c></row>)",
         "explicit blank should remain as an empty A1 cell while B1 is preserved");
@@ -3158,6 +3175,13 @@ void test_internal_materialized_session_blank_and_erase_projection()
         "erasing the only row-2 source cell should remove the explicit row");
     check_contains(worksheet_xml, R"(<dimension ref="A1:B1"/>)",
         "blank/erase materialized flush should refresh dimension to remaining extents");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after blank/erase materialized flush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after blank/erase materialized flush should not mutate the source package");
 }
 
 void test_internal_materialized_session_repeated_materialize_preserves_dirty_state()
@@ -3166,6 +3190,9 @@ void test_internal_materialized_session_repeated_materialize_preserves_dirty_sta
         write_two_sheet_source("fastxlsx-workbook-editor-materialized-rematerialize-source.xlsx");
     const std::filesystem::path output =
         artifact("fastxlsx-workbook-editor-materialized-rematerialize-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-rematerialize-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     fastxlsx::detail::testing_workbook_editor_materialize_source_sheet(
@@ -3184,11 +3211,20 @@ void test_internal_materialized_session_repeated_materialize_preserves_dirty_sta
     editor.save_as(output);
 
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "repeated materialization flush should not mutate the source package");
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(worksheet_xml, "kept-after-rematerialize",
         "repeated materialization should not discard dirty materialized payload");
     check_not_contains(worksheet_xml, "placeholder-a1",
         "repeated materialization should not reload the original source A1 payload");
+
+    editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clean no-op save_as after repeated materialization flush should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clean no-op save_as after repeated materialization flush should not mutate the source package");
 }
 
 void test_internal_materialized_session_load_guard_failure_preserves_editor_state()

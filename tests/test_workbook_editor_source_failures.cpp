@@ -3588,7 +3588,8 @@ void test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly
             const std::function<std::filesystem::path(std::string_view)>& write_source,
             const std::function<void(std::map<std::string, std::string>&)>& mutate_entries,
             std::string_view expected_diagnostic,
-            std::string_view scenario) {
+            std::string_view scenario,
+            bool check_clean_noop_recovery = false) {
             const std::string source_name =
                 std::string("fastxlsx-workbook-editor-public-source-shape-")
                 + std::string(tag) + "-source.xlsx";
@@ -3605,7 +3606,8 @@ void test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly
             const std::string replacement_text =
                 std::string("usable-after-source-shape-") + std::string(tag);
             check_public_worksheet_materialization_failure_hygiene(
-                source, output, expected_diagnostic, replacement_text, scenario);
+                source, output, expected_diagnostic, replacement_text, scenario,
+                "Data", "xl/worksheets/sheet1.xml", "Data", check_clean_noop_recovery);
         };
 
     expect_public_shape_materialization_failure(
@@ -3643,6 +3645,32 @@ void test_public_worksheet_editor_rejects_unsupported_source_cell_shapes_cleanly
         },
         "invalid boolean cell value",
         "source invalid boolean cell");
+
+    expect_public_shape_materialization_failure(
+        "missing-error-value",
+        write_text_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-shape</t></is></c>)",
+                R"(<c r="A1" t="e"></c>)");
+        },
+        "invalid error cell value",
+        "source missing error cell value",
+        true);
+
+    expect_public_shape_materialization_failure(
+        "empty-error-value",
+        write_text_source,
+        [](std::map<std::string, std::string>& entries) {
+            std::string& worksheet_xml = entries.at("xl/worksheets/sheet1.xml");
+            replace_first_or_throw(worksheet_xml,
+                R"(<c r="A1" t="inlineStr"><is><t>source-shape</t></is></c>)",
+                R"(<c r="A1" t="e"><v></v></c>)");
+        },
+        "invalid error cell value",
+        "source empty error cell value",
+        true);
 }
 
 void test_public_worksheet_editor_rejects_malformed_source_worksheet_xml_cleanly()

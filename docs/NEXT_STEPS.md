@@ -193,6 +193,9 @@ unsupported `<f>` attributes, invalid shared formula `si` values, and formulas
 inside shared-string source cells. These cases must fail before materializing
 `WorksheetEditor`, preserve public editor state, and leave the editor usable for
 a recovery sheetData save.
+It now also pins source error cells with missing or empty `<v>` values as
+materialization failures, requiring the public editor to remain recoverable and
+the recovery output to settle into a byte-stable clean no-op save.
 Representative source-failure recovery paths now also assert source-package
 immutability and byte-stable clean no-op saves after recovery for invalid
 shared-string indexes, malformed worksheet XML, empty formulas, inline text

@@ -39,6 +39,18 @@ bool shared_strings_snapshot_matches(
         cell_values_equal(actual.value, expected.value);
 }
 
+std::string shared_strings_snapshot_prefix(
+    std::string_view scenario,
+    std::string_view stage)
+{
+    std::string prefix(scenario);
+    if (!stage.empty()) {
+        prefix += " ";
+        prefix += std::string(stage);
+    }
+    return prefix;
+}
+
 std::optional<fastxlsx::CellRange> shared_strings_expected_used_range(
     std::span<const ReopenedLazySharedStringsCell> expected_data_cells)
 {
@@ -106,12 +118,13 @@ bool shared_strings_column_already_checked(
     return false;
 }
 
-void check_reopened_shared_strings_row_snapshots(
-    fastxlsx::WorksheetEditor& reopened_data,
+void check_shared_strings_row_snapshots(
+    fastxlsx::WorksheetEditor& sheet,
     std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
-    std::string_view scenario)
+    std::string_view scenario,
+    std::string_view stage)
 {
-    const std::string prefix(scenario);
+    const std::string prefix = shared_strings_snapshot_prefix(scenario, stage);
     std::vector<std::uint32_t> checked_rows;
 
     for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
@@ -128,9 +141,9 @@ void check_reopened_shared_strings_row_snapshots(
         }
 
         const std::vector<fastxlsx::WorksheetCellSnapshot> row_cells =
-            reopened_data.row_cells(expected.row);
+            sheet.row_cells(expected.row);
         check(row_cells.size() == expected_count,
-            prefix + " fresh reopen row_cells should expose the expected row count");
+            prefix + " row_cells should expose the expected row count");
         if (row_cells.size() != expected_count) {
             continue;
         }
@@ -142,18 +155,28 @@ void check_reopened_shared_strings_row_snapshots(
             }
 
             check(shared_strings_snapshot_matches(row_cells[row_index], candidate),
-                prefix + " fresh reopen row_cells should preserve row-major values");
+                prefix + " row_cells should preserve row-major values");
             ++row_index;
         }
     }
 }
 
-void check_reopened_shared_strings_column_snapshots(
+void check_reopened_shared_strings_row_snapshots(
     fastxlsx::WorksheetEditor& reopened_data,
     std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
     std::string_view scenario)
 {
-    const std::string prefix(scenario);
+    check_shared_strings_row_snapshots(
+        reopened_data, expected_data_cells, scenario, "fresh reopen");
+}
+
+void check_shared_strings_column_snapshots(
+    fastxlsx::WorksheetEditor& sheet,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    std::string_view scenario,
+    std::string_view stage)
+{
+    const std::string prefix = shared_strings_snapshot_prefix(scenario, stage);
     std::vector<std::uint32_t> checked_columns;
 
     for (const ReopenedLazySharedStringsCell& expected : expected_data_cells) {
@@ -171,9 +194,9 @@ void check_reopened_shared_strings_column_snapshots(
         }
 
         const std::vector<fastxlsx::WorksheetCellSnapshot> column_cells =
-            reopened_data.column_cells(expected.column);
+            sheet.column_cells(expected.column);
         check(column_cells.size() == expected_count,
-            prefix + " fresh reopen column_cells should expose the expected column count");
+            prefix + " column_cells should expose the expected column count");
         if (column_cells.size() != expected_count) {
             continue;
         }
@@ -185,10 +208,19 @@ void check_reopened_shared_strings_column_snapshots(
             }
 
             check(shared_strings_snapshot_matches(column_cells[column_index], candidate),
-                prefix + " fresh reopen column_cells should preserve column-major values");
+                prefix + " column_cells should preserve column-major values");
             ++column_index;
         }
     }
+}
+
+void check_reopened_shared_strings_column_snapshots(
+    fastxlsx::WorksheetEditor& reopened_data,
+    std::span<const ReopenedLazySharedStringsCell> expected_data_cells,
+    std::string_view scenario)
+{
+    check_shared_strings_column_snapshots(
+        reopened_data, expected_data_cells, scenario, "fresh reopen");
 }
 
 void check_reopened_lazy_shared_strings_dirty_output(
@@ -1480,6 +1512,11 @@ void check_live_shifted_shared_strings_cells(
         }
     }
 
+    check_shared_strings_row_snapshots(
+        sheet, expected_cells, scenario, "live shifted");
+    check_shared_strings_column_snapshots(
+        sheet, expected_cells, scenario, "live shifted");
+
     for (const ReopenedLazySharedStringsCell& expected : expected_cells) {
         const fastxlsx::CellValue actual =
             sheet.get_cell(expected.row, expected.column);
@@ -1577,6 +1614,10 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
                 scenario_text + " should track shifted materialized cell count");
             check_live_shifted_shared_strings_cells(
                 sheet, expected_cells, expected_range, scenario);
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),

@@ -221,10 +221,10 @@ no-op.
 It also pins structural shifts over source formula records in the same focused
 shard: `insert_rows()`, `insert_columns()`, `delete_rows()`, and
 `delete_columns()` move materialized ordinary/shared/array/dataTable formula
-cells, rewrite moved formula text, keep formula metadata dropped, omit stale
-cached `<v>` payloads from shifted formula cells, and preserve metadata-only
-numeric fallback cells as ordinary values across save, no-op, fresh-reopen edit,
-and repeat no-op.
+cells, rewrite moved formula text, expose the shifted live sparse/row/column
+views before save, keep formula metadata dropped, omit stale cached `<v>`
+payloads from shifted formula cells, and preserve metadata-only numeric fallback
+cells as ordinary values across save, no-op, fresh-reopen edit, and repeat no-op.
 Those structural-shift source formula cases now also include moved formula
 cells with A1 ranges, whole-row / whole-column references, string literals, and
 structured-reference text, so the same save/reopen/no-op path covers the narrow

@@ -558,6 +558,9 @@ That same retry snapshot helper now also pins `cell_count()`, `used_range()`,
 `contains_cell()`, `try_cell()`, `get_cell()`, and memory-estimate stability
 across those read-only probes, so clean reused handles stay clean while exposing
 the combined shifted sparse state.
+It now also checks duplicate requested-coordinate sparse reads, the empty
+inserted row/column gaps, and the shifted row-three / column-three snapshots on
+the same clean retry handles.
 The path-equivalent failed-save retry path now mirrors that evidence: a rejected
 path-equivalent source-overwrite save keeps the dirty shifted session and source
 bytes intact, the safe retry/no-op output remains reusable, and a later `C3`

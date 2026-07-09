@@ -136,6 +136,11 @@ source records, keep the prefixed worksheet wrapper, regenerate sheetData cells
 without source element prefixes or ignored extension text, and keep clean no-op
 saves byte-stable. This remains namespace-tolerant value projection, not
 namespace repair or rich-text style preservation.
+The source-success structural shift coverage now also checks live dirty
+`WorksheetEditor` snapshots before save across source scalar, `t="str"`, inline
+rich text, and prefixed inline-string cases: `used_range()`, `sparse_cells()`,
+`row_cells()`, `column_cells()`, and direct `get_cell()` all expose the shifted
+materialized state while keeping the editor dirty until `save_as()`.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

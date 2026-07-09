@@ -39,13 +39,26 @@ bool source_success_snapshot_matches(
         source_success_values_equal(actual.value, expected.value);
 }
 
-void check_reopened_source_success_row_snapshots(
-    fastxlsx::WorksheetEditor& reopened_sheet,
+std::string source_success_snapshot_prefix(
+    std::string_view scenario,
+    std::string_view stage)
+{
+    std::string prefix(scenario);
+    if (!stage.empty()) {
+        prefix += " ";
+        prefix += std::string(stage);
+    }
+    return prefix;
+}
+
+void check_source_success_row_snapshots(
+    fastxlsx::WorksheetEditor& sheet,
     std::span<const ReopenedSourceSuccessCell> expected_cells,
-    std::string_view scenario)
+    std::string_view scenario,
+    std::string_view stage)
 {
     std::vector<std::uint32_t> checked_rows;
-    const std::string prefix(scenario);
+    const std::string prefix = source_success_snapshot_prefix(scenario, stage);
 
     for (const ReopenedSourceSuccessCell& expected : expected_cells) {
         bool already_checked = false;
@@ -68,9 +81,9 @@ void check_reopened_source_success_row_snapshots(
         }
 
         const std::vector<fastxlsx::WorksheetCellSnapshot> row_cells =
-            reopened_sheet.row_cells(expected.row);
+            sheet.row_cells(expected.row);
         check(row_cells.size() == expected_count,
-            prefix + " fresh reopen row_cells should expose the expected row count");
+            prefix + " row_cells should expose the expected row count");
         if (row_cells.size() != expected_count) {
             continue;
         }
@@ -81,19 +94,20 @@ void check_reopened_source_success_row_snapshots(
                 continue;
             }
             check(source_success_snapshot_matches(row_cells[index], candidate),
-                prefix + " fresh reopen row_cells should preserve row-major values");
+                prefix + " row_cells should preserve row-major values");
             ++index;
         }
     }
 }
 
-void check_reopened_source_success_column_snapshots(
-    fastxlsx::WorksheetEditor& reopened_sheet,
+void check_source_success_column_snapshots(
+    fastxlsx::WorksheetEditor& sheet,
     std::span<const ReopenedSourceSuccessCell> expected_cells,
-    std::string_view scenario)
+    std::string_view scenario,
+    std::string_view stage)
 {
     std::vector<std::uint32_t> checked_columns;
-    const std::string prefix(scenario);
+    const std::string prefix = source_success_snapshot_prefix(scenario, stage);
 
     for (const ReopenedSourceSuccessCell& expected : expected_cells) {
         bool already_checked = false;
@@ -116,9 +130,9 @@ void check_reopened_source_success_column_snapshots(
         }
 
         const std::vector<fastxlsx::WorksheetCellSnapshot> column_cells =
-            reopened_sheet.column_cells(expected.column);
+            sheet.column_cells(expected.column);
         check(column_cells.size() == expected_count,
-            prefix + " fresh reopen column_cells should expose the expected column count");
+            prefix + " column_cells should expose the expected column count");
         if (column_cells.size() != expected_count) {
             continue;
         }
@@ -129,9 +143,51 @@ void check_reopened_source_success_column_snapshots(
                 continue;
             }
             check(source_success_snapshot_matches(column_cells[index], candidate),
-                prefix + " fresh reopen column_cells should preserve row-major values");
+                prefix + " column_cells should preserve row-major values");
             ++index;
         }
+    }
+}
+
+void check_source_success_snapshots(
+    fastxlsx::WorksheetEditor& sheet,
+    const fastxlsx::CellRange& expected_range,
+    std::span<const ReopenedSourceSuccessCell> expected_cells,
+    std::string_view scenario,
+    std::string_view stage)
+{
+    const std::string prefix = source_success_snapshot_prefix(scenario, stage);
+
+    check(sheet.cell_count() == expected_cells.size(),
+        prefix + " should preserve the expected sparse cell count");
+
+    const std::optional<fastxlsx::CellRange> actual_range = sheet.used_range();
+    check(actual_range.has_value() &&
+            actual_range->first_row == expected_range.first_row &&
+            actual_range->first_column == expected_range.first_column &&
+            actual_range->last_row == expected_range.last_row &&
+            actual_range->last_column == expected_range.last_column,
+        prefix + " should expose the expected used range");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> actual_cells =
+        sheet.sparse_cells();
+    check(actual_cells.size() == expected_cells.size(),
+        prefix + " sparse_cells should expose the expected cell count");
+    if (actual_cells.size() == expected_cells.size()) {
+        for (std::size_t index = 0; index < expected_cells.size(); ++index) {
+            check(source_success_snapshot_matches(actual_cells[index], expected_cells[index]),
+                prefix + " sparse_cells should preserve row-major values");
+        }
+    }
+
+    check_source_success_row_snapshots(sheet, expected_cells, scenario, stage);
+    check_source_success_column_snapshots(sheet, expected_cells, scenario, stage);
+
+    for (const ReopenedSourceSuccessCell& expected : expected_cells) {
+        const fastxlsx::CellValue actual =
+            sheet.get_cell(expected.row, expected.column);
+        check(source_success_values_equal(actual, expected.value),
+            prefix + " should read each expected cell directly");
     }
 }
 
@@ -149,39 +205,8 @@ void check_reopened_source_success_dirty_output(
         reopened_editor, prefix + " fresh reopen");
     check(!reopened_sheet.has_pending_changes(),
         prefix + " fresh reopen should materialize a clean worksheet");
-    check(reopened_sheet.cell_count() == expected_cells.size(),
-        prefix + " fresh reopen should preserve the expected sparse cell count");
-
-    const std::optional<fastxlsx::CellRange> actual_range = reopened_sheet.used_range();
-    check(actual_range.has_value() &&
-            actual_range->first_row == expected_range.first_row &&
-            actual_range->first_column == expected_range.first_column &&
-            actual_range->last_row == expected_range.last_row &&
-            actual_range->last_column == expected_range.last_column,
-        prefix + " fresh reopen should expose the expected used range");
-
-    const std::vector<fastxlsx::WorksheetCellSnapshot> actual_cells =
-        reopened_sheet.sparse_cells();
-    check(actual_cells.size() == expected_cells.size(),
-        prefix + " fresh reopen sparse_cells should expose the expected cell count");
-    if (actual_cells.size() == expected_cells.size()) {
-        for (std::size_t index = 0; index < expected_cells.size(); ++index) {
-            check(source_success_snapshot_matches(actual_cells[index], expected_cells[index]),
-                prefix + " fresh reopen sparse_cells should preserve row-major values");
-        }
-    }
-
-    check_reopened_source_success_row_snapshots(
-        reopened_sheet, expected_cells, scenario);
-    check_reopened_source_success_column_snapshots(
-        reopened_sheet, expected_cells, scenario);
-
-    for (const ReopenedSourceSuccessCell& expected : expected_cells) {
-        const fastxlsx::CellValue actual =
-            reopened_sheet.get_cell(expected.row, expected.column);
-        check(source_success_values_equal(actual, expected.value),
-            prefix + " fresh reopen should read each expected cell directly");
-    }
+    check_source_success_snapshots(
+        reopened_sheet, expected_range, expected_cells, scenario, "fresh reopen");
 
     check(!reopened_sheet.has_pending_changes(),
         prefix + " fresh reopen reads should leave the worksheet clean");
@@ -489,6 +514,12 @@ void test_public_worksheet_editor_structural_shift_source_supported_values()
                 scenario_text + " should dirty WorkbookEditor");
             check(sheet.cell_count() == expected_cells.size(),
                 scenario_text + " should expose the shifted scalar cell count");
+            check_source_success_snapshots(
+                sheet, expected_range, expected_cells, scenario, "live shifted");
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),
@@ -957,6 +988,12 @@ void test_public_worksheet_editor_structural_shift_source_scalar_string_cells()
                 scenario_text + " should dirty WorkbookEditor");
             check(sheet.cell_count() == expected_cells.size(),
                 scenario_text + " should expose the shifted t=str cell count");
+            check_source_success_snapshots(
+                sheet, expected_range, expected_cells, scenario, "live shifted");
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),
@@ -1411,6 +1448,12 @@ void test_public_worksheet_editor_structural_shift_source_inline_rich_text()
                 scenario_text + " should dirty WorkbookEditor");
             check(sheet.cell_count() == expected_cells.size(),
                 scenario_text + " should expose the shifted rich text cell count");
+            check_source_success_snapshots(
+                sheet, expected_range, expected_cells, scenario, "live shifted");
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),
@@ -1980,6 +2023,12 @@ void test_public_worksheet_editor_structural_shift_prefixed_source_inline_string
                 scenario_text + " should dirty WorkbookEditor");
             check(sheet.cell_count() == expected_cells.size(),
                 scenario_text + " should expose the shifted prefixed inline cell count");
+            check_source_success_snapshots(
+                sheet, expected_range, expected_cells, scenario, "live shifted");
+            check(sheet.has_pending_changes(),
+                scenario_text + " live shifted reads should keep Data dirty");
+            check(editor.has_pending_changes(),
+                scenario_text + " live shifted reads should keep WorkbookEditor dirty");
 
             editor.save_as(output);
             check(!sheet.has_pending_changes(),

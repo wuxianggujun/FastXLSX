@@ -50,6 +50,10 @@ read-only failure path.
 It now extends the same comparison to full, used-range, and requested-coordinate
 `sparse_cells()` snapshots, covering duplicate requested coordinates and
 missing-coordinate skips without dirtying the saved/reacquired session.
+The same invalid-read recovery helper now also pins `cell_count()`,
+`estimated_memory_usage()`, and `used_range()` immediately after scalar read
+failures and again after the final scalar read probes, so diagnostics and
+snapshot stability cover those public state observers too.
 The inline materialized flush path now also verifies the final saved worksheet
 XML for text, number, boolean, escaped formula, escaped error, and explicit blank
 sparse records after the dirty session is flushed into the Patch plan.

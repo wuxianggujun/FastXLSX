@@ -8422,6 +8422,12 @@ schema validation.
   no-op saves, and the later post-noop handoff for both max-cells and
   memory-budget recoveries. This is handle readback parity only, not a broader
   guardrail or metadata repair policy.
+- The exact sparse-shift and delete-shift budget-release guardrail paths now
+  also fresh-reopen the first same-budget reacquired no-op outputs before their
+  repeated no-op checkpoints, proving saved-output readback parity for the
+  recovered sparse state across max-cells and memory-budget branches. This is
+  no-op readback evidence only, not guardrail policy expansion or metadata
+  repair.
 - Current public API:
   - `Workbook`
   - `Worksheet`

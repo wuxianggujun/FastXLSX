@@ -1473,6 +1473,320 @@ void test_public_worksheet_editor_row_column_formula_source_mutations_drop_metad
         "row/column formula source mutation fresh-reopen no-op output");
 }
 
+void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_metadata()
+{
+    const auto write_formula_source = [](std::string_view name) {
+        const std::filesystem::path source = write_two_sheet_source(name);
+        const std::string worksheet_xml =
+            R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            R"(<sheetData><row r="1">)"
+            R"(<c r="A1"><f>A2+50</f><v>3001</v></c>)"
+            R"(<c r="B1"><f t="shared" ref="B1:C1" si="93" ca="1">A1+50</f><v>3002</v></c>)"
+            R"(<c r="C1"><f t="shared" si="93" aca="1"/><v>3003</v></c>)"
+            R"(<c r="D1"><f t="array" ref="D1:E1" ca="1">SUM(A1:B1)</f><v>3004</v></c>)"
+            R"(<c r="E1"><f t="array" ref="D1:E1"/><v>3005</v></c>)"
+            R"(<c r="F1"><f t="dataTable" ref="F1:G1" dt2D="1" r1="A1">A1+60</f><v>3006</v></c>)"
+            R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>3007</v></c>)"
+            R"(<c r="H1"><f>G1+1</f><v>3008</v></c>)"
+            R"(</row></sheetData></worksheet>)";
+        rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+        return source;
+    };
+
+    const auto check_no_formula_metadata = [](const std::string& worksheet_xml,
+                                              std::string_view scenario) {
+        const std::string prefix(scenario);
+        check_not_contains(worksheet_xml, R"(t="shared")",
+            prefix + " should drop shared formula metadata");
+        check_not_contains(worksheet_xml, R"(t="array")",
+            prefix + " should drop array formula metadata");
+        check_not_contains(worksheet_xml, R"(t="dataTable")",
+            prefix + " should drop dataTable formula metadata");
+        check_not_contains(worksheet_xml, R"(ca="1")",
+            prefix + " should drop calc metadata attributes");
+        check_not_contains(worksheet_xml, R"(aca="1")",
+            prefix + " should drop shared follower metadata attributes");
+        check_not_contains(worksheet_xml, R"(dt2D="1")",
+            prefix + " should drop dataTable attributes");
+        check_not_contains(worksheet_xml, R"(r1="A1")",
+            prefix + " should drop dataTable input metadata");
+        check_not_contains(worksheet_xml, "<f>A2+50</f>",
+            prefix + " should not revive ordinary source formula text");
+        check_not_contains(worksheet_xml, "SUM(A1:B1)",
+            prefix + " should not revive array formula text");
+        check_not_contains(worksheet_xml, "<f>A1+60</f>",
+            prefix + " should not revive dataTable formula text");
+        for (int stale_cached_value = 3001; stale_cached_value <= 3008; ++stale_cached_value) {
+            check_not_contains(worksheet_xml,
+                "<v>" + std::to_string(stale_cached_value) + "</v>",
+                prefix + " should drop stale cached values");
+        }
+    };
+
+    const auto check_reopened_empty_formula_output =
+        [](const std::filesystem::path& output, std::string_view scenario) {
+            const std::string prefix(scenario);
+            fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+
+            check_workbook_editor_public_clean_state(reopened_editor,
+                prefix + " fresh reopen");
+            check(!reopened_sheet.has_pending_changes(),
+                prefix + " fresh reopen should keep the materialized worksheet clean");
+            check(reopened_sheet.cell_count() == 0,
+                prefix + " fresh reopen should keep the sparse store empty");
+            check(!reopened_sheet.used_range().has_value(),
+                prefix + " fresh reopen should expose no used range");
+            check(reopened_sheet.sparse_cells().empty(),
+                prefix + " fresh reopen sparse_cells should be empty");
+            check(reopened_sheet.row_cells(1).empty(),
+                prefix + " fresh reopen row_cells should be empty");
+            check(reopened_sheet.column_cells(1).empty(),
+                prefix + " fresh reopen column_cells should be empty");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                prefix + " fresh reopen should keep erased A1 absent");
+            check(!reopened_sheet.has_pending_changes(),
+                prefix + " fresh reopen reads should leave the worksheet clean");
+            check_workbook_editor_public_clean_state(reopened_editor,
+                prefix + " fresh reopen reads");
+        };
+
+    const std::filesystem::path clear_source = write_formula_source(
+        "fastxlsx-workbook-editor-public-whole-clear-formula-source-mutation-source.xlsx");
+    const std::filesystem::path clear_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-clear-formula-source-mutation-output.xlsx");
+    const std::filesystem::path clear_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-clear-formula-source-mutation-noop-output.xlsx");
+    const std::filesystem::path clear_reopened_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-clear-formula-source-mutation-reopened-output.xlsx");
+    const std::filesystem::path clear_reopened_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-clear-formula-source-mutation-reopened-noop-output.xlsx");
+    const auto clear_source_entries = fastxlsx::test::read_zip_entries(clear_source);
+
+    fastxlsx::WorkbookEditor clear_editor = fastxlsx::WorkbookEditor::open(clear_source);
+    fastxlsx::WorksheetEditor clear_sheet = clear_editor.worksheet("Data");
+    check(clear_sheet.cell_count() == 8,
+        "whole-store formula clear setup should materialize all source records");
+    check(clear_sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula
+            && clear_sheet.get_cell("C1").text_value() == "B1+50",
+        "whole-store formula clear setup should translate shared followers");
+    check(clear_sheet.get_cell("E1").kind() == fastxlsx::CellValueKind::Number
+            && clear_sheet.get_cell("E1").number_value() == 3005.0,
+        "whole-store formula clear setup should materialize array cached fallback");
+    check(clear_sheet.get_cell("F1").kind() == fastxlsx::CellValueKind::Formula
+            && clear_sheet.get_cell("F1").text_value() == "A1+60",
+        "whole-store formula clear setup should flatten dataTable formula text");
+    check(!clear_sheet.has_pending_changes(),
+        "whole-store formula clear setup should start clean");
+
+    clear_sheet.clear_cell_values();
+    check(clear_sheet.has_pending_changes(),
+        "whole-store formula clear should dirty Data");
+    check(clear_editor.has_pending_changes(),
+        "whole-store formula clear should dirty WorkbookEditor");
+    check(clear_sheet.cell_count() == 8,
+        "whole-store formula clear should keep every source record represented");
+    check(clear_sheet.get_cell("A1").kind() == fastxlsx::CellValueKind::Blank,
+        "whole-store formula clear should blank ordinary formula records");
+    check(clear_sheet.get_cell("D1").kind() == fastxlsx::CellValueKind::Blank,
+        "whole-store formula clear should blank array formula records");
+    check(clear_sheet.get_cell("F1").kind() == fastxlsx::CellValueKind::Blank,
+        "whole-store formula clear should blank dataTable formula records");
+
+    clear_editor.save_as(clear_output);
+    check(!clear_sheet.has_pending_changes(),
+        "whole-store formula clear save should keep Data clean");
+    const auto clear_output_entries = fastxlsx::test::read_zip_entries(clear_output);
+    const std::string& clear_worksheet_xml =
+        clear_output_entries.at("xl/worksheets/sheet1.xml");
+    for (const char column : std::string("ABCDEFGH")) {
+        check_contains(clear_worksheet_xml,
+            std::string("<c r=\"") + column + "1\"/>",
+            "whole-store formula clear save should persist every source formula coordinate as blank");
+    }
+    check_no_formula_metadata(clear_worksheet_xml, "whole-store formula clear save");
+    check(fastxlsx::test::read_zip_entries(clear_source) == clear_source_entries,
+        "whole-store formula clear save should not mutate the source package");
+    check(clear_output_entries.at("xl/worksheets/sheet2.xml")
+            == clear_source_entries.at("xl/worksheets/sheet2.xml"),
+        "whole-store formula clear save should preserve untouched worksheets");
+
+    const ReopenedFormulaOutputCell clear_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::blank()},
+        {1, 2, fastxlsx::CellValue::blank()},
+        {1, 3, fastxlsx::CellValue::blank()},
+        {1, 4, fastxlsx::CellValue::blank()},
+        {1, 5, fastxlsx::CellValue::blank()},
+        {1, 6, fastxlsx::CellValue::blank()},
+        {1, 7, fastxlsx::CellValue::blank()},
+        {1, 8, fastxlsx::CellValue::blank()},
+    };
+    check_reopened_formula_dirty_output(
+        clear_output,
+        fastxlsx::CellRange {1, 1, 1, 8},
+        clear_expected_cells,
+        "whole-store formula clear output");
+
+    clear_editor.save_as(clear_noop_output);
+    check(!clear_sheet.has_pending_changes(),
+        "whole-store formula clear no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(clear_noop_output) == clear_output_entries,
+        "whole-store formula clear no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(clear_source) == clear_source_entries,
+        "whole-store formula clear no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        clear_noop_output,
+        fastxlsx::CellRange {1, 1, 1, 8},
+        clear_expected_cells,
+        "whole-store formula clear no-op output");
+
+    fastxlsx::WorkbookEditor clear_reopened_editor =
+        fastxlsx::WorkbookEditor::open(clear_noop_output);
+    fastxlsx::WorksheetEditor clear_reopened_sheet =
+        clear_reopened_editor.worksheet("Data");
+    check(!clear_reopened_sheet.has_pending_changes(),
+        "whole-store formula clear fresh reopen should start clean");
+    clear_reopened_sheet.set_cell("I2", fastxlsx::CellValue::formula("A1+H1"));
+    clear_reopened_editor.save_as(clear_reopened_output);
+    const auto clear_reopened_entries =
+        fastxlsx::test::read_zip_entries(clear_reopened_output);
+    const std::string& clear_reopened_xml =
+        clear_reopened_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(clear_reopened_xml, R"(<c r="I2"><f>A1+H1</f></c>)",
+        "whole-store formula clear fresh-reopen save should include later formula edit");
+    check_no_formula_metadata(
+        clear_reopened_xml, "whole-store formula clear fresh-reopen save");
+    check(fastxlsx::test::read_zip_entries(clear_noop_output) == clear_output_entries,
+        "whole-store formula clear fresh-reopen save should not mutate its saved input");
+    const ReopenedFormulaOutputCell clear_reopened_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::blank()},
+        {1, 2, fastxlsx::CellValue::blank()},
+        {1, 3, fastxlsx::CellValue::blank()},
+        {1, 4, fastxlsx::CellValue::blank()},
+        {1, 5, fastxlsx::CellValue::blank()},
+        {1, 6, fastxlsx::CellValue::blank()},
+        {1, 7, fastxlsx::CellValue::blank()},
+        {1, 8, fastxlsx::CellValue::blank()},
+        {2, 9, fastxlsx::CellValue::formula("A1+H1")},
+    };
+    check_reopened_formula_dirty_output(
+        clear_reopened_output,
+        fastxlsx::CellRange {1, 1, 2, 9},
+        clear_reopened_expected_cells,
+        "whole-store formula clear fresh-reopen output");
+
+    clear_reopened_editor.save_as(clear_reopened_noop_output);
+    check(!clear_reopened_sheet.has_pending_changes(),
+        "whole-store formula clear fresh-reopen no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(clear_reopened_noop_output)
+            == clear_reopened_entries,
+        "whole-store formula clear fresh-reopen no-op save should keep output byte-stable");
+    check_reopened_formula_dirty_output(
+        clear_reopened_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 9},
+        clear_reopened_expected_cells,
+        "whole-store formula clear fresh-reopen no-op output");
+
+    const std::filesystem::path erase_source = write_formula_source(
+        "fastxlsx-workbook-editor-public-whole-erase-formula-source-mutation-source.xlsx");
+    const std::filesystem::path erase_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-erase-formula-source-mutation-output.xlsx");
+    const std::filesystem::path erase_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-erase-formula-source-mutation-noop-output.xlsx");
+    const std::filesystem::path erase_reopened_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-erase-formula-source-mutation-reopened-output.xlsx");
+    const std::filesystem::path erase_reopened_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-whole-erase-formula-source-mutation-reopened-noop-output.xlsx");
+    const auto erase_source_entries = fastxlsx::test::read_zip_entries(erase_source);
+
+    fastxlsx::WorkbookEditor erase_editor = fastxlsx::WorkbookEditor::open(erase_source);
+    fastxlsx::WorksheetEditor erase_sheet = erase_editor.worksheet("Data");
+    check(erase_sheet.cell_count() == 8,
+        "whole-store formula erase setup should materialize all source records");
+    erase_sheet.erase_cells();
+    check(erase_sheet.has_pending_changes(),
+        "whole-store formula erase should dirty Data");
+    check(erase_editor.has_pending_changes(),
+        "whole-store formula erase should dirty WorkbookEditor");
+    check(erase_sheet.cell_count() == 0,
+        "whole-store formula erase should remove every source formula record");
+    check(!erase_sheet.used_range().has_value(),
+        "whole-store formula erase should clear the represented used range");
+    check(!erase_sheet.try_cell("A1").has_value(),
+        "whole-store formula erase should remove ordinary formula records");
+    check(!erase_sheet.try_cell("F1").has_value(),
+        "whole-store formula erase should remove dataTable formula records");
+
+    erase_editor.save_as(erase_output);
+    check(!erase_sheet.has_pending_changes(),
+        "whole-store formula erase save should keep Data clean");
+    const auto erase_output_entries = fastxlsx::test::read_zip_entries(erase_output);
+    const std::string& erase_worksheet_xml =
+        erase_output_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(erase_worksheet_xml, "<c r=\"",
+        "whole-store formula erase save should omit every source formula coordinate");
+    check_contains(erase_worksheet_xml, "<sheetData",
+        "whole-store formula erase save should keep a worksheet sheetData element");
+    check_no_formula_metadata(erase_worksheet_xml, "whole-store formula erase save");
+    check(fastxlsx::test::read_zip_entries(erase_source) == erase_source_entries,
+        "whole-store formula erase save should not mutate the source package");
+    check(erase_output_entries.at("xl/worksheets/sheet2.xml")
+            == erase_source_entries.at("xl/worksheets/sheet2.xml"),
+        "whole-store formula erase save should preserve untouched worksheets");
+    check_reopened_empty_formula_output(
+        erase_output, "whole-store formula erase output");
+
+    erase_editor.save_as(erase_noop_output);
+    check(!erase_sheet.has_pending_changes(),
+        "whole-store formula erase no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(erase_noop_output) == erase_output_entries,
+        "whole-store formula erase no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(erase_source) == erase_source_entries,
+        "whole-store formula erase no-op save should not mutate the source package");
+    check_reopened_empty_formula_output(
+        erase_noop_output, "whole-store formula erase no-op output");
+
+    fastxlsx::WorkbookEditor erase_reopened_editor =
+        fastxlsx::WorkbookEditor::open(erase_noop_output);
+    fastxlsx::WorksheetEditor erase_reopened_sheet =
+        erase_reopened_editor.worksheet("Data");
+    check(!erase_reopened_sheet.has_pending_changes(),
+        "whole-store formula erase fresh reopen should start clean");
+    erase_reopened_sheet.set_cell("A1", fastxlsx::CellValue::formula("B1+1"));
+    erase_reopened_editor.save_as(erase_reopened_output);
+    const auto erase_reopened_entries =
+        fastxlsx::test::read_zip_entries(erase_reopened_output);
+    const std::string& erase_reopened_xml =
+        erase_reopened_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(erase_reopened_xml, R"(<c r="A1"><f>B1+1</f></c>)",
+        "whole-store formula erase fresh-reopen save should include later formula edit");
+    check_no_formula_metadata(
+        erase_reopened_xml, "whole-store formula erase fresh-reopen save");
+    check(fastxlsx::test::read_zip_entries(erase_noop_output) == erase_output_entries,
+        "whole-store formula erase fresh-reopen save should not mutate its saved input");
+    const ReopenedFormulaOutputCell erase_reopened_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::formula("B1+1")},
+    };
+    check_reopened_formula_dirty_output(
+        erase_reopened_output,
+        fastxlsx::CellRange {1, 1, 1, 1},
+        erase_reopened_expected_cells,
+        "whole-store formula erase fresh-reopen output");
+
+    erase_reopened_editor.save_as(erase_reopened_noop_output);
+    check(!erase_reopened_sheet.has_pending_changes(),
+        "whole-store formula erase fresh-reopen no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(erase_reopened_noop_output)
+            == erase_reopened_entries,
+        "whole-store formula erase fresh-reopen no-op save should keep output byte-stable");
+    check_reopened_formula_dirty_output(
+        erase_reopened_noop_output,
+        fastxlsx::CellRange {1, 1, 1, 1},
+        erase_reopened_expected_cells,
+        "whole-store formula erase fresh-reopen no-op output");
+}
+
 void test_public_worksheet_editor_materializes_source_shared_formulas()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -2320,6 +2634,7 @@ int main()
         test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_row_column_formula_source_mutations_drop_metadata();
+        test_public_worksheet_editor_whole_store_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         test_public_worksheet_editor_materializes_office_like_shared_formula_shape();

@@ -2399,6 +2399,9 @@ through every reused output helper while missing rejected `D4` is skipped.
 Those reopened outputs now also exercise invalid `CellRange`, A1-range,
 coordinate-batch, row, and column snapshot reads, proving they remain read
 failures that do not revive `last_edit_error()` or dirty the recovered session.
+The same checks now pin post-failure public state too: sparse count, estimated
+memory, `used_range()`, and the full sparse snapshot endpoints remain stable
+and can still be read after the rejected snapshot requests.
 It now repeats that recovered clean no-op save too, proving the replacement
 diagnostic stays clear, package entries remain stable, source bytes are
 unchanged, and the second output still reopens with only the successful value.
@@ -2418,7 +2421,9 @@ state and replacement-only `Untouched!A1` sparse state beside the existing
 row/column checks while skipping missing rejected coordinates.
 The same reopened Data and Untouched handles now also reject invalid snapshot
 reads without changing `last_edit_error()`, pending summaries, or clean
-materialized state.
+materialized state. They also re-read sparse count, estimated memory,
+`used_range()`, and full sparse snapshot endpoints after those failures to prove
+the copy-original and replacement-only states remain inspectable.
 It now repeats that clean no-op save as well, preserving public summaries,
 keeping `last_edit_error()` clear, proving output entries stable, and reopening
 the second output with the same recovered worksheet split.

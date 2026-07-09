@@ -40,6 +40,9 @@ dirty diagnostics, append-only sharedStrings projection, existing-string reuse
 without rewriting the table, and duplicate appended text de-duplication. This is
 WorksheetEditor small-file in-memory persistence evidence, not broad
 sharedStrings migration or metadata repair.
+The inline materialized flush path now also verifies the final saved worksheet
+XML for text, number, boolean, escaped formula, escaped error, and explicit blank
+sparse records after the dirty session is flushed into the Patch plan.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

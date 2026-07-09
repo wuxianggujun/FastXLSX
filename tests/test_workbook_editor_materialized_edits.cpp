@@ -729,6 +729,10 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
         materialize_session(registry, "Data");
     data.set_cell(1, 1, fastxlsx::CellValue::text("inline-a1"));
     data.set_cell(2, 2, fastxlsx::CellValue::number(22.0));
+    data.set_cell(3, 3, fastxlsx::CellValue::boolean(true));
+    data.set_cell(4, 4, fastxlsx::CellValue::formula("A1&B2<C3"));
+    data.set_cell(5, 5, fastxlsx::CellValue::error("#VALUE<&"));
+    data.set_cell(6, 6, fastxlsx::CellValue::blank());
     check(data.dirty(), "materialized flush test should start with a dirty session");
 
     const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
@@ -750,13 +754,21 @@ void test_materialized_flush_to_patch_plan_clears_dirty_sessions()
     editor.save_as(output);
     const std::string worksheet =
         read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
-    check(worksheet.find(R"(<dimension ref="A1:B2"/>)") != std::string::npos,
+    check(worksheet.find(R"(<dimension ref="A1:F6"/>)") != std::string::npos,
         "materialized flush should update worksheet dimensions from sparse cells");
     check(worksheet.find(R"(<c r="A1" t="inlineStr"><is><t>inline-a1</t></is></c>)")
             != std::string::npos,
         "materialized flush should project text as inline strings without sharedStrings");
     check(worksheet.find(R"(<c r="B2"><v>22</v></c>)") != std::string::npos,
         "materialized flush should project numeric sparse cells");
+    check(worksheet.find(R"(<c r="C3" t="b"><v>1</v></c>)") != std::string::npos,
+        "materialized flush should project boolean sparse cells");
+    check(worksheet.find(R"(<c r="D4"><f>A1&amp;B2&lt;C3</f></c>)") != std::string::npos,
+        "materialized flush should project escaped formula sparse cells");
+    check(worksheet.find(R"(<c r="E5" t="e"><v>#VALUE&lt;&amp;</v></c>)") != std::string::npos,
+        "materialized flush should project escaped error sparse cells");
+    check(worksheet.find(R"(<c r="F6"/>)") != std::string::npos,
+        "materialized flush should project blank sparse cells");
     check(!stored_package_has_entry(output, "xl/sharedStrings.xml"),
         "materialized flush without source sharedStrings should not create sharedStrings");
     check_materialized_flush_noop_save_is_stable(

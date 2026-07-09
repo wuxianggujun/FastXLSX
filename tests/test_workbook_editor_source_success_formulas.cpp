@@ -2049,6 +2049,318 @@ void test_public_worksheet_editor_full_replacement_formula_source_mutations_drop
         "full-replacement formula source mutation fresh-reopen no-op output");
 }
 
+void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop_metadata()
+{
+    const auto write_insert_shift_source = [](std::string_view name, int stale_base) {
+        const std::filesystem::path source = write_two_sheet_source(name);
+        const auto stale_value = [stale_base](int offset) {
+            return std::to_string(stale_base + offset);
+        };
+        const std::string worksheet_xml =
+            std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + R"(<sheetData><row r="1">)"
+            + R"(<c r="A1"><f>A2+90</f><v>)" + stale_value(1) + R"(</v></c>)"
+            + R"(<c r="B1"><f t="shared" ref="B1:C1" si="97" ca="1">A1+90</f><v>)"
+            + stale_value(2) + R"(</v></c>)"
+            + R"(<c r="C1"><f t="shared" si="97" aca="1"/><v>)" + stale_value(3)
+            + R"(</v></c>)"
+            + R"(<c r="D1"><f t="array" ref="D1:E1" ca="1">SUM(A1:B1)</f><v>)"
+            + stale_value(4) + R"(</v></c>)"
+            + R"(<c r="E1"><f t="array" ref="D1:E1"/><v>)" + stale_value(5)
+            + R"(</v></c>)"
+            + R"(<c r="F1"><f t="dataTable" ref="F1:G1" dt2D="1" r1="A1">A1+100</f><v>)"
+            + stale_value(6) + R"(</v></c>)"
+            + R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>)"
+            + stale_value(7) + R"(</v></c>)"
+            + R"(<c r="H1"><f>G1+1</f><v>)" + stale_value(8) + R"(</v></c>)"
+            + R"(</row></sheetData></worksheet>)";
+        rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+        return source;
+    };
+
+    const auto write_delete_rows_source = [](std::string_view name, int stale_base) {
+        const std::filesystem::path source = write_two_sheet_source(name);
+        const auto stale_value = [stale_base](int offset) {
+            return std::to_string(stale_base + offset);
+        };
+        const std::string worksheet_xml =
+            std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + R"(<sheetData><row r="2">)"
+            + R"(<c r="A2"><f>A4+90</f><v>)" + stale_value(1) + R"(</v></c>)"
+            + R"(<c r="B2"><f t="shared" ref="B2:C2" si="98" ca="1">A4+90</f><v>)"
+            + stale_value(2) + R"(</v></c>)"
+            + R"(<c r="C2"><f t="shared" si="98" aca="1"/><v>)" + stale_value(3)
+            + R"(</v></c>)"
+            + R"(<c r="D2"><f t="array" ref="D2:E2" ca="1">SUM(A4:B4)</f><v>)"
+            + stale_value(4) + R"(</v></c>)"
+            + R"(<c r="E2"><f t="array" ref="D2:E2"/><v>)" + stale_value(5)
+            + R"(</v></c>)"
+            + R"(<c r="F2"><f t="dataTable" ref="F2:G2" dt2D="1" r1="A2">A4+100</f><v>)"
+            + stale_value(6) + R"(</v></c>)"
+            + R"(<c r="G2"><f t="dataTable" ref="F2:G2" ca="1"/><v>)"
+            + stale_value(7) + R"(</v></c>)"
+            + R"(<c r="H2"><f>G4+1</f><v>)" + stale_value(8) + R"(</v></c>)"
+            + R"(</row></sheetData></worksheet>)";
+        rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+        return source;
+    };
+
+    const auto write_delete_columns_source = [](std::string_view name, int stale_base) {
+        const std::filesystem::path source = write_two_sheet_source(name);
+        const auto stale_value = [stale_base](int offset) {
+            return std::to_string(stale_base + offset);
+        };
+        const std::string worksheet_xml =
+            std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+            + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            + R"(<sheetData><row r="1">)"
+            + R"(<c r="A1"><f>D1+90</f><v>)" + stale_value(1) + R"(</v></c>)"
+            + R"(<c r="B1"><f t="shared" ref="B1:C1" si="99" ca="1">D1+90</f><v>)"
+            + stale_value(2) + R"(</v></c>)"
+            + R"(<c r="C1"><f t="shared" si="99" aca="1"/><v>)" + stale_value(3)
+            + R"(</v></c>)"
+            + R"(<c r="D1"><f t="array" ref="D1:E1" ca="1">SUM(F1:G1)</f><v>)"
+            + stale_value(4) + R"(</v></c>)"
+            + R"(<c r="E1"><f t="array" ref="D1:E1"/><v>)" + stale_value(5)
+            + R"(</v></c>)"
+            + R"(<c r="F1"><f t="dataTable" ref="F1:G1" dt2D="1" r1="A1">G1+100</f><v>)"
+            + stale_value(6) + R"(</v></c>)"
+            + R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>)"
+            + stale_value(7) + R"(</v></c>)"
+            + R"(<c r="H1"><f>G1+1</f><v>)" + stale_value(8) + R"(</v></c>)"
+            + R"(</row></sheetData></worksheet>)";
+        rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+        return source;
+    };
+
+    const auto check_no_formula_metadata =
+        [](const std::string& worksheet_xml,
+           std::initializer_list<int> omitted_cached_values,
+           std::string_view scenario) {
+            const std::string prefix(scenario);
+            check_not_contains(worksheet_xml, R"(t="shared")",
+                prefix + " should drop shared formula metadata");
+            check_not_contains(worksheet_xml, R"(t="array")",
+                prefix + " should drop array formula metadata");
+            check_not_contains(worksheet_xml, R"(t="dataTable")",
+                prefix + " should drop dataTable formula metadata");
+            check_not_contains(worksheet_xml, R"(ca="1")",
+                prefix + " should drop calc metadata attributes");
+            check_not_contains(worksheet_xml, R"(aca="1")",
+                prefix + " should drop shared follower metadata attributes");
+            check_not_contains(worksheet_xml, R"(dt2D="1")",
+                prefix + " should drop dataTable attributes");
+            check_not_contains(worksheet_xml, R"(r1=")",
+                prefix + " should drop dataTable input metadata");
+            for (const int omitted_cached_value : omitted_cached_values) {
+                check_not_contains(worksheet_xml,
+                    "<v>" + std::to_string(omitted_cached_value) + "</v>",
+                    prefix + " should drop stale cached values from shifted formula cells");
+            }
+        };
+
+    const auto run_shift_case =
+        [&](std::string_view artifact_suffix,
+            std::string_view scenario,
+            const std::filesystem::path& source,
+            std::initializer_list<int> omitted_cached_values,
+            auto mutate,
+            const fastxlsx::CellRange& expected_range,
+            std::span<const ReopenedFormulaOutputCell> expected_cells,
+            const fastxlsx::CellRange& reopened_range,
+            const ReopenedFormulaOutputCell& reopened_edit) {
+            const std::string artifact_suffix_text(artifact_suffix);
+            const std::string scenario_text(scenario);
+            const std::filesystem::path output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-formula-source-mutation-"
+                + artifact_suffix_text + "-output.xlsx");
+            const std::filesystem::path noop_output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-formula-source-mutation-"
+                + artifact_suffix_text + "-noop-output.xlsx");
+            const std::filesystem::path reopened_output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-formula-source-mutation-"
+                + artifact_suffix_text + "-reopened-output.xlsx");
+            const std::filesystem::path reopened_noop_output = artifact(
+                "fastxlsx-workbook-editor-public-structural-shift-formula-source-mutation-"
+                + artifact_suffix_text + "-reopened-noop-output.xlsx");
+            const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            check(sheet.cell_count() == 8,
+                scenario_text + " setup should materialize all source formula records");
+            check(!sheet.has_pending_changes(),
+                scenario_text + " setup should start clean");
+            check(!editor.has_pending_changes(),
+                scenario_text + " setup should not dirty WorkbookEditor");
+
+            mutate(sheet);
+
+            check(sheet.has_pending_changes(),
+                scenario_text + " should dirty Data");
+            check(editor.has_pending_changes(),
+                scenario_text + " should dirty WorkbookEditor");
+            check(sheet.cell_count() == expected_cells.size(),
+                scenario_text + " should expose the expected shifted sparse count");
+
+            editor.save_as(output);
+            check(!sheet.has_pending_changes(),
+                scenario_text + " save should keep Data clean");
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            const std::string& output_worksheet_xml =
+                output_entries.at("xl/worksheets/sheet1.xml");
+            check_no_formula_metadata(
+                output_worksheet_xml, omitted_cached_values, scenario);
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                scenario_text + " save should not mutate the source package");
+            check(output_entries.at("xl/worksheets/sheet2.xml")
+                    == source_entries.at("xl/worksheets/sheet2.xml"),
+                scenario_text + " save should preserve untouched worksheets");
+            check_reopened_formula_dirty_output(
+                output, expected_range, expected_cells, scenario);
+
+            editor.save_as(noop_output);
+            check(!sheet.has_pending_changes(),
+                scenario_text + " no-op save should keep Data clean");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " no-op save should keep output byte-stable");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                scenario_text + " no-op save should not mutate the source package");
+            check_reopened_formula_dirty_output(
+                noop_output, expected_range, expected_cells, scenario_text + " no-op output");
+
+            fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            check(!reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh reopen should start clean");
+            reopened_sheet.set_cell(
+                reopened_edit.row, reopened_edit.column, reopened_edit.value);
+            reopened_editor.save_as(reopened_output);
+            const auto reopened_entries = fastxlsx::test::read_zip_entries(reopened_output);
+            const std::string& reopened_worksheet_xml =
+                reopened_entries.at("xl/worksheets/sheet1.xml");
+            check_no_formula_metadata(reopened_worksheet_xml,
+                omitted_cached_values,
+                scenario_text + " fresh-reopen save");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " fresh-reopen save should not mutate its saved input");
+
+            std::vector<ReopenedFormulaOutputCell> reopened_expected(
+                expected_cells.begin(), expected_cells.end());
+            reopened_expected.push_back(reopened_edit);
+            check_reopened_formula_dirty_output(
+                reopened_output,
+                reopened_range,
+                std::span<const ReopenedFormulaOutputCell>(
+                    reopened_expected.data(), reopened_expected.size()),
+                scenario_text + " fresh-reopen output");
+
+            reopened_editor.save_as(reopened_noop_output);
+            check(!reopened_sheet.has_pending_changes(),
+                scenario_text + " fresh-reopen no-op save should keep Data clean");
+            check(fastxlsx::test::read_zip_entries(reopened_noop_output)
+                    == reopened_entries,
+                scenario_text + " fresh-reopen no-op save should keep output byte-stable");
+            check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+                scenario_text + " fresh-reopen no-op save should not mutate its saved input");
+            check_reopened_formula_dirty_output(
+                reopened_noop_output,
+                reopened_range,
+                std::span<const ReopenedFormulaOutputCell>(
+                    reopened_expected.data(), reopened_expected.size()),
+                scenario_text + " fresh-reopen no-op output");
+        };
+
+    const ReopenedFormulaOutputCell insert_rows_expected[] = {
+        {2, 1, fastxlsx::CellValue::formula("A3+90")},
+        {2, 2, fastxlsx::CellValue::formula("A2+90")},
+        {2, 3, fastxlsx::CellValue::formula("B2+90")},
+        {2, 4, fastxlsx::CellValue::formula("SUM(A2:B2)")},
+        {2, 5, fastxlsx::CellValue::number(5005.0)},
+        {2, 6, fastxlsx::CellValue::formula("A2+100")},
+        {2, 7, fastxlsx::CellValue::number(5007.0)},
+        {2, 8, fastxlsx::CellValue::formula("G2+1")},
+    };
+    run_shift_case("insert-rows",
+        "structural insert_rows formula source mutation",
+        write_insert_shift_source(
+            "fastxlsx-workbook-editor-public-structural-insert-rows-formula-source-mutation-source.xlsx",
+            5000),
+        {5001, 5002, 5003, 5004, 5006, 5008},
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_rows(1, 1); },
+        fastxlsx::CellRange {2, 1, 2, 8},
+        insert_rows_expected,
+        fastxlsx::CellRange {2, 1, 3, 9},
+        ReopenedFormulaOutputCell {3, 9, fastxlsx::CellValue::formula("A2+H2")});
+
+    const ReopenedFormulaOutputCell insert_columns_expected[] = {
+        {1, 2, fastxlsx::CellValue::formula("B2+90")},
+        {1, 3, fastxlsx::CellValue::formula("B1+90")},
+        {1, 4, fastxlsx::CellValue::formula("C1+90")},
+        {1, 5, fastxlsx::CellValue::formula("SUM(B1:C1)")},
+        {1, 6, fastxlsx::CellValue::number(5105.0)},
+        {1, 7, fastxlsx::CellValue::formula("B1+100")},
+        {1, 8, fastxlsx::CellValue::number(5107.0)},
+        {1, 9, fastxlsx::CellValue::formula("H1+1")},
+    };
+    run_shift_case("insert-columns",
+        "structural insert_columns formula source mutation",
+        write_insert_shift_source(
+            "fastxlsx-workbook-editor-public-structural-insert-columns-formula-source-mutation-source.xlsx",
+            5100),
+        {5101, 5102, 5103, 5104, 5106, 5108},
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.insert_columns(1, 1); },
+        fastxlsx::CellRange {1, 2, 1, 9},
+        insert_columns_expected,
+        fastxlsx::CellRange {1, 2, 2, 10},
+        ReopenedFormulaOutputCell {2, 10, fastxlsx::CellValue::formula("B1+I1")});
+
+    const ReopenedFormulaOutputCell delete_rows_expected[] = {
+        {1, 1, fastxlsx::CellValue::formula("A3+90")},
+        {1, 2, fastxlsx::CellValue::formula("A3+90")},
+        {1, 3, fastxlsx::CellValue::formula("B3+90")},
+        {1, 4, fastxlsx::CellValue::formula("SUM(A3:B3)")},
+        {1, 5, fastxlsx::CellValue::number(5205.0)},
+        {1, 6, fastxlsx::CellValue::formula("A3+100")},
+        {1, 7, fastxlsx::CellValue::number(5207.0)},
+        {1, 8, fastxlsx::CellValue::formula("G3+1")},
+    };
+    run_shift_case("delete-rows",
+        "structural delete_rows formula source mutation",
+        write_delete_rows_source(
+            "fastxlsx-workbook-editor-public-structural-delete-rows-formula-source-mutation-source.xlsx",
+            5200),
+        {5201, 5202, 5203, 5204, 5206, 5208},
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_rows(1, 1); },
+        fastxlsx::CellRange {1, 1, 1, 8},
+        delete_rows_expected,
+        fastxlsx::CellRange {1, 1, 2, 9},
+        ReopenedFormulaOutputCell {2, 9, fastxlsx::CellValue::formula("A1+H1")});
+
+    const ReopenedFormulaOutputCell delete_columns_expected[] = {
+        {1, 1, fastxlsx::CellValue::formula("C1+90")},
+        {1, 2, fastxlsx::CellValue::formula("D1+90")},
+        {1, 3, fastxlsx::CellValue::formula("SUM(E1:F1)")},
+        {1, 4, fastxlsx::CellValue::number(5305.0)},
+        {1, 5, fastxlsx::CellValue::formula("F1+100")},
+        {1, 6, fastxlsx::CellValue::number(5307.0)},
+        {1, 7, fastxlsx::CellValue::formula("F1+1")},
+    };
+    run_shift_case("delete-columns",
+        "structural delete_columns formula source mutation",
+        write_delete_columns_source(
+            "fastxlsx-workbook-editor-public-structural-delete-columns-formula-source-mutation-source.xlsx",
+            5300),
+        {5301, 5302, 5303, 5304, 5306, 5308},
+        [](fastxlsx::WorksheetEditor& sheet) { sheet.delete_columns(1, 1); },
+        fastxlsx::CellRange {1, 1, 1, 7},
+        delete_columns_expected,
+        fastxlsx::CellRange {1, 1, 2, 8},
+        ReopenedFormulaOutputCell {2, 8, fastxlsx::CellValue::formula("A1+G1")});
+}
+
 void test_public_worksheet_editor_materializes_source_shared_formulas()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -2898,6 +3210,7 @@ int main()
         test_public_worksheet_editor_row_column_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_whole_store_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_full_replacement_formula_source_mutations_drop_metadata();
+        test_public_worksheet_editor_structural_shift_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         test_public_worksheet_editor_materializes_office_like_shared_formula_shape();

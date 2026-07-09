@@ -1111,6 +1111,10 @@ output packages after later saves: max-cells and memory-budget budget-release,
 missing-erase, blank-overwrite, last-error recovery, and mixed diagnostic
 recovery all prove the first no-op package remains unchanged after the second
 no-op and post-noop save.
+The budget-release guardrail snapshot helper now also pins range and
+requested-coordinate sparse reads, duplicate requested `D4`, skipped erased/gap
+coordinates, and empty row/column gaps across its clean saved/reopened/no-op
+handles.
 The blank-overwrite guardrail same-editor no-op saves now also pin the clean
 diagnostic surface directly: max-cells and memory-budget first/second no-op
 outputs keep replacement diagnostics empty and clear `last_edit_error()` while

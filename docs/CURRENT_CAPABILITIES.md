@@ -123,6 +123,8 @@
   materialization; this is not source-cell repair or type coercion.
 - Guardrail：`WorksheetEditorOptions::max_cells` 和 `memory_budget_bytes` 约束 source materialization
   与后续 sparse-store mutations。它们是 sparse-store estimate guardrails，不是进程 RSS 或 package save peak。
+  Clean budget-release recovery handles are covered by full/range/requested sparse snapshots,
+  row/column snapshots, duplicate requested coordinates, and empty gap row/column reads.
 - 适用边界：small-file random cell editing。该路径不支持 non-default caller-supplied style id 写入、
   sharedStrings broad migration、style migration/merge、formula evaluation、full formula rewrite、
   rich-text preservation、namespace repair、semantic metadata sync、relationship repair、

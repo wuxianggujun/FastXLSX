@@ -43,6 +43,11 @@ sharedStrings migration or metadata repair.
 Saved-output diagnostic recovery now also pins represented `get_cell()` payloads
 before and after invalid scalar/snapshot reads, proving those failures do not
 hide value/style drift or dirty the reacquired materialized session.
+Invalid scalar-read recovery now uses the same wider rejection matrix across
+`contains_cell()`, `try_cell()`, and `get_cell()`: zero and out-of-bounds
+coordinates, empty/lowercase/overflowing/malformed A1 text, range-like A1
+strings, absolute-reference syntax, and sheet-qualified references all fail
+without dirtying the clean saved session.
 The same recovery helper now also compares represented `row_cells()` and
 `column_cells()` snapshots before and after those invalid read probes, so
 traversal order, payloads, and source style handles stay pinned across the

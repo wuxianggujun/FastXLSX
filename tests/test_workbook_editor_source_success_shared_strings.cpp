@@ -1350,6 +1350,97 @@ void test_public_worksheet_editor_reuses_duplicate_dirty_shared_strings()
         "duplicate dirty sharedStrings post-dirty no-op output");
 }
 
+void test_public_worksheet_editor_reuses_existing_dirty_shared_strings_without_rewriting_table()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-existing-dirty-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-existing-dirty-output.xlsx");
+    const std::filesystem::path dirty_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-sharedstrings-existing-dirty-noop-output.xlsx");
+    {
+        fastxlsx::WorkbookWriterOptions options;
+        options.string_strategy = fastxlsx::StringStrategy::SharedString;
+        fastxlsx::WorkbookWriter writer =
+            fastxlsx::WorkbookWriter::create(source, options);
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("source-reuse")});
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::number(7.0)});
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
+            && a1->text_value() == "source-reuse",
+        "existing dirty sharedStrings fixture should materialize source text");
+    check(!sheet.has_pending_changes(),
+        "existing dirty sharedStrings materialization should start clean");
+
+    sheet.set_cell("B1", fastxlsx::CellValue::text("source-reuse"));
+    sheet.set_cell("C2", fastxlsx::CellValue::text("source-reuse"));
+    check(sheet.has_pending_changes(),
+        "existing dirty sharedStrings edits should dirty Data");
+    editor.save_as(output);
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "existing dirty sharedStrings save should refresh worksheet dimension");
+    check_contains(worksheet_xml, R"(<c r="A1" t="s"><v>0</v></c>)",
+        "existing dirty sharedStrings save should keep the source cell on index 0");
+    check_contains(worksheet_xml, R"(<c r="B1" t="s"><v>0</v></c>)",
+        "existing dirty sharedStrings save should reuse index 0 for the first dirty cell");
+    check_contains(worksheet_xml, R"(<c r="C2" t="s"><v>0</v></c>)",
+        "existing dirty sharedStrings save should reuse index 0 for the second dirty cell");
+    check_not_contains(worksheet_xml, R"(inlineStr)",
+        "existing dirty sharedStrings save should not fall back to inline text");
+    check(output_entries.at("xl/sharedStrings.xml") == shared_strings_before,
+        "existing dirty sharedStrings save should not rewrite the sharedStrings table");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "existing dirty sharedStrings save should preserve untouched sheet bytes");
+    check(!sheet.has_pending_changes(),
+        "existing dirty sharedStrings save should clean Data");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "existing dirty sharedStrings save should clear materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "existing dirty sharedStrings save");
+    check(!editor.last_edit_error().has_value(),
+        "existing dirty sharedStrings save should keep last_edit_error clear");
+
+    const ReopenedLazySharedStringsCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("source-reuse")},
+        {1, 2, fastxlsx::CellValue::text("source-reuse")},
+        {2, 3, fastxlsx::CellValue::text("source-reuse")},
+    };
+    check_reopened_shared_strings_dirty_output(
+        output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        "existing dirty sharedStrings output");
+
+    editor.save_as(dirty_noop_output);
+    check(!sheet.has_pending_changes(),
+        "existing dirty sharedStrings post-dirty no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(dirty_noop_output) == output_entries,
+        "existing dirty sharedStrings post-dirty no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "existing dirty sharedStrings post-dirty no-op save should not mutate the source package");
+    check_reopened_shared_strings_dirty_output(
+        dirty_noop_output,
+        expected_cells,
+        fastxlsx::CellRange {1, 1, 2, 3},
+        "existing dirty sharedStrings post-dirty no-op output");
+}
+
 void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations()
 {
     struct LegalDeclarationCase {
@@ -2512,6 +2603,7 @@ int main()
         test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until_index_cells();
         test_public_worksheet_editor_materializes_source_shared_strings();
         test_public_worksheet_editor_reuses_duplicate_dirty_shared_strings();
+        test_public_worksheet_editor_reuses_existing_dirty_shared_strings_without_rewriting_table();
         test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declarations();
         test_public_worksheet_editor_flattens_rich_source_shared_strings();
         test_public_worksheet_editor_materializes_prefixed_source_shared_strings();

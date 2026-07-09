@@ -565,6 +565,13 @@ void test_rewrite_formula_references_for_structural_edit()
 
     check_equal(
         fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            R"('B1'' Sheet'!B1+'A1''B1'!A1+[B1.xlsx]B1!B1)",
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 1}),
+        R"('B1'' Sheet'!C1+'A1''B1'!A1+[B1.xlsx]B1!C1)",
+        "formula structural column insert should preserve escaped quoted sheet-name token text");
+
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
             R"(SUM(A:A,$2:$3,Sheet1!$B:$C))",
             FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 2}),
         R"(SUM(A:A,$4:$5,Sheet1!$B:$C))",
@@ -642,6 +649,33 @@ void test_rewrite_formula_references_for_structural_edit()
             "A1+B1", FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 3, 0}),
         "A1+B1",
         "formula structural rewrite should preserve text for zero-count edits");
+
+    const std::string zero_count_formula =
+        R"(SUM(B2:C3,'B2'' Sheet'!B2,Table1[B2],"B2"))";
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            zero_count_formula,
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertRows, 2, 0}),
+        zero_count_formula,
+        "formula structural row insert should preserve text for zero-count edits");
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            zero_count_formula,
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteRows, 2, 0}),
+        zero_count_formula,
+        "formula structural row delete should preserve text for zero-count edits");
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            zero_count_formula,
+            FormulaStructuralEdit {FormulaStructuralEditKind::InsertColumns, 2, 0}),
+        zero_count_formula,
+        "formula structural column insert should preserve text for zero-count edits");
+    check_equal(
+        fastxlsx::detail::rewrite_formula_references_for_structural_edit(
+            zero_count_formula,
+            FormulaStructuralEdit {FormulaStructuralEditKind::DeleteColumns, 2, 0}),
+        zero_count_formula,
+        "formula structural column delete should preserve text for zero-count edits");
 }
 
 void test_formula_reference_audit_fields()

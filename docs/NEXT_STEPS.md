@@ -47,6 +47,10 @@ The appended sharedStrings materialized flush path now also checks final
 worksheet indexes plus appended table text that needs XML escaping or
 `xml:space="preserve"`, while remaining append-only rather than a broad
 sharedStrings migration.
+The unsupported sharedStrings append path now has a direct internal flush
+regression too: when the source table is readable but not safe to append, dirty
+materialized text is saved as inline strings and the source sharedStrings bytes
+are preserved instead of repaired.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

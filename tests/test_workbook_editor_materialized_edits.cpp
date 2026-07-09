@@ -970,6 +970,82 @@ void test_materialized_flush_reuses_existing_shared_strings_without_rewrite()
         "existing-only sharedStrings flush no-op save should not mutate the source package");
 }
 
+void test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_unsupported()
+{
+    MaterializedFlushSourcePackage source =
+        write_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-shared-unsupported-source.xlsx",
+            true);
+    const std::string unsupported_shared_strings =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1" unsupported="preserve-me">)"
+        R"(<si><t>existing</t></si></sst>)";
+    fastxlsx::test::rewrite_package_entry_as_stored(
+        source.path, "xl/sharedStrings.xml", unsupported_shared_strings);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("fallback <&> text"));
+    data.set_cell(1, 3, fastxlsx::CellValue::text("  fallback spaced  "));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 1,
+        "unsupported sharedStrings flush should still flush one worksheet");
+    check(!data.dirty(),
+        "unsupported sharedStrings flush should clear the dirty session");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-unsupported-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-unsupported-noop-output.xlsx");
+    editor.save_as(output);
+    const std::string worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(worksheet.find(R"(<dimension ref="A1:C1"/>)") != std::string::npos,
+        "unsupported sharedStrings flush should update sparse dimensions");
+    check(worksheet.find(
+              R"(<c r="A1" t="inlineStr"><is><t>existing</t></is></c>)")
+            != std::string::npos,
+        "unsupported sharedStrings flush should write existing text inline");
+    check(worksheet.find(
+              R"(<c r="B1" t="inlineStr"><is><t>fallback &lt;&amp;&gt; text</t></is></c>)")
+            != std::string::npos,
+        "unsupported sharedStrings flush should write escaped dirty text inline");
+    check(worksheet.find(
+              R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve">  fallback spaced  </t></is></c>)")
+            != std::string::npos,
+        "unsupported sharedStrings flush should preserve dirty text whitespace inline");
+    check(worksheet.find(R"(t="s")") == std::string::npos,
+        "unsupported sharedStrings flush should not write shared string indexes");
+    check(shared_strings == unsupported_shared_strings,
+        "unsupported sharedStrings flush should preserve source sharedStrings bytes");
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "unsupported sharedStrings flush no-op save should keep output byte-stable",
+        "unsupported sharedStrings flush no-op save should keep registry clean");
+    check(!data.dirty(),
+        "unsupported sharedStrings flush no-op save should keep the flushed session clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "unsupported sharedStrings flush no-op save should not mutate the source package");
+}
+
 void test_materialized_flush_deduplicates_appended_shared_strings()
 {
     const MaterializedFlushSourcePackage source =
@@ -1056,6 +1132,7 @@ int main()
         test_materialized_flush_rejects_stale_targets_without_clearing_dirty();
         test_materialized_flush_appends_shared_strings_projection();
         test_materialized_flush_reuses_existing_shared_strings_without_rewrite();
+        test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_unsupported();
         test_materialized_flush_deduplicates_appended_shared_strings();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';

@@ -875,6 +875,262 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<reused-edge>")"));
 }
 
+void test_public_worksheet_editor_materializes_source_max_coordinate_error_and_erases_edge()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-source-max-coordinate-error-source.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-error-noop-output.xlsx");
+    const std::filesystem::path erase_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-error-erase-output.xlsx");
+    const std::filesystem::path erase_noop_output =
+        artifact("fastxlsx-workbook-editor-public-source-max-coordinate-error-erase-noop-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-error-fresh-reopen-restore-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-error-fresh-reopen-restore-noop-output.xlsx");
+    const std::filesystem::path post_noop_reuse_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-error-post-noop-reuse-output.xlsx");
+    const std::filesystem::path post_noop_reuse_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-error-post-noop-reuse-noop-output.xlsx");
+
+    std::map<std::string, std::string> entries = fastxlsx::test::read_zip_entries(source);
+    entries.at("xl/worksheets/sheet1.xml") =
+        std::string(R"(<?xml version="1.0" encoding="UTF-8"?>)")
+        + R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+          R"(<dimension ref="A1:XFD1048576"/>)"
+          R"(<sheetData>)"
+          R"(<row r="1">)"
+          R"(<c r="A1" t="inlineStr"><is><t>source-error-a1</t></is></c>)"
+          R"(<c r="B1"><v>1</v></c>)"
+          R"(</row>)"
+          R"(<row r="2">)"
+          R"(<c r="A2" t="inlineStr"><is><t>source-error-a2</t></is></c>)"
+          R"(</row>)"
+          R"(<row r="1048576">)"
+          R"(<c r="XFD1048576" t="e"><v>#VALUE!</v></c>)"
+          R"(</row>)"
+          R"(</sheetData></worksheet>)";
+    write_stored_zip_entries(source, entries);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    check(sheet.cell_count() == 4,
+        "source max-coordinate error materialization should load sparse source records only");
+    check(!sheet.has_pending_changes(),
+        "read-only source max-coordinate error materialization should start clean");
+    check(!editor.has_pending_changes(),
+        "read-only source max-coordinate error materialization should not dirty WorkbookEditor");
+    check(editor.pending_change_count() == 0,
+        "read-only source max-coordinate error materialization should not queue public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "read-only source max-coordinate error materialization should not expose dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "read-only source max-coordinate error materialization should not expose dirty cell count");
+    {
+        const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+        const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+        check(by_position.kind() == fastxlsx::CellValueKind::Error &&
+                by_position.text_value() == "#VALUE!",
+            "source max-coordinate error materialization should read errors through row/column overloads");
+        check(by_a1.kind() == fastxlsx::CellValueKind::Error &&
+                by_a1.text_value() == "#VALUE!",
+            "source max-coordinate error materialization should read errors through A1 overloads");
+    }
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.size() == 1,
+            "source max-coordinate error range snapshot should expose the edge record");
+        if (edge_cells.size() == 1) {
+            check(edge_cells[0].reference.row == 1048576 &&
+                    edge_cells[0].reference.column == 16384,
+                "source max-coordinate error range snapshot should preserve legal boundary coordinates");
+            check(edge_cells[0].value.kind() == fastxlsx::CellValueKind::Error &&
+                    edge_cells[0].value.text_value() == "#VALUE!",
+                "source max-coordinate error range snapshot should preserve source error text");
+        }
+    }
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "no-op save_as after source max-coordinate error materialization should keep the handle clean");
+    check(!editor.has_pending_changes(),
+        "no-op save_as after source max-coordinate error materialization should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        "no-op save_as after source max-coordinate error materialization should not create public edits");
+    check(fastxlsx::test::read_zip_entries(noop_output) == source_entries,
+        "no-op save_as after source max-coordinate error materialization should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "no-op save_as after source max-coordinate error materialization should not mutate source package");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        noop_output,
+        "source max-coordinate error no-op output",
+        fastxlsx::CellValue::error("#VALUE!"));
+
+    sheet.erase_cell("XFD1048576");
+    check(!editor.last_edit_error().has_value(),
+        "source max-coordinate error erase should not create edit diagnostics");
+    check(sheet.has_pending_changes(),
+        "source max-coordinate error erase should dirty the materialized handle");
+    check(sheet.cell_count() == 3,
+        "source max-coordinate error erase should shrink the sparse record count");
+    check(!sheet.try_cell(1048576, 16384).has_value(),
+        "source max-coordinate error erase should remove row/column readback");
+    check(threw_fastxlsx_error([&] {
+        (void)sheet.get_cell("XFD1048576");
+    }), "source max-coordinate error get_cell should throw after erase");
+    {
+        const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+            sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+        check(edge_cells.empty(),
+            "source max-coordinate error range snapshot should be empty after erase");
+    }
+    {
+        const std::vector<std::string> names =
+            editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "source max-coordinate error erase dirty diagnostics should use source sheet name");
+    }
+    check(editor.pending_materialized_cell_count() == 3,
+        "source max-coordinate error erase dirty diagnostics should report remaining sparse records");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "source max-coordinate error erase should create one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" && summary.planned_name == "Data",
+                "source max-coordinate error erase summary should use source names");
+            check(!summary.renamed,
+                "source max-coordinate error erase summary should not be marked renamed");
+            check(summary.materialized_dirty && summary.materialized_cell_count == 3,
+                "source max-coordinate error erase summary should report the shrunken sparse store");
+            check(!summary.sheet_data_replaced,
+                "source max-coordinate error erase summary should not invent replacement diagnostics");
+        }
+    }
+
+    editor.save_as(erase_output);
+    check(!sheet.has_pending_changes(),
+        "save_as after source max-coordinate error erase should clean the handle");
+    check(editor.pending_change_count() == 1,
+        "save_as after source max-coordinate error erase should count one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "save_as after source max-coordinate error erase should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "save_as after source max-coordinate error erase should clear dirty cell count");
+    check(editor.pending_worksheet_edits().empty(),
+        "save_as after source max-coordinate error erase should clear summaries");
+
+    const auto erase_entries = fastxlsx::test::read_zip_entries(erase_output);
+    const std::string worksheet_xml = erase_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "source max-coordinate error erase output should shrink dimension to remaining source records");
+    check_not_contains(worksheet_xml, "XFD1048576",
+        "source max-coordinate error erase output should omit the erased edge reference");
+    check_not_contains(worksheet_xml, "#VALUE!",
+        "source max-coordinate error erase output should omit the erased edge error");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>source-error-a1</t></is></c>)",
+        "source max-coordinate error erase output should preserve source A1");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "source max-coordinate error erase output should preserve source B1");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>source-error-a2</t></is></c>)",
+        "source max-coordinate error erase output should preserve source A2");
+    check_contains(erase_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "source max-coordinate error erase output should preserve untouched sheets");
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"), "#VALUE!",
+        "source max-coordinate error erase should not mutate the source package bytes");
+    check_source_max_coordinate_erase_reopened_output(
+        erase_output,
+        "source max-coordinate error erase output",
+        "source-error-a1",
+        "source-error-a2");
+    check_source_max_coordinate_erase_noop_save(
+        editor,
+        sheet,
+        erase_noop_output,
+        erase_entries,
+        source,
+        source_entries,
+        "source max-coordinate error erase",
+        "source-error-a1",
+        "source-error-a2");
+
+    const auto erase_noop_entries = fastxlsx::test::read_zip_entries(erase_noop_output);
+
+    check_source_max_coordinate_fresh_reopen_restore_after_erase(
+        erase_noop_output,
+        fresh_reopen_restore_output,
+        fresh_reopen_restore_noop_output,
+        source,
+        source_entries,
+        erase_noop_entries,
+        fastxlsx::CellValue::error("#N/A"),
+        R"(<c r="XFD1048576" t="e"><v>#N/A</v></c>)",
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        "source max-coordinate error fresh-reopen restore");
+
+    sheet.set_cell("XFD1048576", fastxlsx::CellValue::error("#NULL!"));
+    check(sheet.has_pending_changes(),
+        "source max-coordinate error post-noop reuse edit should dirty the materialized handle");
+    check(editor.has_pending_changes(),
+        "source max-coordinate error post-noop reuse edit should dirty WorkbookEditor");
+    check(editor.pending_materialized_cell_count() == 4,
+        "source max-coordinate error post-noop reuse edit should expose the restored sparse count");
+
+    editor.save_as(post_noop_reuse_output);
+    check(!sheet.has_pending_changes(),
+        "source max-coordinate error post-noop reuse save should clean the handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "source max-coordinate error post-noop reuse save should clear dirty names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "source max-coordinate error post-noop reuse save should clear dirty cell count");
+
+    const auto post_noop_reuse_entries =
+        fastxlsx::test::read_zip_entries(post_noop_reuse_output);
+    const std::string post_noop_reuse_xml =
+        post_noop_reuse_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_reuse_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        "source max-coordinate error post-noop reuse output should restore max-bound dimension");
+    check_contains(post_noop_reuse_xml,
+        R"(<c r="XFD1048576" t="e"><v>#NULL!</v></c>)",
+        "source max-coordinate error post-noop reuse output should restore error text");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source max-coordinate error post-noop reuse save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(erase_output) == erase_entries,
+        "source max-coordinate error post-noop reuse save should not mutate the erase output");
+    check(fastxlsx::test::read_zip_entries(erase_noop_output) == erase_noop_entries,
+        "source max-coordinate error post-noop reuse save should not mutate the erase no-op output");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        post_noop_reuse_output,
+        "source max-coordinate error post-noop reuse output",
+        fastxlsx::CellValue::error("#NULL!"));
+
+    editor.save_as(post_noop_reuse_noop_output);
+    check(!sheet.has_pending_changes(),
+        "source max-coordinate error post-noop reuse no-op save should keep the handle clean");
+    check(fastxlsx::test::read_zip_entries(post_noop_reuse_noop_output)
+            == post_noop_reuse_entries,
+        "source max-coordinate error post-noop reuse no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "source max-coordinate error post-noop reuse no-op save should leave the source package unchanged");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        post_noop_reuse_noop_output,
+        "source max-coordinate error post-noop reuse no-op output",
+        fastxlsx::CellValue::error("#NULL!"));
+}
+
 void test_public_worksheet_editor_materializes_source_max_coordinate_shared_string_and_erases_edge()
 {
     const std::filesystem::path source =
@@ -2098,6 +2354,7 @@ int main()
     try {
         test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_edge();
         test_public_worksheet_editor_materializes_source_max_coordinate_formula_and_erases_edge();
+        test_public_worksheet_editor_materializes_source_max_coordinate_error_and_erases_edge();
         test_public_worksheet_editor_materializes_source_max_coordinate_shared_string_and_erases_edge();
         test_public_worksheet_editor_materializes_source_max_coordinate_scalar_values_and_erases_edge();
         test_public_worksheet_editor_materializes_source_max_coordinate_empty_inline_strings_and_erases_edge();

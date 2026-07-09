@@ -93,7 +93,7 @@ byte-stable, keep follow-up no-op saves byte-identical, and allow the saved
 outputs to be reopened for later text edits that continue appending through the
 sharedStrings table.
 The source-success max-coordinate shard now also fresh-reopens compact
-erase/no-op outputs, restores `XFD1048576` for inline text, formula,
+erase/no-op outputs, restores `XFD1048576` for inline text, formula, error,
 scalar/blank, empty-inline, shared-string, and rich shared-string sources, and
 requires the restored outputs' clean no-op saves to stay byte-identical.
 The generated QA lane includes `generated_rename_materialized`, which renames

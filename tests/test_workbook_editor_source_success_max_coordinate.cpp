@@ -243,6 +243,110 @@ void check_source_max_coordinate_erase_noop_save(
         expected_a2_text);
 }
 
+void check_source_max_coordinate_fresh_reopen_restore_after_erase(
+    const std::filesystem::path& input,
+    const std::filesystem::path& restored_output,
+    const std::filesystem::path& restored_noop_output,
+    const std::filesystem::path& source,
+    const std::map<std::string, std::string>& source_entries,
+    const std::map<std::string, std::string>& input_entries,
+    const fastxlsx::CellValue& restored_edge,
+    std::string_view restored_cell_xml,
+    std::optional<std::string_view> shared_strings_append_xml,
+    std::optional<std::string_view> shared_strings_count_xml,
+    std::optional<std::string_view> shared_strings_unique_count_xml,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(input);
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = 8;
+    fastxlsx::WorksheetEditor reopened_sheet =
+        reopened_editor.worksheet("Data", options);
+
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " input should start as a clean materialized worksheet");
+    check(reopened_sheet.cell_count() == 3,
+        prefix + " input should expose the erased sparse record count");
+    check(!reopened_sheet.try_cell("XFD1048576").has_value(),
+        prefix + " input should keep the erased edge absent");
+    check_workbook_editor_public_clean_state(
+        reopened_editor, prefix + " input");
+
+    reopened_sheet.set_cell("XFD1048576", restored_edge);
+    check(reopened_sheet.has_pending_changes(),
+        prefix + " edit should dirty the fresh materialized handle");
+    check(reopened_editor.has_pending_changes(),
+        prefix + " edit should dirty the fresh editor");
+    check(reopened_editor.pending_materialized_cell_count() == 4,
+        prefix + " edit should restore the sparse source count");
+
+    reopened_editor.save_as(restored_output);
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " save should clean the materialized handle");
+    check(reopened_editor.pending_change_count() == 1,
+        prefix + " save should record one materialized handoff");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0,
+        prefix + " save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened_editor, prefix + " save");
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " save should keep diagnostics clear");
+
+    const auto restored_entries = fastxlsx::test::read_zip_entries(restored_output);
+    const std::string restored_xml = restored_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(restored_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+        prefix + " output should restore max-bound dimension");
+    check_contains(restored_xml, restored_cell_xml,
+        prefix + " output should serialize the restored edge cell");
+    if (shared_strings_append_xml.has_value() ||
+        shared_strings_count_xml.has_value() ||
+        shared_strings_unique_count_xml.has_value()) {
+        const std::string restored_shared_strings =
+            restored_entries.at("xl/sharedStrings.xml");
+        if (shared_strings_append_xml.has_value()) {
+            check_contains(restored_shared_strings,
+                *shared_strings_append_xml,
+                prefix + " output should append the restored shared string");
+        }
+        if (shared_strings_count_xml.has_value()) {
+            check_contains(restored_shared_strings,
+                *shared_strings_count_xml,
+                prefix + " output should update sharedStrings count metadata");
+        }
+        if (shared_strings_unique_count_xml.has_value()) {
+            check_contains(restored_shared_strings,
+                *shared_strings_unique_count_xml,
+                prefix + " output should update sharedStrings uniqueCount metadata");
+        }
+    }
+    check(fastxlsx::test::read_zip_entries(input) == input_entries,
+        prefix + " save should leave the fresh input package unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        prefix + " save should leave the original source package unchanged");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        restored_output,
+        prefix + " output",
+        restored_edge);
+
+    reopened_editor.save_as(restored_noop_output);
+    check(!reopened_sheet.has_pending_changes(),
+        prefix + " no-op save should keep the materialized handle clean");
+    check(fastxlsx::test::read_zip_entries(restored_noop_output)
+            == restored_entries,
+        prefix + " no-op output should stay byte-identical");
+    check(fastxlsx::test::read_zip_entries(input) == input_entries,
+        prefix + " no-op save should leave the fresh input package unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        prefix + " no-op save should leave the original source package unchanged");
+    check_source_max_coordinate_read_only_noop_reopened_output(
+        restored_noop_output,
+        prefix + " no-op output",
+        restored_edge);
+}
+
 void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_edge()
 {
     const std::filesystem::path source =
@@ -253,6 +357,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-erase-output.xlsx");
     const std::filesystem::path erase_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-erase-noop-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-fresh-reopen-restore-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-fresh-reopen-restore-noop-output.xlsx");
     const std::filesystem::path post_noop_reuse_output = artifact(
         "fastxlsx-workbook-editor-public-source-max-coordinate-post-noop-reuse-output.xlsx");
     const std::filesystem::path post_noop_reuse_noop_output = artifact(
@@ -439,6 +547,20 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
 
     const auto erase_noop_entries = fastxlsx::test::read_zip_entries(erase_noop_output);
 
+    check_source_max_coordinate_fresh_reopen_restore_after_erase(
+        erase_noop_output,
+        fresh_reopen_restore_output,
+        fresh_reopen_restore_noop_output,
+        source,
+        source_entries,
+        erase_noop_entries,
+        fastxlsx::CellValue::text("source-max-edge-fresh-reopen"),
+        R"(<c r="XFD1048576" t="inlineStr"><is><t>source-max-edge-fresh-reopen</t></is></c>)",
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        "source max-coordinate fresh-reopen restore");
+
     sheet.set_cell("XFD1048576", fastxlsx::CellValue::text("source-max-edge-reused"));
     check(sheet.has_pending_changes(),
         "source max-coordinate post-noop reuse edit should dirty the materialized handle");
@@ -500,6 +622,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-erase-output.xlsx");
     const std::filesystem::path erase_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-formula-erase-noop-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-formula-fresh-reopen-restore-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-formula-fresh-reopen-restore-noop-output.xlsx");
     const std::filesystem::path post_noop_reuse_output = artifact(
         "fastxlsx-workbook-editor-public-source-max-coordinate-formula-post-noop-reuse-output.xlsx");
     const std::filesystem::path post_noop_reuse_noop_output = artifact(
@@ -682,6 +808,20 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
 
     const auto erase_noop_entries = fastxlsx::test::read_zip_entries(erase_noop_output);
 
+    check_source_max_coordinate_fresh_reopen_restore_after_erase(
+        erase_noop_output,
+        fresh_reopen_restore_output,
+        fresh_reopen_restore_noop_output,
+        source,
+        source_entries,
+        erase_noop_entries,
+        fastxlsx::CellValue::formula("SUM(A1:B1)+7"),
+        R"(<c r="XFD1048576"><f>SUM(A1:B1)+7</f></c>)",
+        std::nullopt,
+        std::nullopt,
+        std::nullopt,
+        "source max-coordinate formula fresh-reopen restore");
+
     sheet.set_cell("XFD1048576", fastxlsx::CellValue::formula(R"(SUM(A1:B1)&"<reused-edge>")"));
     check(sheet.has_pending_changes(),
         "source max-coordinate formula post-noop reuse edit should dirty the materialized handle");
@@ -745,6 +885,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-erase-output.xlsx");
     const std::filesystem::path erase_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-erase-noop-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-fresh-reopen-restore-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-fresh-reopen-restore-noop-output.xlsx");
     const std::filesystem::path post_noop_reuse_output = artifact(
         "fastxlsx-workbook-editor-public-source-max-coordinate-sharedstring-post-noop-reuse-output.xlsx");
     const std::filesystem::path post_noop_reuse_noop_output = artifact(
@@ -958,6 +1102,20 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         "source-shared-a2");
 
     const auto erase_noop_entries = fastxlsx::test::read_zip_entries(erase_noop_output);
+
+    check_source_max_coordinate_fresh_reopen_restore_after_erase(
+        erase_noop_output,
+        fresh_reopen_restore_output,
+        fresh_reopen_restore_noop_output,
+        source,
+        source_entries,
+        erase_noop_entries,
+        fastxlsx::CellValue::text("source-shared-edge-fresh-reopen & <again>"),
+        R"(<c r="XFD1048576" t="s"><v>4</v></c>)",
+        R"(<si><t>source-shared-edge-fresh-reopen &amp; &lt;again&gt;</t></si></sst>)",
+        R"(count="5")",
+        R"(uniqueCount="5")",
+        "source max-coordinate shared string fresh-reopen restore");
 
     sheet.set_cell(
         "XFD1048576",
@@ -1617,6 +1775,10 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-output.xlsx");
     const std::filesystem::path erase_noop_output =
         artifact("fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-erase-noop-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-fresh-reopen-restore-output.xlsx");
+    const std::filesystem::path fresh_reopen_restore_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-fresh-reopen-restore-noop-output.xlsx");
     const std::filesystem::path post_noop_reuse_output = artifact(
         "fastxlsx-workbook-editor-public-source-max-coordinate-rich-shared-string-post-noop-reuse-output.xlsx");
     const std::filesystem::path post_noop_reuse_noop_output = artifact(
@@ -1811,6 +1973,20 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         "source-rich-a2");
 
     const auto erase_noop_entries = fastxlsx::test::read_zip_entries(erase_noop_output);
+
+    check_source_max_coordinate_fresh_reopen_restore_after_erase(
+        erase_noop_output,
+        fresh_reopen_restore_output,
+        fresh_reopen_restore_noop_output,
+        source,
+        source_entries,
+        erase_noop_entries,
+        fastxlsx::CellValue::text("rich-shared-edge-fresh-reopen & <again>"),
+        R"(<c r="XFD1048576" t="s"><v>3</v></c>)",
+        R"(<si><t>rich-shared-edge-fresh-reopen &amp; &lt;again&gt;</t></si></sst>)",
+        R"(count="4")",
+        R"(uniqueCount="4")",
+        "source max-coordinate rich shared string fresh-reopen restore");
 
     sheet.set_cell(
         "XFD1048576",

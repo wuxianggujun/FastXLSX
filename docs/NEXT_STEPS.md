@@ -51,6 +51,10 @@ preserve sharedStrings indexes/table bytes on save, keep untouched worksheets
 byte-stable, keep follow-up no-op saves byte-identical, and allow the saved
 outputs to be reopened for later text edits that continue appending through the
 sharedStrings table.
+The source-success max-coordinate shard now also fresh-reopens compact
+erase/no-op outputs, restores `XFD1048576` for inline text, formula,
+shared-string, and rich shared-string sources, and requires the restored
+outputs' clean no-op saves to stay byte-identical.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

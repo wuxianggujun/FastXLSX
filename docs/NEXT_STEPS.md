@@ -84,6 +84,9 @@ It now also pins direct mutations of source formula records across ordinary,
 shared, array, and dataTable source shapes: value overwrite, full replacement,
 explicit blank clear, and erase all drop stale formula metadata/cached values
 without mutating the source package.
+The same direct-mutation path now fresh-reopens the clean no-op output, applies
+a later formula edit, and repeats byte-stable no-op validation so the flattened
+formula shape remains reusable as a saved-session input.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

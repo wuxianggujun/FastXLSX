@@ -729,6 +729,10 @@ void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata(
         "fastxlsx-workbook-editor-public-direct-formula-source-mutation-output.xlsx");
     const std::filesystem::path noop_output = artifact(
         "fastxlsx-workbook-editor-public-direct-formula-source-mutation-noop-output.xlsx");
+    const std::filesystem::path reopened_output = artifact(
+        "fastxlsx-workbook-editor-public-direct-formula-source-mutation-reopened-output.xlsx");
+    const std::filesystem::path reopened_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-direct-formula-source-mutation-reopened-noop-output.xlsx");
 
     const std::string worksheet_xml =
         R"(<?xml version="1.0" encoding="UTF-8"?>)"
@@ -878,6 +882,80 @@ void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata(
         fastxlsx::CellRange {1, 1, 1, 7},
         expected_cells,
         "direct formula source mutation no-op output");
+
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    check(!reopened_sheet.has_pending_changes(),
+        "direct formula source mutation fresh reopen should start clean");
+    check(!reopened_editor.has_pending_changes(),
+        "direct formula source mutation fresh reopen should keep WorkbookEditor clean");
+    check(reopened_sheet.cell_count() == 5,
+        "direct formula source mutation fresh reopen should preserve sparse count");
+    check(!reopened_sheet.try_cell("D1").has_value(),
+        "direct formula source mutation fresh reopen should keep erased array formula absent");
+    check(!reopened_sheet.try_cell("F1").has_value(),
+        "direct formula source mutation fresh reopen should keep erased dataTable formula absent");
+    check(reopened_sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank,
+        "direct formula source mutation fresh reopen should keep shared follower blank");
+    check(reopened_sheet.get_cell("G1").kind() == fastxlsx::CellValueKind::Blank,
+        "direct formula source mutation fresh reopen should keep dataTable fallback blank");
+
+    reopened_sheet.set_cell("H2", fastxlsx::CellValue::formula("E1+B1"));
+    check(reopened_sheet.has_pending_changes(),
+        "direct formula source mutation fresh-reopen edit should dirty Data");
+    check(reopened_editor.has_pending_changes(),
+        "direct formula source mutation fresh-reopen edit should dirty WorkbookEditor");
+    reopened_editor.save_as(reopened_output);
+    check(!reopened_sheet.has_pending_changes(),
+        "direct formula source mutation fresh-reopen save should keep Data clean");
+
+    const auto reopened_entries = fastxlsx::test::read_zip_entries(reopened_output);
+    const std::string& reopened_worksheet_xml =
+        reopened_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reopened_worksheet_xml, R"(<c r="H2"><f>E1+B1</f></c>)",
+        "direct formula source mutation fresh-reopen save should include the later formula edit");
+    check_not_contains(reopened_worksheet_xml, R"(t="shared")",
+        "direct formula source mutation fresh-reopen save should keep shared metadata dropped");
+    check_not_contains(reopened_worksheet_xml, R"(t="array")",
+        "direct formula source mutation fresh-reopen save should keep array metadata dropped");
+    check_not_contains(reopened_worksheet_xml, R"(t="dataTable")",
+        "direct formula source mutation fresh-reopen save should keep dataTable metadata dropped");
+    for (const int stale_cached_value : stale_cached_values) {
+        check_not_contains(reopened_worksheet_xml,
+            "<v>" + std::to_string(stale_cached_value) + "</v>",
+            "direct formula source mutation fresh-reopen save should keep stale cached values dropped");
+    }
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "direct formula source mutation fresh-reopen save should not mutate the original source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "direct formula source mutation fresh-reopen save should not mutate its saved input");
+
+    const ReopenedFormulaOutputCell reopened_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("ordinary-overwrite")},
+        {1, 2, fastxlsx::CellValue::number(12.5)},
+        {1, 3, fastxlsx::CellValue::blank()},
+        {1, 5, fastxlsx::CellValue::formula("A1+B1")},
+        {1, 7, fastxlsx::CellValue::blank()},
+        {2, 8, fastxlsx::CellValue::formula("E1+B1")},
+    };
+    check_reopened_formula_dirty_output(
+        reopened_output,
+        fastxlsx::CellRange {1, 1, 2, 8},
+        reopened_expected_cells,
+        "direct formula source mutation fresh-reopen output");
+
+    reopened_editor.save_as(reopened_noop_output);
+    check(!reopened_sheet.has_pending_changes(),
+        "direct formula source mutation fresh-reopen no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(reopened_noop_output) == reopened_entries,
+        "direct formula source mutation fresh-reopen no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "direct formula source mutation fresh-reopen no-op save should not mutate its saved input");
+    check_reopened_formula_dirty_output(
+        reopened_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 8},
+        reopened_expected_cells,
+        "direct formula source mutation fresh-reopen no-op output");
 }
 
 void test_public_worksheet_editor_materializes_source_shared_formulas()

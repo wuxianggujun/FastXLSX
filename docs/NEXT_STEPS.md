@@ -47,6 +47,9 @@ The same recovery helper now also compares represented `row_cells()` and
 `column_cells()` snapshots before and after those invalid read probes, so
 traversal order, payloads, and source style handles stay pinned across the
 read-only failure path.
+It now extends the same comparison to full, used-range, and requested-coordinate
+`sparse_cells()` snapshots, covering duplicate requested coordinates and
+missing-coordinate skips without dirtying the saved/reacquired session.
 The inline materialized flush path now also verifies the final saved worksheet
 XML for text, number, boolean, escaped formula, escaped error, and explicit blank
 sparse records after the dirty session is flushed into the Patch plan.

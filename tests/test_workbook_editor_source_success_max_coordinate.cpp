@@ -33,6 +33,61 @@ bool source_max_coordinate_snapshot_matches(
         source_max_coordinate_values_equal(actual.value, expected);
 }
 
+void check_source_max_coordinate_live_edge_readback(
+    fastxlsx::WorksheetEditor& sheet,
+    const fastxlsx::CellValue& expected_edge,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    check(sheet.cell_count() == 4,
+        prefix + " live readback should expose the restored sparse cell count");
+
+    const std::optional<fastxlsx::CellRange> range = sheet.used_range();
+    check(range.has_value() &&
+            range->first_row == 1 &&
+            range->first_column == 1 &&
+            range->last_row == 1048576 &&
+            range->last_column == 16384,
+        prefix + " live readback should expose A1:XFD1048576 bounds");
+
+    const fastxlsx::CellValue by_position = sheet.get_cell(1048576, 16384);
+    const fastxlsx::CellValue by_a1 = sheet.get_cell("XFD1048576");
+    check(source_max_coordinate_values_equal(by_position, expected_edge),
+        prefix + " live readback should read the edge through row/column overloads");
+    check(source_max_coordinate_values_equal(by_a1, expected_edge),
+        prefix + " live readback should read the edge through A1 overloads");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> edge_cells =
+        sheet.sparse_cells(fastxlsx::CellRange {1048576, 16384, 1048576, 16384});
+    check(edge_cells.size() == 1,
+        prefix + " live edge range should expose one sparse record");
+    if (edge_cells.size() == 1) {
+        check(source_max_coordinate_snapshot_matches(edge_cells[0], expected_edge),
+            prefix + " live edge range should preserve coordinates and value");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> max_row =
+        sheet.row_cells(1048576);
+    check(max_row.size() == 1,
+        prefix + " live max row should expose only the edge record");
+    if (max_row.size() == 1) {
+        check(source_max_coordinate_snapshot_matches(max_row[0], expected_edge),
+            prefix + " live max row should preserve the edge value");
+    }
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> max_column =
+        sheet.column_cells(16384);
+    check(max_column.size() == 1,
+        prefix + " live max column should expose only the edge record");
+    if (max_column.size() == 1) {
+        check(source_max_coordinate_snapshot_matches(max_column[0], expected_edge),
+            prefix + " live max column should preserve the edge value");
+    }
+
+    check(sheet.has_pending_changes(),
+        prefix + " live readback should keep the restored edit dirty before save");
+}
+
 void check_source_max_coordinate_read_only_noop_reopened_output(
     const std::filesystem::path& output,
     std::string_view scenario,
@@ -280,6 +335,8 @@ void check_source_max_coordinate_fresh_reopen_restore_after_erase(
         prefix + " edit should dirty the fresh editor");
     check(reopened_editor.pending_materialized_cell_count() == 4,
         prefix + " edit should restore the sparse source count");
+    check_source_max_coordinate_live_edge_readback(
+        reopened_sheet, restored_edge, prefix + " edit");
 
     reopened_editor.save_as(restored_output);
     check(!reopened_sheet.has_pending_changes(),

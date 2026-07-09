@@ -95,8 +95,10 @@ reopened for later text edits that continue appending through the sharedStrings
 table.
 The source-success max-coordinate shard now also fresh-reopens compact
 erase/no-op outputs, restores `XFD1048576` for inline text, formula, error,
-scalar/blank, empty-inline, shared-string, and rich shared-string sources, and
-requires the restored outputs' clean no-op saves to stay byte-identical.
+scalar/blank, empty-inline, shared-string, and rich shared-string sources,
+checks the restored live edge through row/column, A1, sparse-range, row, and
+column views before save, and requires the restored outputs' clean no-op saves
+to stay byte-identical.
 The public-state append-row / set-row / set-column paths now also carry dirty
 error-cell evidence: `append_row()`, `set_row()`, and `set_column()` can add or
 replace opaque error tokens beside text, number, formula, and explicit blank

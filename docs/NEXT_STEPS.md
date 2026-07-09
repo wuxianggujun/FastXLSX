@@ -185,6 +185,12 @@ It also pins internal structural-shift failure recovery: row/column insert
 overflows keep clean sessions clean after staged formula rewrites, delete span
 preflight failures preserve pre-existing dirty state, and all rejected paths
 leave the sparse records and dimensions unchanged.
+Internal no-op structural-shift coverage now also pins non-intersecting
+row/column shifts, zero-count shifts, and empty-session shifts: clean sessions
+stay clean, pre-existing dirty state remains dirty, sparse records/styles,
+memory estimates, dimensions, and projection XML stay unchanged. This is
+`MaterializedWorksheetSession` small-file In-memory hygiene evidence, not a
+metadata sync or large-file random editing claim.
 The generated QA lane includes `generated_rename_materialized`, which renames
 `Data` to `EditedData`, writes materialized A1/B2 cells, preserves the
 untouched sheet, and now also has a no-op save variant requiring the clean

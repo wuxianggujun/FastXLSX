@@ -1082,6 +1082,140 @@ void test_internal_materialized_worksheet_session_shifts_sparse_records()
     }
 }
 
+void test_internal_materialized_worksheet_session_shift_noops_preserve_state()
+{
+    const fastxlsx::StyleId formula_style = fastxlsx::detail::make_source_style_id(10);
+    const auto collect_worksheet_xml =
+        [](fastxlsx::detail::MaterializedWorksheetSession& session) {
+            auto projection = session.worksheet_chunk_source();
+            std::string xml;
+            std::string chunk;
+            while (projection(chunk)) {
+                xml += chunk;
+            }
+            return xml;
+        };
+    const auto check_formula_record =
+        [formula_style](const fastxlsx::detail::CellRecord* record,
+            std::string_view text,
+            const char* message) {
+            check(record != nullptr, message);
+            check(record->kind == fastxlsx::CellValueKind::Formula, message);
+            check(record->text_value == text, message);
+            check(record->style_id.has_value()
+                    && record->style_id->value() == formula_style.value(),
+                message);
+        };
+    const auto check_text_record =
+        [](const fastxlsx::detail::CellRecord* record,
+            std::string_view text,
+            const char* message) {
+            check(record != nullptr, message);
+            check(record->kind == fastxlsx::CellValueKind::Text, message);
+            check(record->text_value == text, message);
+        };
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1,
+            fastxlsx::CellValue::formula("A1+B1").with_style(formula_style));
+        store.set_cell(2, 2, fastxlsx::CellValue::text("tail-b2"));
+
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "CleanNoop", std::move(store));
+        const std::size_t memory_before = session.estimated_memory_usage();
+
+        session.insert_rows(3, 2);
+        session.delete_rows(3, 2);
+        session.insert_columns(3, 2);
+        session.delete_columns(3, 2);
+
+        check(!session.dirty(),
+            "non-intersecting materialized shifts should keep a clean session clean");
+        check(session.cell_count() == 2,
+            "non-intersecting materialized shifts should preserve sparse count");
+        check(session.estimated_memory_usage() == memory_before,
+            "non-intersecting materialized shifts should preserve sparse memory estimate");
+        check(session.dimension_reference() == "A1:B2",
+            "non-intersecting materialized shifts should preserve dimension");
+        check_formula_record(session.try_cell(1, 1), "A1+B1",
+            "non-intersecting materialized shifts should preserve formula text and style");
+        check_text_record(session.try_cell(2, 2), "tail-b2",
+            "non-intersecting materialized shifts should preserve text records");
+
+        const std::string xml = collect_worksheet_xml(session);
+        check(xml.find(R"(<dimension ref="A1:B2"/>)") != std::string::npos,
+            "non-intersecting materialized shifts projection should preserve dimension");
+        check(xml.find(R"(<c r="A1" s="10"><f>A1+B1</f></c>)") != std::string::npos,
+            "non-intersecting materialized shifts projection should preserve formula XML");
+        check(xml.find(R"(<c r="B2" t="inlineStr"><is><t>tail-b2</t></is></c>)")
+                != std::string::npos,
+            "non-intersecting materialized shifts projection should preserve text XML");
+    }
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "CleanZeroCount", std::move(store));
+
+        session.insert_rows(1, 0);
+        session.delete_rows(1, 0);
+        session.insert_columns(1, 0);
+        session.delete_columns(1, 0);
+
+        check(!session.dirty(),
+            "zero-count materialized shifts should keep a clean session clean");
+        check(session.cell_count() == 1,
+            "zero-count materialized shifts should preserve clean sparse count");
+        const fastxlsx::detail::CellRecord* number = session.try_cell(1, 1);
+        check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number
+                && number->number_value == 1.0,
+            "zero-count materialized shifts should preserve clean records");
+    }
+
+    {
+        fastxlsx::detail::CellStore store;
+        store.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "DirtyZeroCount", std::move(store));
+        session.set_cell(2, 2, fastxlsx::CellValue::text("dirty-b2"));
+
+        session.insert_rows(1, 0);
+        session.delete_rows(1, 0);
+        session.insert_columns(1, 0);
+        session.delete_columns(1, 0);
+
+        check(session.dirty(),
+            "zero-count materialized shifts should preserve pre-existing dirty state");
+        check(session.cell_count() == 2,
+            "zero-count materialized shifts should preserve dirty sparse count");
+        const fastxlsx::detail::CellRecord* number = session.try_cell(1, 1);
+        check(number != nullptr && number->kind == fastxlsx::CellValueKind::Number
+                && number->number_value == 1.0,
+            "zero-count materialized shifts should preserve source records");
+        check_text_record(session.try_cell(2, 2), "dirty-b2",
+            "zero-count materialized shifts should preserve dirty records");
+    }
+
+    {
+        fastxlsx::detail::MaterializedWorksheetSession session(
+            "Empty", fastxlsx::detail::CellStore {});
+
+        session.insert_rows(1, 1);
+        session.delete_rows(1, 1);
+        session.insert_columns(1, 1);
+        session.delete_columns(1, 1);
+
+        check(!session.dirty(),
+            "materialized shifts on an empty store should keep the session clean");
+        check(session.cell_count() == 0,
+            "materialized shifts on an empty store should keep the sparse count empty");
+        check(session.dimension_reference() == "A1",
+            "materialized shifts on an empty store should keep the empty dimension");
+    }
+}
+
 void test_internal_materialized_worksheet_session_shift_failures_preserve_state()
 {
     const fastxlsx::StyleId formula_style = fastxlsx::detail::make_source_style_id(12);
@@ -2569,6 +2703,7 @@ int main()
         test_internal_cell_store_guardrails();
         test_internal_materialized_worksheet_session();
         test_internal_materialized_worksheet_session_shifts_sparse_records();
+        test_internal_materialized_worksheet_session_shift_noops_preserve_state();
         test_internal_materialized_worksheet_session_shift_failures_preserve_state();
         test_internal_materialized_worksheet_session_registry();
         test_internal_cell_store_sheet_data_serialization();

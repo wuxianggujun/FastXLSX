@@ -81,7 +81,8 @@
   range strings, and coordinate-batch entries throw read failures without
   replacing `WorkbookEditor::last_edit_error()` or dirtying the materialized
   session; represented scalar `get_cell()` payloads remain stable after those
-  failed read probes.
+  failed read probes, and represented `row_cells()` / `column_cells()` snapshots
+  remain stable across the same recovery path.
 - `set_cells()` and `set_cell_values()` batch inputs are preflighted, allow duplicate
   coordinates, and apply later-wins ordering. `set_cell()` / `set_cells()` /
   `set_row()` / `set_column()` are full sparse replacements and drop prior source

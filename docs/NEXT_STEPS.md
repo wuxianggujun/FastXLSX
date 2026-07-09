@@ -145,6 +145,11 @@ The source-success structural shift coverage now also checks live dirty
 rich text, and prefixed inline-string cases: `used_range()`, `sparse_cells()`,
 `row_cells()`, `column_cells()`, and direct `get_cell()` all expose the shifted
 materialized state while keeping the editor dirty until `save_as()`.
+Public dirty-state coverage now also treats `used_range()`, `row_cells()`, and
+`column_cells()` as read-only inspection APIs in clean, failed-mutation, and
+dirty materialized sessions: these reads do not dirty clean sessions, do not
+replace `last_edit_error()`, and do not queue a materialized handoff before
+`save_as()`.
 Formula structural rewrite coverage now also pins mixed absolute markers:
 row/column insertions shift the affected coordinates in references like `$A2`,
 `B$2`, and `$C$3`, while preserving the caller's `$` marker text. This remains

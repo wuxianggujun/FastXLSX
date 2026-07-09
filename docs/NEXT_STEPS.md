@@ -2651,6 +2651,11 @@ The invalid snapshot-read helper now also pins workbook-level state stability
 across clean and dirty materialized sessions: dirty flags, pending change
 counts, dirty materialized aggregate diagnostics, and worksheet summary counts
 remain unchanged after failed scalar, range, A1, or coordinate-batch reads.
+Saved-output diagnostic recovery now also uses that helper to compare concrete
+first/last sparse values and scalar `contains_cell()` / `try_cell()` probes
+before and after invalid snapshot reads, including missing-cell probes, so
+read-only inspection cannot hide payload/style drift or dirty the reacquired
+session.
 The same standalone snapshot lane now also batches empty literal no-op mutation
 overloads: empty `append_row()`, missing-row/column empty replacements, empty
 full/value batch replacements, empty value clears, and empty erases clear prior

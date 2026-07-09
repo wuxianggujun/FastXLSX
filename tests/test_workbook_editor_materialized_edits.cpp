@@ -79,6 +79,7 @@ struct MaterializedFlushTwoSheetSourcePackage {
     std::filesystem::path path;
     std::string data_worksheet;
     std::string other_worksheet;
+    std::string shared_strings;
 };
 
 MaterializedFlushSourcePackage write_materialized_flush_source_package(
@@ -141,27 +142,42 @@ MaterializedFlushSourcePackage write_materialized_flush_source_package(
 }
 
 MaterializedFlushTwoSheetSourcePackage write_two_sheet_materialized_flush_source_package(
-    std::string_view name)
+    std::string_view name,
+    bool with_shared_strings = false)
 {
     MaterializedFlushTwoSheetSourcePackage source;
     source.path = fastxlsx::test::artifact_path(name);
-    source.data_worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
-        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
-        R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    if (with_shared_strings) {
+        source.data_worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>)";
+        source.shared_strings = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="1" uniqueCount="1">)"
+            R"(<si><t>existing</t></si></sst>)";
+    } else {
+        source.data_worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
+            R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+            R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    }
     source.other_worksheet = R"(<?xml version="1.0" encoding="UTF-8"?>)"
         R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
         R"(<dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>2</v></c></row></sheetData></worksheet>)";
 
     std::map<std::string, std::string> entries;
-    entries.emplace("[Content_Types].xml",
-        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+    std::string content_types = R"(<?xml version="1.0" encoding="UTF-8"?>)"
         R"(<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">)"
         R"(<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>)"
         R"(<Default Extension="xml" ContentType="application/xml"/>)"
         R"(<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>)"
         R"(<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
-        R"(<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)"
-        R"(</Types>)");
+        R"(<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>)";
+    if (with_shared_strings) {
+        content_types +=
+            R"(<Override PartName="/xl/sharedStrings.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>)";
+    }
+    content_types += R"(</Types>)";
+
+    entries.emplace("[Content_Types].xml", std::move(content_types));
     entries.emplace("_rels/.rels",
         R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
         R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>)"
@@ -170,13 +186,22 @@ MaterializedFlushTwoSheetSourcePackage write_two_sheet_materialized_flush_source
         R"(<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
         R"(xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
         R"(<sheets><sheet name="Data" sheetId="1" r:id="rId1"/><sheet name="Other" sheetId="2" r:id="rId2"/></sheets></workbook>)");
-    entries.emplace("xl/_rels/workbook.xml.rels",
+    std::string workbook_relationships =
         R"(<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">)"
         R"(<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>)"
-        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>)"
-        R"(</Relationships>)");
+        R"(<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>)";
+    if (with_shared_strings) {
+        workbook_relationships +=
+            R"(<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)";
+    }
+    workbook_relationships += R"(</Relationships>)";
+
+    entries.emplace("xl/_rels/workbook.xml.rels", std::move(workbook_relationships));
     entries.emplace("xl/worksheets/sheet1.xml", source.data_worksheet);
     entries.emplace("xl/worksheets/sheet2.xml", source.other_worksheet);
+    if (with_shared_strings) {
+        entries.emplace("xl/sharedStrings.xml", source.shared_strings);
+    }
     fastxlsx::test::write_stored_zip_entries(source.path, entries);
     return source;
 }
@@ -1225,6 +1250,99 @@ void test_materialized_flush_deduplicates_appended_shared_strings()
         "duplicate sharedStrings flush no-op save should not mutate the source package");
 }
 
+void test_materialized_flush_reuses_shared_strings_across_multiple_dirty_sessions()
+{
+    const MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-source.xlsx",
+            true);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("cross-sheet-new"));
+
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(1, 1, fastxlsx::CellValue::text("cross-sheet-new"));
+    other.set_cell(2, 2, fastxlsx::CellValue::text("other-only"));
+    other.set_cell(3, 3, fastxlsx::CellValue::number(33.0));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "multi-session sharedStrings materialized flush should report both worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session sharedStrings materialized flush should clear both sessions");
+    check(registry.dirty_session_count() == 0,
+        "multi-session sharedStrings materialized flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-noop-output.xlsx");
+    editor.save_as(output);
+
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(data_worksheet.find(R"(<dimension ref="A1:B1"/>)") != std::string::npos,
+        "multi-session sharedStrings flush should update Data dimensions");
+    check(data_worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)")
+            != std::string::npos,
+        "multi-session sharedStrings flush should reuse the source string index");
+    check(data_worksheet.find(R"(<c r="B1" t="s"><v>1</v></c>)")
+            != std::string::npos,
+        "multi-session sharedStrings flush should use the first appended string index");
+    check(data_worksheet.find("inlineStr") == std::string::npos,
+        "multi-session sharedStrings flush should not inline Data text");
+
+    check(other_worksheet.find(R"(<dimension ref="A1:C3"/>)") != std::string::npos,
+        "multi-session sharedStrings flush should update Other dimensions");
+    check(other_worksheet.find(R"(<c r="A1" t="s"><v>1</v></c>)")
+            != std::string::npos,
+        "multi-session sharedStrings flush should reuse appended indexes across sheets");
+    check(other_worksheet.find(R"(<c r="B2" t="s"><v>2</v></c>)")
+            != std::string::npos,
+        "multi-session sharedStrings flush should append later sheet-only text");
+    check(other_worksheet.find(R"(<c r="C3"><v>33</v></c>)") != std::string::npos,
+        "multi-session sharedStrings flush should keep non-text cells value-only");
+    check(other_worksheet.find("inlineStr") == std::string::npos,
+        "multi-session sharedStrings flush should not inline Other text");
+
+    check(shared_strings.find(R"(count="4")") != std::string::npos &&
+            shared_strings.find(R"(uniqueCount="3")") != std::string::npos,
+        "multi-session sharedStrings flush should count cross-sheet references and unique strings");
+    check(shared_strings.find(
+              R"(<si><t>existing</t></si><si><t>cross-sheet-new</t></si><si><t>other-only</t></si>)")
+            != std::string::npos,
+        "multi-session sharedStrings flush should append each cross-sheet text once");
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "multi-session sharedStrings flush no-op save should keep output byte-stable",
+        "multi-session sharedStrings flush no-op save should keep registry clean");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session sharedStrings flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "multi-session sharedStrings flush no-op save should not mutate the source package");
+}
+
 } // namespace
 
 int main()
@@ -1250,6 +1368,7 @@ int main()
         test_materialized_flush_reuses_existing_shared_strings_without_rewrite();
         test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_unsupported();
         test_materialized_flush_deduplicates_appended_shared_strings();
+        test_materialized_flush_reuses_shared_strings_across_multiple_dirty_sessions();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
         return 1;

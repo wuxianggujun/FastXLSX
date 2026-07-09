@@ -55,6 +55,12 @@ The internal flush bridge now also covers multiple dirty materialized worksheet
 sessions in one handoff: both sheets flush, clear diagnostics, write their own
 worksheet XML, avoid creating sharedStrings, and settle into a byte-stable no-op
 save while leaving the source package unchanged.
+That multi-session flush coverage now also has the sharedStrings-backed variant:
+two dirty worksheets reuse the source table, share one appended index for the
+same new text across sheets, append sheet-local text once, preserve non-text
+cells as value-only XML, and settle into a byte-stable no-op save. This remains
+append/reuse small-file In-memory handoff evidence, not sharedStrings repair or
+metadata migration.
 Those internal flush tests now also require repeated `save_as()` outputs to
 stay byte-identical after the dirty sessions are cleared, while preserving the
 source package across inline, appended sharedStrings, existing-only

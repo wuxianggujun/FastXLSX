@@ -958,6 +958,238 @@ void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata(
         "direct formula source mutation fresh-reopen no-op output");
 }
 
+void test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-batch-formula-source-mutation-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-batch-formula-source-mutation-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-batch-formula-source-mutation-noop-output.xlsx");
+    const std::filesystem::path reopened_output = artifact(
+        "fastxlsx-workbook-editor-public-batch-formula-source-mutation-reopened-output.xlsx");
+    const std::filesystem::path reopened_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-batch-formula-source-mutation-reopened-noop-output.xlsx");
+
+    const std::string worksheet_xml =
+        R"(<?xml version="1.0" encoding="UTF-8"?>)"
+        R"(<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">)"
+        R"(<sheetData><row r="1">)"
+        R"(<c r="A1"><f>A2+10</f><v>1001</v></c>)"
+        R"(<c r="B1"><f t="shared" ref="B1:C1" si="71" ca="1">A1+10</f><v>1002</v></c>)"
+        R"(<c r="C1"><f t="shared" si="71" aca="1"/><v>1003</v></c>)"
+        R"(<c r="D1"><f t="array" ref="D1:E1" ca="1">SUM(A1:B1)</f><v>1004</v></c>)"
+        R"(<c r="E1"><f t="array" ref="D1:E1"/><v>1005</v></c>)"
+        R"(<c r="F1"><f t="dataTable" ref="F1:G1" dt2D="1" r1="A1">A1+20</f><v>1006</v></c>)"
+        R"(<c r="G1"><f t="dataTable" ref="F1:G1" ca="1"/><v>1007</v></c>)"
+        R"(<c r="H1"><f>G1+1</f><v>1008</v></c>)"
+        R"(</row></sheetData></worksheet>)";
+    rewrite_package_entry_as_stored(source, "xl/worksheets/sheet1.xml", worksheet_xml);
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(sheet.cell_count() == 8,
+        "batch formula source mutation setup should materialize all source records");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("C1").text_value() == "B1+10",
+        "batch formula source mutation setup should translate shared followers");
+    check(sheet.get_cell("D1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("D1").text_value() == "SUM(A1:B1)",
+        "batch formula source mutation setup should flatten array formula text");
+    check(sheet.get_cell("E1").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("E1").number_value() == 1005.0,
+        "batch formula source mutation setup should materialize array cached fallback");
+    check(sheet.get_cell("F1").kind() == fastxlsx::CellValueKind::Formula
+            && sheet.get_cell("F1").text_value() == "A1+20",
+        "batch formula source mutation setup should flatten dataTable formula text");
+    check(sheet.get_cell("G1").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("G1").number_value() == 1007.0,
+        "batch formula source mutation setup should materialize dataTable cached fallback");
+    check(!sheet.has_pending_changes(),
+        "batch formula source mutation setup should start clean");
+    check(!editor.has_pending_changes(),
+        "batch formula source mutation setup should not dirty WorkbookEditor");
+
+    sheet.set_cell_values({
+        {{1, 1}, fastxlsx::CellValue::text("batch-overwrite-a1")},
+        {{1, 2}, fastxlsx::CellValue::number(25.0)},
+        {{1, 8}, fastxlsx::CellValue::formula("A1+B1")},
+    });
+    sheet.clear_cell_values("C1:D1");
+    sheet.clear_cell_values({fastxlsx::WorksheetCellReference {1, 7}});
+    sheet.erase_cells("E1:F1");
+
+    check(sheet.has_pending_changes(),
+        "batch formula source mutations should dirty Data");
+    check(editor.has_pending_changes(),
+        "batch formula source mutations should dirty WorkbookEditor");
+    check(sheet.cell_count() == 6,
+        "batch formula source mutations should remove erased source formula records");
+    check(!sheet.try_cell("E1").has_value(),
+        "batch formula source mutations should erase array cached fallback");
+    check(!sheet.try_cell("F1").has_value(),
+        "batch formula source mutations should erase dataTable formula cell");
+    check(sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Blank,
+        "batch formula source mutations should clear shared follower as blank");
+    check(sheet.get_cell("D1").kind() == fastxlsx::CellValueKind::Blank,
+        "batch formula source mutations should clear array formula as blank");
+    check(sheet.get_cell("G1").kind() == fastxlsx::CellValueKind::Blank,
+        "batch formula source mutations should clear dataTable fallback as blank");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "batch formula source mutation save should keep Data clean");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string& output_worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(output_worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>batch-overwrite-a1</t></is></c>)",
+        "batch formula source mutation save should persist batch text overwrite");
+    check_contains(output_worksheet_xml, R"(<c r="B1"><v>25</v></c>)",
+        "batch formula source mutation save should persist batch numeric overwrite");
+    check_contains(output_worksheet_xml, R"(<c r="C1"/>)",
+        "batch formula source mutation save should persist A1-range cleared shared follower");
+    check_contains(output_worksheet_xml, R"(<c r="D1"/>)",
+        "batch formula source mutation save should persist A1-range cleared array formula");
+    check_not_contains(output_worksheet_xml, "<c r=\"E1\"",
+        "batch formula source mutation save should omit erased array fallback");
+    check_not_contains(output_worksheet_xml, "<c r=\"F1\"",
+        "batch formula source mutation save should omit erased dataTable formula");
+    check_contains(output_worksheet_xml, R"(<c r="G1"/>)",
+        "batch formula source mutation save should persist coordinate-batch cleared dataTable fallback");
+    check_contains(output_worksheet_xml, R"(<c r="H1"><f>A1+B1</f></c>)",
+        "batch formula source mutation save should persist batch formula overwrite");
+    check_not_contains(output_worksheet_xml, R"(t="shared")",
+        "batch formula source mutation save should drop shared formula metadata");
+    check_not_contains(output_worksheet_xml, R"(t="array")",
+        "batch formula source mutation save should drop array formula metadata");
+    check_not_contains(output_worksheet_xml, R"(t="dataTable")",
+        "batch formula source mutation save should drop dataTable formula metadata");
+    check_not_contains(output_worksheet_xml, R"(ca="1")",
+        "batch formula source mutation save should drop calc metadata attributes");
+    check_not_contains(output_worksheet_xml, R"(dt2D="1")",
+        "batch formula source mutation save should drop dataTable attributes");
+    check_not_contains(output_worksheet_xml, "<f>A2+10</f>",
+        "batch formula source mutation save should not revive ordinary source formula");
+    check_not_contains(output_worksheet_xml, "SUM(A1:B1)",
+        "batch formula source mutation save should not revive array formula text");
+    check_not_contains(output_worksheet_xml, "<f>A1+20</f>",
+        "batch formula source mutation save should not revive dataTable formula text");
+    check_not_contains(output_worksheet_xml, "<f>G1+1</f>",
+        "batch formula source mutation save should not revive overwritten formula text");
+    const int stale_cached_values[] = {1001, 1002, 1003, 1004, 1005, 1006, 1007, 1008};
+    for (const int stale_cached_value : stale_cached_values) {
+        check_not_contains(output_worksheet_xml,
+            "<v>" + std::to_string(stale_cached_value) + "</v>",
+            "batch formula source mutation save should drop stale cached values");
+    }
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "batch formula source mutation save should not mutate the source package");
+    check(output_entries.at("xl/worksheets/sheet2.xml")
+            == source_entries.at("xl/worksheets/sheet2.xml"),
+        "batch formula source mutation save should preserve untouched worksheets");
+
+    const ReopenedFormulaOutputCell expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("batch-overwrite-a1")},
+        {1, 2, fastxlsx::CellValue::number(25.0)},
+        {1, 3, fastxlsx::CellValue::blank()},
+        {1, 4, fastxlsx::CellValue::blank()},
+        {1, 7, fastxlsx::CellValue::blank()},
+        {1, 8, fastxlsx::CellValue::formula("A1+B1")},
+    };
+    check_reopened_formula_dirty_output(
+        output,
+        fastxlsx::CellRange {1, 1, 1, 8},
+        expected_cells,
+        "batch formula source mutation output");
+
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "batch formula source mutation no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "batch formula source mutation no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "batch formula source mutation no-op save should not mutate the source package");
+    check_reopened_formula_dirty_output(
+        noop_output,
+        fastxlsx::CellRange {1, 1, 1, 8},
+        expected_cells,
+        "batch formula source mutation no-op output");
+
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    check(!reopened_sheet.has_pending_changes(),
+        "batch formula source mutation fresh reopen should start clean");
+    check(reopened_sheet.cell_count() == 6,
+        "batch formula source mutation fresh reopen should preserve sparse count");
+    check(!reopened_sheet.try_cell("E1").has_value(),
+        "batch formula source mutation fresh reopen should keep erased array fallback absent");
+    check(!reopened_sheet.try_cell("F1").has_value(),
+        "batch formula source mutation fresh reopen should keep erased dataTable formula absent");
+
+    reopened_sheet.set_cell_values({
+        {{2, 1}, fastxlsx::CellValue::text("batch-reopen-text")},
+        {{2, 8}, fastxlsx::CellValue::formula("H1+B1")},
+    });
+    reopened_editor.save_as(reopened_output);
+    check(!reopened_sheet.has_pending_changes(),
+        "batch formula source mutation fresh-reopen save should keep Data clean");
+    const auto reopened_entries = fastxlsx::test::read_zip_entries(reopened_output);
+    const std::string& reopened_worksheet_xml =
+        reopened_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reopened_worksheet_xml,
+        R"(<c r="A2" t="inlineStr"><is><t>batch-reopen-text</t></is></c>)",
+        "batch formula source mutation fresh-reopen save should include later batch text");
+    check_contains(reopened_worksheet_xml, R"(<c r="H2"><f>H1+B1</f></c>)",
+        "batch formula source mutation fresh-reopen save should include later batch formula");
+    check_not_contains(reopened_worksheet_xml, R"(t="shared")",
+        "batch formula source mutation fresh-reopen save should keep shared metadata dropped");
+    check_not_contains(reopened_worksheet_xml, R"(t="array")",
+        "batch formula source mutation fresh-reopen save should keep array metadata dropped");
+    check_not_contains(reopened_worksheet_xml, R"(t="dataTable")",
+        "batch formula source mutation fresh-reopen save should keep dataTable metadata dropped");
+    for (const int stale_cached_value : stale_cached_values) {
+        check_not_contains(reopened_worksheet_xml,
+            "<v>" + std::to_string(stale_cached_value) + "</v>",
+            "batch formula source mutation fresh-reopen save should keep stale cached values dropped");
+    }
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "batch formula source mutation fresh-reopen save should not mutate original source package");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "batch formula source mutation fresh-reopen save should not mutate its saved input");
+
+    const ReopenedFormulaOutputCell reopened_expected_cells[] = {
+        {1, 1, fastxlsx::CellValue::text("batch-overwrite-a1")},
+        {1, 2, fastxlsx::CellValue::number(25.0)},
+        {1, 3, fastxlsx::CellValue::blank()},
+        {1, 4, fastxlsx::CellValue::blank()},
+        {1, 7, fastxlsx::CellValue::blank()},
+        {1, 8, fastxlsx::CellValue::formula("A1+B1")},
+        {2, 1, fastxlsx::CellValue::text("batch-reopen-text")},
+        {2, 8, fastxlsx::CellValue::formula("H1+B1")},
+    };
+    check_reopened_formula_dirty_output(
+        reopened_output,
+        fastxlsx::CellRange {1, 1, 2, 8},
+        reopened_expected_cells,
+        "batch formula source mutation fresh-reopen output");
+
+    reopened_editor.save_as(reopened_noop_output);
+    check(!reopened_sheet.has_pending_changes(),
+        "batch formula source mutation fresh-reopen no-op save should keep Data clean");
+    check(fastxlsx::test::read_zip_entries(reopened_noop_output) == reopened_entries,
+        "batch formula source mutation fresh-reopen no-op save should keep output byte-stable");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+        "batch formula source mutation fresh-reopen no-op save should not mutate its saved input");
+    check_reopened_formula_dirty_output(
+        reopened_noop_output,
+        fastxlsx::CellRange {1, 1, 2, 8},
+        reopened_expected_cells,
+        "batch formula source mutation fresh-reopen no-op output");
+}
+
 void test_public_worksheet_editor_materializes_source_shared_formulas()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -1803,6 +2035,7 @@ int main()
         test_public_worksheet_editor_materializes_source_error_cells();
         test_public_worksheet_editor_ignores_formula_cached_result_types();
         test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata();
+        test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata();
         test_public_worksheet_editor_materializes_source_shared_formulas();
         test_public_worksheet_editor_materializes_source_order_shared_formula_matrix();
         test_public_worksheet_editor_materializes_office_like_shared_formula_shape();

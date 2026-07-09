@@ -87,6 +87,11 @@ without mutating the source package.
 The same direct-mutation path now fresh-reopens the clean no-op output, applies
 a later formula edit, and repeats byte-stable no-op validation so the flattened
 formula shape remains reusable as a saved-session input.
+The source-success formula shard now mirrors that coverage for sparse batch and
+range mutations: `set_cell_values()`, A1-range `clear_cell_values()`,
+coordinate-list clear, and A1-range `erase_cells()` all keep formula metadata
+and stale cached values dropped across save, no-op, fresh-reopen edit, and
+repeat no-op.
 It also includes `generated_in_memory_delete_column_formula`, which drives
 `WorksheetEditor::delete_columns()` over a tiny existing workbook and verifies
 left-shifted source cells plus formula reference translation before the same

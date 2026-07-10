@@ -38,7 +38,7 @@
 - `worksheet()` 与 `try_worksheet()` 都传播该 typed exception；后者仅在 worksheet 名称不存在时返回 `std::nullopt`。Policy mismatch、malformed XML 和其他加载失败仍是通用 `FastXlsxError`。
 - `AllowLossyProjection` 是显式 opt-in，会把支持的 source cell 投影为 plain text/formula text；丢弃语义不可恢复。
 - 同一 materialized session 的 policy/guardrail 必须匹配，不能静默切换契约。
-- Dirty save 仅在 workbook 具有单一有效 sharedStrings relationship/content type，且 target 可规整为包内 part 时做 append-only sharedStrings projection；重复、外部、fragment/query、非法 percent escape、错误 content type、缺失或 malformed sharedStrings 等不安全元数据会回退为 inline strings，并保留原 relationship/content type/part 状态而不做 repair。
+- Dirty save 仅在 workbook 具有单一有效 sharedStrings relationship/content type，且 target 经合法 percent-decoding 后可规整为包内 part 时做 append-only sharedStrings projection；重复、外部、fragment/query、非法 percent escape、错误 content type、缺失或 malformed sharedStrings 等不安全元数据会回退为 inline strings，并保留原 relationship/content type/part 状态而不做 repair。
 - `WorksheetEditor::insert_rows()` / `delete_rows()` / `insert_columns()` / `delete_columns()` 只移动或删除已表示的 sparse cell 记录；会随记录保留 `CellValue` 和 materialized source `StyleId`，对受支持公式引用做窄结构平移，并在 dirty `save_as()` 中刷新 sparse dimension。失败必须保留 dirty diagnostics/counts 且可重试；它不是 worksheet metadata repair、sharedStrings/styles 全量迁移、relationships/drawings/tables 修复或 calcChain rebuild。
 - 不是任意 worksheet XML 的无损模型，也不是 large-file low-memory random editor。
 

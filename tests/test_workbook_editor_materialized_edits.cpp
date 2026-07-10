@@ -2439,6 +2439,120 @@ void test_materialized_flush_uses_shared_strings_when_relationship_target_normal
         "normalized sharedStrings target flush no-op save should not mutate the source package");
 }
 
+void test_materialized_flush_uses_shared_strings_when_relationship_target_percent_decodes_to_part()
+{
+    MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-percent-decoded-target-source.xlsx",
+            true);
+    std::map<std::string, std::string> entries =
+        read_stored_package_entries(source.path);
+    auto workbook_relationships =
+        entries.find("xl/_rels/workbook.xml.rels");
+    check(workbook_relationships != entries.end(),
+        "percent-decoded sharedStrings target source should contain workbook relationships");
+    const std::string package_target = R"(Target="sharedStrings.xml")";
+    const std::string percent_decoded_target = R"(Target="sharedStrings%2Exml")";
+    const std::size_t target_position =
+        workbook_relationships->second.find(package_target);
+    check(target_position != std::string::npos,
+        "percent-decoded sharedStrings target source should contain a sharedStrings relationship target");
+    workbook_relationships->second.replace(
+        target_position, package_target.size(), percent_decoded_target);
+    fastxlsx::test::write_stored_zip_entries(source.path, entries);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("cross-sheet-new"));
+
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(1, 1, fastxlsx::CellValue::text("cross-sheet-new"));
+    other.set_cell(2, 2, fastxlsx::CellValue::text("other-only"));
+    other.set_cell(3, 3, fastxlsx::CellValue::number(33.0));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "percent-decoded sharedStrings target flush should report both worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "percent-decoded sharedStrings target flush should clear both sessions");
+    check(registry.dirty_session_count() == 0,
+        "percent-decoded sharedStrings target flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-percent-decoded-target-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-percent-decoded-target-noop-output.xlsx");
+    editor.save_as(output);
+
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+    const std::string output_workbook_relationships =
+        read_stored_package_entry(output, "xl/_rels/workbook.xml.rels");
+
+    check(data_worksheet.find(R"(<dimension ref="A1:B1"/>)") != std::string::npos,
+        "percent-decoded sharedStrings target flush should update Data dimensions");
+    check(data_worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)")
+            != std::string::npos,
+        "percent-decoded sharedStrings target flush should reuse the source string index");
+    check(data_worksheet.find(R"(<c r="B1" t="s"><v>1</v></c>)")
+            != std::string::npos,
+        "percent-decoded sharedStrings target flush should use the first appended string index");
+    check(data_worksheet.find("inlineStr") == std::string::npos,
+        "percent-decoded sharedStrings target flush should not inline Data text");
+
+    check(other_worksheet.find(R"(<dimension ref="A1:C3"/>)") != std::string::npos,
+        "percent-decoded sharedStrings target flush should update Other dimensions");
+    check(other_worksheet.find(R"(<c r="A1" t="s"><v>1</v></c>)")
+            != std::string::npos,
+        "percent-decoded sharedStrings target flush should reuse appended indexes across sheets");
+    check(other_worksheet.find(R"(<c r="B2" t="s"><v>2</v></c>)")
+            != std::string::npos,
+        "percent-decoded sharedStrings target flush should append later sheet-only text");
+    check(other_worksheet.find(R"(<c r="C3"><v>33</v></c>)") != std::string::npos,
+        "percent-decoded sharedStrings target flush should keep non-text cells value-only");
+    check(other_worksheet.find("inlineStr") == std::string::npos,
+        "percent-decoded sharedStrings target flush should not inline Other text");
+
+    check(shared_strings.find(R"(count="4")") != std::string::npos &&
+            shared_strings.find(R"(uniqueCount="3")") != std::string::npos,
+        "percent-decoded sharedStrings target flush should count cross-sheet references and unique strings");
+    check(shared_strings.find(
+              R"(<si><t>existing</t></si><si><t>cross-sheet-new</t></si><si><t>other-only</t></si>)")
+            != std::string::npos,
+        "percent-decoded sharedStrings target flush should append each cross-sheet text once");
+    check(output_workbook_relationships == source_entries.at("xl/_rels/workbook.xml.rels"),
+        "percent-decoded sharedStrings target flush should not repair workbook relationships");
+    check_reopened_multi_session_appended_shared_strings_output(output);
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "percent-decoded sharedStrings target flush no-op save should keep output byte-stable",
+        "percent-decoded sharedStrings target flush no-op save should keep registry clean");
+    check_reopened_multi_session_appended_shared_strings_output(noop_output);
+    check(!data.dirty() && !other.dirty(),
+        "percent-decoded sharedStrings target flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "percent-decoded sharedStrings target flush no-op save should not mutate the source package");
+}
+
 void test_materialized_flush_shared_strings_skips_non_text_dirty_sessions()
 {
     const MaterializedFlushTwoSheetSourcePackage source =
@@ -3929,6 +4043,7 @@ int main()
         test_materialized_flush_deduplicates_appended_shared_strings();
         test_materialized_flush_reuses_shared_strings_across_multiple_dirty_sessions();
         test_materialized_flush_uses_shared_strings_when_relationship_target_normalizes_to_part();
+        test_materialized_flush_uses_shared_strings_when_relationship_target_percent_decodes_to_part();
         test_materialized_flush_shared_strings_skips_non_text_dirty_sessions();
         test_materialized_flush_reuses_existing_shared_strings_across_multiple_dirty_sessions();
         test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_append_is_unsupported();

@@ -2563,6 +2563,114 @@ void test_public_worksheet_editor_shifted_state_survives_invalid_shift_recovery(
         "shifted invalid recovery save should clear dirty materialized memory");
 }
 
+void test_public_worksheet_editor_delete_rows_columns_project_sparse_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-materialized-delete-shifts-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-delete-shifts-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-c3"));
+    sheet.set_cell(2, 4, fastxlsx::CellValue::text("tail-d2"));
+
+    sheet.delete_rows(1, 1);
+    sheet.delete_columns(2, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public delete row/column shifts should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public delete row/column shifts should keep the handle dirty");
+    check(editor.pending_change_count() == 0,
+        "public delete row/column shifts should not queue coarse edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public delete row/column shifts should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public delete row/column shifts should report projected materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public delete row/column shifts should report projected materialized memory");
+    check(projected_cell_count == 3,
+        "public delete row/column shifts should remove deleted sparse records");
+
+    check(sheet.get_cell("A1").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C1").text_value() == "tail-d2" &&
+            sheet.get_cell("B2").text_value() == "dirty-c3",
+        "public delete row/column shifts should project surviving source and dirty cells");
+    check(!sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("C2").has_value() &&
+            !sheet.try_cell("D1").has_value(),
+        "public delete row/column shifts should clear deleted and pre-shift coordinates");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+    check(row_one.size() == 2 &&
+            row_one[0].reference.row == 1 &&
+            row_one[0].reference.column == 1 &&
+            row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_one[0].value.text_value() == "placeholder-a2" &&
+            row_one[1].reference.row == 1 &&
+            row_one[1].reference.column == 3 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_one[1].value.text_value() == "tail-d2",
+        "public delete row/column shifts should preserve row snapshot order");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_two = sheet.row_cells(2);
+    check(row_two.size() == 1 &&
+            row_two[0].reference.row == 2 &&
+            row_two[0].reference.column == 2 &&
+            row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_two[0].value.text_value() == "dirty-c3",
+        "public delete row/column shifts should expose shifted dirty row snapshot");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_two = sheet.column_cells(2);
+    check(column_two.size() == 1 &&
+            column_two[0].reference.row == 2 &&
+            column_two[0].reference.column == 2 &&
+            column_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_two[0].value.text_value() == "dirty-c3",
+        "public delete row/column shifts should expose shifted dirty column snapshot");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public delete row/column shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "public delete row/column shift save should persist projected bounds");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "public delete row/column shift save should persist shifted source text");
+    check_contains(worksheet_xml,
+        R"(<c r="C1" t="inlineStr"><is><t>tail-d2</t></is></c>)",
+        "public delete row/column shift save should persist shifted tail text");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>dirty-c3</t></is></c>)",
+        "public delete row/column shift save should persist shifted dirty cell");
+    check_not_contains(worksheet_xml, "placeholder-a1",
+        "public delete row/column shift save should omit deleted source text");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "public delete row/column shift save should omit old source row coordinate");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "public delete row/column shift save should omit old source number coordinate");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "public delete row/column shift save should omit old dirty coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public delete row/column shift save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public delete row/column shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public delete row/column shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public delete row/column shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public delete row/column shift save should clear dirty materialized memory");
+}
+
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
 {
     const std::filesystem::path source =
@@ -3958,6 +4066,7 @@ int main()
         test_public_worksheet_editor_boundary_shifts_clear_diagnostics_preserve_dirty_state();
         test_public_worksheet_editor_invalid_shifts_preserve_dirty_state_and_recover();
         test_public_worksheet_editor_shifted_state_survives_invalid_shift_recovery();
+        test_public_worksheet_editor_delete_rows_columns_project_sparse_state();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

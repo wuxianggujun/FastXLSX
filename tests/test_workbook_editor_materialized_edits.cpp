@@ -1061,6 +1061,85 @@ void test_materialized_session_invalid_column_spans_preserve_state()
         "invalid column spans should not leak partially shifted column records");
 }
 
+void test_materialized_session_zero_count_structural_edits_preserve_clean_state()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    const fastxlsx::StyleId formula_style =
+        fastxlsx::detail::make_source_style_id(33);
+
+    data.set_cell(1, 1, fastxlsx::CellValue::text("a1"));
+    data.set_cell(2, 2,
+        fastxlsx::CellValue::formula("A1+B2").with_style(formula_style));
+    data.clear_dirty();
+    const std::size_t initial_memory = data.estimated_memory_usage();
+
+    data.insert_rows(2, 0);
+    data.delete_rows(2, 0);
+    data.insert_columns(2, 0);
+    data.delete_columns(2, 0);
+
+    check(!data.dirty(),
+        "zero-count structural edits should keep a clean session clean");
+    check(data.cell_count() == 2,
+        "zero-count structural edits should preserve clean sparse cell count");
+    check(data.estimated_memory_usage() == initial_memory,
+        "zero-count structural edits should preserve clean estimated memory usage");
+
+    const fastxlsx::detail::CellRecord* first_cell = data.try_cell(1, 1);
+    check(first_cell != nullptr &&
+            first_cell->kind == fastxlsx::CellValueKind::Text &&
+            first_cell->text_value == "a1",
+        "zero-count structural edits should preserve clean text cells");
+    const fastxlsx::detail::CellRecord* formula_cell = data.try_cell(2, 2);
+    check(formula_cell != nullptr &&
+            formula_cell->kind == fastxlsx::CellValueKind::Formula &&
+            formula_cell->text_value == "A1+B2" &&
+            formula_cell->style_id.has_value() &&
+            formula_cell->style_id->value() == formula_style.value(),
+        "zero-count structural edits should preserve clean formula text and style");
+}
+
+void test_materialized_session_zero_count_structural_edits_preserve_dirty_state()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    const fastxlsx::StyleId formula_style =
+        fastxlsx::detail::make_source_style_id(35);
+
+    data.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+    data.set_cell(2, 2,
+        fastxlsx::CellValue::formula("A1+B2").with_style(formula_style));
+    const std::size_t initial_memory = data.estimated_memory_usage();
+
+    data.insert_rows(2, 0);
+    data.delete_rows(2, 0);
+    data.insert_columns(2, 0);
+    data.delete_columns(2, 0);
+
+    check(data.dirty(),
+        "zero-count structural edits should keep a dirty session dirty");
+    check(data.cell_count() == 2,
+        "zero-count structural edits should preserve dirty sparse cell count");
+    check(data.estimated_memory_usage() == initial_memory,
+        "zero-count structural edits should preserve dirty estimated memory usage");
+
+    const fastxlsx::detail::CellRecord* first_cell = data.try_cell(1, 1);
+    check(first_cell != nullptr &&
+            first_cell->kind == fastxlsx::CellValueKind::Number &&
+            first_cell->number_value == 1.0,
+        "zero-count structural edits should preserve dirty numeric cells");
+    const fastxlsx::detail::CellRecord* formula_cell = data.try_cell(2, 2);
+    check(formula_cell != nullptr &&
+            formula_cell->kind == fastxlsx::CellValueKind::Formula &&
+            formula_cell->text_value == "A1+B2" &&
+            formula_cell->style_id.has_value() &&
+            formula_cell->style_id->value() == formula_style.value(),
+        "zero-count structural edits should preserve dirty formula text and style");
+}
+
 void test_dirty_worksheet_projection_uses_shared_string_index_provider()
 {
     fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
@@ -2243,6 +2322,8 @@ int main()
         test_materialized_session_insert_column_overflow_preserves_state();
         test_materialized_session_invalid_row_spans_preserve_state();
         test_materialized_session_invalid_column_spans_preserve_state();
+        test_materialized_session_zero_count_structural_edits_preserve_clean_state();
+        test_materialized_session_zero_count_structural_edits_preserve_dirty_state();
         test_dirty_worksheet_projection_uses_shared_string_index_provider();
         test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty();
         test_dirty_worksheet_projection_provider_failure_keeps_session_dirty();

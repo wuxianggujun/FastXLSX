@@ -1994,6 +1994,32 @@ std::filesystem::path write_two_sheet_source_with_delete_shift_formula(std::stri
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_styled_delete_shift_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("delete-a1"),
+            fastxlsx::CellView::text("delete-b1")});
+        data.append_row({fastxlsx::CellView::text("delete-a2"),
+            fastxlsx::CellView::text("styled-ref-b2"),
+            fastxlsx::CellView::text("styled-ref-c2"),
+            fastxlsx::CellView::formula("B2+C2").with_style(formula_style)});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_stationary_formula(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -3505,6 +3531,134 @@ void test_public_worksheet_editor_delete_rows_columns_translate_moved_formula()
         "public delete formula shift save should clear dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "public delete formula shift save should clear dirty materialized memory");
+}
+
+void test_public_worksheet_editor_delete_moved_formula_preserves_style_id()
+{
+    fastxlsx::StyleId formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_delete_shift_formula(
+            "fastxlsx-workbook-editor-materialized-styled-delete-formula-source.xlsx",
+            formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-styled-delete-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-styled-delete-formula-noop.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.delete_rows(1, 1);
+    sheet.delete_columns(1, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public styled moved formula delete shift should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public styled moved formula delete shift should dirty the borrowed handle");
+    check(editor.pending_change_count() == 0,
+        "public styled moved formula delete shift should not queue coarse edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public styled moved formula delete shift should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public styled moved formula delete shift should report projected materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public styled moved formula delete shift should report projected memory");
+    check(projected_cell_count == 3,
+        "public styled moved formula delete shift should remove deleted sparse records");
+
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("C1");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "A1+B1" &&
+            shifted_formula.has_style() &&
+            shifted_formula.style_id().value() == formula_style.value(),
+        "public styled moved formula delete shift should translate formula and keep style id");
+    check(sheet.get_cell("A1").text_value() == "styled-ref-b2" &&
+            sheet.get_cell("B1").text_value() == "styled-ref-c2",
+        "public styled moved formula delete shift should preserve shifted source cells");
+    check(!sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("B2").has_value() &&
+            !sheet.try_cell("D2").has_value(),
+        "public styled moved formula delete shift should remove deleted and old formula coordinates");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+    check(row_one.size() == 3 &&
+            row_one[0].reference.row == 1 &&
+            row_one[0].reference.column == 1 &&
+            row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_one[0].value.text_value() == "styled-ref-b2" &&
+            row_one[1].reference.row == 1 &&
+            row_one[1].reference.column == 2 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_one[1].value.text_value() == "styled-ref-c2" &&
+            row_one[2].reference.row == 1 &&
+            row_one[2].reference.column == 3 &&
+            row_one[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+            row_one[2].value.text_value() == "A1+B1" &&
+            row_one[2].value.has_style() &&
+            row_one[2].value.style_id().value() == formula_style.value(),
+        "public styled moved formula delete shift should expose style id in row snapshot");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three = sheet.column_cells(3);
+    check(column_three.size() == 1 &&
+            column_three[0].reference.row == 1 &&
+            column_three[0].reference.column == 3 &&
+            column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            column_three[0].value.text_value() == "A1+B1" &&
+            column_three[0].value.has_style() &&
+            column_three[0].value.style_id().value() == formula_style.value(),
+        "public styled moved formula delete shift should expose style id in column snapshot");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public styled moved formula delete shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="C1" s=")") + std::to_string(formula_style.value())
+        + R"("><f>A1+B1</f></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C1"/>)",
+        "public styled moved formula delete shift save should persist projected bounds");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "public styled moved formula delete shift save should persist formula style id");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>styled-ref-b2</t></is></c>)",
+        "public styled moved formula delete shift save should persist shifted first source cell");
+    check_contains(worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>styled-ref-c2</t></is></c>)",
+        "public styled moved formula delete shift save should persist shifted second source cell");
+    check_not_contains(worksheet_xml, "delete-a1",
+        "public styled moved formula delete shift save should omit deleted row text");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "public styled moved formula delete shift save should omit old formula coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public styled moved formula delete shift save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public styled moved formula delete shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public styled moved formula delete shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public styled moved formula delete shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public styled moved formula delete shift save should clear dirty materialized memory");
+
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("C1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == "A1+B1" &&
+            reopened_formula.has_style() &&
+            reopened_formula.style_id().value() == formula_style.value(),
+        "public styled moved formula delete shift reopened output should keep formula style id");
+    reopened_editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "public styled moved formula delete shift no-op save should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public styled moved formula delete shift no-op save should not mutate the source package");
 }
 
 void test_public_worksheet_editor_insert_columns_rewrites_stationary_formula()
@@ -6959,6 +7113,7 @@ int main()
         test_public_worksheet_editor_insert_rows_columns_translate_moved_formula();
         test_public_worksheet_editor_insert_moved_formula_preserves_style_id();
         test_public_worksheet_editor_delete_rows_columns_translate_moved_formula();
+        test_public_worksheet_editor_delete_moved_formula_preserves_style_id();
         test_public_worksheet_editor_insert_columns_rewrites_stationary_formula();
         test_public_worksheet_editor_insert_rows_rewrites_stationary_formula();
         test_public_worksheet_editor_stationary_formula_rewrite_preserves_style_id();

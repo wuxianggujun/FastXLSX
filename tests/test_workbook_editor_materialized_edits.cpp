@@ -758,6 +758,92 @@ void test_materialized_session_delete_columns_rewrites_formula_records()
         "delete_columns should keep snapshots ordered by shifted sparse coordinates");
 }
 
+void test_materialized_session_insert_row_overflow_preserves_state()
+{
+    constexpr std::uint32_t max_excel_rows = 1048576U;
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    const fastxlsx::StyleId formula_style =
+        fastxlsx::detail::make_source_style_id(17);
+
+    data.set_cell(1, 1, fastxlsx::CellValue::text("a1"));
+    data.set_cell(max_excel_rows, 2,
+        fastxlsx::CellValue::formula("A1+B1").with_style(formula_style));
+    data.clear_dirty();
+    const std::size_t initial_memory = data.estimated_memory_usage();
+
+    check(throws_fastxlsx_error([&] { data.insert_rows(1, 1); }),
+        "insert_rows overflow should throw before replacing sparse records");
+
+    check(!data.dirty(),
+        "insert_rows overflow should keep the materialized session clean");
+    check(data.cell_count() == 2,
+        "insert_rows overflow should preserve sparse cell count");
+    check(data.estimated_memory_usage() == initial_memory,
+        "insert_rows overflow should preserve estimated memory usage");
+
+    const fastxlsx::detail::CellRecord* first_cell = data.try_cell(1, 1);
+    check(first_cell != nullptr &&
+            first_cell->kind == fastxlsx::CellValueKind::Text &&
+            first_cell->text_value == "a1",
+        "insert_rows overflow should preserve the first source-backed cell");
+    const fastxlsx::detail::CellRecord* formula_cell =
+        data.try_cell(max_excel_rows, 2);
+    check(formula_cell != nullptr &&
+            formula_cell->kind == fastxlsx::CellValueKind::Formula &&
+            formula_cell->text_value == "A1+B1" &&
+            formula_cell->style_id.has_value() &&
+            formula_cell->style_id->value() == formula_style.value(),
+        "insert_rows overflow should preserve formula text and style");
+    check(data.try_cell(2, 1) == nullptr,
+        "insert_rows overflow should not leak a partially shifted first cell");
+}
+
+void test_materialized_session_insert_column_overflow_preserves_state()
+{
+    constexpr std::uint32_t max_excel_columns = 16384U;
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    const fastxlsx::StyleId formula_style =
+        fastxlsx::detail::make_source_style_id(19);
+
+    data.set_cell(1, 1, fastxlsx::CellValue::number(1.0));
+    data.set_cell(2, max_excel_columns,
+        fastxlsx::CellValue::formula("A1+B1").with_style(formula_style));
+    data.clear_dirty();
+    const std::size_t initial_memory = data.estimated_memory_usage();
+
+    check(throws_fastxlsx_error([&] { data.insert_columns(1, 1); }),
+        "insert_columns overflow should throw before replacing sparse records");
+
+    check(!data.dirty(),
+        "insert_columns overflow should keep the materialized session clean");
+    check(data.cell_count() == 2,
+        "insert_columns overflow should preserve sparse cell count");
+    check(data.estimated_memory_usage() == initial_memory,
+        "insert_columns overflow should preserve estimated memory usage");
+
+    const fastxlsx::detail::CellRecord* first_cell = data.try_cell(1, 1);
+    check(first_cell != nullptr &&
+            first_cell->kind == fastxlsx::CellValueKind::Number &&
+            first_cell->number_value == 1.0,
+        "insert_columns overflow should preserve the first source-backed cell");
+    const fastxlsx::detail::CellRecord* formula_cell =
+        data.try_cell(2, max_excel_columns);
+    check(formula_cell != nullptr &&
+            formula_cell->kind == fastxlsx::CellValueKind::Formula &&
+            formula_cell->text_value == "A1+B1" &&
+            formula_cell->style_id.has_value() &&
+            formula_cell->style_id->value() == formula_style.value(),
+        "insert_columns overflow should preserve formula text and style");
+    check(data.try_cell(1, 2) == nullptr,
+        "insert_columns overflow should not leak a partially shifted first cell");
+}
+
 void test_dirty_worksheet_projection_uses_shared_string_index_provider()
 {
     fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
@@ -1934,6 +2020,8 @@ int main()
         test_dirty_sheet_data_projection_uses_shared_string_index_provider();
         test_materialized_session_insert_rows_translates_formula_records();
         test_materialized_session_delete_columns_rewrites_formula_records();
+        test_materialized_session_insert_row_overflow_preserves_state();
+        test_materialized_session_insert_column_overflow_preserves_state();
         test_dirty_worksheet_projection_uses_shared_string_index_provider();
         test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty();
         test_dirty_worksheet_projection_provider_failure_keeps_session_dirty();

@@ -1945,6 +1945,31 @@ std::filesystem::path write_two_sheet_source_with_shift_formula(std::string_view
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_styled_shift_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2"),
+            fastxlsx::CellView::text("row2-gap-b2"),
+            fastxlsx::CellView::formula("A1+B1").with_style(formula_style)});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_delete_shift_formula(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -3254,6 +3279,129 @@ void test_public_worksheet_editor_insert_rows_columns_translate_moved_formula()
         "public insert formula shift save should clear dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "public insert formula shift save should clear dirty materialized memory");
+}
+
+void test_public_worksheet_editor_insert_moved_formula_preserves_style_id()
+{
+    fastxlsx::StyleId formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_shift_formula(
+            "fastxlsx-workbook-editor-materialized-styled-insert-formula-source.xlsx",
+            formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-styled-insert-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-styled-insert-formula-noop.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    sheet.insert_columns(2, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public styled moved formula insert shift should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public styled moved formula insert shift should dirty the borrowed handle");
+    check(editor.pending_change_count() == 0,
+        "public styled moved formula insert shift should not queue coarse edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public styled moved formula insert shift should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public styled moved formula insert shift should report projected materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public styled moved formula insert shift should report projected memory");
+    check(projected_cell_count == 5,
+        "public styled moved formula insert shift should preserve sparse record count");
+
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("D3");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "B2+C2" &&
+            shifted_formula.has_style() &&
+            shifted_formula.style_id().value() == formula_style.value(),
+        "public styled moved formula insert shift should translate formula and keep style id");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "row2-gap-b2",
+        "public styled moved formula insert shift should preserve shifted source cells");
+    check(!sheet.try_cell("C2").has_value() && !sheet.try_cell("D2").has_value(),
+        "public styled moved formula insert shift should clear old formula row coordinates");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three = sheet.row_cells(3);
+    check(row_three.size() == 3 &&
+            row_three[0].reference.row == 3 &&
+            row_three[0].reference.column == 1 &&
+            row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[0].value.text_value() == "placeholder-a2" &&
+            row_three[1].reference.row == 3 &&
+            row_three[1].reference.column == 3 &&
+            row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[1].value.text_value() == "row2-gap-b2" &&
+            row_three[2].reference.row == 3 &&
+            row_three[2].reference.column == 4 &&
+            row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+            row_three[2].value.text_value() == "B2+C2" &&
+            row_three[2].value.has_style() &&
+            row_three[2].value.style_id().value() == formula_style.value(),
+        "public styled moved formula insert shift should expose style id in row snapshot");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_four = sheet.column_cells(4);
+    check(column_four.size() == 1 &&
+            column_four[0].reference.row == 3 &&
+            column_four[0].reference.column == 4 &&
+            column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            column_four[0].value.text_value() == "B2+C2" &&
+            column_four[0].value.has_style() &&
+            column_four[0].value.style_id().value() == formula_style.value(),
+        "public styled moved formula insert shift should expose style id in column snapshot");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public styled moved formula insert shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="D3" s=")") + std::to_string(formula_style.value())
+        + R"("><f>B2+C2</f></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D3"/>)",
+        "public styled moved formula insert shift save should persist projected bounds");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "public styled moved formula insert shift save should persist formula style id");
+    check_contains(worksheet_xml,
+        R"(<c r="C3" t="inlineStr"><is><t>row2-gap-b2</t></is></c>)",
+        "public styled moved formula insert shift save should persist shifted source text");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "public styled moved formula insert shift save should omit old formula coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public styled moved formula insert shift save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public styled moved formula insert shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public styled moved formula insert shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public styled moved formula insert shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public styled moved formula insert shift save should clear dirty materialized memory");
+
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D3");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == "B2+C2" &&
+            reopened_formula.has_style() &&
+            reopened_formula.style_id().value() == formula_style.value(),
+        "public styled moved formula insert shift reopened output should keep formula style id");
+    reopened_editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "public styled moved formula insert shift no-op save should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public styled moved formula insert shift no-op save should not mutate the source package");
 }
 
 void test_public_worksheet_editor_delete_rows_columns_translate_moved_formula()
@@ -6809,6 +6957,7 @@ int main()
         test_public_worksheet_editor_delete_rows_columns_project_sparse_state();
         test_public_worksheet_editor_insert_rows_columns_project_sparse_state();
         test_public_worksheet_editor_insert_rows_columns_translate_moved_formula();
+        test_public_worksheet_editor_insert_moved_formula_preserves_style_id();
         test_public_worksheet_editor_delete_rows_columns_translate_moved_formula();
         test_public_worksheet_editor_insert_columns_rewrites_stationary_formula();
         test_public_worksheet_editor_insert_rows_rewrites_stationary_formula();

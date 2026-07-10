@@ -637,6 +637,127 @@ void test_dirty_sheet_data_projection_uses_shared_string_index_provider()
         "shared-string sheetData projection should not emit inline strings");
 }
 
+void test_materialized_session_insert_rows_translates_formula_records()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    const fastxlsx::StyleId stationary_formula_style =
+        fastxlsx::detail::make_source_style_id(7);
+    const fastxlsx::StyleId moved_formula_style =
+        fastxlsx::detail::make_source_style_id(9);
+
+    data.set_cell(1, 1,
+        fastxlsx::CellValue::formula("A2+B2").with_style(stationary_formula_style));
+    data.set_cell(2, 3,
+        fastxlsx::CellValue::formula("A1+B2").with_style(moved_formula_style));
+    data.set_cell(4, 4, fastxlsx::CellValue::number(44.0));
+    data.clear_dirty();
+
+    data.insert_rows(2, 1);
+
+    check(data.dirty(),
+        "insert_rows should dirty the materialized session after shifting records");
+    check(data.cell_count() == 3,
+        "insert_rows should preserve sparse record count when it only shifts records");
+    check(data.try_cell(2, 3) == nullptr,
+        "insert_rows should remove the original formula coordinate");
+    check(data.try_cell(4, 4) == nullptr,
+        "insert_rows should remove the original tail coordinate");
+
+    const fastxlsx::detail::CellRecord* stationary_formula = data.try_cell(1, 1);
+    check(stationary_formula != nullptr &&
+            stationary_formula->kind == fastxlsx::CellValueKind::Formula &&
+            stationary_formula->text_value == "A3+B3" &&
+            stationary_formula->style_id.has_value() &&
+            stationary_formula->style_id->value() == stationary_formula_style.value(),
+        "insert_rows should rewrite stationary formula references and preserve style");
+
+    const fastxlsx::detail::CellRecord* moved_formula = data.try_cell(3, 3);
+    check(moved_formula != nullptr &&
+            moved_formula->kind == fastxlsx::CellValueKind::Formula &&
+            moved_formula->text_value == "A2+B3" &&
+            moved_formula->style_id.has_value() &&
+            moved_formula->style_id->value() == moved_formula_style.value(),
+        "insert_rows should translate moved formula text and preserve style");
+
+    const fastxlsx::detail::CellRecord* shifted_tail = data.try_cell(5, 4);
+    check(shifted_tail != nullptr &&
+            shifted_tail->kind == fastxlsx::CellValueKind::Number &&
+            shifted_tail->number_value == 44.0,
+        "insert_rows should shift later sparse records");
+
+    const std::vector<fastxlsx::detail::MaterializedCellSnapshot> snapshots =
+        data.sparse_cell_snapshots();
+    check(snapshots.size() == 3 &&
+            snapshots[0].position.row == 1 && snapshots[0].position.column == 1 &&
+            snapshots[1].position.row == 3 && snapshots[1].position.column == 3 &&
+            snapshots[2].position.row == 5 && snapshots[2].position.column == 4,
+        "insert_rows should keep snapshots ordered by shifted sparse coordinates");
+}
+
+void test_materialized_session_delete_columns_rewrites_formula_records()
+{
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    const fastxlsx::StyleId stationary_formula_style =
+        fastxlsx::detail::make_source_style_id(11);
+    const fastxlsx::StyleId moved_formula_style =
+        fastxlsx::detail::make_source_style_id(13);
+
+    data.set_cell(1, 1,
+        fastxlsx::CellValue::formula("B1+D1").with_style(stationary_formula_style));
+    data.set_cell(2, 4,
+        fastxlsx::CellValue::formula("A1+D1").with_style(moved_formula_style));
+    data.set_cell(3, 5, fastxlsx::CellValue::text("tail-e3"));
+    data.set_cell(4, 2, fastxlsx::CellValue::number(24.0));
+    data.clear_dirty();
+
+    data.delete_columns(2, 2);
+
+    check(data.dirty(),
+        "delete_columns should dirty the materialized session after shifting records");
+    check(data.cell_count() == 3,
+        "delete_columns should drop deleted-column records and keep shifted survivors");
+    check(data.try_cell(2, 4) == nullptr,
+        "delete_columns should remove the original moved formula coordinate");
+    check(data.try_cell(3, 5) == nullptr,
+        "delete_columns should remove the original tail coordinate");
+    check(data.try_cell(4, 2) == nullptr,
+        "delete_columns should erase records inside the deleted columns");
+
+    const fastxlsx::detail::CellRecord* stationary_formula = data.try_cell(1, 1);
+    check(stationary_formula != nullptr &&
+            stationary_formula->kind == fastxlsx::CellValueKind::Formula &&
+            stationary_formula->text_value == "#REF!+B1" &&
+            stationary_formula->style_id.has_value() &&
+            stationary_formula->style_id->value() == stationary_formula_style.value(),
+        "delete_columns should rewrite stationary formula references and preserve style");
+
+    const fastxlsx::detail::CellRecord* moved_formula = data.try_cell(2, 2);
+    check(moved_formula != nullptr &&
+            moved_formula->kind == fastxlsx::CellValueKind::Formula &&
+            moved_formula->text_value == "#REF!+B1" &&
+            moved_formula->style_id.has_value() &&
+            moved_formula->style_id->value() == moved_formula_style.value(),
+        "delete_columns should translate moved formula text and preserve style");
+
+    const fastxlsx::detail::CellRecord* shifted_tail = data.try_cell(3, 3);
+    check(shifted_tail != nullptr &&
+            shifted_tail->kind == fastxlsx::CellValueKind::Text &&
+            shifted_tail->text_value == "tail-e3",
+        "delete_columns should shift later sparse records");
+
+    const std::vector<fastxlsx::detail::MaterializedCellSnapshot> snapshots =
+        data.sparse_cell_snapshots();
+    check(snapshots.size() == 3 &&
+            snapshots[0].position.row == 1 && snapshots[0].position.column == 1 &&
+            snapshots[1].position.row == 2 && snapshots[1].position.column == 2 &&
+            snapshots[2].position.row == 3 && snapshots[2].position.column == 3,
+        "delete_columns should keep snapshots ordered by shifted sparse coordinates");
+}
+
 void test_dirty_worksheet_projection_uses_shared_string_index_provider()
 {
     fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
@@ -1811,6 +1932,8 @@ int main()
         test_pending_materialized_names_ignore_stale_source_names();
         test_dirty_sheet_data_projections_include_only_dirty_sessions_and_dimensions();
         test_dirty_sheet_data_projection_uses_shared_string_index_provider();
+        test_materialized_session_insert_rows_translates_formula_records();
+        test_materialized_session_delete_columns_rewrites_formula_records();
         test_dirty_worksheet_projection_uses_shared_string_index_provider();
         test_dirty_sheet_data_projection_provider_failure_keeps_session_dirty();
         test_dirty_worksheet_projection_provider_failure_keeps_session_dirty();

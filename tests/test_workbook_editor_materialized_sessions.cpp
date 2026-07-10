@@ -2015,6 +2015,58 @@ std::filesystem::path write_two_sheet_source_with_styled_stationary_formula(
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_styled_stationary_delete_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::formula("C1+C2").with_style(formula_style),
+            fastxlsx::CellView::text("delete-b1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("row2-gap-a2"),
+            fastxlsx::CellView::text("delete-b2"),
+            fastxlsx::CellView::text("styled-ref-c2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_styled_stationary_row_delete_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::formula("B2+B3").with_style(formula_style),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("delete-a2"),
+            fastxlsx::CellView::text("delete-b2")});
+        data.append_row({fastxlsx::CellView::text("row3-gap-a3"),
+            fastxlsx::CellView::text("styled-ref-b3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_custom_stationary_formula(
     std::string_view name, std::string_view formula_text)
 {
@@ -4797,6 +4849,233 @@ void test_public_worksheet_editor_delete_shifts_preserve_absolute_formula_marker
     }
 }
 
+void test_public_worksheet_editor_stationary_formula_delete_preserves_style_id()
+{
+    {
+        fastxlsx::StyleId formula_style;
+        const std::filesystem::path source =
+            write_two_sheet_source_with_styled_stationary_row_delete_formula(
+                "fastxlsx-workbook-editor-materialized-styled-stationary-delete-row-source.xlsx",
+                formula_style);
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-materialized-styled-stationary-delete-row-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-materialized-styled-stationary-delete-row-noop.xlsx");
+        const std::map<std::string, std::string> source_entries =
+            fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.delete_rows(2, 1);
+        const std::size_t projected_cell_count = sheet.cell_count();
+        const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+        check(!editor.last_edit_error().has_value(),
+            "public styled stationary formula delete_rows should leave diagnostics clear");
+        check(sheet.has_pending_changes(),
+            "public styled stationary formula delete_rows should dirty the borrowed handle");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            "public styled stationary formula delete_rows should keep dirty materialized names");
+        check(editor.pending_materialized_cell_count() == projected_cell_count,
+            "public styled stationary formula delete_rows should report projected materialized count");
+        check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+            "public styled stationary formula delete_rows should report projected memory");
+        check(projected_cell_count == 4,
+            "public styled stationary formula delete_rows should remove deleted sparse records");
+
+        const fastxlsx::CellValue stationary_formula = sheet.get_cell("A1");
+        check(stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                stationary_formula.text_value() == "#REF!+B2" &&
+                stationary_formula.has_style() &&
+                stationary_formula.style_id().value() == formula_style.value(),
+            "public styled stationary formula delete_rows should rewrite formula and keep style id");
+        check(sheet.get_cell("B1").number_value() == 1.0 &&
+                sheet.get_cell("A2").text_value() == "row3-gap-a3" &&
+                sheet.get_cell("B2").text_value() == "styled-ref-b3",
+            "public styled stationary formula delete_rows should shift referenced source cells");
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+        check(row_one.size() == 2 &&
+                row_one[0].reference.row == 1 &&
+                row_one[0].reference.column == 1 &&
+                row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                row_one[0].value.text_value() == "#REF!+B2" &&
+                row_one[0].value.has_style() &&
+                row_one[0].value.style_id().value() == formula_style.value() &&
+                row_one[1].reference.row == 1 &&
+                row_one[1].reference.column == 2 &&
+                row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                row_one[1].value.number_value() == 1.0,
+            "public styled stationary formula delete_rows should expose style id in row snapshot");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_one = sheet.column_cells(1);
+        check(column_one.size() == 2 &&
+                column_one[0].reference.row == 1 &&
+                column_one[0].reference.column == 1 &&
+                column_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                column_one[0].value.text_value() == "#REF!+B2" &&
+                column_one[0].value.has_style() &&
+                column_one[0].value.style_id().value() == formula_style.value() &&
+                column_one[1].reference.row == 2 &&
+                column_one[1].reference.column == 1 &&
+                column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_one[1].value.text_value() == "row3-gap-a3",
+            "public styled stationary formula delete_rows should expose style id in column snapshot");
+
+        editor.save_as(output);
+        const std::map<std::string, std::string> output_entries =
+            fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "public styled stationary formula delete_rows save should not mutate the source package");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_formula_xml =
+            std::string(R"(<c r="A1" s=")") + std::to_string(formula_style.value())
+            + R"("><f>#REF!+B2</f></c>)";
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+            "public styled stationary formula delete_rows save should persist projected bounds");
+        check_contains(worksheet_xml, styled_formula_xml,
+            "public styled stationary formula delete_rows save should persist formula style id");
+        check_contains(worksheet_xml,
+            R"(<c r="B2" t="inlineStr"><is><t>styled-ref-b3</t></is></c>)",
+            "public styled stationary formula delete_rows save should persist shifted source text");
+        check_not_contains(worksheet_xml, "delete-a2",
+            "public styled stationary formula delete_rows save should omit deleted row text");
+        check_not_contains(worksheet_xml, "delete-b2",
+            "public styled stationary formula delete_rows save should omit deleted referenced text");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "public styled stationary formula delete_rows save should preserve untouched worksheets");
+        check(!sheet.has_pending_changes(),
+            "public styled stationary formula delete_rows save should clean the borrowed handle");
+
+        fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+        fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+        const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("A1");
+        check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_formula.text_value() == "#REF!+B2" &&
+                reopened_formula.has_style() &&
+                reopened_formula.style_id().value() == formula_style.value(),
+            "public styled stationary formula delete_rows reopened output should keep formula style id");
+        reopened_editor.save_as(noop_output);
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "public styled stationary formula delete_rows no-op save should be byte-stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "public styled stationary formula delete_rows no-op save should not mutate the source package");
+    }
+
+    {
+        fastxlsx::StyleId formula_style;
+        const std::filesystem::path source =
+            write_two_sheet_source_with_styled_stationary_delete_formula(
+                "fastxlsx-workbook-editor-materialized-styled-stationary-delete-column-source.xlsx",
+                formula_style);
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-materialized-styled-stationary-delete-column-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-materialized-styled-stationary-delete-column-noop.xlsx");
+        const std::map<std::string, std::string> source_entries =
+            fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.delete_columns(2, 1);
+        const std::size_t projected_cell_count = sheet.cell_count();
+        const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+        check(!editor.last_edit_error().has_value(),
+            "public styled stationary formula delete_columns should leave diagnostics clear");
+        check(sheet.has_pending_changes(),
+            "public styled stationary formula delete_columns should dirty the borrowed handle");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            "public styled stationary formula delete_columns should keep dirty materialized names");
+        check(editor.pending_materialized_cell_count() == projected_cell_count,
+            "public styled stationary formula delete_columns should report projected materialized count");
+        check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+            "public styled stationary formula delete_columns should report projected memory");
+        check(projected_cell_count == 4,
+            "public styled stationary formula delete_columns should remove deleted sparse records");
+
+        const fastxlsx::CellValue stationary_formula = sheet.get_cell("A1");
+        check(stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                stationary_formula.text_value() == "B1+B2" &&
+                stationary_formula.has_style() &&
+                stationary_formula.style_id().value() == formula_style.value(),
+            "public styled stationary formula delete_columns should rewrite formula and keep style id");
+        check(sheet.get_cell("B1").number_value() == 1.0 &&
+                sheet.get_cell("A2").text_value() == "row2-gap-a2" &&
+                sheet.get_cell("B2").text_value() == "styled-ref-c2",
+            "public styled stationary formula delete_columns should shift referenced source cells");
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+        check(row_one.size() == 2 &&
+                row_one[0].reference.row == 1 &&
+                row_one[0].reference.column == 1 &&
+                row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                row_one[0].value.text_value() == "B1+B2" &&
+                row_one[0].value.has_style() &&
+                row_one[0].value.style_id().value() == formula_style.value() &&
+                row_one[1].reference.row == 1 &&
+                row_one[1].reference.column == 2 &&
+                row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                row_one[1].value.number_value() == 1.0,
+            "public styled stationary formula delete_columns should expose style id in row snapshot");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_one = sheet.column_cells(1);
+        check(column_one.size() == 2 &&
+                column_one[0].reference.row == 1 &&
+                column_one[0].reference.column == 1 &&
+                column_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                column_one[0].value.text_value() == "B1+B2" &&
+                column_one[0].value.has_style() &&
+                column_one[0].value.style_id().value() == formula_style.value() &&
+                column_one[1].reference.row == 2 &&
+                column_one[1].reference.column == 1 &&
+                column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_one[1].value.text_value() == "row2-gap-a2",
+            "public styled stationary formula delete_columns should expose style id in column snapshot");
+
+        editor.save_as(output);
+        const std::map<std::string, std::string> output_entries =
+            fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "public styled stationary formula delete_columns save should not mutate the source package");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string styled_formula_xml =
+            std::string(R"(<c r="A1" s=")") + std::to_string(formula_style.value())
+            + R"("><f>B1+B2</f></c>)";
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+            "public styled stationary formula delete_columns save should persist projected bounds");
+        check_contains(worksheet_xml, styled_formula_xml,
+            "public styled stationary formula delete_columns save should persist formula style id");
+        check_contains(worksheet_xml,
+            R"(<c r="B2" t="inlineStr"><is><t>styled-ref-c2</t></is></c>)",
+            "public styled stationary formula delete_columns save should persist shifted source text");
+        check_not_contains(worksheet_xml, "delete-b1",
+            "public styled stationary formula delete_columns save should omit deleted row-one text");
+        check_not_contains(worksheet_xml, "delete-b2",
+            "public styled stationary formula delete_columns save should omit deleted row-two text");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "public styled stationary formula delete_columns save should preserve untouched worksheets");
+        check(!sheet.has_pending_changes(),
+            "public styled stationary formula delete_columns save should clean the borrowed handle");
+
+        fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+        fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+        const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("A1");
+        check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                reopened_formula.text_value() == "B1+B2" &&
+                reopened_formula.has_style() &&
+                reopened_formula.style_id().value() == formula_style.value(),
+            "public styled stationary formula delete_columns reopened output should keep formula style id");
+        reopened_editor.save_as(noop_output);
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "public styled stationary formula delete_columns no-op save should be byte-stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "public styled stationary formula delete_columns no-op save should not mutate the source package");
+    }
+}
+
 void test_public_worksheet_editor_delete_rows_rewrites_stationary_formula()
 {
     const std::filesystem::path source =
@@ -6409,6 +6688,7 @@ int main()
         test_public_worksheet_editor_insert_shifts_rewrite_stationary_range_formulas();
         test_public_worksheet_editor_delete_shifts_rewrite_stationary_range_formulas();
         test_public_worksheet_editor_delete_shifts_preserve_absolute_formula_markers();
+        test_public_worksheet_editor_stationary_formula_delete_preserves_style_id();
         test_public_worksheet_editor_delete_rows_rewrites_stationary_formula();
         test_public_worksheet_editor_delete_columns_rewrites_stationary_formula();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();

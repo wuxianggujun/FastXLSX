@@ -1991,6 +1991,30 @@ std::filesystem::path write_two_sheet_source_with_stationary_formula(std::string
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_stationary_delete_formula(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::formula("C1+C2"),
+            fastxlsx::CellView::text("delete-b1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("row2-gap-a2"),
+            fastxlsx::CellView::text("delete-b2"),
+            fastxlsx::CellView::text("ref-c2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 // Writes a source workbook with document properties so patch tests can verify
 // that WorkbookEditor preserves docProps bytes through save_as().
 std::filesystem::path write_two_sheet_source_with_document_properties(std::string_view name)
@@ -3161,6 +3185,108 @@ void test_public_worksheet_editor_insert_columns_rewrites_stationary_formula()
         "public stationary formula insert_columns save should clear dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "public stationary formula insert_columns save should clear dirty materialized memory");
+}
+
+void test_public_worksheet_editor_delete_columns_rewrites_stationary_formula()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_stationary_delete_formula(
+            "fastxlsx-workbook-editor-materialized-stationary-delete-formula-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-stationary-delete-formula-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.delete_columns(2, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public stationary formula delete_columns should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public stationary formula delete_columns should dirty the borrowed handle");
+    check(editor.pending_change_count() == 0,
+        "public stationary formula delete_columns should not queue coarse edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public stationary formula delete_columns should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public stationary formula delete_columns should report projected materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public stationary formula delete_columns should report projected memory");
+    check(projected_cell_count == 4,
+        "public stationary formula delete_columns should remove deleted sparse records");
+
+    const fastxlsx::CellValue stationary_formula = sheet.get_cell("A1");
+    check(stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            stationary_formula.text_value() == "B1+B2",
+        "public stationary formula delete_columns should rewrite affected references");
+    check(sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "row2-gap-a2" &&
+            sheet.get_cell("B2").text_value() == "ref-c2",
+        "public stationary formula delete_columns should shift referenced source cells");
+    check(!sheet.try_cell("C1").has_value() && !sheet.try_cell("C2").has_value(),
+        "public stationary formula delete_columns should remove old column coordinates");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+    check(row_one.size() == 2 &&
+            row_one[0].reference.row == 1 &&
+            row_one[0].reference.column == 1 &&
+            row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            row_one[0].value.text_value() == "B1+B2" &&
+            row_one[1].reference.row == 1 &&
+            row_one[1].reference.column == 2 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            row_one[1].value.number_value() == 1.0,
+        "public stationary formula delete_columns should expose rewritten formula in row snapshot");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one = sheet.column_cells(1);
+    check(column_one.size() == 2 &&
+            column_one[0].reference.row == 1 &&
+            column_one[0].reference.column == 1 &&
+            column_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            column_one[0].value.text_value() == "B1+B2" &&
+            column_one[1].reference.row == 2 &&
+            column_one[1].reference.column == 1 &&
+            column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_one[1].value.text_value() == "row2-gap-a2",
+        "public stationary formula delete_columns should expose rewritten formula in column snapshot");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public stationary formula delete_columns save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+        "public stationary formula delete_columns save should persist projected bounds");
+    check_contains(worksheet_xml,
+        R"(<c r="A1"><f>B1+B2</f></c>)",
+        "public stationary formula delete_columns save should persist rewritten formula");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "public stationary formula delete_columns save should persist shifted source number");
+    check_contains(worksheet_xml,
+        R"(<c r="B2" t="inlineStr"><is><t>ref-c2</t></is></c>)",
+        "public stationary formula delete_columns save should persist shifted source text");
+    check_not_contains(worksheet_xml, "delete-b1",
+        "public stationary formula delete_columns save should omit deleted row-one text");
+    check_not_contains(worksheet_xml, "delete-b2",
+        "public stationary formula delete_columns save should omit deleted row-two text");
+    check_not_contains(worksheet_xml, R"(r="C1")",
+        "public stationary formula delete_columns save should omit old C1 coordinate");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "public stationary formula delete_columns save should omit old C2 coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public stationary formula delete_columns save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public stationary formula delete_columns save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public stationary formula delete_columns save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public stationary formula delete_columns save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public stationary formula delete_columns save should clear dirty materialized memory");
 }
 
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
@@ -4563,6 +4689,7 @@ int main()
         test_public_worksheet_editor_insert_rows_columns_translate_moved_formula();
         test_public_worksheet_editor_delete_rows_columns_translate_moved_formula();
         test_public_worksheet_editor_insert_columns_rewrites_stationary_formula();
+        test_public_worksheet_editor_delete_columns_rewrites_stationary_formula();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

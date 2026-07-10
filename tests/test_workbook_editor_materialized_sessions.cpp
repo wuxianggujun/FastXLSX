@@ -3676,6 +3676,137 @@ void test_public_worksheet_editor_stationary_formula_rewrite_preserves_style_id(
         "public styled stationary formula insert_rows no-op save should be byte-stable");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "public styled stationary formula insert_rows no-op save should not mutate the source package");
+
+    {
+        fastxlsx::StyleId column_formula_style;
+        const std::filesystem::path column_source =
+            write_two_sheet_source_with_styled_stationary_formula(
+                "fastxlsx-workbook-editor-materialized-styled-stationary-column-formula-source.xlsx",
+                column_formula_style);
+        const std::filesystem::path column_output =
+            artifact("fastxlsx-workbook-editor-materialized-styled-stationary-column-formula-output.xlsx");
+        const std::filesystem::path column_noop_output =
+            artifact("fastxlsx-workbook-editor-materialized-styled-stationary-column-formula-noop.xlsx");
+        const std::map<std::string, std::string> column_source_entries =
+            fastxlsx::test::read_zip_entries(column_source);
+
+        fastxlsx::WorkbookEditor column_editor = fastxlsx::WorkbookEditor::open(column_source);
+        fastxlsx::WorksheetEditor column_sheet = column_editor.worksheet("Data");
+
+        column_sheet.insert_columns(2, 1);
+        const std::size_t column_projected_cell_count = column_sheet.cell_count();
+        const std::size_t column_projected_memory = column_sheet.estimated_memory_usage();
+
+        check(!column_editor.last_edit_error().has_value(),
+            "public styled stationary formula insert_columns should leave diagnostics clear");
+        check(column_sheet.has_pending_changes(),
+            "public styled stationary formula insert_columns should dirty the borrowed handle");
+        check(column_editor.pending_materialized_worksheet_names()
+                == std::vector<std::string>{"Data"},
+            "public styled stationary formula insert_columns should keep dirty materialized names");
+        check(column_editor.pending_materialized_cell_count() == column_projected_cell_count,
+            "public styled stationary formula insert_columns should report projected materialized count");
+        check(column_editor.estimated_pending_materialized_memory_usage()
+                == column_projected_memory,
+            "public styled stationary formula insert_columns should report projected memory");
+        check(column_projected_cell_count == 4,
+            "public styled stationary formula insert_columns should preserve sparse record count");
+
+        const fastxlsx::CellValue column_stationary_formula = column_sheet.get_cell("A1");
+        check(column_stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                column_stationary_formula.text_value() == "C1+C2" &&
+                column_stationary_formula.has_style() &&
+                column_stationary_formula.style_id().value() == column_formula_style.value(),
+            "public styled stationary formula insert_columns should rewrite formula and keep style id");
+        check(column_sheet.get_cell("C1").number_value() == 1.0 &&
+                column_sheet.get_cell("A2").text_value() == "row2-gap-a2" &&
+                column_sheet.get_cell("C2").text_value() == "styled-ref-b2",
+            "public styled stationary formula insert_columns should shift referenced source cells");
+        check(!column_sheet.try_cell("B1").has_value() &&
+                !column_sheet.try_cell("B2").has_value(),
+            "public styled stationary formula insert_columns should leave inserted column gaps empty");
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_row_one =
+            column_sheet.row_cells(1);
+        check(column_row_one.size() == 2 &&
+                column_row_one[0].reference.row == 1 &&
+                column_row_one[0].reference.column == 1 &&
+                column_row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                column_row_one[0].value.text_value() == "C1+C2" &&
+                column_row_one[0].value.has_style() &&
+                column_row_one[0].value.style_id().value() == column_formula_style.value() &&
+                column_row_one[1].reference.row == 1 &&
+                column_row_one[1].reference.column == 3 &&
+                column_row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                column_row_one[1].value.number_value() == 1.0,
+            "public styled stationary formula insert_columns should expose style id in row snapshot");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_column_one =
+            column_sheet.column_cells(1);
+        check(column_column_one.size() == 2 &&
+                column_column_one[0].reference.row == 1 &&
+                column_column_one[0].reference.column == 1 &&
+                column_column_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                column_column_one[0].value.text_value() == "C1+C2" &&
+                column_column_one[0].value.has_style() &&
+                column_column_one[0].value.style_id().value() == column_formula_style.value() &&
+                column_column_one[1].reference.row == 2 &&
+                column_column_one[1].reference.column == 1 &&
+                column_column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_column_one[1].value.text_value() == "row2-gap-a2",
+            "public styled stationary formula insert_columns should expose style id in column snapshot");
+
+        column_editor.save_as(column_output);
+        const std::map<std::string, std::string> column_output_entries =
+            fastxlsx::test::read_zip_entries(column_output);
+        check(fastxlsx::test::read_zip_entries(column_source) == column_source_entries,
+            "public styled stationary formula insert_columns save should not mutate the source package");
+        const std::string column_worksheet_xml =
+            column_output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string column_styled_formula_xml =
+            std::string(R"(<c r="A1" s=")") + std::to_string(column_formula_style.value())
+            + R"("><f>C1+C2</f></c>)";
+        check_contains(column_worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+            "public styled stationary formula insert_columns save should persist projected bounds");
+        check_contains(column_worksheet_xml, column_styled_formula_xml,
+            "public styled stationary formula insert_columns save should persist formula style id");
+        check_contains(column_worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+            "public styled stationary formula insert_columns save should persist shifted source number");
+        check_contains(column_worksheet_xml,
+            R"(<c r="C2" t="inlineStr"><is><t>styled-ref-b2</t></is></c>)",
+            "public styled stationary formula insert_columns save should persist shifted source text");
+        check_not_contains(column_worksheet_xml, R"(r="B1")",
+            "public styled stationary formula insert_columns save should omit inserted B1 gap");
+        check_not_contains(column_worksheet_xml, R"(r="B2")",
+            "public styled stationary formula insert_columns save should omit inserted B2 gap");
+        check_contains(column_output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "public styled stationary formula insert_columns save should preserve untouched worksheets");
+        check(!column_sheet.has_pending_changes(),
+            "public styled stationary formula insert_columns save should clean the borrowed handle");
+        check(column_editor.pending_materialized_worksheet_names().empty(),
+            "public styled stationary formula insert_columns save should clear dirty materialized names");
+        check(column_editor.pending_materialized_cell_count() == 0,
+            "public styled stationary formula insert_columns save should clear dirty materialized cell count");
+        check(column_editor.estimated_pending_materialized_memory_usage() == 0,
+            "public styled stationary formula insert_columns save should clear dirty materialized memory");
+
+        fastxlsx::WorkbookEditor column_reopened_editor =
+            fastxlsx::WorkbookEditor::open(column_output);
+        fastxlsx::WorksheetEditor column_reopened_sheet =
+            column_reopened_editor.worksheet("Data");
+        const fastxlsx::CellValue column_reopened_formula =
+            column_reopened_sheet.get_cell("A1");
+        check(column_reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                column_reopened_formula.text_value() == "C1+C2" &&
+                column_reopened_formula.has_style() &&
+                column_reopened_formula.style_id().value() == column_formula_style.value(),
+            "public styled stationary formula insert_columns reopened output should keep formula style id");
+        column_reopened_editor.save_as(column_noop_output);
+        const auto column_noop_entries = fastxlsx::test::read_zip_entries(column_noop_output);
+        check(column_noop_entries == column_output_entries,
+            "public styled stationary formula insert_columns no-op save should be byte-stable");
+        check(fastxlsx::test::read_zip_entries(column_source) == column_source_entries,
+            "public styled stationary formula insert_columns no-op save should not mutate the source package");
+    }
 }
 
 void test_public_worksheet_editor_insert_shifts_skip_non_reference_formula_tokens()

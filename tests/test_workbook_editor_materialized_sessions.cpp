@@ -2036,6 +2036,104 @@ std::filesystem::path write_public_editing_e2e_source(std::string_view name)
     return path;
 }
 
+void test_public_worksheet_editor_zero_count_shifts_clear_diagnostics_preserve_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-materialized-zero-count-shifts-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-zero-count-shifts-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t clean_cell_count = sheet.cell_count();
+    const std::size_t clean_memory = sheet.estimated_memory_usage();
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid"));
+    }), "zero-count public shift setup should record a clean-session diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "zero-count public shift setup should expose the clean-session diagnostic");
+
+    sheet.insert_rows(2, 0);
+    sheet.delete_rows(2, 0);
+    sheet.insert_columns(2, 0);
+    sheet.delete_columns(2, 0);
+
+    check(!editor.last_edit_error().has_value(),
+        "zero-count public shifts should clear clean-session diagnostics");
+    check(!editor.has_pending_changes(),
+        "zero-count public shifts should keep a clean editor clean");
+    check(!sheet.has_pending_changes(),
+        "zero-count public shifts should keep a clean handle clean");
+    check(sheet.cell_count() == clean_cell_count,
+        "zero-count public shifts should preserve clean sparse count");
+    check(sheet.estimated_memory_usage() == clean_memory,
+        "zero-count public shifts should preserve clean sparse memory");
+    const std::optional<fastxlsx::CellValue> clean_a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> clean_b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> clean_a2 = sheet.try_cell("A2");
+    check(clean_a1.has_value() && clean_a1->kind() == fastxlsx::CellValueKind::Text &&
+            clean_a1->text_value() == "placeholder-a1",
+        "zero-count public shifts should preserve clean A1");
+    check(clean_b1.has_value() && clean_b1->kind() == fastxlsx::CellValueKind::Number &&
+            clean_b1->number_value() == 1.0,
+        "zero-count public shifts should preserve clean B1");
+    check(clean_a2.has_value() && clean_a2->kind() == fastxlsx::CellValueKind::Text &&
+            clean_a2->text_value() == "placeholder-a2",
+        "zero-count public shifts should preserve clean A2");
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-c3"));
+    const std::size_t dirty_memory = sheet.estimated_memory_usage();
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "zero-count public shift dirty setup should dirty the materialized session");
+    check(threw_fastxlsx_error([&] { sheet.delete_columns(0, 1); }),
+        "zero-count public shift dirty setup should record a dirty-session diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "zero-count public shift dirty setup should expose the dirty-session diagnostic");
+
+    sheet.insert_rows(2, 0);
+    sheet.delete_rows(2, 0);
+    sheet.insert_columns(2, 0);
+    sheet.delete_columns(2, 0);
+
+    check(!editor.last_edit_error().has_value(),
+        "zero-count public shifts should clear dirty-session diagnostics");
+    check(sheet.has_pending_changes(),
+        "zero-count public shifts should keep a dirty handle dirty");
+    check(editor.pending_change_count() == 0,
+        "zero-count public shifts should not queue coarse public edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "zero-count public shifts should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == clean_cell_count + 1U,
+        "zero-count public shifts should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "zero-count public shifts should preserve dirty materialized memory");
+    const std::optional<fastxlsx::CellValue> dirty_c3 = sheet.try_cell("C3");
+    check(dirty_c3.has_value() && dirty_c3->kind() == fastxlsx::CellValueKind::Text &&
+            dirty_c3->text_value() == "dirty-c3",
+        "zero-count public shifts should preserve dirty C3");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "zero-count public shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "dirty-c3",
+        "zero-count public shift save should persist the dirty sparse cell");
+    check(!sheet.has_pending_changes(),
+        "zero-count public shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "zero-count public shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "zero-count public shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "zero-count public shift save should clear dirty materialized memory");
+}
+
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
 {
     const std::filesystem::path source =
@@ -3426,6 +3524,7 @@ void test_internal_materialized_session_missing_source_load_preserves_editor_sta
 int main()
 {
     try {
+        test_public_worksheet_editor_zero_count_shifts_clear_diagnostics_preserve_state();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

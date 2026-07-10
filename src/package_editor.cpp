@@ -4845,6 +4845,13 @@ PackageEditorSheetRenameStagedHook& package_editor_sheet_rename_staged_hook() no
     return hook;
 }
 
+PackageEditorDocumentPropertiesStagedHook&
+package_editor_document_properties_staged_hook() noexcept
+{
+    static PackageEditorDocumentPropertiesStagedHook hook = nullptr;
+    return hook;
+}
+
 void run_package_editor_source_copy_temp_files_hook(
     std::span<const std::filesystem::path> temporary_source_files)
 {
@@ -4863,6 +4870,13 @@ void run_package_editor_calc_metadata_staged_hook()
 void run_package_editor_sheet_rename_staged_hook()
 {
     if (auto hook = package_editor_sheet_rename_staged_hook(); hook != nullptr) {
+        hook();
+    }
+}
+
+void run_package_editor_document_properties_staged_hook()
+{
+    if (auto hook = package_editor_document_properties_staged_hook(); hook != nullptr) {
         hook();
     }
 }
@@ -7606,35 +7620,48 @@ void PackageEditor::set_document_properties(const DocumentProperties& properties
             "document properties package relationships metadata replacement");
     }
 
-    edit_plan_.set_part(core_part, PartWriteMode::GenerateSmallXml,
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
+
+    updated_edit_plan.set_part(core_part, PartWriteMode::GenerateSmallXml,
         "core document properties generated small XML");
-    edit_plan_.set_part(app_part, PartWriteMode::GenerateSmallXml,
+    updated_edit_plan.set_part(app_part, PartWriteMode::GenerateSmallXml,
         "extended document properties generated small XML");
-    upsert_part_replacement(replacements_, core_part, std::move(core_properties_xml),
+    upsert_part_replacement(updated_replacements, core_part, std::move(core_properties_xml),
         PartWriteMode::GenerateSmallXml, "core document properties generated small XML");
-    upsert_part_replacement(replacements_, app_part, std::move(extended_properties_xml),
+    upsert_part_replacement(updated_replacements, app_part, std::move(extended_properties_xml),
         PartWriteMode::GenerateSmallXml, "extended document properties generated small XML");
-    remove_entry_replacement(entry_replacements_, core_part.zip_path());
-    remove_entry_replacement(entry_replacements_, app_part.zip_path());
-    remove_omitted_entry(omitted_entries_, core_part.zip_path());
-    remove_omitted_entry(omitted_entries_, app_part.zip_path());
+    remove_entry_replacement(updated_entry_replacements, core_part.zip_path());
+    remove_entry_replacement(updated_entry_replacements, app_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, core_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, app_part.zip_path());
 
     if (content_types_changed) {
-        upsert_entry_replacement(reader_, entry_replacements_, "[Content_Types].xml",
+        upsert_entry_replacement(reader_, updated_entry_replacements, "[Content_Types].xml",
             std::move(content_types_xml));
-        edit_plan_.set_package_entry("[Content_Types].xml", PartWriteMode::LocalDomRewrite,
+        updated_edit_plan.set_package_entry(
+            "[Content_Types].xml", PartWriteMode::LocalDomRewrite,
             "content types updated for document properties",
             PackageEntryAuditKind::ContentTypes);
     }
     if (package_relationships_changed) {
-        upsert_entry_replacement(reader_, entry_replacements_, "_rels/.rels",
+        upsert_entry_replacement(reader_, updated_entry_replacements, "_rels/.rels",
             std::move(package_relationships_xml));
-        edit_plan_.set_package_entry("_rels/.rels", PartWriteMode::LocalDomRewrite,
+        updated_edit_plan.set_package_entry(
+            "_rels/.rels", PartWriteMode::LocalDomRewrite,
             "package relationships updated for document properties",
             PackageEntryAuditKind::PackageRelationships);
     }
 
-    manifest_ = std::move(updated_manifest);
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_document_properties_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
 PackageEditorOutputPlan PackageEditor::planned_output() const
@@ -7755,6 +7782,12 @@ void testing_set_package_editor_sheet_rename_staged_hook(
     PackageEditorSheetRenameStagedHook hook) noexcept
 {
     package_editor_sheet_rename_staged_hook() = hook;
+}
+
+void testing_set_package_editor_document_properties_staged_hook(
+    PackageEditorDocumentPropertiesStagedHook hook) noexcept
+{
+    package_editor_document_properties_staged_hook() = hook;
 }
 #endif
 

@@ -1,5 +1,29 @@
 #include "test_package_editor_core_common.hpp"
 
+class ScopedPackageEditorDocumentPropertiesStagedHook {
+public:
+    explicit ScopedPackageEditorDocumentPropertiesStagedHook(
+        fastxlsx::detail::PackageEditorDocumentPropertiesStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_document_properties_staged_hook(hook);
+    }
+
+    ~ScopedPackageEditorDocumentPropertiesStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_document_properties_staged_hook(nullptr);
+    }
+
+    ScopedPackageEditorDocumentPropertiesStagedHook(
+        const ScopedPackageEditorDocumentPropertiesStagedHook&) = delete;
+    ScopedPackageEditorDocumentPropertiesStagedHook& operator=(
+        const ScopedPackageEditorDocumentPropertiesStagedHook&) = delete;
+};
+
+void fail_package_editor_document_properties_after_staging()
+{
+    throw std::runtime_error("injected document properties commit failure");
+}
+
 void test_package_editor_repeated_part_replacement_updates_final_state()
 {
     const SourcePackage source =
@@ -1199,6 +1223,104 @@ void test_package_editor_combines_document_properties_and_worksheet_rewrite()
         "combined patch should request full calculation on load");
 }
 
+void test_package_editor_document_properties_staging_failure_preserves_prior_plan_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-docprops-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-docprops-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-docprops-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const fastxlsx::detail::PartName app_part("/docProps/app.xml");
+    const std::string prior_workbook =
+        R"(<workbook><sheets><sheet name="Queued" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, prior_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "prior workbook replacement before injected document properties failure");
+    editor.remove_part(core_part,
+        "prior core properties removal before injected document properties failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+
+    fastxlsx::DocumentProperties properties;
+    properties.creator = "Transactional Author";
+    properties.application = "FastXLSX Transaction Test";
+
+    bool failed = false;
+    {
+        ScopedPackageEditorDocumentPropertiesStagedHook hook(
+            fail_package_editor_document_properties_after_staging);
+        try {
+            editor.set_document_properties(properties);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "injected document properties commit failure",
+                "document properties staged failure should preserve injected context");
+        }
+    }
+    check(failed,
+        "PackageEditor should surface injected document properties staging failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "document properties staging failure should preserve prior edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "document properties staging failure should preserve prior notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "document properties staging failure should preserve package-entry audits");
+    check(editor.edit_plan().find_removed_part(core_part) != nullptr,
+        "document properties staging failure should preserve prior core removal");
+    check(editor.edit_plan().find_part(core_part) == nullptr,
+        "document properties staging failure should not restore core properties plan");
+    check(editor.edit_plan().find_part(app_part) == nullptr,
+        "document properties staging failure should not add app properties plan");
+    check(editor.manifest().find_part(core_part) == nullptr,
+        "document properties staging failure should preserve removed core manifest state");
+    check(editor.manifest().find_part(app_part) == nullptr,
+        "document properties staging failure should not add app properties manifest state");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check(failed_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "document properties staging failure should preserve the prior workbook patch");
+    check(failed_reader.find_entry("docProps/core.xml") == nullptr,
+        "document properties staging failure should preserve prior core omission");
+    check(failed_reader.find_entry("docProps/app.xml") == nullptr,
+        "document properties staging failure should not emit app properties");
+    check_not_contains(failed_reader.read_entry("[Content_Types].xml"),
+        "/docProps/core.xml",
+        "document properties staging failure should preserve removed core content type");
+    check_not_contains(failed_reader.read_entry("[Content_Types].xml"),
+        "/docProps/app.xml",
+        "document properties staging failure should not add app content type");
+    check_contains(failed_reader.read_entry("_rels/.rels"),
+        "relationships/metadata/core-properties",
+        "document properties staging failure should preserve the audited source core relationship");
+    check_not_contains(failed_reader.read_entry("_rels/.rels"),
+        "relationships/extended-properties",
+        "document properties staging failure should not add app relationship");
+
+    editor.set_document_properties(properties);
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check(retry_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "document properties retry should preserve the prior workbook patch");
+    check_contains(retry_reader.read_entry("docProps/core.xml"),
+        "<dc:creator>Transactional Author</dc:creator>",
+        "document properties retry should write core properties");
+    check_contains(retry_reader.read_entry("docProps/app.xml"),
+        "<Application>FastXLSX Transaction Test</Application>",
+        "document properties retry should write app properties");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1219,6 +1341,7 @@ int main(int argc, char* argv[])
             test_package_editor_document_properties_failure_preserves_state();
             test_package_editor_document_properties_app_relationship_failure_preserves_state();
             test_package_editor_combines_document_properties_and_worksheet_rewrite();
+            test_package_editor_document_properties_staging_failure_preserves_prior_plan_and_retries();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

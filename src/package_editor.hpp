@@ -186,6 +186,10 @@ using PackageEditorSheetRenameStagedHook = void (*)();
 void testing_set_package_editor_sheet_rename_staged_hook(
     PackageEditorSheetRenameStagedHook hook) noexcept;
 
+using PackageEditorDocumentPropertiesStagedHook = void (*)();
+void testing_set_package_editor_document_properties_staged_hook(
+    PackageEditorDocumentPropertiesStagedHook hook) noexcept;
+
 struct ReplacementCellPayloadScannerTestResult {
     std::size_t start_tag_count = 0;
     std::size_t formula_tag_count = 0;

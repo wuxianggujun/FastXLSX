@@ -20,7 +20,7 @@
 ### Patch：已有 workbook
 
 - `WorkbookEditor::open()` / `save_as()`。
-- 支持 sheet catalog 查询、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request、document properties 和已有 PNG/JPEG media bytes replacement。
+- 支持 sheet catalog 查询、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request 和已有 PNG/JPEG media bytes replacement。
 - 未修改和未知 package part 默认 copy-original；修改 part 才 rewrite/remove。
 - `save_as()` 不覆盖 source，也不承诺 atomic in-place save。
 - `has_pending_changes()` 表示 retained staged state；成功保存后仍可为 true。
@@ -59,6 +59,7 @@
 - `EditPlan`、dependency analysis、relationship graph、part index。
 - worksheet transformer/event reader、`CellStore`、materialized session registry。
 - package-entry chunk/file-backed helpers 和测试 hook。
+- Internal `PackageEditor::set_document_properties()` 支持 core/app docProps 与相关 content types/root relationships 的窄事务式 rewrite；它不是 `WorkbookEditor` public API。
 
 文档只能在明确的 internal/architecture 语境提及它们。
 

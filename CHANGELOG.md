@@ -19,6 +19,7 @@
 - `WorkbookEditor::save_as()` 的 dirty In-memory handoff 改为 stage → package write → state commit；写出失败不再提前清除 session dirty diagnostics，并可用最新值安全重试。
 - `PackageEditor::request_full_calculation()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再泄漏部分 calcChain/content-type/relationship mutation，并支持保留既有计划后重试。
 - `WorkbookEditor::rename_sheet()` 与 internal PackageEditor sheet catalog rename 改为跨 package/public state 的事务式 staging；提交前失败不再泄漏部分 catalog、formula session 或 pending diagnostics mutation，并支持保留既有 patch 后重试。
+- Internal `PackageEditor::set_document_properties()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；同时纠正文档中将该 internal helper 误写为 `WorkbookEditor` public 能力的表述。
 
 ### Documentation
 

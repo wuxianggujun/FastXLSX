@@ -407,6 +407,90 @@ void test_failed_save_as_after_materialized_stage_preserves_dirty_state()
         "existing-output successful retry should update the output package after the failed attempt");
 }
 
+void test_failed_save_as_after_mixed_patch_and_materialized_stage_preserves_state()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-mixed-stage-save-failure-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-mixed-stage-save-failure-output.xlsx");
+    std::error_code remove_error;
+    std::filesystem::remove(output, remove_error);
+    const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_sheet_data("Untouched",
+        {{fastxlsx::CellValue::text("mixed-stage-replacement")}});
+    fastxlsx::WorksheetEditor worksheet = editor.worksheet("Data");
+    worksheet.set_cell(1, 1, fastxlsx::CellValue::text("stale-mixed-stage-value"));
+
+    check(worksheet.has_pending_changes(),
+        "mixed staged failure setup should dirty the materialized handle");
+    check(editor.pending_change_count() == 1,
+        "mixed staged failure setup should count only the replacement before save");
+    check(editor.pending_replacement_worksheet_names() ==
+            std::vector<std::string>{"Untouched"},
+        "mixed staged failure setup should expose the replacement worksheet");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string>{"Data"},
+        "mixed staged failure setup should expose the dirty materialized worksheet");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 2,
+        "mixed staged failure setup should count replacement and materialized edits");
+
+    {
+        ScopedWorkbookEditorSaveAsStagedHook hook(
+            throw_after_workbook_editor_materialized_stage);
+        check(threw_fastxlsx_error([&] { editor.save_as(output); }),
+            "injected failure after mixed materialized staging should fail save_as");
+    }
+
+    check(!std::filesystem::exists(output),
+        "mixed staged failure should not create an output package");
+    check(worksheet.has_pending_changes(),
+        "mixed staged failure should keep the materialized handle dirty");
+    check(editor.pending_change_count() == 1,
+        "mixed staged failure should not commit the materialized handoff");
+    check(editor.pending_replacement_worksheet_names() ==
+            std::vector<std::string>{"Untouched"},
+        "mixed staged failure should preserve replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() ==
+            std::vector<std::string>{"Data"},
+        "mixed staged failure should preserve materialized diagnostics");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 2,
+        "mixed staged failure should preserve the unsaved watermark");
+    check(!editor.last_edit_error().has_value(),
+        "mixed staged failure should not create last_edit_error");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "mixed staged failure should leave the source package unchanged");
+
+    worksheet.set_cell(1, 1, fastxlsx::CellValue::text("fresh-mixed-stage-value"));
+    editor.save_as(output);
+
+    check(!worksheet.has_pending_changes(),
+        "mixed staged retry should clear the materialized handle");
+    check(editor.pending_change_count() == 2,
+        "mixed staged retry should commit the replacement and materialized handoff");
+    check(editor.pending_replacement_worksheet_names() ==
+            std::vector<std::string>{"Untouched"},
+        "mixed staged retry should retain replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "mixed staged retry should clear materialized diagnostics");
+    check(!editor.has_unsaved_changes() && editor.unsaved_change_count() == 0,
+        "mixed staged retry should advance the saved watermark");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml =
+        output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, "fresh-mixed-stage-value",
+        "mixed staged retry should write the latest materialized value");
+    check_not_contains(data_xml, "stale-mixed-stage-value",
+        "mixed staged retry should replace the stale materialized value");
+    check_contains(untouched_xml, "mixed-stage-replacement",
+        "mixed staged retry should write the queued replacement");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "mixed staged retry should leave the source package unchanged");
+}
+
 void test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirty_state()
 {
     const std::filesystem::path source = write_two_sheet_source(
@@ -804,6 +888,7 @@ int main()
         test_noop_save_as_keeps_editor_usable_for_later_edits();
         test_failed_save_as_preserves_public_facade_state();
         test_failed_save_as_after_materialized_stage_preserves_dirty_state();
+        test_failed_save_as_after_mixed_patch_and_materialized_stage_preserves_state();
         test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirty_state();
         test_successful_save_as_preserves_public_facade_state();
         test_unsaved_change_watermark_tracks_successful_saves();

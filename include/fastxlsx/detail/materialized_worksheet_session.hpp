@@ -530,6 +530,18 @@ public:
         return sessions_.size();
     }
 
+    void swap(MaterializedWorksheetSessionRegistry& other) noexcept
+    {
+        sessions_.swap(other.sessions_);
+    }
+
+    friend void swap(
+        MaterializedWorksheetSessionRegistry& left,
+        MaterializedWorksheetSessionRegistry& right) noexcept
+    {
+        left.swap(right);
+    }
+
     [[nodiscard]] bool contains(std::string_view planned_name) const
     {
         return try_session(planned_name) != nullptr;

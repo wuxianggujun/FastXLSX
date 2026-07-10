@@ -33,6 +33,19 @@ public:
 
     void record_rename(std::string_view old_current_name, std::string_view new_current_name);
 
+    void swap(WorkbookEditorSheetCatalogPlan& other) noexcept
+    {
+        source_names_.swap(other.source_names_);
+        planned_names_by_source_.swap(other.planned_names_by_source_);
+    }
+
+    friend void swap(
+        WorkbookEditorSheetCatalogPlan& left,
+        WorkbookEditorSheetCatalogPlan& right) noexcept
+    {
+        left.swap(right);
+    }
+
 private:
     std::vector<std::string> source_names_;
     std::map<std::string, std::string> planned_names_by_source_;

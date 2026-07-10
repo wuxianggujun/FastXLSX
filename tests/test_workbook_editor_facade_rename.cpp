@@ -1,4 +1,29 @@
+#include "../src/package_editor.hpp"
 #include "test_workbook_editor_facade_common.hpp"
+
+class ScopedWorkbookEditorSheetRenameStagedHook {
+public:
+    explicit ScopedWorkbookEditorSheetRenameStagedHook(
+        fastxlsx::detail::PackageEditorSheetRenameStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_sheet_rename_staged_hook(hook);
+    }
+
+    ~ScopedWorkbookEditorSheetRenameStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_sheet_rename_staged_hook(nullptr);
+    }
+
+    ScopedWorkbookEditorSheetRenameStagedHook(
+        const ScopedWorkbookEditorSheetRenameStagedHook&) = delete;
+    ScopedWorkbookEditorSheetRenameStagedHook& operator=(
+        const ScopedWorkbookEditorSheetRenameStagedHook&) = delete;
+};
+
+void fail_workbook_editor_sheet_rename_after_staging()
+{
+    throw fastxlsx::FastXlsxError("injected sheet rename commit failure");
+}
 
 void test_rename_sheet_changes_catalog_name_and_preserves_parts()
 {
@@ -661,6 +686,85 @@ void test_rename_to_existing_name_throws_and_editor_stays_usable()
         "editor should still apply a valid rename after a rejected one");
 }
 
+void test_rename_staging_failure_preserves_public_and_package_state_then_retries()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-rename-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = artifact(
+        "fastxlsx-workbook-editor-rename-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = artifact(
+        "fastxlsx-workbook-editor-rename-staging-retry-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    editor.replace_cells("Data",
+        {{{1, 1}, fastxlsx::CellValue::text("rename transaction patch")}});
+
+    const std::size_t pending_count_before = editor.pending_change_count();
+    const std::size_t targeted_count_before =
+        editor.pending_targeted_cell_replacement_count();
+    const std::size_t targeted_bytes_before =
+        editor.estimated_pending_targeted_cell_replacement_xml_bytes();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry> catalog_before =
+        editor.worksheet_catalog();
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before =
+        editor.pending_worksheet_edits();
+
+    {
+        ScopedWorkbookEditorSheetRenameStagedHook hook(
+            fail_workbook_editor_sheet_rename_after_staging);
+        check(threw_fastxlsx_error(
+                  [&] { editor.rename_sheet("Data", "RenamedData"); }),
+            "injected sheet rename staging failure should throw FastXlsxError");
+    }
+
+    check(workbook_editor_catalog_entries_equal(
+              editor.worksheet_catalog(), catalog_before),
+        "sheet rename staging failure should preserve the public catalog");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before),
+        "sheet rename staging failure should preserve public edit summaries");
+    check(editor.pending_change_count() == pending_count_before,
+        "sheet rename staging failure should preserve pending change count");
+    check(editor.pending_targeted_cell_replacement_count() == targeted_count_before,
+        "sheet rename staging failure should preserve targeted replacement count");
+    check(editor.estimated_pending_targeted_cell_replacement_xml_bytes()
+            == targeted_bytes_before,
+        "sheet rename staging failure should preserve targeted replacement bytes");
+    check(editor.pending_targeted_cell_replacement_worksheet_names()
+            == std::vector<std::string> {"Data"},
+        "sheet rename staging failure should keep targeted diagnostics on the old name");
+    check(editor.has_worksheet("Data") && !editor.has_worksheet("RenamedData"),
+        "sheet rename staging failure should keep the old public catalog name");
+    check(editor.last_edit_error().has_value(),
+        "sheet rename staging failure should record public error context");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(), "injected sheet rename commit failure",
+            "sheet rename staging failure should retain injected error context");
+    }
+
+    editor.save_as(failed_output);
+    const auto failed_entries = fastxlsx::test::read_zip_entries(failed_output);
+    check_contains(failed_entries.at("xl/workbook.xml"), R"(name="Data")",
+        "sheet rename staging failure output should keep the old catalog name");
+    check_not_contains(failed_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "sheet rename staging failure output should not leak the rejected catalog name");
+    check_contains(failed_entries.at("xl/worksheets/sheet1.xml"),
+        "rename transaction patch",
+        "sheet rename staging failure output should preserve the prior targeted patch");
+
+    editor.rename_sheet("Data", "RenamedData");
+    check(editor.pending_targeted_cell_replacement_worksheet_names()
+            == std::vector<std::string> {"RenamedData"},
+        "sheet rename retry should migrate targeted diagnostics to the new name");
+    editor.save_as(retry_output);
+    const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
+    check_contains(retry_entries.at("xl/workbook.xml"), R"(name="RenamedData")",
+        "sheet rename retry should write the new catalog name");
+    check_contains(retry_entries.at("xl/worksheets/sheet1.xml"),
+        "rename transaction patch",
+        "sheet rename retry should preserve the prior targeted patch");
+}
+
 void test_rename_missing_sheet_throws_and_editor_stays_usable()
 {
     const std::filesystem::path source =
@@ -704,6 +808,7 @@ int main()
         test_rename_chain_back_to_source_name_clears_rename_only_summary();
         test_replacement_after_rename_chain_back_failure_uses_restored_name();
         test_failed_rename_preserves_pending_replacement_diagnostics();
+        test_rename_staging_failure_preserves_public_and_package_state_then_retries();
         test_rename_to_existing_name_throws_and_editor_stays_usable();
         test_rename_missing_sheet_throws_and_editor_stays_usable();
         test_rename_to_invalid_name_throws();

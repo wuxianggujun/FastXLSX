@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -75,6 +76,11 @@ workbook_editor_public_catalog_from_detail_catalog(
 } // namespace detail
 
 struct WorkbookEditor::Impl {
+    using PendingTargetedCellReplacements =
+        std::map<std::string,
+            std::map<std::string, std::size_t, std::less<>>,
+            std::less<>>;
+
     Impl(detail::PackageEditor editor, WorkbookEditorOptions options)
         : editor(std::move(editor))
         , options(std::move(options))
@@ -90,8 +96,7 @@ struct WorkbookEditor::Impl {
     std::size_t pending_public_edit_count = 0;
     std::size_t saved_public_edit_count = 0;
     detail::WorkbookEditorPendingSheetDataPayloads pending_sheet_data_payloads;
-    std::map<std::string, std::map<std::string, std::size_t, std::less<>>, std::less<>>
-        pending_targeted_cell_replacements;
+    PendingTargetedCellReplacements pending_targeted_cell_replacements;
     std::optional<std::string> last_public_edit_error;
 
     [[nodiscard]] std::vector<std::string> source_worksheet_names() const
@@ -226,18 +231,33 @@ struct WorkbookEditor::Impl {
         }
     }
 
-    void move_pending_targeted_cell_replacements(
-        std::string_view old_name, std::string_view new_name)
+    [[nodiscard]] std::optional<PendingTargetedCellReplacements>
+    stage_pending_targeted_cell_replacements_move(
+        std::string_view old_name, std::string_view new_name) const
     {
         auto source = pending_targeted_cell_replacements.find(old_name);
         if (source == pending_targeted_cell_replacements.end()) {
-            return;
+            return std::nullopt;
         }
-        auto moved = std::move(source->second);
-        pending_targeted_cell_replacements.erase(source);
-        auto& destination = pending_targeted_cell_replacements[std::string(new_name)];
+
+        PendingTargetedCellReplacements updated = pending_targeted_cell_replacements;
+        auto updated_source = updated.find(old_name);
+        auto moved = std::move(updated_source->second);
+        updated.erase(updated_source);
+        auto& destination = updated[std::string(new_name)];
         for (auto& [cell_reference, payload_bytes] : moved) {
             destination[std::move(cell_reference)] = payload_bytes;
+        }
+        return updated;
+    }
+
+    void commit_pending_targeted_cell_replacements_move(
+        std::optional<PendingTargetedCellReplacements>& updated) noexcept
+    {
+        static_assert(std::is_nothrow_swappable_v<PendingTargetedCellReplacements>);
+        if (updated.has_value()) {
+            using std::swap;
+            swap(pending_targeted_cell_replacements, *updated);
         }
     }
 

@@ -1,5 +1,29 @@
 #include "test_package_editor_sheetdata_catalog_common.hpp"
 
+class ScopedPackageEditorSheetRenameStagedHook {
+public:
+    explicit ScopedPackageEditorSheetRenameStagedHook(
+        fastxlsx::detail::PackageEditorSheetRenameStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_sheet_rename_staged_hook(hook);
+    }
+
+    ~ScopedPackageEditorSheetRenameStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_sheet_rename_staged_hook(nullptr);
+    }
+
+    ScopedPackageEditorSheetRenameStagedHook(
+        const ScopedPackageEditorSheetRenameStagedHook&) = delete;
+    ScopedPackageEditorSheetRenameStagedHook& operator=(
+        const ScopedPackageEditorSheetRenameStagedHook&) = delete;
+};
+
+void fail_package_editor_sheet_rename_after_staging()
+{
+    throw std::runtime_error("injected sheet rename commit failure");
+}
+
 void test_package_editor_renames_sheet_catalog_entry_preserving_parts()
 {
     LinkedObjectSourcePackage source =
@@ -333,6 +357,76 @@ void test_package_editor_sheet_catalog_rename_uses_planned_workbook_xml()
     check(output_reader.read_entry("custom/opaque-extension.bin")
             == source.opaque_extension,
         "planned sheet catalog rename should preserve unknown extension bytes");
+}
+
+void test_package_editor_sheet_catalog_rename_staging_failure_preserves_prior_plan_and_retries()
+{
+    const LinkedObjectSourcePackage source =
+        write_sheet_data_patch_source_package(
+            "fastxlsx-package-editor-sheet-catalog-rename-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output =
+        output_path("fastxlsx-package-editor-sheet-catalog-rename-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output =
+        output_path("fastxlsx-package-editor-sheet-catalog-rename-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const std::string prior_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<calcPr calcId="77" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, prior_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "prior workbook replacement before injected sheet rename failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_workbook_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorSheetRenameStagedHook hook(
+            fail_package_editor_sheet_rename_after_staging);
+        try {
+            editor.rename_sheet_catalog_entry("Sheet1", "Renamed");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "injected sheet rename commit failure",
+                "sheet rename staged failure should preserve injected context");
+        }
+    }
+    check(failed, "PackageEditor should surface injected sheet rename staging failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "sheet rename staging failure should preserve prior edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "sheet rename staging failure should preserve prior notes");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == initial_workbook_audit_count,
+        "sheet rename staging failure should preserve prior workbook payload audits");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check(failed_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "sheet rename staging failure output should keep prior workbook replacement");
+    check(failed_reader.read_entry("custom/opaque-extension.bin")
+            == source.opaque_extension,
+        "sheet rename staging failure output should preserve unknown bytes");
+
+    editor.rename_sheet_catalog_entry("Sheet1", "Renamed");
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    const std::string retry_workbook = retry_reader.read_entry("xl/workbook.xml");
+    check_contains(retry_workbook, R"(name="Renamed")",
+        "sheet rename retry should write the new catalog name");
+    check_not_contains(retry_workbook, R"(name="Sheet1")",
+        "sheet rename retry should remove the old catalog name");
+    check_contains(retry_workbook, R"(<calcPr calcId="77" fullCalcOnLoad="0"/>)",
+        "sheet rename retry should preserve prior workbook metadata");
 }
 
 void test_package_editor_rejects_sheet_catalog_rename_without_state_changes()
@@ -1494,6 +1588,7 @@ int main(int argc, char* argv[])
         test_package_editor_sheet_catalog_rename_rewrites_defined_names_opt_in();
         test_package_editor_sheet_catalog_rename_defined_name_rewrite_failure_is_clean();
         test_package_editor_sheet_catalog_rename_uses_planned_workbook_xml();
+        test_package_editor_sheet_catalog_rename_staging_failure_preserves_prior_plan_and_retries();
         test_package_editor_rejects_sheet_catalog_rename_without_state_changes();
         test_package_editor_rejects_invalid_planned_workbook_catalog_by_name_without_state_changes();
         test_package_editor_by_name_helpers_allow_workbook_metadata_rewrite();

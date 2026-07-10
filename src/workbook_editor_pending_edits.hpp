@@ -31,6 +31,18 @@ public:
         std::size_t estimated_memory_usage);
     void migrate(std::string_view old_name, std::string_view new_name);
 
+    void swap(WorkbookEditorPendingSheetDataPayloads& other) noexcept
+    {
+        payloads_.swap(other.payloads_);
+    }
+
+    friend void swap(
+        WorkbookEditorPendingSheetDataPayloads& left,
+        WorkbookEditorPendingSheetDataPayloads& right) noexcept
+    {
+        left.swap(right);
+    }
+
 private:
     std::map<std::string, WorkbookEditorPendingSheetDataPayloadDiagnostic> payloads_;
 };

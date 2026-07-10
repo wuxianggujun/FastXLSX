@@ -4839,6 +4839,12 @@ PackageEditorCalcMetadataStagedHook& package_editor_calc_metadata_staged_hook() 
     return hook;
 }
 
+PackageEditorSheetRenameStagedHook& package_editor_sheet_rename_staged_hook() noexcept
+{
+    static PackageEditorSheetRenameStagedHook hook = nullptr;
+    return hook;
+}
+
 void run_package_editor_source_copy_temp_files_hook(
     std::span<const std::filesystem::path> temporary_source_files)
 {
@@ -4853,7 +4859,40 @@ void run_package_editor_calc_metadata_staged_hook()
         hook();
     }
 }
+
+void run_package_editor_sheet_rename_staged_hook()
+{
+    if (auto hook = package_editor_sheet_rename_staged_hook(); hook != nullptr) {
+        hook();
+    }
+}
 #endif
+
+void commit_package_editor_staged_state(
+    PackageManifest& manifest,
+    EditPlan& edit_plan,
+    std::vector<PackagePartReplacement>& replacements,
+    std::vector<PackageEntryReplacement>& entry_replacements,
+    std::vector<std::string>& omitted_entries,
+    PackageManifest& updated_manifest,
+    EditPlan& updated_edit_plan,
+    std::vector<PackagePartReplacement>& updated_replacements,
+    std::vector<PackageEntryReplacement>& updated_entry_replacements,
+    std::vector<std::string>& updated_omitted_entries) noexcept
+{
+    static_assert(std::is_nothrow_swappable_v<PackageManifest>);
+    static_assert(std::is_nothrow_swappable_v<EditPlan>);
+    static_assert(std::is_nothrow_swappable_v<std::vector<PackagePartReplacement>>);
+    static_assert(std::is_nothrow_swappable_v<std::vector<PackageEntryReplacement>>);
+    static_assert(std::is_nothrow_swappable_v<std::vector<std::string>>);
+
+    using std::swap;
+    swap(manifest, updated_manifest);
+    swap(edit_plan, updated_edit_plan);
+    swap(replacements, updated_replacements);
+    swap(entry_replacements, updated_entry_replacements);
+    swap(omitted_entries, updated_omitted_entries);
+}
 
 PackageEntry materialize_active_package_entry_replacement(const PackageReader& reader,
     const PackageEntryReplacement& replacement, std::string entry_name)
@@ -7336,28 +7375,35 @@ void PackageEditor::rename_sheet_catalog_entry(
         : "workbook sheet catalog name attribute local-DOM rewrite; definedNames, "
           "formulas, tables, drawings, charts, hyperlinks, and relationship targets "
           "are preserved for caller review";
-    edit_plan_.set_part(workbook_part, PartWriteMode::LocalDomRewrite, rewrite_reason);
+    PackageManifest updated_manifest = manifest_;
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
+
+    updated_edit_plan.set_part(
+        workbook_part, PartWriteMode::LocalDomRewrite, rewrite_reason);
     if (rewrite_defined_names) {
-        edit_plan_.add_note(
+        updated_edit_plan.add_note(
             "workbook sheet catalog rename rewrites direct workbook definedName "
             "formula references with an opt-in narrow policy; worksheet formulas, "
             "tables, drawings, charts, hyperlinks, relationship targets, "
             "sharedStrings, styles, and calcChain are not synchronized");
     } else {
-        edit_plan_.add_note(
+        updated_edit_plan.add_note(
             "workbook sheet catalog rename only rewrites the workbook <sheets><sheet "
             "name> attribute; definedNames, formulas, tables, drawings, charts, "
             "hyperlinks, relationship targets, sharedStrings, styles, and calcChain "
             "are not synchronized");
     }
-    edit_plan_.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
+    updated_edit_plan.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
         workbook_part,
         WorkbookPayloadDependencyAuditKind::SheetCatalog,
         WorkbookPayloadDependencyAuditScope::SheetCatalogRename,
         "sheets/sheet@name",
         "workbook sheet catalog rename rewrites only the sheet name attribute",
     });
-    edit_plan_.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
+    updated_edit_plan.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
         workbook_part,
         WorkbookPayloadDependencyAuditKind::DefinedNames,
         WorkbookPayloadDependencyAuditScope::SheetCatalogRename,
@@ -7368,14 +7414,22 @@ void PackageEditor::rename_sheet_catalog_entry(
                     : "workbook sheet catalog rename checked direct definedName formula references with opt-in narrow sync; no direct references changed")
             : "workbook sheet catalog rename preserves definedNames without semantic sync",
     });
-    upsert_part_replacement(replacements_, workbook_part, std::move(workbook_xml),
+    upsert_part_replacement(updated_replacements, workbook_part, std::move(workbook_xml),
         PartWriteMode::LocalDomRewrite,
         rewrite_reason,
         &workbook_part);
-    remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
-    remove_omitted_entry(omitted_entries_, workbook_part.zip_path());
-    manifest_.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
-    audit_preserved_relationship_entry(edit_plan_, reader_, workbook_part);
+    remove_entry_replacement(updated_entry_replacements, workbook_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, workbook_part.zip_path());
+    updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
+    audit_preserved_relationship_entry(updated_edit_plan, reader_, workbook_part);
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_sheet_rename_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
 void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
@@ -7506,18 +7560,9 @@ void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
     run_package_editor_calc_metadata_staged_hook();
 #endif
 
-    static_assert(std::is_nothrow_swappable_v<PackageManifest>);
-    static_assert(std::is_nothrow_swappable_v<EditPlan>);
-    static_assert(std::is_nothrow_swappable_v<std::vector<PackagePartReplacement>>);
-    static_assert(std::is_nothrow_swappable_v<std::vector<PackageEntryReplacement>>);
-    static_assert(std::is_nothrow_swappable_v<std::vector<std::string>>);
-
-    using std::swap;
-    swap(manifest_, updated_manifest);
-    swap(edit_plan_, updated_edit_plan);
-    swap(replacements_, updated_replacements);
-    swap(entry_replacements_, updated_entry_replacements);
-    swap(omitted_entries_, updated_omitted_entries);
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
 void PackageEditor::set_document_properties(const DocumentProperties& properties)
@@ -7704,6 +7749,12 @@ void testing_set_package_editor_calc_metadata_staged_hook(
     PackageEditorCalcMetadataStagedHook hook) noexcept
 {
     package_editor_calc_metadata_staged_hook() = hook;
+}
+
+void testing_set_package_editor_sheet_rename_staged_hook(
+    PackageEditorSheetRenameStagedHook hook) noexcept
+{
+    package_editor_sheet_rename_staged_hook() = hook;
 }
 #endif
 

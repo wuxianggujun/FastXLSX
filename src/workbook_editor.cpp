@@ -664,6 +664,10 @@ void WorkbookEditor::rename_sheet(
     const std::string new_name_key = new_name;
 
     try {
+        std::optional<WorkbookEditor::Impl::PendingTargetedCellReplacements>
+            updated_targeted_cell_replacements =
+                impl_->stage_pending_targeted_cell_replacements_move(
+                    old_name_key, new_name_key);
         detail::WorkbookEditorSheetRenameOptions rename_options;
         if (options.formula_policy == WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames) {
             rename_options.formula_policy =
@@ -686,7 +690,8 @@ void WorkbookEditor::rename_sheet(
                 std::move(new_name),
                 rename_options);
         (void)result;
-        impl_->move_pending_targeted_cell_replacements(old_name_key, new_name_key);
+        impl_->commit_pending_targeted_cell_replacements_move(
+            updated_targeted_cell_replacements);
         ++impl_->pending_public_edit_count;
         impl_->clear_last_edit_error();
     } catch (const FastXlsxError& error) {

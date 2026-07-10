@@ -4,9 +4,9 @@
 
 #include <fastxlsx/detail/formula_reference_audit.hpp>
 
-#include <map>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -96,39 +96,6 @@ collect_materialized_formula_rewrites(
     return planned_rewrites;
 }
 
-void preflight_materialized_formula_rewrites(
-    const MaterializedWorksheetSessionRegistry& materialized_sessions,
-    const std::vector<MaterializedFormulaRewrite>& planned_rewrites)
-{
-    std::map<std::string, CellStore> preflight_stores;
-    for (const MaterializedFormulaRewrite& rewrite : planned_rewrites) {
-        auto existing_store = preflight_stores.find(rewrite.planned_sheet_name);
-        if (existing_store == preflight_stores.end()) {
-            const MaterializedWorksheetSession* session =
-                materialized_sessions.try_session(rewrite.planned_sheet_name);
-            if (session == nullptr) {
-                throw FastXlsxError(
-                    "materialized worksheet formula rewrite session disappeared before preflight");
-            }
-            existing_store = preflight_stores.emplace(
-                rewrite.planned_sheet_name, session->store()).first;
-        }
-
-        const CellRecord* source_record =
-            existing_store->second.try_cell(rewrite.position.row, rewrite.position.column);
-        if (source_record == nullptr || source_record->kind != CellValueKind::Formula) {
-            throw FastXlsxError(
-                "materialized worksheet formula rewrite preflight target is not a formula cell");
-        }
-
-        existing_store->second.set_cell(
-            rewrite.position.row,
-            rewrite.position.column,
-            formula_cell_value_with_existing_style(
-                *source_record, rewrite.formula_text));
-    }
-}
-
 void apply_materialized_formula_rewrites(
     MaterializedWorksheetSessionRegistry& materialized_sessions,
     const std::vector<MaterializedFormulaRewrite>& planned_rewrites)
@@ -179,15 +146,25 @@ WorkbookEditorSheetRenameResult rename_workbook_editor_sheet(
         sheet_catalog.source_name_for_current(old_name_key);
     const std::vector<FormulaSheetReferenceRewrite> formula_rewrites =
         sheet_rename_formula_rewrites(old_name_key, new_name_key, source_name);
+    WorkbookEditorSheetRenameResult result {old_name_key, new_name_key};
 
     validate_workbook_editor_sheet_rename_preflight(materialized_sessions, old_name_key);
 
+    WorkbookEditorSheetCatalogPlan updated_sheet_catalog = sheet_catalog;
+    WorkbookEditorPendingSheetDataPayloads updated_pending_payloads = pending_payloads;
+    record_workbook_editor_sheet_rename_state(
+        updated_sheet_catalog, updated_pending_payloads, old_name_key, new_name_key);
+
     std::vector<MaterializedFormulaRewrite> materialized_formula_rewrites;
+    std::optional<MaterializedWorksheetSessionRegistry> updated_materialized_sessions;
     if (rewrites_materialized_worksheet_formulas(options.formula_policy)) {
         materialized_formula_rewrites =
             collect_materialized_formula_rewrites(materialized_sessions, formula_rewrites);
-        preflight_materialized_formula_rewrites(
-            materialized_sessions, materialized_formula_rewrites);
+        if (!materialized_formula_rewrites.empty()) {
+            updated_materialized_sessions.emplace(materialized_sessions);
+            apply_materialized_formula_rewrites(
+                *updated_materialized_sessions, materialized_formula_rewrites);
+        }
     }
 
     SheetCatalogRenameOptions catalog_options;
@@ -198,11 +175,20 @@ WorkbookEditorSheetRenameResult rename_workbook_editor_sheet(
     }
     editor.rename_sheet_catalog_entry(
         old_name_key, std::move(new_name), ReferencePolicy {}, catalog_options);
-    record_workbook_editor_sheet_rename_state(
-        sheet_catalog, pending_payloads, old_name_key, new_name_key);
-    apply_materialized_formula_rewrites(materialized_sessions, materialized_formula_rewrites);
 
-    return WorkbookEditorSheetRenameResult {old_name_key, new_name_key};
+    static_assert(std::is_nothrow_swappable_v<WorkbookEditorSheetCatalogPlan>);
+    static_assert(std::is_nothrow_swappable_v<WorkbookEditorPendingSheetDataPayloads>);
+    static_assert(std::is_nothrow_swappable_v<MaterializedWorksheetSessionRegistry>);
+    static_assert(std::is_nothrow_move_constructible_v<WorkbookEditorSheetRenameResult>);
+
+    using std::swap;
+    swap(sheet_catalog, updated_sheet_catalog);
+    swap(pending_payloads, updated_pending_payloads);
+    if (updated_materialized_sessions.has_value()) {
+        swap(materialized_sessions, *updated_materialized_sessions);
+    }
+
+    return result;
 }
 
 } // namespace fastxlsx::detail

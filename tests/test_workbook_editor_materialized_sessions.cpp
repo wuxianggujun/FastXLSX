@@ -1991,6 +1991,30 @@ std::filesystem::path write_two_sheet_source_with_stationary_formula(std::string
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_styled_stationary_formula(
+    std::string_view name, fastxlsx::StyleId& formula_style)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    formula_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::formula("B1+B2").with_style(formula_style),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("row2-gap-a2"),
+            fastxlsx::CellView::text("styled-ref-b2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_custom_stationary_formula(
     std::string_view name, std::string_view formula_text)
 {
@@ -3477,6 +3501,129 @@ void test_public_worksheet_editor_insert_rows_rewrites_stationary_formula()
         "public stationary formula insert_rows save should clear dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "public stationary formula insert_rows save should clear dirty materialized memory");
+}
+
+void test_public_worksheet_editor_stationary_formula_rewrite_preserves_style_id()
+{
+    fastxlsx::StyleId formula_style;
+    const std::filesystem::path source =
+        write_two_sheet_source_with_styled_stationary_formula(
+            "fastxlsx-workbook-editor-materialized-styled-stationary-formula-source.xlsx",
+            formula_style);
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-styled-stationary-formula-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-materialized-styled-stationary-formula-noop.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public styled stationary formula insert_rows should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public styled stationary formula insert_rows should dirty the borrowed handle");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public styled stationary formula insert_rows should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public styled stationary formula insert_rows should report projected materialized count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public styled stationary formula insert_rows should report projected memory");
+    check(projected_cell_count == 4,
+        "public styled stationary formula insert_rows should preserve sparse record count");
+
+    const fastxlsx::CellValue stationary_formula = sheet.get_cell("A1");
+    check(stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            stationary_formula.text_value() == "B1+B3" &&
+            stationary_formula.has_style() &&
+            stationary_formula.style_id().value() == formula_style.value(),
+        "public styled stationary formula insert_rows should rewrite formula and keep style id");
+    check(sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A3").text_value() == "row2-gap-a2" &&
+            sheet.get_cell("B3").text_value() == "styled-ref-b2",
+        "public styled stationary formula insert_rows should shift referenced source cells");
+    check(!sheet.try_cell("A2").has_value() && !sheet.try_cell("B2").has_value(),
+        "public styled stationary formula insert_rows should leave inserted row gaps empty");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+    check(row_one.size() == 2 &&
+            row_one[0].reference.row == 1 &&
+            row_one[0].reference.column == 1 &&
+            row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            row_one[0].value.text_value() == "B1+B3" &&
+            row_one[0].value.has_style() &&
+            row_one[0].value.style_id().value() == formula_style.value() &&
+            row_one[1].reference.row == 1 &&
+            row_one[1].reference.column == 2 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            row_one[1].value.number_value() == 1.0,
+        "public styled stationary formula insert_rows should expose style id in row snapshot");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_one = sheet.column_cells(1);
+    check(column_one.size() == 2 &&
+            column_one[0].reference.row == 1 &&
+            column_one[0].reference.column == 1 &&
+            column_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            column_one[0].value.text_value() == "B1+B3" &&
+            column_one[0].value.has_style() &&
+            column_one[0].value.style_id().value() == formula_style.value() &&
+            column_one[1].reference.row == 3 &&
+            column_one[1].reference.column == 1 &&
+            column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_one[1].value.text_value() == "row2-gap-a2",
+        "public styled stationary formula insert_rows should expose style id in column snapshot");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public styled stationary formula insert_rows save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_formula_xml =
+        std::string(R"(<c r="A1" s=")") + std::to_string(formula_style.value())
+        + R"("><f>B1+B3</f></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+        "public styled stationary formula insert_rows save should persist projected bounds");
+    check_contains(worksheet_xml, styled_formula_xml,
+        "public styled stationary formula insert_rows save should persist formula style id");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "public styled stationary formula insert_rows save should persist source number");
+    check_contains(worksheet_xml,
+        R"(<c r="B3" t="inlineStr"><is><t>styled-ref-b2</t></is></c>)",
+        "public styled stationary formula insert_rows save should persist shifted source text");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "public styled stationary formula insert_rows save should omit inserted A2 gap");
+    check_not_contains(worksheet_xml, R"(r="B2")",
+        "public styled stationary formula insert_rows save should omit inserted B2 gap");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public styled stationary formula insert_rows save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public styled stationary formula insert_rows save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public styled stationary formula insert_rows save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public styled stationary formula insert_rows save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public styled stationary formula insert_rows save should clear dirty materialized memory");
+
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("A1");
+    check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            reopened_formula.text_value() == "B1+B3" &&
+            reopened_formula.has_style() &&
+            reopened_formula.style_id().value() == formula_style.value(),
+        "public styled stationary formula insert_rows reopened output should keep formula style id");
+    reopened_editor.save_as(noop_output);
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "public styled stationary formula insert_rows no-op save should be byte-stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public styled stationary formula insert_rows no-op save should not mutate the source package");
 }
 
 void test_public_worksheet_editor_insert_shifts_skip_non_reference_formula_tokens()
@@ -6255,6 +6402,7 @@ int main()
         test_public_worksheet_editor_delete_rows_columns_translate_moved_formula();
         test_public_worksheet_editor_insert_columns_rewrites_stationary_formula();
         test_public_worksheet_editor_insert_rows_rewrites_stationary_formula();
+        test_public_worksheet_editor_stationary_formula_rewrite_preserves_style_id();
         test_public_worksheet_editor_insert_shifts_skip_non_reference_formula_tokens();
         test_public_worksheet_editor_delete_shifts_skip_non_reference_formula_tokens();
         test_public_worksheet_editor_insert_shifts_preserve_absolute_formula_markers();

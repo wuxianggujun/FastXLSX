@@ -937,6 +937,45 @@ void check_internal_materialized_session_save_state(
         label + " should preserve pending change count");
 }
 
+void check_internal_materialized_flush_failure_dirty_projection_state(
+    const fastxlsx::WorkbookEditor& editor,
+    std::string_view scenario)
+{
+    const std::string label = std::string(scenario);
+
+    check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_names(
+              editor) == std::vector<std::string>{"Data", "Ghost"},
+        label + " should preserve all internal dirty session names");
+    check(editor.has_pending_changes(),
+        label + " should keep save_as pending");
+    check(editor.pending_change_count() == 0,
+        label + " should not publish coarse public edit handoffs");
+    check(editor.pending_materialized_worksheet_names()
+              == std::vector<std::string>{"Data"},
+        label + " should expose only catalog-backed dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 5,
+        label + " should preserve aggregate dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() > 0,
+        label + " should preserve aggregate dirty materialized memory");
+
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+        editor.pending_worksheet_edits();
+    check(summaries.size() == 1,
+        label + " should expose one catalog-backed dirty summary");
+    if (summaries.size() == 1) {
+        const fastxlsx::WorkbookEditorWorksheetEditSummary& summary = summaries[0];
+        check(summary.source_name == "Data" &&
+                summary.planned_name == "Data" &&
+                !summary.renamed &&
+                !summary.sheet_data_replaced &&
+                !summary.targeted_cells_replaced &&
+                summary.materialized_dirty &&
+                summary.materialized_cell_count == 3 &&
+                summary.estimated_materialized_memory_usage > 0,
+            label + " should preserve only the valid Data dirty summary");
+    }
+}
+
 std::size_t check_public_two_clean_two_handle_clean_state(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& data,
@@ -3072,6 +3111,8 @@ void test_internal_materialized_session_flush_failure_preserves_dirty_state()
         "failed materialized flush should not queue coarse public edit diagnostics");
     check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 2,
         "failed materialized flush should preserve all dirty sessions");
+    check_internal_materialized_flush_failure_dirty_projection_state(
+        editor, "failed materialized flush");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "failed materialized flush should not mutate the source package");
 
@@ -3081,6 +3122,8 @@ void test_internal_materialized_session_flush_failure_preserves_dirty_state()
         "failed save_as auto-flush should not queue partial materialized diagnostics");
     check(fastxlsx::detail::testing_workbook_editor_dirty_materialized_session_count(editor) == 2,
         "failed save_as auto-flush should preserve all dirty sessions");
+    check_internal_materialized_flush_failure_dirty_projection_state(
+        editor, "failed save_as auto-flush");
     check(fastxlsx::test::read_zip_entries(source) == source_entries,
         "failed save_as auto-flush should not mutate the source package");
 }

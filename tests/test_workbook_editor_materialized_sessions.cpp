@@ -1922,6 +1922,29 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_shift_formula(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text("placeholder-a1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("placeholder-a2"),
+            fastxlsx::CellView::text("row2-gap-b2"),
+            fastxlsx::CellView::formula("A1+B1")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 // Writes a source workbook with document properties so patch tests can verify
 // that WorkbookEditor preserves docProps bytes through save_as().
 std::filesystem::path write_two_sheet_source_with_document_properties(std::string_view name)
@@ -2788,6 +2811,109 @@ void test_public_worksheet_editor_insert_rows_columns_project_sparse_state()
         "public insert row/column shift save should clear dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "public insert row/column shift save should clear dirty materialized memory");
+}
+
+void test_public_worksheet_editor_insert_rows_columns_translate_moved_formula()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source_with_shift_formula(
+            "fastxlsx-workbook-editor-materialized-insert-formula-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-insert-formula-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.insert_rows(2, 1);
+    sheet.insert_columns(2, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public insert formula shift should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public insert formula shift should dirty the borrowed handle");
+    check(editor.pending_change_count() == 0,
+        "public insert formula shift should not queue coarse edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public insert formula shift should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public insert formula shift should report projected materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public insert formula shift should report projected materialized memory");
+    check(projected_cell_count == 5,
+        "public insert formula shift should preserve sparse record count");
+
+    const fastxlsx::CellValue shifted_formula = sheet.get_cell("D3");
+    check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+            shifted_formula.text_value() == "B2+C2",
+        "public insert formula shift should translate moved formula references");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "row2-gap-b2",
+        "public insert formula shift should preserve shifted source cells");
+    check(!sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("C2").has_value(),
+        "public insert formula shift should leave gaps and old formula coordinate empty");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three = sheet.row_cells(3);
+    check(row_three.size() == 3 &&
+            row_three[0].reference.row == 3 &&
+            row_three[0].reference.column == 1 &&
+            row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[0].value.text_value() == "placeholder-a2" &&
+            row_three[1].reference.row == 3 &&
+            row_three[1].reference.column == 3 &&
+            row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[1].value.text_value() == "row2-gap-b2" &&
+            row_three[2].reference.row == 3 &&
+            row_three[2].reference.column == 4 &&
+            row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+            row_three[2].value.text_value() == "B2+C2",
+        "public insert formula shift should expose translated formula in row snapshots");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_four = sheet.column_cells(4);
+    check(column_four.size() == 1 &&
+            column_four[0].reference.row == 3 &&
+            column_four[0].reference.column == 4 &&
+            column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+            column_four[0].value.text_value() == "B2+C2",
+        "public insert formula shift should expose translated formula in column snapshots");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public insert formula shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D3"/>)",
+        "public insert formula shift save should persist projected bounds");
+    check_contains(worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "public insert formula shift save should persist shifted source number");
+    check_contains(worksheet_xml,
+        R"(<c r="D3"><f>B2+C2</f></c>)",
+        "public insert formula shift save should persist translated moved formula");
+    check_contains(worksheet_xml, "placeholder-a2",
+        "public insert formula shift save should persist shifted source text");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "public insert formula shift save should omit inserted column gap");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "public insert formula shift save should omit inserted row gap");
+    check_not_contains(worksheet_xml, R"(r="C2")",
+        "public insert formula shift save should omit old formula coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public insert formula shift save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public insert formula shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public insert formula shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public insert formula shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public insert formula shift save should clear dirty materialized memory");
 }
 
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
@@ -4187,6 +4313,7 @@ int main()
         test_public_worksheet_editor_shifted_state_survives_invalid_shift_recovery();
         test_public_worksheet_editor_delete_rows_columns_project_sparse_state();
         test_public_worksheet_editor_insert_rows_columns_project_sparse_state();
+        test_public_worksheet_editor_insert_rows_columns_translate_moved_formula();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

@@ -370,9 +370,12 @@ void test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirt
         "fastxlsx-workbook-editor-materialized-stage-multi-save-failure-output.xlsx");
     const std::filesystem::path noop_output = artifact(
         "fastxlsx-workbook-editor-materialized-stage-multi-save-failure-noop-output.xlsx");
+    const std::filesystem::path post_noop_output = artifact(
+        "fastxlsx-workbook-editor-materialized-stage-multi-save-failure-post-noop-output.xlsx");
     std::error_code remove_error;
     std::filesystem::remove(output, remove_error);
     std::filesystem::remove(noop_output, remove_error);
+    std::filesystem::remove(post_noop_output, remove_error);
 
     const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
 
@@ -477,6 +480,40 @@ void test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirt
         "multi-sheet staged failure retry no-op output should match retry output");
     check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
         "multi-sheet staged failure retry no-op save should leave source bytes unchanged");
+
+    data.set_cell(3, 3, fastxlsx::CellValue::text("post-noop-staged-save-failure"));
+    check(data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet staged failure retry post-noop edit should dirty only Data");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "multi-sheet staged failure retry post-noop edit should expose only Data dirty name");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "multi-sheet staged failure retry post-noop edit should create one unsaved change");
+
+    editor.save_as(post_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet staged failure retry post-noop save should clean both handles");
+    check(editor.pending_change_count() == 3,
+        "multi-sheet staged failure retry post-noop save should add one materialized handoff");
+    check(!editor.has_unsaved_changes() && editor.unsaved_change_count() == 0,
+        "multi-sheet staged failure retry post-noop save should advance the saved watermark");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_data_xml =
+        post_noop_entries.at("xl/worksheets/sheet1.xml");
+    const std::string post_noop_untouched_xml =
+        post_noop_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(post_noop_data_xml, "after-multi-staged-save-failure",
+        "multi-sheet staged failure retry post-noop output should keep retry Data value");
+    check_contains(post_noop_data_xml, "post-noop-staged-save-failure",
+        "multi-sheet staged failure retry post-noop output should include the follow-up Data edit");
+    check_not_contains(post_noop_data_xml, "before-multi-staged-save-failure",
+        "multi-sheet staged failure retry post-noop output should not revive stale Data value");
+    check_contains(post_noop_untouched_xml, "untouched-multi-staged-save-failure",
+        "multi-sheet staged failure retry post-noop output should preserve Untouched value");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "multi-sheet staged failure retry post-noop save should leave noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet staged failure retry post-noop save should leave source bytes unchanged");
 }
 
 void test_successful_save_as_preserves_public_facade_state()

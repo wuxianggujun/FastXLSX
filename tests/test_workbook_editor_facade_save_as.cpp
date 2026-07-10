@@ -368,8 +368,11 @@ void test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirt
         "fastxlsx-workbook-editor-materialized-stage-multi-save-failure-source.xlsx");
     const std::filesystem::path output = artifact(
         "fastxlsx-workbook-editor-materialized-stage-multi-save-failure-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-materialized-stage-multi-save-failure-noop-output.xlsx");
     std::error_code remove_error;
     std::filesystem::remove(output, remove_error);
+    std::filesystem::remove(noop_output, remove_error);
 
     const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
 
@@ -451,6 +454,29 @@ void test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirt
     check(reopened_untouched_b1.kind() == fastxlsx::CellValueKind::Text &&
             reopened_untouched_b1.text_value() == "untouched-multi-staged-save-failure",
         "multi-sheet staged failure retry reopened output should expose Untouched value");
+
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet staged failure retry no-op save should keep handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet staged failure retry no-op save should not add another handoff");
+    check(!editor.has_unsaved_changes() && editor.unsaved_change_count() == 0,
+        "multi-sheet staged failure retry no-op save should keep the saved watermark");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet staged failure retry no-op save should keep materialized diagnostics clean");
+    check_workbook_editor_public_save_state_preserved(
+        editor,
+        save_state_before_noop,
+        "multi-sheet staged failure retry no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "multi-sheet staged failure retry no-op output should match retry output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet staged failure retry no-op save should leave source bytes unchanged");
 }
 
 void test_successful_save_as_preserves_public_facade_state()

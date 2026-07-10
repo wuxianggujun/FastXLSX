@@ -2548,6 +2548,81 @@ void test_public_worksheet_editor_zero_count_shifts_clear_diagnostics_preserve_s
         "zero-count public shift save should clear dirty materialized memory");
 }
 
+void test_public_worksheet_editor_clean_disjoint_shifts_clear_diagnostics_preserve_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-materialized-clean-disjoint-shifts-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-clean-disjoint-shifts-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    const std::size_t clean_cell_count = sheet.cell_count();
+    const std::size_t clean_memory = sheet.estimated_memory_usage();
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid"));
+    }), "clean disjoint public shift setup should record a clean-session diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "clean disjoint public shift setup should expose the clean-session diagnostic");
+
+    sheet.insert_rows(10, 1);
+    sheet.delete_rows(10, 1);
+    sheet.insert_columns(10, 1);
+    sheet.delete_columns(10, 1);
+
+    check(!editor.last_edit_error().has_value(),
+        "clean disjoint public shifts should clear clean-session diagnostics");
+    check(!editor.has_pending_changes(),
+        "clean disjoint public shifts should keep the editor clean");
+    check(!sheet.has_pending_changes(),
+        "clean disjoint public shifts should keep the borrowed handle clean");
+    check(editor.pending_change_count() == 0,
+        "clean disjoint public shifts should not queue coarse public edits");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean disjoint public shifts should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean disjoint public shifts should not expose dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean disjoint public shifts should not expose dirty materialized memory");
+    check(sheet.cell_count() == clean_cell_count,
+        "clean disjoint public shifts should preserve sparse count");
+    check(sheet.estimated_memory_usage() == clean_memory,
+        "clean disjoint public shifts should preserve sparse memory");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text &&
+            a1->text_value() == "placeholder-a1",
+        "clean disjoint public shifts should preserve A1");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Number &&
+            b1->number_value() == 1.0,
+        "clean disjoint public shifts should preserve B1");
+    check(a2.has_value() && a2->kind() == fastxlsx::CellValueKind::Text &&
+            a2->text_value() == "placeholder-a2",
+        "clean disjoint public shifts should preserve A2");
+    check(!sheet.try_cell("A10").has_value() && !sheet.try_cell("J1").has_value(),
+        "clean disjoint public shifts should not synthesize edge cells");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "clean disjoint public shift save should be a source roundtrip");
+    check(!sheet.has_pending_changes(),
+        "clean disjoint public shift save should keep the borrowed handle clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean disjoint public shift save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean disjoint public shift save should keep dirty materialized cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean disjoint public shift save should keep dirty materialized memory empty");
+}
+
 void test_public_worksheet_editor_disjoint_shifts_clear_diagnostics_preserve_dirty_state()
 {
     const std::filesystem::path source =
@@ -7104,6 +7179,7 @@ int main()
 {
     try {
         test_public_worksheet_editor_zero_count_shifts_clear_diagnostics_preserve_state();
+        test_public_worksheet_editor_clean_disjoint_shifts_clear_diagnostics_preserve_state();
         test_public_worksheet_editor_disjoint_shifts_clear_diagnostics_preserve_dirty_state();
         test_public_worksheet_editor_boundary_shifts_clear_diagnostics_preserve_dirty_state();
         test_public_worksheet_editor_invalid_shifts_preserve_dirty_state_and_recover();

@@ -1991,6 +1991,29 @@ std::filesystem::path write_two_sheet_source_with_stationary_formula(std::string
     return path;
 }
 
+std::filesystem::path write_two_sheet_source_with_absolute_stationary_formula(
+    std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::formula("B$2+$B2+$B$2+B1"),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text("row2-gap-a2"),
+            fastxlsx::CellView::text("absolute-ref-b2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me"),
+            fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
 std::filesystem::path write_two_sheet_source_with_stationary_delete_formula(std::string_view name)
 {
     const std::filesystem::path path = artifact(name);
@@ -3308,6 +3331,199 @@ void test_public_worksheet_editor_insert_rows_rewrites_stationary_formula()
         "public stationary formula insert_rows save should clear dirty materialized cell count");
     check(editor.estimated_pending_materialized_memory_usage() == 0,
         "public stationary formula insert_rows save should clear dirty materialized memory");
+}
+
+void test_public_worksheet_editor_insert_shifts_preserve_absolute_formula_markers()
+{
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source_with_absolute_stationary_formula(
+                "fastxlsx-workbook-editor-materialized-absolute-row-formula-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-materialized-absolute-row-formula-output.xlsx");
+        const std::map<std::string, std::string> source_entries =
+            fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.insert_rows(2, 1);
+        const std::size_t projected_cell_count = sheet.cell_count();
+        const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+        check(!editor.last_edit_error().has_value(),
+            "public absolute formula insert_rows should leave diagnostics clear");
+        check(sheet.has_pending_changes(),
+            "public absolute formula insert_rows should dirty the borrowed handle");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            "public absolute formula insert_rows should keep dirty materialized names");
+        check(editor.pending_materialized_cell_count() == projected_cell_count,
+            "public absolute formula insert_rows should report projected materialized count");
+        check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+            "public absolute formula insert_rows should report projected memory");
+        check(projected_cell_count == 4,
+            "public absolute formula insert_rows should preserve sparse record count");
+
+        const fastxlsx::CellValue stationary_formula = sheet.get_cell("A1");
+        check(stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                stationary_formula.text_value() == "B$3+$B3+$B$3+B1",
+            "public absolute formula insert_rows should preserve absolute markers while moving rows");
+        check(sheet.get_cell("B1").number_value() == 1.0 &&
+                sheet.get_cell("A3").text_value() == "row2-gap-a2" &&
+                sheet.get_cell("B3").text_value() == "absolute-ref-b2",
+            "public absolute formula insert_rows should shift source cells");
+        check(!sheet.try_cell("A2").has_value() && !sheet.try_cell("B2").has_value(),
+            "public absolute formula insert_rows should keep inserted row gaps empty");
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+        check(row_one.size() == 2 &&
+                row_one[0].reference.row == 1 &&
+                row_one[0].reference.column == 1 &&
+                row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                row_one[0].value.text_value() == "B$3+$B3+$B$3+B1" &&
+                row_one[1].reference.row == 1 &&
+                row_one[1].reference.column == 2 &&
+                row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                row_one[1].value.number_value() == 1.0,
+            "public absolute formula insert_rows should expose rewritten formula in row snapshot");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_two = sheet.column_cells(2);
+        check(column_two.size() == 2 &&
+                column_two[0].reference.row == 1 &&
+                column_two[0].reference.column == 2 &&
+                column_two[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                column_two[0].value.number_value() == 1.0 &&
+                column_two[1].reference.row == 3 &&
+                column_two[1].reference.column == 2 &&
+                column_two[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_two[1].value.text_value() == "absolute-ref-b2",
+            "public absolute formula insert_rows should expose shifted reference column snapshot");
+
+        editor.save_as(output);
+        const std::map<std::string, std::string> output_entries =
+            fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "public absolute formula insert_rows save should not mutate the source package");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:B3"/>)",
+            "public absolute formula insert_rows save should persist projected bounds");
+        check_contains(worksheet_xml,
+            R"(<c r="A1"><f>B$3+$B3+$B$3+B1</f></c>)",
+            "public absolute formula insert_rows save should persist rewritten formula");
+        check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+            "public absolute formula insert_rows save should persist source number");
+        check_contains(worksheet_xml,
+            R"(<c r="B3" t="inlineStr"><is><t>absolute-ref-b2</t></is></c>)",
+            "public absolute formula insert_rows save should persist shifted source text");
+        check_not_contains(worksheet_xml, R"(r="A2")",
+            "public absolute formula insert_rows save should omit inserted A2 gap");
+        check_not_contains(worksheet_xml, R"(r="B2")",
+            "public absolute formula insert_rows save should omit inserted B2 gap");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "public absolute formula insert_rows save should preserve untouched worksheets");
+        check(!sheet.has_pending_changes(),
+            "public absolute formula insert_rows save should clean the borrowed handle");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "public absolute formula insert_rows save should clear dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "public absolute formula insert_rows save should clear dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "public absolute formula insert_rows save should clear dirty materialized memory");
+    }
+
+    {
+        const std::filesystem::path source =
+            write_two_sheet_source_with_absolute_stationary_formula(
+                "fastxlsx-workbook-editor-materialized-absolute-column-formula-source.xlsx");
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-materialized-absolute-column-formula-output.xlsx");
+        const std::map<std::string, std::string> source_entries =
+            fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.insert_columns(2, 1);
+        const std::size_t projected_cell_count = sheet.cell_count();
+        const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+        check(!editor.last_edit_error().has_value(),
+            "public absolute formula insert_columns should leave diagnostics clear");
+        check(sheet.has_pending_changes(),
+            "public absolute formula insert_columns should dirty the borrowed handle");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            "public absolute formula insert_columns should keep dirty materialized names");
+        check(editor.pending_materialized_cell_count() == projected_cell_count,
+            "public absolute formula insert_columns should report projected materialized count");
+        check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+            "public absolute formula insert_columns should report projected memory");
+        check(projected_cell_count == 4,
+            "public absolute formula insert_columns should preserve sparse record count");
+
+        const fastxlsx::CellValue stationary_formula = sheet.get_cell("A1");
+        check(stationary_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                stationary_formula.text_value() == "C$2+$C2+$C$2+C1",
+            "public absolute formula insert_columns should preserve absolute markers while moving columns");
+        check(sheet.get_cell("C1").number_value() == 1.0 &&
+                sheet.get_cell("A2").text_value() == "row2-gap-a2" &&
+                sheet.get_cell("C2").text_value() == "absolute-ref-b2",
+            "public absolute formula insert_columns should shift source cells");
+        check(!sheet.try_cell("B1").has_value() && !sheet.try_cell("B2").has_value(),
+            "public absolute formula insert_columns should keep inserted column gaps empty");
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+        check(row_one.size() == 2 &&
+                row_one[0].reference.row == 1 &&
+                row_one[0].reference.column == 1 &&
+                row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                row_one[0].value.text_value() == "C$2+$C2+$C$2+C1" &&
+                row_one[1].reference.row == 1 &&
+                row_one[1].reference.column == 3 &&
+                row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                row_one[1].value.number_value() == 1.0,
+            "public absolute formula insert_columns should expose rewritten formula in row snapshot");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_three = sheet.column_cells(3);
+        check(column_three.size() == 2 &&
+                column_three[0].reference.row == 1 &&
+                column_three[0].reference.column == 3 &&
+                column_three[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                column_three[0].value.number_value() == 1.0 &&
+                column_three[1].reference.row == 2 &&
+                column_three[1].reference.column == 3 &&
+                column_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_three[1].value.text_value() == "absolute-ref-b2",
+            "public absolute formula insert_columns should expose shifted reference column snapshot");
+
+        editor.save_as(output);
+        const std::map<std::string, std::string> output_entries =
+            fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "public absolute formula insert_columns save should not mutate the source package");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+            "public absolute formula insert_columns save should persist projected bounds");
+        check_contains(worksheet_xml,
+            R"(<c r="A1"><f>C$2+$C2+$C$2+C1</f></c>)",
+            "public absolute formula insert_columns save should persist rewritten formula");
+        check_contains(worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+            "public absolute formula insert_columns save should persist shifted source number");
+        check_contains(worksheet_xml,
+            R"(<c r="C2" t="inlineStr"><is><t>absolute-ref-b2</t></is></c>)",
+            "public absolute formula insert_columns save should persist shifted source text");
+        check_not_contains(worksheet_xml, R"(r="B1")",
+            "public absolute formula insert_columns save should omit inserted B1 gap");
+        check_not_contains(worksheet_xml, R"(r="B2")",
+            "public absolute formula insert_columns save should omit inserted B2 gap");
+        check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+            "public absolute formula insert_columns save should preserve untouched worksheets");
+        check(!sheet.has_pending_changes(),
+            "public absolute formula insert_columns save should clean the borrowed handle");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "public absolute formula insert_columns save should clear dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "public absolute formula insert_columns save should clear dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "public absolute formula insert_columns save should clear dirty materialized memory");
+    }
 }
 
 void test_public_worksheet_editor_delete_rows_rewrites_stationary_formula()
@@ -4915,6 +5131,7 @@ int main()
         test_public_worksheet_editor_delete_rows_columns_translate_moved_formula();
         test_public_worksheet_editor_insert_columns_rewrites_stationary_formula();
         test_public_worksheet_editor_insert_rows_rewrites_stationary_formula();
+        test_public_worksheet_editor_insert_shifts_preserve_absolute_formula_markers();
         test_public_worksheet_editor_delete_rows_rewrites_stationary_formula();
         test_public_worksheet_editor_delete_columns_rewrites_stationary_formula();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();

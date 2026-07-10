@@ -1,5 +1,126 @@
 #include "test_package_editor_preservation_removal_common.hpp"
 
+class ScopedPackageEditorPartRemovalStagedHook {
+public:
+    explicit ScopedPackageEditorPartRemovalStagedHook(
+        fastxlsx::detail::PackageEditorPartRemovalStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_part_removal_staged_hook(hook);
+    }
+
+    ~ScopedPackageEditorPartRemovalStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_part_removal_staged_hook(nullptr);
+    }
+
+    ScopedPackageEditorPartRemovalStagedHook(
+        const ScopedPackageEditorPartRemovalStagedHook&) = delete;
+    ScopedPackageEditorPartRemovalStagedHook& operator=(
+        const ScopedPackageEditorPartRemovalStagedHook&) = delete;
+};
+
+void fail_package_editor_part_removal_after_staging()
+{
+    throw std::runtime_error("injected part removal commit failure");
+}
+
+void test_package_editor_part_removal_staging_failure_preserves_prior_plan_and_retries()
+{
+    const LinkedObjectSourcePackage source = write_linked_object_source_package(
+        "fastxlsx-package-editor-remove-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-remove-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-remove-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName table_part("/xl/tables/table1.xml");
+    const std::string prior_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="Queued" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(</workbook>)";
+    const std::string prior_table =
+        R"(<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" )"
+        R"(id="7" name="QueuedTable" displayName="QueuedTable" ref="A1:B2"/>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, prior_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "prior workbook replacement before injected part removal failure");
+    replace_part_with_memory_chunks(editor, table_part, prior_table,
+        "prior table replacement before injected part removal failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorPartRemovalStagedHook hook(
+            fail_package_editor_part_removal_after_staging);
+        try {
+            editor.remove_part(table_part,
+                "table removal with injected commit failure");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "injected part removal commit failure",
+                "part removal staged failure should preserve injected context");
+        }
+    }
+    check(failed, "PackageEditor should surface injected part removal staging failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "part removal staging failure should preserve prior edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "part removal staging failure should preserve prior notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "part removal staging failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "part removal staging failure should preserve removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "part removal staging failure should preserve omitted-entry audits");
+    check(editor.edit_plan().find_part(table_part) != nullptr,
+        "part removal staging failure should preserve the prior table replacement");
+    check(editor.edit_plan().find_removed_part(table_part) == nullptr,
+        "part removal staging failure should not publish table removal audit");
+    check(editor.manifest().find_part(table_part) != nullptr,
+        "part removal staging failure should preserve table manifest state");
+    check(editor.manifest().content_types().override_for(table_part) != nullptr,
+        "part removal staging failure should preserve table content type");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check(failed_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "part removal staging failure should preserve prior workbook replacement");
+    check(failed_reader.read_entry("xl/tables/table1.xml") == prior_table,
+        "part removal staging failure should preserve prior table replacement");
+    check(failed_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "part removal staging failure should preserve content types bytes");
+    check(failed_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "part removal staging failure should preserve inbound worksheet relationships");
+
+    editor.remove_part(table_part, "table removal retry after staged failure");
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check(retry_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "part removal retry should preserve prior workbook replacement");
+    check(retry_reader.find_entry("xl/tables/table1.xml") == nullptr,
+        "part removal retry should omit the target table part");
+    check(retry_reader.content_types().override_for(table_part) == nullptr,
+        "part removal retry should remove the table content type override");
+    check(retry_reader.read_entry("xl/worksheets/_rels/sheet1.xml.rels")
+            == source.worksheet_relationships,
+        "part removal retry should preserve audited inbound worksheet relationships");
+}
+
 void test_package_editor_removes_unknown_extension_and_omits_owner_relationships()
 {
     const LinkedObjectSourcePackage source =
@@ -1119,6 +1240,7 @@ int main(int argc, char* argv[])
         std::cout << "fastxlsx.package_editor preservation removal shard: " << shard << '\n';
 
         if (should_run_package_editor_shard(shard, "preservation-removal")) {
+            test_package_editor_part_removal_staging_failure_preserves_prior_plan_and_retries();
             test_package_editor_removes_unknown_extension_and_omits_owner_relationships();
             test_package_editor_removes_workbook_and_preserves_package_links();
             test_package_editor_removes_worksheet_and_preserves_workbook_links();

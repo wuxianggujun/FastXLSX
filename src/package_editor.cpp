@@ -4852,6 +4852,12 @@ package_editor_document_properties_staged_hook() noexcept
     return hook;
 }
 
+PackageEditorPartRemovalStagedHook& package_editor_part_removal_staged_hook() noexcept
+{
+    static PackageEditorPartRemovalStagedHook hook = nullptr;
+    return hook;
+}
+
 void run_package_editor_source_copy_temp_files_hook(
     std::span<const std::filesystem::path> temporary_source_files)
 {
@@ -4877,6 +4883,13 @@ void run_package_editor_sheet_rename_staged_hook()
 void run_package_editor_document_properties_staged_hook()
 {
     if (auto hook = package_editor_document_properties_staged_hook(); hook != nullptr) {
+        hook();
+    }
+}
+
+void run_package_editor_part_removal_staged_hook()
+{
+    if (auto hook = package_editor_part_removal_staged_hook(); hook != nullptr) {
         hook();
     }
 }
@@ -6484,6 +6497,10 @@ void PackageEditor::remove_part(
     reject_part_removal_inbound_relationships_by_policy(removal_plan, part_name, policy);
 
     PackageManifest updated_manifest = manifest_;
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
     const bool rewrite_content_types =
         updated_manifest.content_types().override_for(part_name) != nullptr;
     const bool removed_manifest_state = updated_manifest.remove_part(part_name);
@@ -6491,23 +6508,29 @@ void PackageEditor::remove_part(
         throw FastXlsxError("part removal did not update package manifest state");
     }
 
-    merge_removed_part_audit(edit_plan_, removal_plan, part_name);
+    merge_removed_part_audit(updated_edit_plan, removal_plan, part_name);
     for (const std::string& note : removal_plan.notes()) {
-        edit_plan_.add_note(note);
+        updated_edit_plan.add_note(note);
     }
 
-    stage_part_removal_entries(edit_plan_, replacements_, entry_replacements_,
-        omitted_entries_, reader_, part_name);
+    stage_part_removal_entries(updated_edit_plan, updated_replacements,
+        updated_entry_replacements, updated_omitted_entries, reader_, part_name);
 
     if (rewrite_content_types) {
-        upsert_entry_replacement(reader_, entry_replacements_, "[Content_Types].xml",
+        upsert_entry_replacement(reader_, updated_entry_replacements, "[Content_Types].xml",
             serialize_content_types(updated_manifest.content_types()));
-        edit_plan_.set_package_entry("[Content_Types].xml", PartWriteMode::LocalDomRewrite,
-            "content types updated for explicit part removal",
+        updated_edit_plan.set_package_entry("[Content_Types].xml",
+            PartWriteMode::LocalDomRewrite, "content types updated for explicit part removal",
             PackageEntryAuditKind::ContentTypes);
     }
 
-    manifest_ = std::move(updated_manifest);
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_part_removal_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
 void PackageEditor::replace_worksheet_part_from_chunk_source(PartName worksheet_part,
@@ -7788,6 +7811,12 @@ void testing_set_package_editor_document_properties_staged_hook(
     PackageEditorDocumentPropertiesStagedHook hook) noexcept
 {
     package_editor_document_properties_staged_hook() = hook;
+}
+
+void testing_set_package_editor_part_removal_staged_hook(
+    PackageEditorPartRemovalStagedHook hook) noexcept
+{
+    package_editor_part_removal_staged_hook() = hook;
 }
 #endif
 

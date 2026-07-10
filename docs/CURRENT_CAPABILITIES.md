@@ -60,6 +60,7 @@
 - worksheet transformer/event reader、`CellStore`、materialized session registry。
 - package-entry chunk/file-backed helpers 和测试 hook。
 - Internal `PackageEditor::set_document_properties()` 支持 core/app docProps 与相关 content types/root relationships 的窄事务式 rewrite；它不是 `WorkbookEditor` public API。
+- Internal `PackageEditor::remove_part()` 对 edit plan、part/entry replacements、omitted entries、content types 和 manifest 使用事务式 staging；默认只审计并保留 inbound relationships，不是 public 对象删除 API 或自动 orphan cleanup。
 
 文档只能在明确的 internal/architecture 语境提及它们。
 

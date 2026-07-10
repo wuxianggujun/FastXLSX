@@ -190,6 +190,10 @@ using PackageEditorDocumentPropertiesStagedHook = void (*)();
 void testing_set_package_editor_document_properties_staged_hook(
     PackageEditorDocumentPropertiesStagedHook hook) noexcept;
 
+using PackageEditorPartRemovalStagedHook = void (*)();
+void testing_set_package_editor_part_removal_staged_hook(
+    PackageEditorPartRemovalStagedHook hook) noexcept;
+
 struct ReplacementCellPayloadScannerTestResult {
     std::size_t start_tag_count = 0;
     std::size_t formula_tag_count = 0;

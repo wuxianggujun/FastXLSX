@@ -32,6 +32,7 @@
 - Source ZIP entry bytes 或语义结构按策略保留。
 - Relationship target、type、target mode 和 content type 没有意外变化。
 - 删除或替换操作不会留下明显 dangling relationship/orphan part；未实现自动清理时应 audit/fail。
+- 跨 edit plan、replacement、omitted entry、content type 和 manifest 的 mutation 必须先 staging；提交前失败保持调用前输出计划并允许 retry。
 - 失败不会增加 pending edit、污染 catalog 或破坏后续 safe save。
 - No-op `save_as()` 后可重新打开，并保持未修改对象。
 - Preservation fixture 只作为回归证据，不进入 public API 示例。

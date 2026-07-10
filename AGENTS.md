@@ -22,7 +22,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 - `WorksheetEditorOptions` 默认 `RejectKnownLosses`；rich/phonetic/extension、formula metadata、cached result 等已知损失抛 `WorksheetMaterializationError`，提供稳定 category 与 worksheet/cell/sharedStrings context。只有显式 `AllowLossyProjection` 才能拍平，且 policy 是 session identity 的一部分。
 - In-memory 是 small-file sparse random editing，不是 large-file low-memory random editing。
 - Patch 默认 copy-original；unknown part 默认保留；existing-file 功能必须写清 preserve/audit/fail/edit。
-- Calc metadata、sheet rename、internal document-properties 与 internal part removal 联动必须先在 plan/replacements/omitted entries/manifest/public diagnostics 副本完成，再以 noexcept commit 发布；提交前失败保留调用前状态并可重试。
+- Calc metadata、sheet rename、internal document-properties、internal part removal 与 materialized small-part replacement 联动必须先在 plan/replacements/omitted entries/manifest/public diagnostics 副本完成，再以 noexcept commit 发布；提交前失败保留调用前状态并可重试。
 - 公式不求值、不生成 cached value、不完整重建 calcChain。
 - `replace_image()` 只替换已有 media bytes；`add_image()` 是 new-workbook insertion，均不是完整 drawing 编辑。
 - `FASTXLSX_ENABLE_IMAGES=OFF` 不需要 stb，public image symbol 调用抛错，`FASTXLSX_HAS_IMAGES=0` 传播给 consumer。

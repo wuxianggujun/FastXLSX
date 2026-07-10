@@ -194,6 +194,10 @@ using PackageEditorPartRemovalStagedHook = void (*)();
 void testing_set_package_editor_part_removal_staged_hook(
     PackageEditorPartRemovalStagedHook hook) noexcept;
 
+using PackageEditorMaterializedPartReplacementStagedHook = void (*)();
+void testing_set_package_editor_materialized_part_replacement_staged_hook(
+    PackageEditorMaterializedPartReplacementStagedHook hook) noexcept;
+
 struct ReplacementCellPayloadScannerTestResult {
     std::size_t start_tag_count = 0;
     std::size_t formula_tag_count = 0;

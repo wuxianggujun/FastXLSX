@@ -19,9 +19,35 @@ public:
         const ScopedPackageEditorDocumentPropertiesStagedHook&) = delete;
 };
 
+class ScopedPackageEditorMaterializedPartReplacementStagedHook {
+public:
+    explicit ScopedPackageEditorMaterializedPartReplacementStagedHook(
+        fastxlsx::detail::PackageEditorMaterializedPartReplacementStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_materialized_part_replacement_staged_hook(
+            hook);
+    }
+
+    ~ScopedPackageEditorMaterializedPartReplacementStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_materialized_part_replacement_staged_hook(
+            nullptr);
+    }
+
+    ScopedPackageEditorMaterializedPartReplacementStagedHook(
+        const ScopedPackageEditorMaterializedPartReplacementStagedHook&) = delete;
+    ScopedPackageEditorMaterializedPartReplacementStagedHook& operator=(
+        const ScopedPackageEditorMaterializedPartReplacementStagedHook&) = delete;
+};
+
 void fail_package_editor_document_properties_after_staging()
 {
     throw std::runtime_error("injected document properties commit failure");
+}
+
+void fail_package_editor_materialized_part_replacement_after_staging()
+{
+    throw std::runtime_error("injected materialized part replacement commit failure");
 }
 
 void test_package_editor_repeated_part_replacement_updates_final_state()
@@ -1321,6 +1347,102 @@ void test_package_editor_document_properties_staging_failure_preserves_prior_pla
         "document properties retry should write app properties");
 }
 
+void test_package_editor_materialized_part_replacement_staging_failure_preserves_removal_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-part-replacement-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-part-replacement-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-part-replacement-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName core_part("/docProps/core.xml");
+    const std::string prior_workbook =
+        R"(<workbook><sheets><sheet name="Queued" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+    const std::string replacement_core =
+        R"(<cp:coreProperties><dc:creator>Retried Creator</dc:creator></cp:coreProperties>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, prior_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "prior workbook replacement before injected part replacement failure");
+    editor.remove_part(core_part,
+        "prior core removal before injected part replacement failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorMaterializedPartReplacementStagedHook hook(
+            fail_package_editor_materialized_part_replacement_after_staging);
+        try {
+            editor.replace_part(core_part, replacement_core,
+                fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+                "core replacement with injected commit failure");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "injected materialized part replacement commit failure",
+                "part replacement staged failure should preserve injected context");
+        }
+    }
+    check(failed,
+        "PackageEditor should surface injected materialized part replacement failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "part replacement staging failure should preserve prior edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "part replacement staging failure should preserve prior notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "part replacement staging failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "part replacement staging failure should preserve removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "part replacement staging failure should preserve omitted-entry audits");
+    check(editor.edit_plan().find_removed_part(core_part) != nullptr,
+        "part replacement staging failure should preserve prior core removal");
+    check(editor.edit_plan().find_part(core_part) == nullptr,
+        "part replacement staging failure should not publish core replacement");
+    check(editor.manifest().find_part(core_part) == nullptr,
+        "part replacement staging failure should preserve removed core manifest state");
+    check(editor.manifest().content_types().override_for(core_part) == nullptr,
+        "part replacement staging failure should preserve removed core content type");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check(failed_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "part replacement staging failure should preserve prior workbook replacement");
+    check(failed_reader.find_entry("docProps/core.xml") == nullptr,
+        "part replacement staging failure should preserve prior core omission");
+    check_not_contains(failed_reader.read_entry("[Content_Types].xml"),
+        "/docProps/core.xml",
+        "part replacement staging failure should preserve removed core content type output");
+
+    editor.replace_part(core_part, replacement_core,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "core replacement retry after staged failure");
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check(retry_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "part replacement retry should preserve prior workbook replacement");
+    check(retry_reader.read_entry("docProps/core.xml") == replacement_core,
+        "part replacement retry should write replacement core properties");
+    check(retry_reader.content_types().override_for(core_part) != nullptr,
+        "part replacement retry should restore the core content type override");
+    check(retry_reader.read_entry("_rels/.rels") == source.package_relationships,
+        "part replacement retry should preserve package relationships bytes");
+}
+
 } // namespace
 
 int main(int argc, char* argv[])
@@ -1342,6 +1464,7 @@ int main(int argc, char* argv[])
             test_package_editor_document_properties_app_relationship_failure_preserves_state();
             test_package_editor_combines_document_properties_and_worksheet_rewrite();
             test_package_editor_document_properties_staging_failure_preserves_prior_plan_and_retries();
+            test_package_editor_materialized_part_replacement_staging_failure_preserves_removal_and_retries();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

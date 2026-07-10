@@ -2671,6 +2671,125 @@ void test_public_worksheet_editor_delete_rows_columns_project_sparse_state()
         "public delete row/column shift save should clear dirty materialized memory");
 }
 
+void test_public_worksheet_editor_insert_rows_columns_project_sparse_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-materialized-insert-shifts-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-insert-shifts-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-c3"));
+    sheet.set_cell(2, 4, fastxlsx::CellValue::text("tail-d2"));
+
+    sheet.insert_rows(2, 1);
+    sheet.insert_columns(2, 1);
+    const std::size_t projected_cell_count = sheet.cell_count();
+    const std::size_t projected_memory = sheet.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "public insert row/column shifts should leave diagnostics clear");
+    check(sheet.has_pending_changes(),
+        "public insert row/column shifts should keep the handle dirty");
+    check(editor.pending_change_count() == 0,
+        "public insert row/column shifts should not queue coarse edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "public insert row/column shifts should keep dirty materialized names");
+    check(editor.pending_materialized_cell_count() == projected_cell_count,
+        "public insert row/column shifts should report projected materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == projected_memory,
+        "public insert row/column shifts should report projected materialized memory");
+    check(projected_cell_count == 5,
+        "public insert row/column shifts should preserve sparse record count");
+
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("C1").number_value() == 1.0 &&
+            sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+            sheet.get_cell("E3").text_value() == "tail-d2" &&
+            sheet.get_cell("D4").text_value() == "dirty-c3",
+        "public insert row/column shifts should project source and dirty cells");
+    check(!sheet.try_cell("B1").has_value() &&
+            !sheet.try_cell("A2").has_value() &&
+            !sheet.try_cell("C3").has_value() &&
+            !sheet.try_cell("D2").has_value(),
+        "public insert row/column shifts should leave inserted gaps and old coordinates empty");
+
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+    check(row_one.size() == 2 &&
+            row_one[0].reference.row == 1 &&
+            row_one[0].reference.column == 1 &&
+            row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_one[0].value.text_value() == "placeholder-a1" &&
+            row_one[1].reference.row == 1 &&
+            row_one[1].reference.column == 3 &&
+            row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+            row_one[1].value.number_value() == 1.0,
+        "public insert row/column shifts should preserve row one snapshot order");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three = sheet.row_cells(3);
+    check(row_three.size() == 2 &&
+            row_three[0].reference.row == 3 &&
+            row_three[0].reference.column == 1 &&
+            row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[0].value.text_value() == "placeholder-a2" &&
+            row_three[1].reference.row == 3 &&
+            row_three[1].reference.column == 5 &&
+            row_three[1].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[1].value.text_value() == "tail-d2",
+        "public insert row/column shifts should preserve shifted row snapshot order");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_four = sheet.column_cells(4);
+    check(column_four.size() == 1 &&
+            column_four[0].reference.row == 4 &&
+            column_four[0].reference.column == 4 &&
+            column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_four[0].value.text_value() == "dirty-c3",
+        "public insert row/column shifts should expose shifted dirty column snapshot");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "public insert row/column shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:E4"/>)",
+        "public insert row/column shift save should persist projected bounds");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>placeholder-a1</t></is></c>)",
+        "public insert row/column shift save should preserve source A1");
+    check_contains(worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "public insert row/column shift save should persist shifted source number");
+    check_contains(worksheet_xml,
+        R"(<c r="A3" t="inlineStr"><is><t>placeholder-a2</t></is></c>)",
+        "public insert row/column shift save should persist shifted source row");
+    check_contains(worksheet_xml,
+        R"(<c r="E3" t="inlineStr"><is><t>tail-d2</t></is></c>)",
+        "public insert row/column shift save should persist shifted tail text");
+    check_contains(worksheet_xml,
+        R"(<c r="D4" t="inlineStr"><is><t>dirty-c3</t></is></c>)",
+        "public insert row/column shift save should persist shifted dirty cell");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "public insert row/column shift save should omit inserted column gap");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "public insert row/column shift save should omit inserted row gap");
+    check_not_contains(worksheet_xml, R"(r="C3")",
+        "public insert row/column shift save should omit old dirty coordinate");
+    check_not_contains(worksheet_xml, R"(r="D2")",
+        "public insert row/column shift save should omit old tail coordinate");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "public insert row/column shift save should preserve untouched worksheets");
+    check(!sheet.has_pending_changes(),
+        "public insert row/column shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "public insert row/column shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "public insert row/column shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "public insert row/column shift save should clear dirty materialized memory");
+}
+
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
 {
     const std::filesystem::path source =
@@ -4067,6 +4186,7 @@ int main()
         test_public_worksheet_editor_invalid_shifts_preserve_dirty_state_and_recover();
         test_public_worksheet_editor_shifted_state_survives_invalid_shift_recovery();
         test_public_worksheet_editor_delete_rows_columns_project_sparse_state();
+        test_public_worksheet_editor_insert_rows_columns_project_sparse_state();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

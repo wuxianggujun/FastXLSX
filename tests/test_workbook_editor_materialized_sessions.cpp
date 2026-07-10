@@ -2216,6 +2216,110 @@ void test_public_worksheet_editor_disjoint_shifts_clear_diagnostics_preserve_dir
         "disjoint public shift save should clear dirty materialized memory");
 }
 
+void test_public_worksheet_editor_boundary_shifts_clear_diagnostics_preserve_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-materialized-boundary-shifts-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-boundary-shifts-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-c3"));
+    const std::size_t dirty_cell_count = sheet.cell_count();
+    const std::size_t dirty_memory = sheet.estimated_memory_usage();
+
+    check(threw_fastxlsx_error([&] { sheet.insert_rows(0, 1); }),
+        "boundary public shift setup should record a dirty-session diagnostic");
+    check(editor.last_edit_error().has_value(),
+        "boundary public shift setup should expose the dirty-session diagnostic");
+
+    sheet.insert_rows(1048576, 1);
+    sheet.delete_rows(1048576, 1);
+    sheet.insert_columns(16384, 1);
+    sheet.delete_columns(16384, 1);
+
+    check(!editor.last_edit_error().has_value(),
+        "boundary public shifts should clear dirty-session diagnostics");
+    check(sheet.has_pending_changes(),
+        "boundary public shifts should keep the dirty handle dirty");
+    check(editor.pending_change_count() == 0,
+        "boundary public shifts should not queue coarse public edits before save");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "boundary public shifts should preserve dirty materialized names");
+    check(editor.pending_materialized_cell_count() == dirty_cell_count,
+        "boundary public shifts should preserve dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "boundary public shifts should preserve dirty materialized memory");
+    check(sheet.cell_count() == dirty_cell_count,
+        "boundary public shifts should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "boundary public shifts should preserve sparse memory");
+
+    const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
+    const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+    const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
+    const std::optional<fastxlsx::CellValue> c3 = sheet.try_cell("C3");
+    check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text &&
+            a1->text_value() == "placeholder-a1",
+        "boundary public shifts should preserve A1");
+    check(b1.has_value() && b1->kind() == fastxlsx::CellValueKind::Number &&
+            b1->number_value() == 1.0,
+        "boundary public shifts should preserve B1");
+    check(a2.has_value() && a2->kind() == fastxlsx::CellValueKind::Text &&
+            a2->text_value() == "placeholder-a2",
+        "boundary public shifts should preserve A2");
+    check(c3.has_value() && c3->kind() == fastxlsx::CellValueKind::Text &&
+            c3->text_value() == "dirty-c3",
+        "boundary public shifts should preserve C3");
+    check(!sheet.try_cell("A1048576").has_value() &&
+            !sheet.try_cell("XFD1").has_value() &&
+            !sheet.try_cell("D4").has_value(),
+        "boundary public shifts should not synthesize edge or shifted cells");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> row_three = sheet.row_cells(3);
+    check(row_three.size() == 1 &&
+            row_three[0].reference.row == 3 &&
+            row_three[0].reference.column == 3 &&
+            row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            row_three[0].value.text_value() == "dirty-c3",
+        "boundary public shifts should preserve row_cells for the dirty row");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> column_three = sheet.column_cells(3);
+    check(column_three.size() == 1 &&
+            column_three[0].reference.row == 3 &&
+            column_three[0].reference.column == 3 &&
+            column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            column_three[0].value.text_value() == "dirty-c3",
+        "boundary public shifts should preserve column_cells for the dirty column");
+    check(sheet.row_cells(1048576).empty() && sheet.column_cells(16384).empty(),
+        "boundary public shifts should keep edge row and column snapshots empty");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "boundary public shift save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "dirty-c3",
+        "boundary public shift save should persist the dirty sparse cell");
+    check_not_contains(worksheet_xml, "A1048576",
+        "boundary public shift save should not persist row-edge coordinates");
+    check_not_contains(worksheet_xml, "XFD1",
+        "boundary public shift save should not persist column-edge coordinates");
+    check_not_contains(worksheet_xml, "D4",
+        "boundary public shift save should not persist shifted coordinates");
+    check(!sheet.has_pending_changes(),
+        "boundary public shift save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "boundary public shift save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "boundary public shift save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "boundary public shift save should clear dirty materialized memory");
+}
+
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
 {
     const std::filesystem::path source =
@@ -3608,6 +3712,7 @@ int main()
     try {
         test_public_worksheet_editor_zero_count_shifts_clear_diagnostics_preserve_state();
         test_public_worksheet_editor_disjoint_shifts_clear_diagnostics_preserve_dirty_state();
+        test_public_worksheet_editor_boundary_shifts_clear_diagnostics_preserve_dirty_state();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

@@ -2960,6 +2960,124 @@ void test_materialized_flush_multi_session_falls_back_to_inline_when_shared_stri
         "multi-session wrong sharedStrings content type flush no-op save should not mutate the source package");
 }
 
+void test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_relationships_are_duplicate()
+{
+    MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-duplicate-relationship-source.xlsx",
+            true);
+    std::map<std::string, std::string> entries =
+        read_stored_package_entries(source.path);
+    auto workbook_relationships =
+        entries.find("xl/_rels/workbook.xml.rels");
+    check(workbook_relationships != entries.end(),
+        "duplicate relationship source should contain workbook relationships");
+    const std::string relationship_end = R"(</Relationships>)";
+    const std::size_t insert_position =
+        workbook_relationships->second.find(relationship_end);
+    check(insert_position != std::string::npos,
+        "duplicate relationship source should contain a relationships root");
+    workbook_relationships->second.insert(insert_position,
+        R"(<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" Target="sharedStrings.xml"/>)");
+    fastxlsx::test::write_stored_zip_entries(source.path, entries);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("data <&> text"));
+    data.set_cell(1, 3, fastxlsx::CellValue::text("  data spaced  "));
+
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    other.set_cell(2, 2, fastxlsx::CellValue::text("other <&> text"));
+    other.set_cell(3, 3, fastxlsx::CellValue::text("  other spaced  "));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "multi-session duplicate sharedStrings relationships flush should report both worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "multi-session duplicate sharedStrings relationships flush should clear both sessions");
+    check(registry.dirty_session_count() == 0,
+        "multi-session duplicate sharedStrings relationships flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-duplicate-relationship-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-two-sheet-shared-duplicate-relationship-noop-output.xlsx");
+    editor.save_as(output);
+
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+    const std::string output_workbook_relationships =
+        read_stored_package_entry(output, "xl/_rels/workbook.xml.rels");
+
+    check(data_worksheet.find(R"(<dimension ref="A1:C1"/>)") != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should update Data dimensions");
+    check(data_worksheet.find(
+              R"(<c r="A1" t="inlineStr"><is><t>existing</t></is></c>)")
+            != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should inline existing Data text");
+    check(data_worksheet.find(
+              R"(<c r="B1" t="inlineStr"><is><t>data &lt;&amp;&gt; text</t></is></c>)")
+            != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should inline escaped Data text");
+    check(data_worksheet.find(
+              R"(<c r="C1" t="inlineStr"><is><t xml:space="preserve">  data spaced  </t></is></c>)")
+            != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should preserve Data whitespace inline");
+    check(data_worksheet.find(R"(t="s")") == std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should not write Data shared string indexes");
+
+    check(other_worksheet.find(R"(<dimension ref="A1:C3"/>)") != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should update Other dimensions");
+    check(other_worksheet.find(
+              R"(<c r="A1" t="inlineStr"><is><t>existing</t></is></c>)")
+            != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should inline existing Other text");
+    check(other_worksheet.find(
+              R"(<c r="B2" t="inlineStr"><is><t>other &lt;&amp;&gt; text</t></is></c>)")
+            != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should inline escaped Other text");
+    check(other_worksheet.find(
+              R"(<c r="C3" t="inlineStr"><is><t xml:space="preserve">  other spaced  </t></is></c>)")
+            != std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should preserve Other whitespace inline");
+    check(other_worksheet.find(R"(t="s")") == std::string::npos,
+        "multi-session duplicate sharedStrings relationships flush should not write Other shared string indexes");
+    check(shared_strings == source.shared_strings,
+        "multi-session duplicate sharedStrings relationships flush should preserve source sharedStrings bytes");
+    check(output_workbook_relationships == source_entries.at("xl/_rels/workbook.xml.rels"),
+        "multi-session duplicate sharedStrings relationships flush should not repair workbook relationships");
+    check_reopened_multi_session_unsupported_shared_strings_output(output);
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "multi-session duplicate sharedStrings relationships flush no-op save should keep output byte-stable",
+        "multi-session duplicate sharedStrings relationships flush no-op save should keep registry clean");
+    check_reopened_multi_session_unsupported_shared_strings_output(noop_output);
+    check(!data.dirty() && !other.dirty(),
+        "multi-session duplicate sharedStrings relationships flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "multi-session duplicate sharedStrings relationships flush no-op save should not mutate the source package");
+}
+
 void test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_part_is_missing()
 {
     MaterializedFlushTwoSheetSourcePackage source =
@@ -3106,6 +3224,7 @@ int main()
         test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_load_fails();
         test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_relationship_is_stale();
         test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_content_type_is_wrong();
+        test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_relationships_are_duplicate();
         test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_part_is_missing();
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';

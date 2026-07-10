@@ -3,7 +3,9 @@
 #include "workbook_editor_save_as_policy.hpp"
 #include "workbook_editor_sheet_data_replacement.hpp"
 #include "workbook_editor_sheet_rename.hpp"
+#include "workbook_editor_testing_hooks.hpp"
 #include "workbook_editor_image_edit.hpp"
+#include "cell_store_materialization_loss.hpp"
 #include "workbook_editor_state.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
@@ -129,7 +131,71 @@ workbook_editor_targeted_cell_replacements_from_materialized_cells(
     throw FastXlsxError("unknown CellPatchMissingCellPolicy");
 }
 
+[[nodiscard]] WorksheetMaterializationLossCategory public_materialization_loss_category(
+    detail::CellStoreMaterializationLossCategory category)
+{
+    switch (category) {
+    case detail::CellStoreMaterializationLossCategory::RichText:
+        return WorksheetMaterializationLossCategory::RichText;
+    case detail::CellStoreMaterializationLossCategory::PhoneticMetadata:
+        return WorksheetMaterializationLossCategory::PhoneticMetadata;
+    case detail::CellStoreMaterializationLossCategory::ExtensionMetadata:
+        return WorksheetMaterializationLossCategory::ExtensionMetadata;
+    case detail::CellStoreMaterializationLossCategory::FormulaMetadata:
+        return WorksheetMaterializationLossCategory::FormulaMetadata;
+    case detail::CellStoreMaterializationLossCategory::CachedFormulaResult:
+        return WorksheetMaterializationLossCategory::CachedFormulaResult;
+    }
+    throw FastXlsxError("unknown CellStoreMaterializationLossCategory");
+}
+
+[[nodiscard]] std::string_view materialization_loss_category_name(
+    WorksheetMaterializationLossCategory category)
+{
+    switch (category) {
+    case WorksheetMaterializationLossCategory::RichText:
+        return "rich text";
+    case WorksheetMaterializationLossCategory::PhoneticMetadata:
+        return "phonetic metadata";
+    case WorksheetMaterializationLossCategory::ExtensionMetadata:
+        return "extension metadata";
+    case WorksheetMaterializationLossCategory::FormulaMetadata:
+        return "formula metadata";
+    case WorksheetMaterializationLossCategory::CachedFormulaResult:
+        return "cached formula result";
+    }
+    throw FastXlsxError("unknown WorksheetMaterializationLossCategory");
+}
+
+[[nodiscard]] std::string worksheet_materialization_error_message(
+    const WorksheetMaterializationDiagnostic& diagnostic)
+{
+    std::string message = "WorksheetEditor strict materialization rejected ";
+    message += materialization_loss_category_name(diagnostic.category);
+    message += " in worksheet '" + diagnostic.worksheet_name + "' at row ";
+    message += std::to_string(diagnostic.row);
+    message += ", column " + std::to_string(diagnostic.column);
+    if (diagnostic.shared_string_index.has_value()) {
+        message += ", shared string index ";
+        message += std::to_string(*diagnostic.shared_string_index);
+    }
+    return message;
+}
+
 } // namespace
+
+WorksheetMaterializationError::WorksheetMaterializationError(
+    WorksheetMaterializationDiagnostic diagnostic)
+    : FastXlsxError(worksheet_materialization_error_message(diagnostic))
+    , diagnostic_(std::move(diagnostic))
+{
+}
+
+const WorksheetMaterializationDiagnostic&
+WorksheetMaterializationError::diagnostic() const noexcept
+{
+    return diagnostic_;
+}
 
 WorkbookEditor::WorkbookEditor() = default;
 
@@ -368,8 +434,18 @@ WorksheetEditor WorkbookEditor::worksheet(
 
     const detail::CellStoreOptions store_options =
         detail::workbook_editor_cell_store_options_from_worksheet_options(options);
-    impl_->materialized_sessions.materialize_from_workbook_sheet(
-        impl_->editor.reader(), std::string(sheet_name), *source_name, store_options);
+    try {
+        impl_->materialized_sessions.materialize_from_workbook_sheet(
+            impl_->editor.reader(), std::string(sheet_name), *source_name, store_options);
+    } catch (const detail::CellStoreMaterializationLossError& error) {
+        throw WorksheetMaterializationError(WorksheetMaterializationDiagnostic {
+            public_materialization_loss_category(error.category()),
+            std::string(sheet_name),
+            error.row(),
+            error.column(),
+            error.shared_string_index(),
+        });
+    }
     return WorksheetEditor(this, std::string(sheet_name), handle_generation_);
 }
 
@@ -647,8 +723,13 @@ void WorkbookEditor::save_as(const std::filesystem::path& path)
     }
 
     detail::validate_workbook_editor_save_as_path(impl_->editor.reader().path(), path);
-    impl_->flush_dirty_materialized_sessions_to_patch_plan();
+    const detail::WorkbookEditorMaterializedStageResult materialized_stage =
+        impl_->stage_dirty_materialized_sessions_to_patch_plan();
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    detail::run_testing_workbook_editor_save_as_staged_hook();
+#endif
     impl_->editor.save_as(path);
+    impl_->commit_materialized_stage(materialized_stage);
     impl_->mark_saved();
 }
 

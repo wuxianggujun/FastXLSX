@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -4832,11 +4833,24 @@ PackageEditorSourceCopyTempFilesHook& package_editor_source_copy_temp_files_hook
     return hook;
 }
 
+PackageEditorCalcMetadataStagedHook& package_editor_calc_metadata_staged_hook() noexcept
+{
+    static PackageEditorCalcMetadataStagedHook hook = nullptr;
+    return hook;
+}
+
 void run_package_editor_source_copy_temp_files_hook(
     std::span<const std::filesystem::path> temporary_source_files)
 {
     if (auto hook = package_editor_source_copy_temp_files_hook(); hook != nullptr) {
         hook(temporary_source_files);
+    }
+}
+
+void run_package_editor_calc_metadata_staged_hook()
+{
+    if (auto hook = package_editor_calc_metadata_staged_hook(); hook != nullptr) {
+        hook();
     }
 }
 #endif
@@ -7382,6 +7396,10 @@ void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
 
     const PartName calc_chain_part("/xl/calcChain.xml");
     PackageManifest updated_manifest = manifest_;
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
     EditPlan calc_chain_removal_plan;
     bool remove_calc_chain = false;
     bool omit_calc_chain = false;
@@ -7406,58 +7424,59 @@ void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
         }
     }
 
-    edit_plan_.request_full_calculation(calc_chain_action);
-    edit_plan_.set_part(workbook_part, PartWriteMode::LocalDomRewrite,
+    updated_edit_plan.request_full_calculation(calc_chain_action);
+    updated_edit_plan.set_part(workbook_part, PartWriteMode::LocalDomRewrite,
         "workbook calcPr fullCalcOnLoad updated by workbook metadata helper; definedNames preserved for policy review");
-    edit_plan_.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
+    updated_edit_plan.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
         workbook_part,
         WorkbookPayloadDependencyAuditKind::CalcMetadata,
         WorkbookPayloadDependencyAuditScope::WorkbookCalcMetadataRewrite,
         "calcPr",
         "workbook calc metadata helper rewrites direct workbook calcPr fullCalcOnLoad",
     });
-    edit_plan_.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
+    updated_edit_plan.add_workbook_payload_dependency_audit(WorkbookPayloadDependencyAudit {
         workbook_part,
         WorkbookPayloadDependencyAuditKind::DefinedNames,
         WorkbookPayloadDependencyAuditScope::WorkbookCalcMetadataRewrite,
         "definedNames",
         "workbook calc metadata helper preserves definedNames without semantic sync",
     });
-    upsert_part_replacement(replacements_, workbook_part,
+    upsert_part_replacement(updated_replacements, workbook_part,
         std::move(updated_workbook_xml), PartWriteMode::LocalDomRewrite,
         "workbook calcPr fullCalcOnLoad updated by workbook metadata helper; definedNames preserved for policy review",
         &workbook_part);
-    remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
-    remove_omitted_entry(omitted_entries_, workbook_part.zip_path());
+    remove_entry_replacement(updated_entry_replacements, workbook_part.zip_path());
+    remove_omitted_entry(updated_omitted_entries, workbook_part.zip_path());
     updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
 
     if (calc_chain_action == CalcChainAction::Remove) {
         const std::string calc_chain_relationship_entry =
             relationship_entry_name_for_source_part(calc_chain_part);
-        remove_part_replacement(replacements_, calc_chain_part);
-        remove_entry_replacement(entry_replacements_, calc_chain_part.zip_path());
-        remove_entry_replacement(entry_replacements_, calc_chain_relationship_entry);
+        remove_part_replacement(updated_replacements, calc_chain_part);
+        remove_entry_replacement(updated_entry_replacements, calc_chain_part.zip_path());
+        remove_entry_replacement(updated_entry_replacements, calc_chain_relationship_entry);
 
         if (remove_calc_chain) {
-            merge_removed_part_audit(edit_plan_, calc_chain_removal_plan, calc_chain_part);
+            merge_removed_part_audit(
+                updated_edit_plan, calc_chain_removal_plan, calc_chain_part);
             for (const std::string& note : calc_chain_removal_plan.notes()) {
-                edit_plan_.add_note(note);
+                updated_edit_plan.add_note(note);
             }
         }
 
         if (omit_calc_chain) {
-            add_omitted_part_entries(omitted_entries_, calc_chain_part);
+            add_omitted_part_entries(updated_omitted_entries, calc_chain_part);
             if (reader_.find_entry(calc_chain_relationship_entry) != nullptr) {
-                edit_plan_.remove_package_entry(calc_chain_relationship_entry,
+                updated_edit_plan.remove_package_entry(calc_chain_relationship_entry,
                     "calcChain-owned relationships omitted with removed calcChain part",
                     PackageEntryAuditKind::SourceRelationships, calc_chain_part.value());
             }
         }
 
         if (rewrite_content_types) {
-            upsert_entry_replacement(reader_, entry_replacements_, "[Content_Types].xml",
+            upsert_entry_replacement(reader_, updated_entry_replacements, "[Content_Types].xml",
                 serialize_content_types(updated_manifest.content_types()));
-            edit_plan_.set_package_entry("[Content_Types].xml",
+            updated_edit_plan.set_package_entry("[Content_Types].xml",
                 PartWriteMode::LocalDomRewrite,
                 "content types updated for workbook calcChain removal",
                 PackageEntryAuditKind::ContentTypes);
@@ -7468,21 +7487,37 @@ void PackageEditor::request_full_calculation(CalcChainAction calc_chain_action)
                 updated_manifest.relationships_for(workbook_part);
             const std::string workbook_relationship_entry =
                 relationship_entry_name_for_source_part(workbook_part);
-            upsert_entry_replacement(reader_, entry_replacements_, workbook_relationship_entry,
+            upsert_entry_replacement(reader_, updated_entry_replacements,
+                workbook_relationship_entry,
                 serialize_relationships(*workbook_relationships));
-            edit_plan_.set_package_entry(workbook_relationship_entry,
+            updated_edit_plan.set_package_entry(workbook_relationship_entry,
                 PartWriteMode::LocalDomRewrite,
                 "workbook relationships updated for workbook calcChain removal",
                 PackageEntryAuditKind::SourceRelationships, workbook_part.value());
         } else {
-            audit_preserved_relationship_entry(edit_plan_, reader_, workbook_part);
+            audit_preserved_relationship_entry(updated_edit_plan, reader_, workbook_part);
         }
     } else {
-        audit_preserved_relationship_entry(edit_plan_, reader_, workbook_part);
-        audit_preserved_relationship_entry(edit_plan_, reader_, calc_chain_part);
+        audit_preserved_relationship_entry(updated_edit_plan, reader_, workbook_part);
+        audit_preserved_relationship_entry(updated_edit_plan, reader_, calc_chain_part);
     }
 
-    manifest_ = std::move(updated_manifest);
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_calc_metadata_staged_hook();
+#endif
+
+    static_assert(std::is_nothrow_swappable_v<PackageManifest>);
+    static_assert(std::is_nothrow_swappable_v<EditPlan>);
+    static_assert(std::is_nothrow_swappable_v<std::vector<PackagePartReplacement>>);
+    static_assert(std::is_nothrow_swappable_v<std::vector<PackageEntryReplacement>>);
+    static_assert(std::is_nothrow_swappable_v<std::vector<std::string>>);
+
+    using std::swap;
+    swap(manifest_, updated_manifest);
+    swap(edit_plan_, updated_edit_plan);
+    swap(replacements_, updated_replacements);
+    swap(entry_replacements_, updated_entry_replacements);
+    swap(omitted_entries_, updated_omitted_entries);
 }
 
 void PackageEditor::set_document_properties(const DocumentProperties& properties)
@@ -7663,6 +7698,12 @@ void testing_set_package_editor_source_copy_temp_files_hook(
     PackageEditorSourceCopyTempFilesHook hook) noexcept
 {
     package_editor_source_copy_temp_files_hook() = hook;
+}
+
+void testing_set_package_editor_calc_metadata_staged_hook(
+    PackageEditorCalcMetadataStagedHook hook) noexcept
+{
+    package_editor_calc_metadata_staged_hook() = hook;
 }
 #endif
 

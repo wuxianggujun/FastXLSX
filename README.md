@@ -83,9 +83,22 @@ int main()
 }
 ```
 
-`has_pending_changes()` 表示当前仍保留 staged Patch/dirty session 状态；`has_unsaved_changes()` 和 `unsaved_change_count()` 表示相对最近一次成功 `save_as()` 的保存水位。失败的 edit/save 不推进水位。
+`has_pending_changes()` 表示当前仍保留 staged Patch/dirty session 状态；`has_unsaved_changes()` 和 `unsaved_change_count()` 表示相对最近一次成功 `save_as()` 的保存水位。`save_as()` 对 dirty In-memory session 使用 stage → package write → state commit；失败的 edit/save 不推进水位，也不清除 dirty session 诊断。
 
-`WorksheetEditor` 默认使用 `WorksheetMaterializationPolicy::RejectKnownLosses`。遇到 rich text、phonetic/extension metadata、formula metadata 或 cached formula result 等当前模型不能无损表示的 source cell 时，materialization 会在注册 session 前失败。只有明确接受丢失时才使用：
+`WorksheetEditor` 默认使用 `WorksheetMaterializationPolicy::RejectKnownLosses`。遇到 rich text、phonetic/extension metadata、formula metadata 或 cached formula result 等当前模型不能无损表示的 source cell 时，materialization 会在注册 session 前失败。
+
+```cpp
+try {
+    auto sheet = editor.worksheet("Data");
+} catch (const fastxlsx::WorksheetMaterializationError& error) {
+    const auto& diagnostic = error.diagnostic();
+    // category、worksheet_name、1-based row/column；必要时含 sharedStrings index。
+}
+```
+
+该异常仍派生自 `FastXlsxError`；已有通用 catch 不需要修改。`try_worksheet()` 对 strict rejection 同样抛出该异常，只有 worksheet 不存在时返回 `std::nullopt`。异常文本仅用于诊断，自动化逻辑应读取结构化字段。
+
+只有明确接受丢失时才使用：
 
 ```cpp
 fastxlsx::WorksheetEditorOptions options;

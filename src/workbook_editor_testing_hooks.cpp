@@ -13,6 +13,29 @@ namespace fastxlsx {
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 namespace detail {
 
+namespace {
+
+WorkbookEditorSaveAsStagedHook& workbook_editor_save_as_staged_hook() noexcept
+{
+    static WorkbookEditorSaveAsStagedHook hook = nullptr;
+    return hook;
+}
+
+} // namespace
+
+void testing_set_workbook_editor_save_as_staged_hook(
+    WorkbookEditorSaveAsStagedHook hook) noexcept
+{
+    workbook_editor_save_as_staged_hook() = hook;
+}
+
+void run_testing_workbook_editor_save_as_staged_hook()
+{
+    if (auto hook = workbook_editor_save_as_staged_hook(); hook != nullptr) {
+        hook();
+    }
+}
+
 void testing_workbook_editor_materialize_source_sheet(
     WorkbookEditor& editor,
     std::string_view planned_name,

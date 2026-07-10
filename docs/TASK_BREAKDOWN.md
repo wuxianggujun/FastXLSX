@@ -7,17 +7,18 @@
 - 持续核对 public headers、source、tests、CMake 和 `CURRENT_CAPABILITIES.md`。
 - 清理 public/internal 注释中的历史 Phase/future wording。
 - Public API 变更必须补模式、内存、状态、失败、side effect 和 non-goal Doxygen。
+- 将超大 `test_workbook_editor_public_state.cpp` 逐步拆为独立 translation units/shards；拆分前保持行为不变，并保留专用 120 秒 CTest 上限。
 
 ## C1 Patch Facade
 
 - 扩展现有 workbook 对象前，逐对象定义 preserve/audit/fail/edit。
-- 稳定 relationship/content-type/calc metadata 联动和 failure recovery。
+- 将 calc metadata 已采用的副本 staging + noexcept commit 边界扩展到其他跨 relationship/content-type/manifest 的多状态 mutation，并逐项补 failure recovery 回归。
 - 不公开 package mutation foundation。
 
 ## C2 In-memory
 
-- 扩展 strict projection diagnostics，使调用方能审计具体 loss category，而不泄漏 internal parser 状态。
-- 继续验证 guardrail、policy identity、dirty flush、move/handle lifecycle。
+- 新增可投影语义时同步扩展 strict/lossy 分类、typed diagnostic 和 failure-before-state-change tests，不把 parser/XML 细节加入 public contract。
+- 新增 In-memory mutation/projection 时复用 guardrail、policy identity、two-phase save handoff、move/handle lifecycle 回归矩阵。
 - 大 worksheet 低内存 rewrite 不进入 `WorksheetEditor`。
 
 ## C3 Streaming
@@ -37,12 +38,9 @@
 
 ## C6 Performance / Release Evidence
 
-- 生成真实 benchmark bundle 时提交 machine-readable artifacts、environment、hash 和 claims。
-- 为 validator 增加 CI 静态运行；0 bundle 仍应成功。
+- 生成第一份可复现真实 benchmark bundle，提交 machine-readable artifacts、environment、hash 和 claims；在此之前保持 0 bundle / no release claim。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。
 
-## C7 Packaging
+## C7 Packaging / Dev Tooling
 
-- 在可用 MSVC Developer 环境完成 production/stored/no-images build + CTest/smoke。
-- 完成三种 profile 的 install/consumer `find_package()` smoke，确认 minizip 条件依赖与 stb 非传播边界。
 - 评估 `planned-dev` 是否接入真实 CMake target；未接入前不得称为当前 test/benchmark dependency。

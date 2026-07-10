@@ -26,6 +26,11 @@ namespace detail {
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 struct WorkbookEditorPackagePlanAccessor;
 
+using WorkbookEditorSaveAsStagedHook = void (*)();
+
+void testing_set_workbook_editor_save_as_staged_hook(
+    WorkbookEditorSaveAsStagedHook hook) noexcept;
+
 void testing_workbook_editor_materialize_source_sheet(
     WorkbookEditor& editor,
     std::string_view planned_name,
@@ -90,6 +95,66 @@ enum class WorksheetMaterializationPolicy {
     /// scalar/formula CellStore model. The discarded source semantics cannot be
     /// recovered when the materialized worksheet is saved.
     AllowLossyProjection,
+};
+
+/// Stable semantic category for a strict source-to-WorksheetEditor projection loss.
+enum class WorksheetMaterializationLossCategory {
+    /// Rich text runs would be flattened into one plain string.
+    RichText,
+
+    /// Phonetic guides or phonetic display metadata would be discarded.
+    PhoneticMetadata,
+
+    /// Source extension metadata would be discarded.
+    ExtensionMetadata,
+
+    /// Formula attributes such as array/shared formula metadata would be discarded.
+    FormulaMetadata,
+
+    /// A cached formula result would be discarded because formulas retain text only.
+    CachedFormulaResult,
+};
+
+/// Public context for one strict WorksheetEditor materialization rejection.
+///
+/// Row and column are 1-based worksheet coordinates. shared_string_index is the
+/// zero-based OOXML sharedStrings index when the rejected source semantics came
+/// from a referenced shared string item; otherwise it is std::nullopt. The
+/// diagnostic intentionally contains no XML tokens, parser state, part names,
+/// relationship ids, or internal CellStore details.
+struct WorksheetMaterializationDiagnostic {
+    /// Semantic loss that caused strict materialization to reject the source cell.
+    WorksheetMaterializationLossCategory category =
+        WorksheetMaterializationLossCategory::RichText;
+
+    /// Worksheet name from the current planned workbook catalog.
+    std::string worksheet_name;
+
+    /// One-based source row.
+    std::uint32_t row = 1;
+
+    /// One-based source column.
+    std::uint32_t column = 1;
+
+    /// Zero-based sharedStrings index when the loss came from a referenced item.
+    std::optional<std::size_t> shared_string_index;
+};
+
+/// Typed failure raised when RejectKnownLosses blocks worksheet materialization.
+///
+/// This derives from FastXlsxError for source compatibility with existing catch
+/// sites. Catch this type when code needs a stable loss category or source-cell
+/// context. Throwing it does not register a materialized session, queue an edit,
+/// or update WorkbookEditor::last_edit_error().
+class WorksheetMaterializationError final : public FastXlsxError {
+public:
+    explicit WorksheetMaterializationError(
+        WorksheetMaterializationDiagnostic diagnostic);
+
+    [[nodiscard]] const WorksheetMaterializationDiagnostic& diagnostic() const noexcept;
+
+private:
+    WorksheetMaterializationDiagnostic diagnostic_;
 };
 
 /// Guardrails for one materialized worksheet editing session.
@@ -464,6 +529,9 @@ struct WorkbookEditorRenameOptions {
 /// AllowLossyProjection to flatten those supported cells into plain text or
 /// formula text. Discarded semantics cannot be reconstructed by save_as(), and
 /// the projection policy participates in session option matching.
+/// RejectKnownLosses failures throw WorksheetMaterializationError so callers can
+/// inspect a stable semantic category and worksheet/cell context without parsing
+/// exception text or depending on internal XML parser details.
 ///
 /// Dirty projection may reuse or append to a narrowly validated source
 /// sharedStrings table and otherwise writes inline strings. It does not evaluate
@@ -1907,10 +1975,11 @@ public:
     /// omitted until a later mutation dirties it again. If a queued rename
     /// remains, the summary remains as a rename summary with materialized_dirty
     /// false and zero materialized counts until a later mutation re-dirties the
-    /// session. A rejected save_as() that fails before materialized auto-flush
-    /// leaves the current summary fields unchanged. If a rename chain returns
-    /// to the source name before materialization, a later dirty materialized
-    /// summary uses matching source/planned names and is not marked renamed.
+    /// session. A rejected or failed save_as() leaves the current summary fields
+    /// unchanged, including failures after internal materialized staging but
+    /// before package-write success. If a rename chain returns to the source
+    /// name before materialization, a later dirty materialized summary uses
+    /// matching source/planned names and is not marked renamed.
     /// Failed WorksheetEditor mutations do not create dirty materialized
     /// summaries; a later successful mutation after such a failure follows the
     /// same current planned-name rules.
@@ -2100,10 +2169,12 @@ public:
     ///
     /// @param sheet_name Existing worksheet name in the current planned catalog.
     /// @param options Per-materialization sparse-store guardrails.
+    /// @throws WorksheetMaterializationError if RejectKnownLosses detects source
+    /// semantics that the current WorksheetEditor model cannot preserve.
     /// @throws FastXlsxError if the workbook is not open, the sheet is missing,
     /// a whole-sheet replacement is already queued for this sheet, options do
-    /// not match an existing materialized session, the selected projection
-    /// policy rejects known source losses, or source worksheet loading fails. Missing-sheet and materialization failures do not update
+    /// not match an existing materialized session, or source worksheet loading
+    /// otherwise fails. Missing-sheet and materialization failures do not update
     /// last_edit_error().
     [[nodiscard]] WorksheetEditor worksheet(
         std::string_view sheet_name, WorksheetEditorOptions options = {});
@@ -2114,17 +2185,19 @@ public:
     /// API mode: In-memory over an existing workbook. This has the same
     /// borrowed-handle and guardrail semantics as worksheet(), except a missing
     /// current-planned worksheet name returns std::nullopt instead of throwing.
-    /// Other failures still throw FastXlsxError, including queued same-sheet
+    /// Other failures still throw, including queued same-sheet
     /// replace_sheet_data() or replace_cells() payloads, option mismatches with
     /// an existing materialized session, unsupported source worksheet cell
     /// shapes, or malformed worksheet XML. Missing-sheet and materialization
-    /// failures do not update last_edit_error(). A missing-sheet result does not queue a
-    /// dirty session or edit; it also does not discard, reload, or dirty an
-    /// existing saved materialized session after save_as() or failed-save
+    /// failures do not update last_edit_error(). A missing-sheet result does not
+    /// queue a dirty session or edit; it also does not discard, reload, or dirty
+    /// an existing saved materialized session after save_as() or failed-save
     /// recovery. A later no-op save_as() remains copy-original.
     ///
     /// @param sheet_name Existing worksheet name in the current planned catalog.
     /// @param options Per-materialization sparse-store guardrails.
+    /// @throws WorksheetMaterializationError if RejectKnownLosses detects source
+    /// semantics that the current WorksheetEditor model cannot preserve.
     /// @throws FastXlsxError if the workbook is not open or if a non-missing
     /// materialization failure occurs.
     [[nodiscard]] std::optional<WorksheetEditor> try_worksheet(
@@ -2385,12 +2458,15 @@ public:
     /// that is the source package, empty, an existing directory, or has a
     /// non-directory / missing parent. Worksheets not edited and unknown parts are
     /// copied from the source package; with no queued public edits, save_as()
-    /// writes a reader-backed roundtrip copy. A rejected or failed save_as() does
-    /// not clear queued public edits and does not update last_edit_error().
-    /// Output-path preflight runs before dirty WorksheetEditor auto-flush, so a
-    /// rejected save leaves materialized dirty diagnostics and summaries under
-    /// their current planned names, including rename-back paths that restored a
-    /// sheet to its source name.
+    /// writes a reader-backed roundtrip copy. Dirty WorksheetEditor sessions are
+    /// staged into the Patch plan before package writing, but their public dirty
+    /// handoff is committed only after the output package is written successfully.
+    /// A rejected or failed save_as() therefore preserves queued edits, dirty
+    /// materialized diagnostics, pending/unsaved counts, and last_edit_error().
+    /// Output-path preflight runs before materialized staging, including for
+    /// rename-back paths that restored a sheet to its source name. A retry
+    /// restages current session values and replaces any stale internal staged
+    /// projection from the failed attempt.
     /// Successful save_as() is also not a commit/close operation: queued public
     /// edit diagnostics remain visible so callers may save the same planned
     /// state to another output path or continue editing. Consequently,

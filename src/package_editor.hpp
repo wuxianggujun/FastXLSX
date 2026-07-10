@@ -178,6 +178,10 @@ using PackageEditorSourceCopyTempFilesHook =
 void testing_set_package_editor_source_copy_temp_files_hook(
     PackageEditorSourceCopyTempFilesHook hook) noexcept;
 
+using PackageEditorCalcMetadataStagedHook = void (*)();
+void testing_set_package_editor_calc_metadata_staged_hook(
+    PackageEditorCalcMetadataStagedHook hook) noexcept;
+
 struct ReplacementCellPayloadScannerTestResult {
     std::size_t start_tag_count = 0;
     std::size_t formula_tag_count = 0;

@@ -557,7 +557,7 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_linked_pivot.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
-    fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests
+    fastxlsx_preservation_pivot_cache_definition_tests
     test_package_editor_preservation_linked_pivot_cache_definition.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
@@ -573,7 +573,7 @@ add_fastxlsx_package_editor_preservation_target(
     test_package_editor_preservation_linked_custom_xml.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
-    fastxlsx_package_editor_preservation_linked_custom_xml_properties_tests
+    fastxlsx_preservation_custom_xml_properties_tests
     test_package_editor_preservation_linked_custom_xml_properties.cpp
 )
 add_fastxlsx_package_editor_preservation_target(
@@ -584,14 +584,14 @@ add_fastxlsx_package_editor_preservation_target(
 add_custom_target(fastxlsx_package_editor_preservation_linked_pivot_tests
     DEPENDS
         fastxlsx_package_editor_preservation_linked_pivot_core_tests
-        fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests
+        fastxlsx_preservation_pivot_cache_definition_tests
         fastxlsx_package_editor_preservation_linked_pivot_cache_records_tests
 )
 
 add_custom_target(fastxlsx_package_editor_preservation_linked_custom_xml_all_tests
     DEPENDS
         fastxlsx_package_editor_preservation_linked_custom_xml_tests
-        fastxlsx_package_editor_preservation_linked_custom_xml_properties_tests
+        fastxlsx_preservation_custom_xml_properties_tests
         fastxlsx_package_editor_preservation_linked_custom_xml_ordering_tests
 )
 
@@ -704,7 +704,7 @@ add_fastxlsx_package_editor_preservation_shard(
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked-pivot-cache-definition
-    fastxlsx_package_editor_preservation_linked_pivot_cache_definition_tests 60
+    fastxlsx_preservation_pivot_cache_definition_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked-pivot-cache-records
@@ -720,7 +720,7 @@ add_fastxlsx_package_editor_preservation_shard(
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked-custom-xml-properties
-    fastxlsx_package_editor_preservation_linked_custom_xml_properties_tests 60
+    fastxlsx_preservation_custom_xml_properties_tests 60
 )
 add_fastxlsx_package_editor_preservation_shard(
     preservation-linked-custom-xml-ordering
@@ -1016,26 +1016,41 @@ add_fastxlsx_workbook_editor_shard(
     public-retry-projection
     fastxlsx_workbook_editor_public_retry_projection_tests 60
 )
+set(FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT 120)
 add_fastxlsx_workbook_editor_shard(
-    public-state fastxlsx_workbook_editor_public_state_tests 60
+    public-state
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-edits fastxlsx_workbook_editor_public_state_tests 60
+    public-state-edits
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-source-style fastxlsx_workbook_editor_public_state_tests 60
+    public-state-source-style
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-shifts fastxlsx_workbook_editor_public_state_tests 60
+    public-state-shifts
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-formula-audits fastxlsx_workbook_editor_public_state_tests 60
+    public-state-formula-audits
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-reacquire fastxlsx_workbook_editor_public_state_tests 60
+    public-state-reacquire
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-reacquire-guards fastxlsx_workbook_editor_public_state_tests 60
+    public-state-reacquire-guards
+    fastxlsx_workbook_editor_public_state_tests
+    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
     public-guards fastxlsx_workbook_editor_public_guards_tests 60

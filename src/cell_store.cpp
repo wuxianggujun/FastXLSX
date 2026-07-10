@@ -1,5 +1,6 @@
 #include <fastxlsx/detail/cell_store.hpp>
 #include "package_reader.hpp"
+#include "cell_store_materialization_loss.hpp"
 
 #include <fastxlsx/detail/formula.hpp>
 #include <fastxlsx/detail/xml.hpp>
@@ -699,8 +700,8 @@ std::string resolve_internal_relationship_target_path(
     return PartName(source.substr(0, slash) + "/" + decoded_target).value();
 }
 
-std::vector<std::string> parse_shared_strings_xml(
-    std::string_view xml, std::vector<bool>* lossy_items = nullptr)
+std::vector<std::string> parse_shared_strings_xml(std::string_view xml,
+    std::vector<WorkbookSharedStringsSnapshot::ItemLossInfo>* item_losses = nullptr)
 {
     std::vector<std::string> strings;
     std::vector<std::string> element_stack;
@@ -712,7 +713,8 @@ std::vector<std::string> parse_shared_strings_xml(
     bool saw_prolog_text = false;
     bool current_item_saw_direct_text = false;
     bool current_item_saw_rich_run = false;
-    bool current_item_saw_lossy_metadata = false;
+    bool current_item_saw_phonetic_metadata = false;
+    bool current_item_saw_extension_metadata = false;
 
     const auto stack_contains = [&](std::string_view name) {
         return std::find(element_stack.begin(), element_stack.end(), name)
@@ -838,13 +840,18 @@ std::vector<std::string> parse_shared_strings_xml(
             }
             if (name == "si") {
                 strings.push_back(current_text);
-                if (lossy_items != nullptr) {
-                    lossy_items->push_back(current_item_saw_rich_run || current_item_saw_lossy_metadata);
+                if (item_losses != nullptr) {
+                    item_losses->push_back(WorkbookSharedStringsSnapshot::ItemLossInfo {
+                        current_item_saw_rich_run,
+                        current_item_saw_phonetic_metadata,
+                        current_item_saw_extension_metadata,
+                    });
                 }
                 current_text.clear();
                 current_item_saw_direct_text = false;
                 current_item_saw_rich_run = false;
-                current_item_saw_lossy_metadata = false;
+                current_item_saw_phonetic_metadata = false;
+                current_item_saw_extension_metadata = false;
             }
             element_stack.pop_back();
             if (element_stack.empty()) {
@@ -922,22 +929,29 @@ std::vector<std::string> parse_shared_strings_xml(
                 "CellStore sharedStrings loader found malformed rich text metadata");
         }
 
-        if (stack_contains("si")
-            && (name == "rPh" || name == "phoneticPr" || name == "extLst")) {
-            current_item_saw_lossy_metadata = true;
+        if (stack_contains("si") && (name == "rPh" || name == "phoneticPr")) {
+            current_item_saw_phonetic_metadata = true;
+        }
+        if (stack_contains("si") && name == "extLst") {
+            current_item_saw_extension_metadata = true;
         }
 
         if (!self_closing) {
             element_stack.push_back(std::string(name));
         } else if (name == "si") {
             strings.push_back(current_text);
-            if (lossy_items != nullptr) {
-                lossy_items->push_back(current_item_saw_rich_run || current_item_saw_lossy_metadata);
+            if (item_losses != nullptr) {
+                item_losses->push_back(WorkbookSharedStringsSnapshot::ItemLossInfo {
+                    current_item_saw_rich_run,
+                    current_item_saw_phonetic_metadata,
+                    current_item_saw_extension_metadata,
+                });
             }
             current_text.clear();
             current_item_saw_direct_text = false;
             current_item_saw_rich_run = false;
-            current_item_saw_lossy_metadata = false;
+            current_item_saw_phonetic_metadata = false;
+            current_item_saw_extension_metadata = false;
         }
 
         offset = close + 1;
@@ -1605,14 +1619,16 @@ struct ActiveSourceCell {
     bool saw_inline_text_element = false;
     bool saw_direct_inline_text_element = false;
     bool saw_inline_rich_run = false;
-    bool saw_lossy_source_metadata = false;
+    bool saw_phonetic_metadata = false;
+    bool saw_extension_metadata = false;
     bool saw_formula_element = false;
     bool saw_formula_metadata_attributes = false;
     bool formula_type_is_shared = false;
 };
 
 using SharedStringsProvider = std::function<const std::vector<std::string>&()>;
-using SharedStringLossyItemProvider = std::function<bool(std::size_t)>;
+using SharedStringLossProvider =
+    std::function<std::optional<CellStoreMaterializationLossCategory>(std::size_t)>;
 using SourceStyleValidator = std::function<void(StyleId)>;
 
 struct SharedFormulaDefinition {
@@ -1661,7 +1677,7 @@ bool parse_cell_boolean(std::string_view value)
 CellValue materialize_cell_value(
     const ActiveSourceCell& cell,
     const SharedStringsProvider* shared_strings_provider,
-    const SharedStringLossyItemProvider* shared_string_lossy_item_provider,
+    const SharedStringLossProvider* shared_string_loss_provider,
     CellStoreMaterializationPolicy materialization_policy,
     const SharedFormulaDefinitions& shared_formula_definitions)
 {
@@ -1756,10 +1772,14 @@ CellValue materialize_cell_value(
                     "CellStore worksheet loader found a shared string index out of range");
             }
             if (materialization_policy == CellStoreMaterializationPolicy::RejectKnownLosses
-                && shared_string_lossy_item_provider != nullptr
-                && (*shared_string_lossy_item_provider)(static_cast<std::size_t>(index))) {
-                throw FastXlsxError(
-                    "WorksheetEditor strict materialization rejects shared-string rich text or phonetic/extension metadata");
+                && shared_string_loss_provider != nullptr) {
+                const std::optional<CellStoreMaterializationLossCategory> loss =
+                    (*shared_string_loss_provider)(static_cast<std::size_t>(index));
+                if (loss.has_value()) {
+                    throw CellStoreMaterializationLossError(
+                        *loss, cell.position.row, cell.position.column,
+                        static_cast<std::size_t>(index));
+                }
             }
             value = CellValue::text(shared_strings[static_cast<std::size_t>(index)]);
             break;
@@ -1808,11 +1828,11 @@ public:
         CellStoreOptions options,
         const SharedStringsProvider* shared_strings_provider = nullptr,
         const SourceStyleValidator* source_style_validator = nullptr,
-        const SharedStringLossyItemProvider* shared_string_lossy_item_provider = nullptr)
+        const SharedStringLossProvider* shared_string_loss_provider = nullptr)
         : store_(std::move(options))
         , shared_strings_provider_(shared_strings_provider)
         , source_style_validator_(source_style_validator)
-        , shared_string_lossy_item_provider_(shared_string_lossy_item_provider)
+        , shared_string_loss_provider_(shared_string_loss_provider)
     {
     }
 
@@ -1962,7 +1982,7 @@ private:
         }
 
         ActiveSourceCell cell;
-        cell.saw_lossy_source_metadata = saw_phonetic_marker;
+        cell.saw_phonetic_metadata = saw_phonetic_marker;
         cell.position = CellPosition {parsed_reference.row, parsed_reference.column};
         if (last_source_cell_.has_value() && !(*last_source_cell_ < cell.position)) {
             throw FastXlsxError(
@@ -2115,7 +2135,11 @@ private:
 
         if (event.element_name == "rPh" || event.element_name == "phoneticPr"
             || event.element_name == "extLst") {
-            cell.saw_lossy_source_metadata = true;
+            if (event.element_name == "extLst") {
+                cell.saw_extension_metadata = true;
+            } else {
+                cell.saw_phonetic_metadata = true;
+            }
             if (closing) {
                 throw FastXlsxError(
                     "CellStore worksheet loader found malformed inline rich text metadata");
@@ -2281,21 +2305,34 @@ private:
                 "CellStore worksheet loader found malformed inline rich text metadata");
         }
         const CellValue materialized_value = materialize_cell_value(
-            cell, shared_strings_provider_, shared_string_lossy_item_provider_,
+            cell, shared_strings_provider_, shared_string_loss_provider_,
             store_.options().materialization_policy, shared_formula_definitions_);
         if (store_.options().materialization_policy
                 == CellStoreMaterializationPolicy::RejectKnownLosses) {
-            if (cell.saw_inline_rich_run || cell.saw_lossy_source_metadata) {
-                throw FastXlsxError(
-                    "WorksheetEditor strict materialization rejects inline rich text or phonetic/extension metadata");
+            if (cell.saw_inline_rich_run) {
+                throw CellStoreMaterializationLossError(
+                    CellStoreMaterializationLossCategory::RichText,
+                    cell.position.row, cell.position.column);
+            }
+            if (cell.saw_phonetic_metadata) {
+                throw CellStoreMaterializationLossError(
+                    CellStoreMaterializationLossCategory::PhoneticMetadata,
+                    cell.position.row, cell.position.column);
+            }
+            if (cell.saw_extension_metadata) {
+                throw CellStoreMaterializationLossError(
+                    CellStoreMaterializationLossCategory::ExtensionMetadata,
+                    cell.position.row, cell.position.column);
             }
             if (cell.saw_formula_metadata_attributes) {
-                throw FastXlsxError(
-                    "WorksheetEditor strict materialization rejects formula metadata");
+                throw CellStoreMaterializationLossError(
+                    CellStoreMaterializationLossCategory::FormulaMetadata,
+                    cell.position.row, cell.position.column);
             }
             if (cell.saw_formula_element && cell.saw_scalar_value_element) {
-                throw FastXlsxError(
-                    "WorksheetEditor strict materialization rejects cached formula results");
+                throw CellStoreMaterializationLossError(
+                    CellStoreMaterializationLossCategory::CachedFormulaResult,
+                    cell.position.row, cell.position.column);
             }
         }
         if (store_.try_cell(cell.position.row, cell.position.column) != nullptr) {
@@ -2313,7 +2350,7 @@ private:
     CellStore store_;
     const SharedStringsProvider* shared_strings_provider_ = nullptr;
     const SourceStyleValidator* source_style_validator_ = nullptr;
-    const SharedStringLossyItemProvider* shared_string_lossy_item_provider_ = nullptr;
+    const SharedStringLossProvider* shared_string_loss_provider_ = nullptr;
     std::set<std::uint32_t> seen_rows_;
     std::optional<std::uint32_t> last_explicit_row_;
     std::optional<CellPosition> last_source_cell_;
@@ -2607,7 +2644,7 @@ std::optional<WorkbookSharedStringsSnapshot> load_workbook_shared_strings_snapsh
         snapshot.part_name = shared_strings_part.value();
         snapshot.zip_path = shared_strings_part.zip_path();
         snapshot.xml = reader.read_entry(snapshot.zip_path);
-        snapshot.strings = parse_shared_strings_xml(snapshot.xml, &snapshot.lossy_items);
+        snapshot.strings = parse_shared_strings_xml(snapshot.xml, &snapshot.item_losses);
         return snapshot;
     } catch (const std::exception& error) {
         throw FastXlsxError("failed to load workbook sharedStrings part '"
@@ -2810,11 +2847,11 @@ CellStore load_cell_store_from_worksheet_chunks_with_shared_strings_provider(
     WorksheetEventReaderOptions reader_options,
     const SharedStringsProvider* shared_strings_provider,
     const SourceStyleValidator* source_style_validator = nullptr,
-    const SharedStringLossyItemProvider* shared_string_lossy_item_provider = nullptr)
+    const SharedStringLossProvider* shared_string_loss_provider = nullptr)
 {
     CellStoreWorksheetLoader loader(
         std::move(options), shared_strings_provider, source_style_validator,
-        shared_string_lossy_item_provider);
+        shared_string_loss_provider);
     scan_worksheet_events_from_chunk_source(
         read_next_chunk,
         [&loader](const WorksheetEvent& event) {
@@ -2883,10 +2920,26 @@ CellStore load_cell_store_from_workbook_sheet(
             -> const std::vector<std::string>& {
             return ensure_shared_strings_snapshot().strings;
         };
-        SharedStringLossyItemProvider shared_string_lossy_item_provider =
+        SharedStringLossProvider shared_string_loss_provider =
             [&ensure_shared_strings_snapshot](std::size_t index) {
-                const auto& lossy_items = ensure_shared_strings_snapshot().lossy_items;
-                return index < lossy_items.size() && lossy_items[index];
+                const auto& item_losses = ensure_shared_strings_snapshot().item_losses;
+                if (index >= item_losses.size()) {
+                    return std::optional<CellStoreMaterializationLossCategory> {};
+                }
+                const WorkbookSharedStringsSnapshot::ItemLossInfo& loss = item_losses[index];
+                if (loss.rich_text) {
+                    return std::optional<CellStoreMaterializationLossCategory> {
+                        CellStoreMaterializationLossCategory::RichText};
+                }
+                if (loss.phonetic_metadata) {
+                    return std::optional<CellStoreMaterializationLossCategory> {
+                        CellStoreMaterializationLossCategory::PhoneticMetadata};
+                }
+                if (loss.extension_metadata) {
+                    return std::optional<CellStoreMaterializationLossCategory> {
+                        CellStoreMaterializationLossCategory::ExtensionMetadata};
+                }
+                return std::optional<CellStoreMaterializationLossCategory> {};
             };
         std::optional<std::size_t> cell_xfs_count;
         SourceStyleValidator source_style_validator =
@@ -2904,7 +2957,9 @@ CellStore load_cell_store_from_workbook_sheet(
             std::move(options), reader_options,
             &shared_strings_provider,
             &source_style_validator,
-            &shared_string_lossy_item_provider);
+            &shared_string_loss_provider);
+    } catch (const CellStoreMaterializationLossError&) {
+        throw;
     } catch (const std::exception& error) {
         throw FastXlsxError("failed to load CellStore from workbook sheet '"
             + std::string(sheet_name) + "' worksheet part '" + worksheet_part.value()

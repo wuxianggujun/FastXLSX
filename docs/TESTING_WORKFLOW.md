@@ -15,13 +15,13 @@ cmake --build --preset windows-nmake-release
 ctest --preset windows-nmake-release
 ```
 
-普通 CTest timeout 为 60 秒，`noTestsAction=error`；benchmark 不进入默认 CTest。
+普通 CTest timeout 为 60 秒，`noTestsAction=error`；约 10 万行 legacy public-state translation unit 对应的 7 个显式 shard 使用 120 秒上限，避免正常 I/O-heavy recovery 矩阵在较慢 MSVC/NTFS 环境被误判为 hang。Benchmark 不进入默认 CTest。
 
 ## 关键矩阵
 
-- Patch：failure-before-state-change、retry、reopen、unknown part preservation、relationships/content types/calc metadata side effects。
-- Save watermark：successful save 清零 unsaved；failed save 保留；retained staged state 仍可 pending；move 转移 watermark。
-- In-memory：guardrail、strict rejection、explicit lossy opt-in、policy mismatch、no-state-pollution、dirty flush/recovery。
+- Patch：failure-before-state-change、retry、reopen、unknown part preservation、relationships/content types/calc metadata side effects；calc metadata 需注入提交前失败，验证既有 plan/manifest/replacements 不变且 retry 成功。
+- Save transaction/watermark：验证 stage → package write → state commit；post-stage/write failure 保留 dirty session、pending/unsaved count 和 `last_edit_error()`，retry 写入最新值；successful save 清零 unsaved，retained staged state 仍可 pending，move 转移 watermark。
+- In-memory：guardrail、strict rejection category/context、`worksheet()`/`try_worksheet()` typed propagation、explicit lossy opt-in、generic policy mismatch、malformed-source precedence、no-state-pollution、`last_edit_error()` preservation、dirty flush/recovery。
 - Streaming：row order、无 DOM/dense matrix、strings/styles/media/metadata package side effects。
 - No-images：编译 `image_disabled.cpp`，consumer 宏为 0，runtime smoke 确认 public call 抛错。
 

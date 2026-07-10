@@ -1,5 +1,33 @@
 #include "test_workbook_editor_facade_common.hpp"
 
+namespace {
+
+class ScopedWorkbookEditorSaveAsStagedHook {
+public:
+    explicit ScopedWorkbookEditorSaveAsStagedHook(
+        fastxlsx::detail::WorkbookEditorSaveAsStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_workbook_editor_save_as_staged_hook(hook);
+    }
+
+    ~ScopedWorkbookEditorSaveAsStagedHook()
+    {
+        fastxlsx::detail::testing_set_workbook_editor_save_as_staged_hook(nullptr);
+    }
+
+    ScopedWorkbookEditorSaveAsStagedHook(
+        const ScopedWorkbookEditorSaveAsStagedHook&) = delete;
+    ScopedWorkbookEditorSaveAsStagedHook& operator=(
+        const ScopedWorkbookEditorSaveAsStagedHook&) = delete;
+};
+
+void throw_after_workbook_editor_materialized_stage()
+{
+    throw fastxlsx::FastXlsxError("injected save_as failure after materialized staging");
+}
+
+} // namespace
+
 void test_save_as_over_source_throws()
 {
     const std::filesystem::path source =
@@ -266,6 +294,74 @@ void test_failed_save_as_preserves_public_facade_state()
         "safe save_as after clean-error failed save should keep the queued replacement");
 }
 
+void test_failed_save_as_after_materialized_stage_preserves_dirty_state()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-materialized-stage-save-failure-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-materialized-stage-save-failure-output.xlsx");
+    std::error_code remove_error;
+    std::filesystem::remove(output, remove_error);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor worksheet = editor.worksheet("Data");
+    worksheet.set_cell(1, 1, fastxlsx::CellValue::text("before-staged-save-failure"));
+
+    check(worksheet.has_pending_changes(),
+        "materialized edit should be dirty before injected save failure");
+    check(editor.pending_change_count() == 0,
+        "dirty materialized edit should not be handed off before save");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "dirty materialized edit should contribute one unsaved change before save");
+    const std::vector<std::string> pending_names_before_save =
+        editor.pending_materialized_worksheet_names();
+    const std::size_t pending_cells_before_save =
+        editor.pending_materialized_cell_count();
+    const std::size_t pending_memory_before_save =
+        editor.estimated_pending_materialized_memory_usage();
+
+    {
+        ScopedWorkbookEditorSaveAsStagedHook hook(
+            throw_after_workbook_editor_materialized_stage);
+        check(threw_fastxlsx_error([&] { editor.save_as(output); }),
+            "injected failure after materialized staging should fail save_as");
+    }
+
+    check(!std::filesystem::exists(output),
+        "injected pre-write save failure should not create the output package");
+    check(worksheet.has_pending_changes(),
+        "failed save after staging should keep the materialized handle dirty");
+    check(editor.pending_change_count() == 0,
+        "failed save after staging should not commit a public handoff count");
+    check(editor.pending_materialized_worksheet_names() == pending_names_before_save,
+        "failed save after staging should preserve dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == pending_cells_before_save,
+        "failed save after staging should preserve dirty cell diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == pending_memory_before_save,
+        "failed save after staging should preserve dirty memory diagnostics");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "failed save after staging should preserve the unsaved watermark");
+    check(!editor.last_edit_error().has_value(),
+        "failed save after staging should not create last_edit_error");
+
+    worksheet.set_cell(1, 1, fastxlsx::CellValue::text("after-staged-save-failure"));
+    editor.save_as(output);
+
+    check(!worksheet.has_pending_changes(),
+        "successful retry should commit and clear the materialized dirty state");
+    check(editor.pending_change_count() == 1,
+        "successful retry should commit exactly one materialized handoff");
+    check(!editor.has_unsaved_changes() && editor.unsaved_change_count() == 0,
+        "successful retry should advance the unsaved watermark");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "after-staged-save-failure",
+        "successful retry should write the latest materialized value");
+    check_not_contains(worksheet_xml, "before-staged-save-failure",
+        "successful retry should replace the stale staged value");
+}
+
 void test_successful_save_as_preserves_public_facade_state()
 {
     const std::filesystem::path source =
@@ -508,6 +604,7 @@ int main()
         test_noop_save_as_preserves_failed_rename_diagnostic();
         test_noop_save_as_keeps_editor_usable_for_later_edits();
         test_failed_save_as_preserves_public_facade_state();
+        test_failed_save_as_after_materialized_stage_preserves_dirty_state();
         test_successful_save_as_preserves_public_facade_state();
         test_unsaved_change_watermark_tracks_successful_saves();
         test_unsaved_change_watermark_moves_with_editor_state();

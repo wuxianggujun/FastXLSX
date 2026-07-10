@@ -122,6 +122,30 @@ void check_not_contains(std::string_view haystack, std::string_view needle, cons
     check(haystack.find(needle) == std::string_view::npos, message);
 }
 
+class ScopedPackageEditorCalcMetadataStagedHook {
+public:
+    explicit ScopedPackageEditorCalcMetadataStagedHook(
+        fastxlsx::detail::PackageEditorCalcMetadataStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_calc_metadata_staged_hook(hook);
+    }
+
+    ~ScopedPackageEditorCalcMetadataStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_calc_metadata_staged_hook(nullptr);
+    }
+
+    ScopedPackageEditorCalcMetadataStagedHook(
+        const ScopedPackageEditorCalcMetadataStagedHook&) = delete;
+    ScopedPackageEditorCalcMetadataStagedHook& operator=(
+        const ScopedPackageEditorCalcMetadataStagedHook&) = delete;
+};
+
+void fail_package_editor_calc_metadata_after_staging()
+{
+    throw std::runtime_error("injected calc metadata commit failure");
+}
+
 fastxlsx::detail::WorksheetCellReplacement worksheet_cell_replacement(
     std::string_view cell_reference, std::string_view materialized_xml)
 {
@@ -3524,6 +3548,105 @@ void test_package_editor_rejects_malformed_workbook_calc_metadata_without_state_
         "malformed workbook calc failure output should preserve unknown bytes");
 }
 
+void test_package_editor_calc_metadata_staging_failure_preserves_prior_plan_and_retries()
+{
+    const CalcSourcePackage source = write_calc_source_package(
+        "fastxlsx-package-editor-workbook-calc-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-workbook-calc-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-workbook-calc-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName calc_chain_part("/xl/calcChain.xml");
+    const std::string prior_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">)"
+        R"(<sheets><sheet name="QueuedWorkbook" sheetId="1" r:id="rId1"/></sheets>)"
+        R"(<calcPr calcId="77" fullCalcOnLoad="0"/>)"
+        R"(</workbook>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, prior_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "prior workbook replacement before injected calc metadata failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t initial_workbook_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorCalcMetadataStagedHook hook(
+            fail_package_editor_calc_metadata_after_staging);
+        try {
+            editor.request_full_calculation();
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(), "injected calc metadata commit failure",
+                "calc metadata staged failure should preserve injected context");
+        }
+    }
+    check(failed, "PackageEditor should surface injected calc metadata staging failure");
+
+    check(editor.edit_plan().size() == initial_plan_size,
+        "calc metadata staging failure should preserve prior edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "calc metadata staging failure should preserve prior notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "calc metadata staging failure should preserve prior package-entry audit");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "calc metadata staging failure should preserve prior removed-part audit");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "calc metadata staging failure should preserve prior omitted-entry audit");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == initial_workbook_audit_count,
+        "calc metadata staging failure should preserve prior workbook payload audit");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "calc metadata staging failure should not request full calculation");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Preserve,
+        "calc metadata staging failure should preserve calcChain action");
+    check(editor.manifest().find_part(calc_chain_part) != nullptr,
+        "calc metadata staging failure should preserve calcChain manifest state");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_output_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check(failed_output_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "calc metadata staging failure output should keep prior workbook replacement");
+    check(failed_output_reader.read_entry("xl/calcChain.xml") == source.calc_chain,
+        "calc metadata staging failure output should preserve calcChain bytes");
+    check(failed_output_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "calc metadata staging failure output should preserve content types bytes");
+    check(failed_output_reader.read_entry("xl/_rels/workbook.xml.rels")
+            == source.workbook_relationships,
+        "calc metadata staging failure output should preserve workbook relationships bytes");
+
+    editor.request_full_calculation();
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_output_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check_contains(retry_output_reader.read_entry("xl/workbook.xml"),
+        R"(fullCalcOnLoad="1")",
+        "calc metadata retry should write full calculation metadata");
+    check(retry_output_reader.find_entry("xl/calcChain.xml") == nullptr,
+        "calc metadata retry should remove calcChain");
+    check_not_contains(retry_output_reader.read_entry("[Content_Types].xml"),
+        "calcChain",
+        "calc metadata retry should remove calcChain content type");
+    check_not_contains(retry_output_reader.read_entry("xl/_rels/workbook.xml.rels"),
+        "relationships/calcChain",
+        "calc metadata retry should remove calcChain relationship");
+}
+
 
 } // namespace
 
@@ -3554,6 +3677,7 @@ int main(int argc, char* argv[])
             test_package_editor_request_full_calculation_preserves_prior_calc_chain_replacement();
             test_package_editor_rejects_workbook_calc_rebuild_without_state_changes();
             test_package_editor_rejects_malformed_workbook_calc_metadata_without_state_changes();
+            test_package_editor_calc_metadata_staging_failure_preserves_prior_plan_and_retries();
         }
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';

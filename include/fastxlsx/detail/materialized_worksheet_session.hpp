@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -676,6 +677,16 @@ public:
             }
         }
         return names;
+    }
+
+    void clear_dirty_sessions(std::span<const std::string> planned_names) noexcept
+    {
+        for (const std::string& planned_name : planned_names) {
+            auto existing = sessions_.find(planned_name);
+            if (existing != sessions_.end()) {
+                existing->second.clear_dirty();
+            }
+        }
     }
 
     /// Creates full worksheet chunk sources for dirty materialized sessions.

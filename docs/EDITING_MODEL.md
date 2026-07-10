@@ -29,15 +29,17 @@ source package -> part index/relationships -> staged edits -> part-level rewrite
 ## In-memory
 
 ```text
-source worksheet events -> strict/lossy projection -> sparse CellStore -> edits -> Patch flush
+source worksheet events -> strict/lossy projection -> sparse CellStore -> edits -> Patch stage -> package write -> state commit
 ```
 
 - Public facade 是 borrowed `WorksheetEditor`。
 - 适合 small-file random editing；由 cell count 与 estimated memory guardrail 限制。
 - 默认 strict：`RejectKnownLosses` 在 session 注册前拒绝 rich/phonetic/extension、formula metadata 和 cached result 等已知损失。
+- Strict loss 通过 `WorksheetMaterializationError` 暴露稳定 category 与 worksheet/cell/sharedStrings context；public diagnostic 不携带 XML token、part name、relationship id 或 parser state。
 - 显式 `AllowLossyProjection` 才允许拍平为 plain text/formula text。
 - Policy 是 session identity 的一部分；重复获取必须使用相同 policy/guardrail。
-- Dirty session 在 `save_as()` 前 flush 到 Patch plan；失败前不污染 registry、pending count 或 watermark。
+- Dirty session 在 `save_as()` 写包前 stage 到 Patch plan；只有 package write 成功后才提交 public handoff、清除 dirty 并推进 watermark。失败 retry 会按当前 CellStore 重建 projection，覆盖失败尝试留下的 stale internal stage。
+- Strict rejection 不注册 session、不排队 edit、不改变 pending/unsaved count，也不覆盖 `last_edit_error()`。
 - Worksheet metadata、relationships、tables、drawings、validations、comments 等不进入 `CellStore`，不能假设会随 cell structural edit 语义同步。
 
 ## DOM 边界
@@ -49,7 +51,9 @@ source worksheet events -> strict/lossy projection -> sparse CellStore -> edits 
 ## 状态与失败
 
 - Edit/materialization 先 preflight，成功后才注册或修改状态。
-- Failed edit/save 不清除 staged state，也不推进 save watermark。
+- 跨 workbook XML、calcChain、relationships、content types、manifest 和 edit plan 的 recalculation metadata 变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation。
+- Malformed source、非法值和 session option mismatch 保持通用 contract/load failure；不得伪装成 strict projection loss。
+- Failed edit/save 不清除 staged state 或 dirty session diagnostics，也不改变 pending/unsaved count、`last_edit_error()` 或 save watermark。
 - Successful `save_as()` 清除 unsaved watermark，但保留可复用 staged state。
 - Move construction/assignment 转移 watermark 与 session state；moved-from editor 视为未打开且无 pending/unsaved state。
 

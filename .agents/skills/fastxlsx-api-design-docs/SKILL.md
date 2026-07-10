@@ -9,7 +9,9 @@ description: "设计或审查 FastXLSX public API、Doxygen、状态与性能边
 Public Doxygen 必须写清：
 - 顺序/随机访问与生命周期。
 - `has_pending_changes()` 和 `has_unsaved_changes()` 的区别。
+- Save Doxygen 必须区分 internal stage、package write 与 public state commit，并说明失败时 dirty/pending/unsaved/last-error 不变量。
 - In-memory strict/lossy projection，默认 strict，lossy 显式 opt-in。
+- Structured diagnostics 只暴露稳定 category/context，不泄漏 XML、parser 或 package internal 状态；typed exception 保持 `FastXlsxError` catch compatibility。
 - preserve/audit/fail/edit 和 non-goals。
 
 禁止把 internal 类型、preservation evidence、公式文本或窄图片能力扩大为 public/full support。

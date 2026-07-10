@@ -126,12 +126,25 @@ struct WorkbookEditor::Impl {
         return sheet_catalog.source_name_for_current(sheet_name);
     }
 
+    [[nodiscard]] detail::WorkbookEditorMaterializedStageResult
+    stage_dirty_materialized_sessions_to_patch_plan()
+    {
+        return detail::stage_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, materialized_sessions, sheet_catalog);
+    }
+
+    void commit_materialized_stage(
+        const detail::WorkbookEditorMaterializedStageResult& stage) noexcept
+    {
+        detail::commit_workbook_editor_materialized_stage(materialized_sessions, stage);
+        pending_public_edit_count += stage.worksheet_names.size();
+    }
+
     void flush_dirty_materialized_sessions_to_patch_plan()
     {
-        const detail::WorkbookEditorMaterializedFlushResult result =
-            detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
-                editor, materialized_sessions, sheet_catalog);
-        pending_public_edit_count += result.flushed_worksheet_count;
+        const detail::WorkbookEditorMaterializedStageResult stage =
+            stage_dirty_materialized_sessions_to_patch_plan();
+        commit_materialized_stage(stage);
     }
 
     [[nodiscard]] bool has_unsaved_changes() const noexcept

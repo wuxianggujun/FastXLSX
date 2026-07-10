@@ -17,11 +17,12 @@ namespace fastxlsx {
 
 /// Error raised for FastXLSX validation and package-writing failures.
 ///
-/// FastXLSX currently exposes a single exception type for public API failures
-/// such as invalid worksheet names, invalid cell/range references, empty
-/// workbooks, XML generation errors, and ZIP/package write errors. The exception
-/// text is intended for diagnostics; no stable numeric error-code API exists in
-/// the current public surface.
+/// This is the common base for public API failures such as invalid worksheet
+/// names, invalid cell/range references, empty workbooks, XML generation errors,
+/// and ZIP/package write errors. Selected APIs may expose a documented derived
+/// type with structured context; callers that only need generic failure handling
+/// can continue catching FastXlsxError. Generic exception text is diagnostic and
+/// is not a stable error-code API.
 class FastXlsxError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

@@ -23,11 +23,17 @@ using CellStoreSharedStringIndexProvider =
     std::function<std::uint32_t(std::string_view text)>;
 
 struct WorkbookSharedStringsSnapshot {
+    struct ItemLossInfo {
+        bool rich_text = false;
+        bool phonetic_metadata = false;
+        bool extension_metadata = false;
+    };
+
     std::string part_name;
     std::string zip_path;
     std::string xml;
     std::vector<std::string> strings;
-    std::vector<bool> lossy_items;
+    std::vector<ItemLossInfo> item_losses;
 };
 
 /// Worksheet-local sparse coordinate for the internal in-memory editor store.

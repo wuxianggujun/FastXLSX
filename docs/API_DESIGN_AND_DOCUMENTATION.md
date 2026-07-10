@@ -30,6 +30,7 @@
 - `Cell` / `CellValue` 可以作为 owning 边界值和 small-file 存储，不作为 million-row 热路径长期模型。
 - Patch edit 必须明确 copy/rewrite/remove/audit/fail 行为，以及 sharedStrings、styles、formulas、relationships、content types 和 calc metadata 策略。
 - In-memory API 必须提供 cell count、内存估算和 guardrail，并定义失败前状态不污染。
+- Public structured diagnostics 只暴露稳定业务/语义分类与调用方可理解的上下文；XML token、parser state、part path、relationship id 和 internal type 不得成为 public contract。Typed exception 应保留 `FastXlsxError` 基类兼容性，并明确哪些相邻失败仍是通用错误。
 - 数值写入必须拒绝非 finite 值，不能序列化 `nan`、`inf` 或 `-inf`。
 - 第三方库只承担 ZIP、XML、图片等通用能力；XLSX 语义留在 FastXLSX。
 
@@ -43,6 +44,7 @@ Public API 注释至少说明：
 - 内存随 row、cell、string、style、rule、range、image bytes 或 decoded pixels 的增长关系。
 - OpenXML side effect：worksheet `.rels`、drawing `.rels`、content types、styles、sharedStrings、docProps、calc metadata 等。
 - 错误类型、失败是否发生在状态变更前、失败后是否可重试。
+- 若错误提供 typed diagnostic，逐字段说明索引基数、可选条件、稳定性和 text message 的非契约属性。
 - 不支持项和容易被误解的边界。
 
 发现 Doxygen 缺口时在 `TASK_BREAKDOWN.md` 的 C0/C3 记录任务；本文件不维护逐方法覆盖流水。

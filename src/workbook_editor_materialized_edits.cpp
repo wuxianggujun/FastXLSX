@@ -146,10 +146,10 @@ void validate_workbook_editor_materialized_flush_targets(
     }
 }
 
-WorkbookEditorMaterializedFlushResult
-flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+WorkbookEditorMaterializedStageResult
+stage_workbook_editor_dirty_materialized_sessions_to_patch_plan(
     PackageEditor& editor,
-    MaterializedWorksheetSessionRegistry& materialized_sessions,
+    const MaterializedWorksheetSessionRegistry& materialized_sessions,
     const WorkbookEditorSheetCatalogPlan& sheet_catalog)
 {
     std::optional<MaterializedSharedStringsProjectionPlan> shared_strings_projection =
@@ -161,18 +161,13 @@ flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
                 : std::shared_ptr<const CellStoreSharedStringIndexProvider> {});
     validate_workbook_editor_materialized_flush_targets(sheet_catalog, projections);
 
-    WorkbookEditorMaterializedFlushResult result;
+    WorkbookEditorMaterializedStageResult result;
+    result.worksheet_names.reserve(projections.size());
     for (const MaterializedWorksheetSheetDataProjection& projection : projections) {
         editor.replace_worksheet_sheet_data_from_chunk_source_by_name(
             projection.planned_name, projection.read_next_chunk, {},
             std::string_view(projection.dimension_reference));
-
-        MaterializedWorksheetSession* session =
-            materialized_sessions.try_session(projection.planned_name);
-        if (session != nullptr) {
-            session->clear_dirty();
-        }
-        ++result.flushed_worksheet_count;
+        result.worksheet_names.emplace_back(projection.planned_name);
     }
 
     if (shared_strings_projection.has_value()
@@ -185,6 +180,26 @@ flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
             "WorkbookEditor materialized worksheet sharedStrings append");
     }
     return result;
+}
+
+void commit_workbook_editor_materialized_stage(
+    MaterializedWorksheetSessionRegistry& materialized_sessions,
+    const WorkbookEditorMaterializedStageResult& stage) noexcept
+{
+    materialized_sessions.clear_dirty_sessions(stage.worksheet_names);
+}
+
+WorkbookEditorMaterializedFlushResult
+flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+    PackageEditor& editor,
+    MaterializedWorksheetSessionRegistry& materialized_sessions,
+    const WorkbookEditorSheetCatalogPlan& sheet_catalog)
+{
+    WorkbookEditorMaterializedStageResult stage =
+        stage_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, materialized_sessions, sheet_catalog);
+    commit_workbook_editor_materialized_stage(materialized_sessions, stage);
+    return WorkbookEditorMaterializedFlushResult {stage.worksheet_names.size()};
 }
 
 } // namespace fastxlsx::detail

@@ -360,6 +360,51 @@ void test_failed_save_as_after_materialized_stage_preserves_dirty_state()
         "successful retry should write the latest materialized value");
     check_not_contains(worksheet_xml, "before-staged-save-failure",
         "successful retry should replace the stale staged value");
+
+    worksheet.set_cell(2, 1, fastxlsx::CellValue::text("stale-existing-output-failure"));
+    check(worksheet.has_pending_changes(),
+        "existing-output staged failure setup should dirty the materialized handle");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "existing-output staged failure setup should create one unsaved change");
+
+    {
+        ScopedWorkbookEditorSaveAsStagedHook hook(
+            throw_after_workbook_editor_materialized_stage);
+        check(threw_fastxlsx_error([&] { editor.save_as(output); }),
+            "injected failure after materialized staging should fail over existing output");
+    }
+
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "existing-output staged failure should leave the previous output package unchanged");
+    check(worksheet.has_pending_changes(),
+        "existing-output failed save after staging should keep the materialized handle dirty");
+    check(editor.pending_change_count() == 1,
+        "existing-output failed save after staging should not commit another handoff");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "existing-output failed save after staging should preserve the unsaved watermark");
+    check(!editor.last_edit_error().has_value(),
+        "existing-output failed save after staging should not create last_edit_error");
+
+    worksheet.set_cell(2, 1, fastxlsx::CellValue::text("fresh-existing-output-retry"));
+    editor.save_as(output);
+
+    check(!worksheet.has_pending_changes(),
+        "existing-output successful retry should clear the materialized handle");
+    check(editor.pending_change_count() == 2,
+        "existing-output successful retry should commit the second materialized handoff");
+    check(!editor.has_unsaved_changes() && editor.unsaved_change_count() == 0,
+        "existing-output successful retry should advance the saved watermark");
+    const auto final_output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string final_worksheet_xml =
+        final_output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(final_worksheet_xml, "after-staged-save-failure",
+        "existing-output successful retry should keep the first retried value");
+    check_contains(final_worksheet_xml, "fresh-existing-output-retry",
+        "existing-output successful retry should write the latest follow-up value");
+    check_not_contains(final_worksheet_xml, "stale-existing-output-failure",
+        "existing-output successful retry should replace the stale follow-up value");
+    check(final_output_entries != output_entries,
+        "existing-output successful retry should update the output package after the failed attempt");
 }
 
 void test_failed_save_as_after_multi_sheet_materialized_stage_preserves_all_dirty_state()

@@ -289,6 +289,28 @@ void check_boolean_cell(
         message);
 }
 
+void check_formula_cell(
+    fastxlsx::WorksheetEditor& sheet,
+    std::string_view cell_reference,
+    std::string_view expected,
+    const char* message)
+{
+    const auto cell = sheet.try_cell(cell_reference);
+    check(cell.has_value() && cell->kind() == fastxlsx::CellValueKind::Formula &&
+            cell->text_value() == std::string(expected),
+        message);
+}
+
+void check_blank_cell(
+    fastxlsx::WorksheetEditor& sheet,
+    std::string_view cell_reference,
+    const char* message)
+{
+    const auto cell = sheet.try_cell(cell_reference);
+    check(cell.has_value() && cell->kind() == fastxlsx::CellValueKind::Blank,
+        message);
+}
+
 void check_reopened_editor_clean(
     fastxlsx::WorkbookEditor& editor,
     fastxlsx::WorksheetEditor& data,
@@ -328,6 +350,39 @@ void check_reopened_multi_session_appended_shared_strings_output(
     check_number_cell(
         other, "C3", 33.0,
         "reopened appended sharedStrings Other C3 should expose the number");
+}
+
+void check_reopened_mixed_shared_strings_non_text_output(
+    const std::filesystem::path& output)
+{
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor other = editor.worksheet("Other");
+
+    check_reopened_editor_clean(
+        editor, data, other, "reopened mixed sharedStrings/non-text output should be clean");
+    check(data.cell_count() == 2,
+        "reopened mixed sharedStrings/non-text Data sheet should expose two cells");
+    check(other.cell_count() == 4,
+        "reopened mixed sharedStrings/non-text Other sheet should expose four cells");
+    check_text_cell(
+        data, "A1", "existing",
+        "reopened mixed sharedStrings/non-text Data A1 should expose source text");
+    check_text_cell(
+        data, "B1", "text-only-sheet",
+        "reopened mixed sharedStrings/non-text Data B1 should expose appended text");
+    check_blank_cell(
+        other, "B2",
+        "reopened mixed sharedStrings/non-text Other B2 should expose blank cell");
+    check_number_cell(
+        other, "C3", 44.0,
+        "reopened mixed sharedStrings/non-text Other C3 should expose number");
+    check_boolean_cell(
+        other, "A4", false,
+        "reopened mixed sharedStrings/non-text Other A4 should expose boolean");
+    check_formula_cell(
+        other, "D5", "A1&B2<C3",
+        "reopened mixed sharedStrings/non-text Other D5 should expose formula text");
 }
 
 void check_reopened_multi_session_existing_shared_strings_output(
@@ -2114,6 +2169,105 @@ void test_materialized_flush_reuses_shared_strings_across_multiple_dirty_session
         "multi-session sharedStrings flush no-op save should not mutate the source package");
 }
 
+void test_materialized_flush_shared_strings_skips_non_text_dirty_sessions()
+{
+    const MaterializedFlushTwoSheetSourcePackage source =
+        write_two_sheet_materialized_flush_source_package(
+            "fastxlsx-workbook-editor-materialized-flush-shared-non-text-source.xlsx",
+            true);
+    const std::map<std::string, std::string> source_entries =
+        read_stored_package_entries(source.path);
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+
+    fastxlsx::detail::MaterializedWorksheetSessionRegistry registry;
+    fastxlsx::detail::MaterializedWorksheetSession& data =
+        materialize_session(registry, "Data");
+    data.set_cell(1, 1, fastxlsx::CellValue::text("existing"));
+    data.set_cell(1, 2, fastxlsx::CellValue::text("text-only-sheet"));
+
+    fastxlsx::detail::MaterializedWorksheetSession& other =
+        materialize_session(registry, "Other");
+    other.set_cell(2, 2, fastxlsx::CellValue::blank());
+    other.set_cell(3, 3, fastxlsx::CellValue::number(44.0));
+    other.set_cell(4, 1, fastxlsx::CellValue::boolean(false));
+    other.set_cell(5, 4, fastxlsx::CellValue::formula("A1&B2<C3"));
+
+    const fastxlsx::detail::WorkbookEditorSheetCatalogPlan catalog({"Data", "Other"});
+    const fastxlsx::detail::WorkbookEditorMaterializedFlushResult result =
+        fastxlsx::detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
+            editor, registry, catalog);
+
+    check(result.flushed_worksheet_count == 2,
+        "mixed sharedStrings/non-text materialized flush should report both worksheets");
+    check(!data.dirty() && !other.dirty(),
+        "mixed sharedStrings/non-text materialized flush should clear both sessions");
+    check(registry.dirty_session_count() == 0,
+        "mixed sharedStrings/non-text materialized flush should clear dirty diagnostics");
+
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-non-text-output.xlsx");
+    const std::filesystem::path noop_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-materialized-flush-shared-non-text-noop-output.xlsx");
+    editor.save_as(output);
+
+    const std::string data_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet1.xml");
+    const std::string other_worksheet =
+        read_stored_package_entry(output, "xl/worksheets/sheet2.xml");
+    const std::string shared_strings =
+        read_stored_package_entry(output, "xl/sharedStrings.xml");
+
+    check(data_worksheet.find(R"(<dimension ref="A1:B1"/>)") != std::string::npos,
+        "mixed sharedStrings/non-text flush should update Data dimensions");
+    check(data_worksheet.find(R"(<c r="A1" t="s"><v>0</v></c>)")
+            != std::string::npos,
+        "mixed sharedStrings/non-text flush should reuse the source string index");
+    check(data_worksheet.find(R"(<c r="B1" t="s"><v>1</v></c>)")
+            != std::string::npos,
+        "mixed sharedStrings/non-text flush should append the text-only sheet string");
+    check(data_worksheet.find("inlineStr") == std::string::npos,
+        "mixed sharedStrings/non-text flush should not inline Data text");
+
+    check(other_worksheet.find(R"(<dimension ref="A2:D5"/>)") != std::string::npos,
+        "mixed sharedStrings/non-text flush should update Other dimensions");
+    check(other_worksheet.find(R"(<c r="B2"/>)") != std::string::npos,
+        "mixed sharedStrings/non-text flush should keep blank cells value-only");
+    check(other_worksheet.find(R"(<c r="C3"><v>44</v></c>)") != std::string::npos,
+        "mixed sharedStrings/non-text flush should keep numeric cells value-only");
+    check(other_worksheet.find(R"(<c r="A4" t="b"><v>0</v></c>)")
+            != std::string::npos,
+        "mixed sharedStrings/non-text flush should keep boolean cells value-only");
+    check(other_worksheet.find(R"(<c r="D5"><f>A1&amp;B2&lt;C3</f></c>)")
+            != std::string::npos,
+        "mixed sharedStrings/non-text flush should keep formula cells value-only");
+    check(other_worksheet.find(R"(t="s")") == std::string::npos &&
+            other_worksheet.find("inlineStr") == std::string::npos,
+        "mixed sharedStrings/non-text flush should not encode Other cells as text");
+
+    check(shared_strings.find(R"(count="2")") != std::string::npos &&
+            shared_strings.find(R"(uniqueCount="2")") != std::string::npos,
+        "mixed sharedStrings/non-text flush should count only text references");
+    check(shared_strings.find(
+              R"(<si><t>existing</t></si><si><t>text-only-sheet</t></si>)")
+            != std::string::npos,
+        "mixed sharedStrings/non-text flush should append only the text session value");
+    check_reopened_mixed_shared_strings_non_text_output(output);
+
+    check_materialized_flush_noop_save_is_stable(
+        editor,
+        registry,
+        output,
+        noop_output,
+        "mixed sharedStrings/non-text flush no-op save should keep output byte-stable",
+        "mixed sharedStrings/non-text flush no-op save should keep registry clean");
+    check_reopened_mixed_shared_strings_non_text_output(noop_output);
+    check(!data.dirty() && !other.dirty(),
+        "mixed sharedStrings/non-text flush no-op save should keep both sessions clean");
+    check(read_stored_package_entries(source.path) == source_entries,
+        "mixed sharedStrings/non-text flush no-op save should not mutate the source package");
+}
+
 void test_materialized_flush_reuses_existing_shared_strings_across_multiple_dirty_sessions()
 {
     const MaterializedFlushTwoSheetSourcePackage source =
@@ -2341,6 +2495,7 @@ int main()
         test_materialized_flush_falls_back_to_inline_when_shared_strings_append_is_unsupported();
         test_materialized_flush_deduplicates_appended_shared_strings();
         test_materialized_flush_reuses_shared_strings_across_multiple_dirty_sessions();
+        test_materialized_flush_shared_strings_skips_non_text_dirty_sessions();
         test_materialized_flush_reuses_existing_shared_strings_across_multiple_dirty_sessions();
         test_materialized_flush_multi_session_falls_back_to_inline_when_shared_strings_append_is_unsupported();
     } catch (const std::exception& ex) {

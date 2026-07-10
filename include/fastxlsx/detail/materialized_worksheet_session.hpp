@@ -46,8 +46,9 @@ public:
 
     [[nodiscard]] bool options_match(const CellStoreOptions& options) const noexcept
     {
-        return store_.options().max_cells == options.max_cells &&
-            store_.options().memory_budget_bytes == options.memory_budget_bytes;
+        return store_.options().materialization_policy == options.materialization_policy
+            && store_.options().max_cells == options.max_cells
+            && store_.options().memory_budget_bytes == options.memory_budget_bytes;
     }
 
     [[nodiscard]] bool dirty() const noexcept

@@ -1,72 +1,53 @@
-# Development Environment
+# 开发环境
 
-FastXLSX is currently developed and validated primarily on Windows with Visual
-Studio 2026 / MSVC 2026 and CMake presets.
+## 基线
 
-## Required tools
+- C++20。
+- CMake 3.20+；presets schema 需要 CMake 3.21+。
+- Visual Studio 2026 / MSVC 2026 优先。
+- vcpkg manifest mode，`VCPKG_ROOT` 指向可用 vcpkg。
+- 所有文档/源码使用 UTF-8 与仓库既有 LF 策略。
 
-- Visual Studio 2026 with MSVC C++ tools.
-- CMake 3.20 or newer.
-- vcpkg available through `VCPKG_ROOT`, `VCPKG_INSTALLATION_ROOT`, or the
-  Visual Studio bundled vcpkg path used by the presets.
-- Python for repository verification scripts.
-- Excel is optional for local COM-based visual QA scripts.
+## Production
 
-## Recommended local workflow
-
-Run from a VS2026 Developer Command Prompt, or initialize the environment first:
-
-```powershell
-cmd /c '"D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" && cmake --preset windows-nmake-release'
-cmd /c '"D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" && cmake --build --preset windows-nmake-release'
-cmd /c '"D:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" && ctest --preset windows-nmake-release --output-on-failure'
-```
-
-The `windows-nmake-release` preset uses `NMake Makefiles`. Running it from a
-plain PowerShell where `nmake` is not on `PATH` will fail during compiler
-detection.
-
-## Presets
-
-- `windows-nmake-release`: default vcpkg-backed smoke path with `stb`.
-- `windows-nmake-release-vcpkg`: compatibility vcpkg toolchain preset.
-- `windows-nmake-release-minizip`: opt-in `planned-runtime` path with
-  `FASTXLSX_ENABLE_MINIZIP_NG=ON`.
-- `windows-nmake-release-benchmark`: opt-in benchmark build.
-- `windows-nmake-release-benchmark-minizip`: opt-in benchmark build with the
-  minizip backend.
-- `windows-nmake-release-reference-benchmark`: opt-in third-party C++ writer
-  adapter benchmark build. It enables `FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON`
-  and the vcpkg `reference-benchmarks` feature for OpenXLSX / xlnt adapters.
-
-## Install/export validation
-
-For release packaging work, validate both the project and a small installed
-consumer:
+在 VS Developer Command Prompt：
 
 ```powershell
 cmake --preset windows-nmake-release
 cmake --build --preset windows-nmake-release
-ctest --preset windows-nmake-release --output-on-failure
-cmake --install build/windows-nmake-release --prefix build/qa/install-fastxlsx
+ctest --preset windows-nmake-release
 ```
 
-Then configure a separate consumer with:
+该 profile 默认启用 DEFLATE reader/writer 与 images。
 
-```cmake
-find_package(FastXLSX CONFIG REQUIRED)
-target_link_libraries(consumer PRIVATE FastXLSX::fastxlsx)
+## Stored bootstrap
+
+```powershell
+cmake --preset windows-nmake-release-stored
+cmake --build --preset windows-nmake-release-stored
+ctest --preset windows-nmake-release-stored
 ```
 
-For the opt-in minizip package, repeat the same flow with
-`windows-nmake-release-minizip` and install to a separate prefix. The installed
-`FastXLSXConfig.cmake` intentionally calls `find_dependency(minizip-ng CONFIG)`
-for that build, so the consumer configure step must also make the resolved
-vcpkg dependency prefix available through the vcpkg toolchain or
-`CMAKE_PREFIX_PATH`.
+只支持 stored ZIP entries，不代表常见 Excel DEFLATE workbook 的 production 编辑能力。
 
-## Generated files
+## No-images
 
-Do not stage build outputs, generated workbooks, local logs, private state, or
-temporary consumer projects under `build/qa/`. The repository `.gitignore`
-already excludes these paths.
+```powershell
+cmake --preset windows-nmake-release-no-images
+cmake --build --preset windows-nmake-release-no-images
+build\windows-nmake-release-no-images\fastxlsx_image_disabled_smoke.exe
+```
+
+该 profile 不安装 stb，public image call 必须抛 feature-disabled error。
+
+## 常见环境错误
+
+普通 PowerShell/CMD 未加载 MSVC 环境时，NMake preset 会在 `project()` 阶段报告找不到 `nmake` 或 C++ compiler。先运行 `vcvars64.bat`，再确认：
+
+```powershell
+where cl
+where nmake
+cmake --version
+```
+
+不要使用旧 `build/CMakeCache.txt` 推断推荐配置。

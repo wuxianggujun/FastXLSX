@@ -1,81 +1,37 @@
-# Dependencies
+# 依赖
 
-FastXLSX uses vcpkg manifest mode for third-party dependencies. Dependency
-choices must preserve the project boundary: OpenXML/XLSX semantics and hot
-worksheet XML paths stay inside FastXLSX; generic image and ZIP plumbing may use
-mature libraries.
+FastXLSX 使用 vcpkg manifest mode。依赖是否出现在 manifest、是否被当前 profile 安装、是否被源码链接是三个不同事实。
 
-## Current default dependency
+## 默认 production features
 
-### `stb`
+### `runtime-minizip`
 
-- Declared in `vcpkg.json` default `dependencies`.
-- Used for PNG/JPEG image header probing and pixel decoding helpers.
-- Also validates PNG/JPEG inputs for streaming-only new-workbook image
-  insertion.
-- Current local vcpkg metadata reports license `MIT OR CC-PDDC`.
-- CMake integration uses vcpkg's `FindStb.cmake` and `${Stb_INCLUDE_DIR}`.
-- `STB_IMAGE_IMPLEMENTATION` must stay in exactly one `.cpp` file.
+- Port：`minizip-ng[core,zlib]`。
+- CMake：`FASTXLSX_ENABLE_MINIZIP_NG=ON`，private link `MINIZIP::minizip-ng`。
+- 用途：stored + DEFLATE ZIP package reader/writer。
+- Install config：启用时 `find_dependency(minizip-ng CONFIG)`。
 
-`stb` does not provide OpenXML media, drawing, relationship, or content type
-semantics. It must not be documented as existing-workbook image preservation or
-drawing editing support.
+### `images`
 
-## Optional runtime dependency group
+- Port：`stb`。
+- CMake：`FASTXLSX_ENABLE_IMAGES=ON`。
+- 用途：PNG/JPEG metadata、decode、Streaming insertion 和已有 media replacement 的当前窄切片。
+- Header-only，只在实现编译时需要；不开启时不查找 stb，改编译 disabled stubs，并向 consumer 传播 `FASTXLSX_HAS_IMAGES=0`。
 
-The `planned-runtime` vcpkg feature is opt-in. It is used by presets that enable
-`FASTXLSX_ENABLE_MINIZIP_NG=ON`.
+## 显式 profiles
 
-- `minizip-ng[core,zlib]`: opt-in ZIP package backend.
-- `zlib`: compression backend used by the current minizip-ng feature selection.
-- `zlib-ng`, `expat`, and `pugixml`: recorded for planned ZIP/XML work, but not
-  linked by the default build.
+- `windows-nmake-release`：production，minizip + images。
+- `windows-nmake-release-stored`：只安装 `images`，关闭 minizip；仅 stored ZIP bootstrap。
+- `windows-nmake-release-no-images`：只安装 `runtime-minizip`，关闭 images，并运行 disabled-feature smoke。
 
-The minizip-ng path is not the default runtime path. Default builds still use
-the internal stored ZIP bootstrap writer unless configured otherwise.
+## Future / Development features
 
-## Planned development dependency group
+- `planned-xml`：zlib-ng、Expat、pugixml；当前源码不链接，不得写成已实现 parser/DOM backend。
+- `planned-dev`：Catch2、Google Benchmark 候选依赖；当前 tests/benchmarks 不由该 feature 自动接线。
+- `reference-benchmarks`：OpenXLSX/xlnt，仅用于 opt-in 对照，不是 runtime foundation。
 
-The `planned-dev` vcpkg feature records future development dependencies:
+## 引入规则
 
-- `catch2`
-- `benchmark`
-
-Current tests do not use Catch2, and benchmark targets are opt-in through
-`FASTXLSX_BUILD_BENCHMARKS=ON`.
-
-## Optional reference benchmark dependency group
-
-The `reference-benchmarks` vcpkg feature is opt-in and is used only by
-`FASTXLSX_BUILD_REFERENCE_BENCHMARKS=ON`:
-
-- `openxlsx`: OpenXLSX reference writer adapter, vcpkg license metadata
-  currently reports BSD-3-Clause.
-- `xlnt`: xlnt reference writer adapter, vcpkg license metadata currently
-  reports MIT AND BSD-3-Clause AND BSD-2-Clause.
-
-These libraries are not FastXLSX runtime dependencies. They are linked only
-into standalone benchmark executables under `benchmarks/`, and generated
-benchmark artifacts stay under ignored `build/qa/` paths.
-
-## Release packaging notes
-
-- Keep `vcpkg.json` and CMake dependency discovery in sync.
-- Do not add a `find_package()` or link dependency unless source code actually
-  uses that dependency.
-- Do not use `FetchContent` for core dependencies by default.
-- Do not vendor third-party source into `src/` or `include/`.
-- Update `THIRD_PARTY_NOTICES.md` before publishing artifacts.
-- Verify the exact dependency license metadata from the resolved vcpkg baseline
-  before tagging a release.
-
-## Non-goals
-
-Do not add these as FastXLSX runtime dependencies:
-
-- `OpenXLSX`
-- `xlnt`
-- `libxlsxwriter`
-- `QXlsx`
-
-They may be used only as references or benchmark comparison points.
+- 优先 `find_package` / `find_path`，不默认 FetchContent，不 vendoring 到 `src/` 或 public `include/`。
+- 记录 feature、linkage、license、export/consumer 影响和 fallback。
+- ZIP/XML/image 库提供通用能力；OpenXML/OPC/XLSX 语义由 FastXLSX 实现。

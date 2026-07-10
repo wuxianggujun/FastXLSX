@@ -147,7 +147,7 @@ void check_reopened_formula_dirty_output(
 {
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
 
     check_workbook_editor_public_clean_state(
         reopened_editor, prefix + " fresh reopen");
@@ -271,7 +271,7 @@ void test_public_worksheet_editor_materializes_source_formulas()
     write_stored_zip_entries(source, entries);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -435,7 +435,7 @@ void test_public_worksheet_editor_materializes_source_error_cells()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -617,7 +617,7 @@ void test_public_worksheet_editor_structural_shift_source_error_cells()
             const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == source_cell_count,
                 scenario_text + " setup should materialize source error cells");
             check(!sheet.has_pending_changes(),
@@ -673,7 +673,7 @@ void test_public_worksheet_editor_structural_shift_source_error_cells()
                 noop_output, expected_range, expected_cells, scenario_text + " no-op output");
 
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -860,7 +860,7 @@ void test_public_worksheet_editor_ignores_formula_cached_result_types()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -1052,7 +1052,7 @@ void test_public_worksheet_editor_materializes_unresolved_shared_formula_cached_
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -1252,7 +1252,7 @@ void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata(
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> ordinary_formula = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> shared_follower = sheet.try_cell("C1");
@@ -1386,7 +1386,7 @@ void test_public_worksheet_editor_direct_formula_source_mutations_drop_metadata(
         "direct formula source mutation no-op output");
 
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
     check(!reopened_sheet.has_pending_changes(),
         "direct formula source mutation fresh reopen should start clean");
     check(!reopened_editor.has_pending_changes(),
@@ -1490,7 +1490,7 @@ void test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     check(sheet.cell_count() == 8,
         "batch formula source mutation setup should materialize all source records");
@@ -1621,7 +1621,7 @@ void test_public_worksheet_editor_batch_formula_source_mutations_drop_metadata()
         "batch formula source mutation no-op output");
 
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
     check(!reopened_sheet.has_pending_changes(),
         "batch formula source mutation fresh reopen should start clean");
     check(reopened_sheet.cell_count() == 6,
@@ -1744,7 +1744,7 @@ void test_public_worksheet_editor_row_column_formula_source_mutations_drop_metad
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     check(sheet.cell_count() == 24,
         "row/column formula source mutation setup should materialize all source records");
@@ -1903,7 +1903,7 @@ void test_public_worksheet_editor_row_column_formula_source_mutations_drop_metad
         "row/column formula source mutation no-op output");
 
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
     check(!reopened_sheet.has_pending_changes(),
         "row/column formula source mutation fresh reopen should start clean");
     check(reopened_sheet.cell_count() == 14,
@@ -2030,7 +2030,7 @@ void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_meta
         [](const std::filesystem::path& output, std::string_view scenario) {
             const std::string prefix(scenario);
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
 
             check_workbook_editor_public_clean_state(reopened_editor,
                 prefix + " fresh reopen");
@@ -2067,7 +2067,7 @@ void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_meta
     const auto clear_source_entries = fastxlsx::test::read_zip_entries(clear_source);
 
     fastxlsx::WorkbookEditor clear_editor = fastxlsx::WorkbookEditor::open(clear_source);
-    fastxlsx::WorksheetEditor clear_sheet = clear_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor clear_sheet = clear_editor.worksheet("Data", lossy_source_materialization_options());
     check(clear_sheet.cell_count() == 8,
         "whole-store formula clear setup should materialize all source records");
     check(clear_sheet.get_cell("C1").kind() == fastxlsx::CellValueKind::Formula
@@ -2146,7 +2146,7 @@ void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_meta
     fastxlsx::WorkbookEditor clear_reopened_editor =
         fastxlsx::WorkbookEditor::open(clear_noop_output);
     fastxlsx::WorksheetEditor clear_reopened_sheet =
-        clear_reopened_editor.worksheet("Data");
+        clear_reopened_editor.worksheet("Data", lossy_source_materialization_options());
     check(!clear_reopened_sheet.has_pending_changes(),
         "whole-store formula clear fresh reopen should start clean");
     clear_reopened_sheet.set_cell("I2", fastxlsx::CellValue::formula("A1+H1"));
@@ -2203,7 +2203,7 @@ void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_meta
     const auto erase_source_entries = fastxlsx::test::read_zip_entries(erase_source);
 
     fastxlsx::WorkbookEditor erase_editor = fastxlsx::WorkbookEditor::open(erase_source);
-    fastxlsx::WorksheetEditor erase_sheet = erase_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor erase_sheet = erase_editor.worksheet("Data", lossy_source_materialization_options());
     check(erase_sheet.cell_count() == 8,
         "whole-store formula erase setup should materialize all source records");
     erase_sheet.erase_cells();
@@ -2252,7 +2252,7 @@ void test_public_worksheet_editor_whole_store_formula_source_mutations_drop_meta
     fastxlsx::WorkbookEditor erase_reopened_editor =
         fastxlsx::WorkbookEditor::open(erase_noop_output);
     fastxlsx::WorksheetEditor erase_reopened_sheet =
-        erase_reopened_editor.worksheet("Data");
+        erase_reopened_editor.worksheet("Data", lossy_source_materialization_options());
     check(!erase_reopened_sheet.has_pending_changes(),
         "whole-store formula erase fresh reopen should start clean");
     erase_reopened_sheet.set_cell("A1", fastxlsx::CellValue::formula("B1+1"));
@@ -2353,7 +2353,7 @@ void test_public_worksheet_editor_full_replacement_formula_source_mutations_drop
     };
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     check(sheet.cell_count() == 8,
         "full-replacement formula source mutation setup should materialize all source records");
@@ -2503,7 +2503,7 @@ void test_public_worksheet_editor_full_replacement_formula_source_mutations_drop
         "full-replacement formula source mutation no-op output");
 
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
     check(!reopened_sheet.has_pending_changes(),
         "full-replacement formula source mutation fresh reopen should start clean");
     reopened_sheet.set_cell("E5", fastxlsx::CellValue::formula("A4+B4"));
@@ -2693,7 +2693,7 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
             const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == 8,
                 scenario_text + " setup should materialize all source formula records");
             check(!sheet.has_pending_changes(),
@@ -2743,7 +2743,7 @@ void test_public_worksheet_editor_structural_shift_formula_source_mutations_drop
                 noop_output, expected_range, expected_cells, scenario_text + " no-op output");
 
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -2907,7 +2907,7 @@ void test_public_worksheet_editor_materializes_source_shared_formulas()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> base = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> follower = sheet.try_cell("B2");
@@ -3090,7 +3090,7 @@ void test_public_worksheet_editor_materializes_source_order_shared_formula_matri
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const auto expect_formula = [&](std::string_view reference, std::string_view expected,
                                     std::string_view message) {
@@ -3305,7 +3305,7 @@ void test_public_worksheet_editor_materializes_office_like_shared_formula_shape(
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const auto expect_formula = [&](std::string_view reference, std::string_view expected,
                                     std::string_view message) {
@@ -3542,7 +3542,7 @@ void test_public_worksheet_editor_materializes_array_and_datatable_formula_metad
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> array_formula = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> array_cached = sheet.try_cell("B1");

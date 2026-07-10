@@ -207,6 +207,16 @@ bool WorkbookEditor::has_pending_changes() const noexcept
             impl_->materialized_sessions.dirty_session_count() != 0);
 }
 
+bool WorkbookEditor::has_unsaved_changes() const noexcept
+{
+    return impl_ != nullptr && impl_->has_unsaved_changes();
+}
+
+std::size_t WorkbookEditor::unsaved_change_count() const noexcept
+{
+    return impl_ == nullptr ? 0 : impl_->unsaved_change_count();
+}
+
 std::size_t WorkbookEditor::pending_change_count() const noexcept
 {
     return impl_ == nullptr ? 0 : impl_->pending_public_edit_count;
@@ -639,6 +649,7 @@ void WorkbookEditor::save_as(const std::filesystem::path& path)
     detail::validate_workbook_editor_save_as_path(impl_->editor.reader().path(), path);
     impl_->flush_dirty_materialized_sessions_to_patch_plan();
     impl_->editor.save_as(path);
+    impl_->mark_saved();
 }
 
 } // namespace fastxlsx

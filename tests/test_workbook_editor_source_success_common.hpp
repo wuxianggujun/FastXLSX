@@ -112,6 +112,13 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+fastxlsx::WorksheetEditorOptions lossy_source_materialization_options()
+{
+    fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
+    return options;
+}
 bool workbook_editor_catalog_entries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& rhs)

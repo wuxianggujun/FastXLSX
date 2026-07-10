@@ -41,10 +41,26 @@ void test_worksheet_options_project_to_cell_store_options()
 
     const fastxlsx::detail::CellStoreOptions store_options =
         fastxlsx::detail::workbook_editor_cell_store_options_from_worksheet_options(options);
+    check(store_options.materialization_policy
+            == fastxlsx::detail::CellStoreMaterializationPolicy::RejectKnownLosses,
+        "worksheet options should default to strict materialization");
     check(store_options.max_cells == 321,
         "worksheet options should project max_cells to CellStoreOptions");
     check(store_options.memory_budget_bytes == 654,
         "worksheet options should project memory_budget_bytes to CellStoreOptions");
+}
+
+void test_lossy_worksheet_policy_projects_to_cell_store_options()
+{
+    fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
+
+    const fastxlsx::detail::CellStoreOptions store_options =
+        fastxlsx::detail::workbook_editor_cell_store_options_from_worksheet_options(options);
+    check(store_options.materialization_policy
+            == fastxlsx::detail::CellStoreMaterializationPolicy::AllowLossyProjection,
+        "explicit lossy worksheet policy should project to CellStoreOptions");
 }
 
 void test_source_sheet_names_keep_reader_order()
@@ -107,6 +123,7 @@ int main()
     try {
         test_editor_options_project_to_cell_store_options();
         test_worksheet_options_project_to_cell_store_options();
+        test_lossy_worksheet_policy_projects_to_cell_store_options();
         test_source_sheet_names_keep_reader_order();
         test_public_catalog_projection_preserves_semantics();
     } catch (const std::exception& ex) {

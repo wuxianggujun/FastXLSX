@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fastxlsx.local/schemas/benchmark-evidence-manifest.schema.json",
+  "title": "FastXLSX benchmark evidence manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "evidence_schema_version",
+    "evidence_id",
+    "created_utc",
+    "git_revision",
+    "benchmark_kind",
+    "environment",
+    "artifacts",
+    "claims"
+  ],
+  "properties": {
+    "evidence_schema_version": { "const": "1" },
+    "evidence_id": { "type": "string", "minLength": 1 },
+    "created_utc": { "type": "string", "format": "date-time" },
+    "git_revision": { "type": "string", "pattern": "^[0-9a-fA-F]{7,40}$" },
+    "benchmark_kind": {
+      "enum": [
+        "streaming-writer",
+        "workbook-editor",
+        "package-editor-cell-replacement",
+        "reference-writer"
+      ]
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "compiler", "cmake_preset", "cpu", "memory_bytes"],
+      "properties": {
+        "os": { "type": "string", "minLength": 1 },
+        "compiler": { "type": "string", "minLength": 1 },
+        "cmake_preset": { "type": "string", "minLength": 1 },
+        "cpu": { "type": "string", "minLength": 1 },
+        "memory_bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "role"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "role": { "enum": ["result", "matrix-report", "summary", "office-report", "workbook"] }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement", "artifact_paths"],
+        "properties": {
+          "statement": { "type": "string", "minLength": 1 },
+          "artifact_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  }
+}

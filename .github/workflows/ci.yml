@@ -20,6 +20,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.x"
+
+      - name: Validate tracked benchmark evidence
+        shell: cmd
+        run: |
+          python tools\validate_benchmark_evidence.py --self-test || exit /b 1
+          python tools\validate_benchmark_evidence.py --root benchmarks\evidence || exit /b 1
       - name: Locate Visual Studio
         shell: cmd
         run: |
@@ -69,7 +79,7 @@ jobs:
           ctest --preset windows-nmake-release || exit /b 1
 
   windows-msvc-nmake-vcpkg:
-    name: Windows VS2026 NMake opt-in vcpkg (${{ matrix.preset }})
+    name: Windows VS2026 NMake profile (${{ matrix.preset }})
     runs-on: windows-2025-vs2026
     timeout-minutes: 45
 
@@ -77,7 +87,8 @@ jobs:
       fail-fast: false
       matrix:
         preset:
-          - windows-nmake-release-minizip
+          - windows-nmake-release-stored
+          - windows-nmake-release-no-images
 
     steps:
       - name: Checkout
@@ -132,4 +143,8 @@ jobs:
           echo VCPKG_ROOT=%VCPKG_ROOT%
           cmake --preset %FASTXLSX_PRESET% || exit /b 1
           cmake --build --preset %FASTXLSX_PRESET% || exit /b 1
-          ctest --preset %FASTXLSX_PRESET% || exit /b 1
+          if "%FASTXLSX_PRESET%"=="windows-nmake-release-no-images" (
+            build\windows-nmake-release-no-images\fastxlsx_image_disabled_smoke.exe || exit /b 1
+          ) else (
+            ctest --preset %FASTXLSX_PRESET% || exit /b 1
+          )

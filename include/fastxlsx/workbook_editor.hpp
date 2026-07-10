@@ -79,6 +79,19 @@ struct WorkbookEditorOptions {
     std::optional<std::size_t> replacement_memory_budget_bytes;
 };
 
+/// Controls whether source worksheet cells may be projected into the narrower
+/// WorksheetEditor cell model when source-only semantics would be discarded.
+enum class WorksheetMaterializationPolicy {
+    /// Reject known lossy projections such as rich text formatting, formula
+    /// metadata, and cached formula results. This is the safe default.
+    RejectKnownLosses,
+
+    /// Explicitly allow supported source cells to be flattened into the current
+    /// scalar/formula CellStore model. The discarded source semantics cannot be
+    /// recovered when the materialized worksheet is saved.
+    AllowLossyProjection,
+};
+
 /// Guardrails for one materialized worksheet editing session.
 ///
 /// API mode: In-memory / existing-workbook small-file editing. These limits are
@@ -87,6 +100,7 @@ struct WorkbookEditorOptions {
 /// store. They are intentionally separate from WorkbookEditorOptions, which
 /// guards whole-<sheetData> replacement payloads.
 struct WorksheetEditorOptions {
+
     /// Maximum number of sparse cell records allowed in the materialized
     /// worksheet session.
     std::optional<std::size_t> max_cells;
@@ -97,6 +111,14 @@ struct WorksheetEditorOptions {
     /// source package bytes, generated XML chunks, PackageEditor staging files,
     /// ZIP writer buffers, and save-time package assembly costs.
     std::optional<std::size_t> memory_budget_bytes;
+
+    /// Source-to-CellStore projection policy for the initial materialization.
+    ///
+    /// The default rejects source constructs whose semantics the current
+    /// WorksheetEditor cannot preserve. Callers must opt in explicitly before
+    /// rich text or formula metadata/cached results may be flattened.
+    WorksheetMaterializationPolicy materialization_policy =
+        WorksheetMaterializationPolicy::RejectKnownLosses;
 };
 
 /// Coarse public summary of a worksheet-level edit queued in WorkbookEditor.
@@ -420,262 +442,36 @@ struct WorkbookEditorRenameOptions {
 /// Borrowed random cell editor for one WorkbookEditor-owned materialized sheet.
 ///
 /// API mode: In-memory / existing-workbook small-file editing. WorksheetEditor
-/// is not a standalone owner; it references the open WorkbookEditor session that
-/// produced it. It allows supported cells to be read, set, and erased in a
-/// sparse store. Dirty edits are persisted only when the owning
-/// WorkbookEditor::save_as() flushes the store into the Patch plan.
-/// Legal maximum Excel coordinates such as `XFD1048576` can be represented
-/// sparsely; this is not dense row/column allocation or a large-file
-/// performance claim.
-/// Clean read-only materialized sessions are not pending edits; a no-op
-/// save_as() keeps the source package copy-original behavior and does not flush
-/// a standalone worksheet projection.
-/// Source materialization is intentionally narrow and mirrors the maintained
-/// source dependency summary in docs/API_DESIGN_AND_DOCUMENTATION.md: supported
-/// blank, numeric/boolean/scalar `t="str"`, opaque error `t="e"`, formula,
-/// plain inline, simple inline rich text, and workbook-backed shared-string
-/// cells materialize into CellValue variants;
-/// dirty save_as() can reuse and append to an existing safe source
-/// sharedStrings table for text projection, while falling back to inline
-/// strings when the workbook has no table or the source table shape is outside
-/// the narrow append boundary; supported
-/// worksheet/inline/sharedStrings/rich-run element names are matched by
-/// local-name without namespace URI validation; ignored source rich metadata
-/// under `rPh` / `phoneticPr` / `extLst` is omitted, self-closing ignored
-/// metadata is accepted as empty metadata, and malformed/nested/unterminated
-/// ignored metadata remains fail-fast. Comments, processing instructions,
-/// CDATA, or other markup declarations inside sharedStrings text wrappers are
-/// malformed source text, not silently ignored text. A true XML declaration
-/// token after the sharedStrings root has started is malformed, not a normal
-/// processing instruction; duplicate XML declarations are malformed too. An
-/// XML declaration must declare `version="1.0"` or `version="1.1"` and only
-/// uses the narrow `version`, optional `encoding`, optional `standalone`
-/// metadata order; version-only declarations and legal single-quoted
-/// attributes are accepted within that order, but no charset transcoding is
-/// performed. Missing/unsupported versions, duplicate/unknown declaration
-/// attributes, empty or invalid encoding names, empty or invalid standalone
-/// values, and `encoding` after `standalone` are malformed source XML. An XML
-/// declaration after leading whitespace text, comment, or ordinary
-/// processing-instruction prolog trivia is also malformed, while ordinary
-/// processing instructions after a valid XML declaration remain trivia.
-/// Case-varied XML-like processing-instruction targets such as `<?XML ...?>`
-/// or `<?Xml ...?>` are rejected as reserved targets instead of being skipped
-/// as ordinary trivia; `<?xml-stylesheet ...?>` remains ordinary PI trivia and
-/// is not imported or interpreted, while malformed ordinary PI tokens missing
-/// `?>`, lacking a non-empty target, or starting with an obviously invalid
-/// ASCII name-start character, containing an obviously invalid ASCII name
-/// continuation character, or lacking whitespace / immediate `?>` after the
-/// target are rejected; ordinary targets using legal ASCII name-start
-/// characters such as letters, `_`, and `:`, and continuation characters such
-/// as digits, `-`, and `.`, remain ignored trivia. Empty-data ordinary PIs
-/// whose target is followed immediately by `?>` remain ignored trivia. This
-/// summary is not broad sharedStrings migration, style migration, rich-text
-/// preservation, XML repair, namespace repair, relationship repair/pruning,
-/// semantic metadata sync, or large-file low-memory random editing.
-/// Source cells, including blank/scalar cells, scalar `t="str"` string cells,
-/// opaque error `t="e"` cells,
-/// empty inline strings, inlineStr cells without text, simple source inline
-/// rich text runs flattened to plain text, workbook-backed shared string cells
-/// (including simple rich shared string items flattened to plain text), and
-/// formula cells with stale cached scalar values, at legal maximum coordinates
-/// such as `XFD1048576` are materialized sparsely and can be erased like any
-/// other source-backed record.
+/// is not a standalone owner; it references the open WorkbookEditor that created
+/// it. Supported cells are stored sparsely, so legal far-edge coordinates do not
+/// imply a dense worksheet matrix or a large-file performance guarantee. Dirty
+/// sessions are persisted only when WorkbookEditor::save_as() flushes them into
+/// the Patch plan; clean read-only materialization does not rewrite the sheet.
 ///
-/// This first slice writes text through an existing appendable sharedStrings
-/// table when available, otherwise as inline strings. It writes formulas as
-/// formula text, error cells as `t="e"` scalar cells, and booleans/numbers as
-/// scalar cells. Source `t="str"` scalar string cells are
-/// materialized as text, and `t="str"` formula cells keep the formula text
-/// while dropping cached values. Workbook-backed source `t="s"` cells are
-/// read through the existing sharedStrings part and materialized as plain text;
-/// source sharedStrings `xml:space` whitespace is kept in the materialized text,
-/// and simple source sharedStrings rich text runs are flattened to text while
-/// the source sharedStrings part is preserved or append-only updated. Declared sharedStrings
-/// `count` / `uniqueCount` values and otherwise well-formed unknown
-/// sharedStrings attributes do not drive materialization; the actual `<si>`
-/// table order and text are used. Prefixed sharedStrings `sst` / `si` / `t` /
-/// `r` element names are matched by local-name for materialization; this is not
-/// namespace URI validation, namespace repair, or schema validation.
-/// Unsupported sharedStrings item/rich-run local-names still fail fast even
-/// when their namespace URI is ignored. Mixed direct `<t>` text and rich `<r>`
-/// runs, `rPr` outside a rich run, and text wrappers inside `rPr` are
-/// malformed sharedStrings rich metadata and fail during materialization. Source
-/// `rPh` / `phoneticPr` / `extLst` opaque nested markup text is ignored, but
-/// self-closing ignored metadata is treated as empty metadata; nested `<si>`
-/// decoys, markup nested inside a text wrapper, comments / processing
-/// instructions / CDATA inside text wrappers, orphan closing tags, and unclosed
-/// ignored metadata still fail fast as malformed source sharedStrings.
-/// CDATA / DOCTYPE-like markup declarations are not a supported sharedStrings
-/// text import path, and `<?xml ...?>` after the sharedStrings root start is
-/// rejected instead of being treated as ordinary processing-instruction trivia;
-/// legal version-only declarations and single-quoted declaration attributes
-/// remain accepted when they follow the supported order;
-/// duplicate XML declarations, declarations missing a supported `version`
-/// attribute, unsupported declaration versions, duplicate/unknown declaration
-/// attributes, empty or invalid declaration encoding names, declaration
-/// `standalone` values other than `yes` or `no`, declaration `encoding` after
-/// `standalone`, and XML declarations after leading whitespace text or prolog
-/// comment / ordinary PI trivia are rejected as malformed source XML.
-/// Case-varied XML-like processing-instruction targets such as `<?XML ...?>`
-/// or `<?Xml ...?>` are rejected as reserved targets instead of being skipped
-/// as ordinary trivia; `<?xml-stylesheet ...?>` remains ordinary PI trivia and
-/// is not imported or interpreted, while malformed ordinary PI tokens missing
-/// `?>`, lacking a non-empty target, starting with an obviously invalid ASCII
-/// name-start character, containing an obviously invalid ASCII name
-/// continuation character, or lacking whitespace / immediate `?>` after the
-/// target are rejected; ordinary targets using legal ASCII name-start
-/// characters such as letters, `_`, and `:`, and continuation characters such
-/// as digits, `-`, and `.`, remain ignored trivia. Empty-data ordinary PIs
-/// whose target is followed immediately by `?>` remain ignored trivia.
-/// Source workbooks without a sharedStrings part still materialize supported
-/// non-`t="s"` cells and dirty saves do not create
-/// a string table just because the source lacked one. SharedStrings metadata is
-/// resolved lazily for the selected worksheet: stale or malformed sharedStrings
-/// relationship/content-type metadata or payloads do not block supported
-/// non-`t="s"` cells, but still fail fast if an actual source `t="s"` cell is
-/// encountered. Source formula cells are materialized as
-/// `CellValue::formula(...)` and stale cached scalar values are ignored.
-/// Source shared formula definitions and source-order followers are
-/// materialized as plain formula text with narrow A1-style relative-reference
-/// translation; unresolved metadata-only shared formula followers can still
-/// fall back to supported cached scalar values. Source blank cells materialize
-/// as explicit blank records, source booleans materialize as
-/// `CellValue::boolean(...)`. Simple source inline rich
-/// text runs are flattened to ordinary text; inline rich formatting is not
-/// preserved, and inline phonetic / extension metadata text is ignored.
-/// Opaque nested markup inside inline `rPh` / `phoneticPr` / `extLst` is
-/// ignored for text materialization, and self-closing ignored metadata is
-/// treated as empty metadata; nested `<si>` decoys, markup inside inline text
-/// wrappers, orphan closing tags, and unclosed ignored metadata still fail fast
-/// as malformed source inline rich metadata.
-/// Prefixed source worksheet / sheetData / row / cell element names and
-/// inlineStr, rich-run, formula, and value-wrapper element names are matched by
-/// local-name during this read-only materialization; element namespace URIs are
-/// not inspected, so this is not namespace URI validation, namespace repair, or
-/// schema validation. Unsupported local-names still fail fast even when their
-/// namespace URI is ignored.
-/// Malformed inline rich text metadata, including mixed direct/rich text shapes,
-/// run properties outside runs, value wrappers inside run properties, and
-/// unclosed rich/ignored metadata, fails during materialization without
-/// creating a dirty materialized session.
-/// Empty inline strings materialize as empty text, and inlineStr cells without
-/// text materialize as explicit blank records. Empty source worksheets,
-/// including missing or self-closing `sheetData`, materialize as empty sparse
-/// stores. save_as() writes sparse-store text values as shared string indexes
-/// only when it can reuse an existing appendable sharedStrings part; otherwise
-/// it writes inline strings and never creates `xl/sharedStrings.xml` from
-/// scratch. Dirty inline text projection XML-escapes text nodes, uses
-/// `xml:space="preserve"` for leading or trailing whitespace, and writes empty
-/// text as an empty `<t></t>` element. Dirty projection writes
-/// numbers as scalar `<v>` values and booleans as `t="b"` scalar values,
-/// including at legal edge coordinates such as `XFD1048576`; formulas write
-/// escaped `<f>` text without cached results at the same sparse boundary.
-/// Explicit blank records write empty
-/// `<c>` cells at their coordinates, including edge coordinates such as
-/// `XFD1048576`, and can extend the dirty projection dimension. Erased existing
-/// records are omitted from the dirty projection.
-/// Erasing a sparse edge record, including a saved formula or scalar edge
-/// record, can shrink the dirty projection dimension to the remaining sparse
-/// extents.
-/// Invalid source sharedStrings metadata, relationship target failures,
-/// malformed shared string item/rich-run structure, malformed sharedStrings
-/// XML/entity/attribute syntax, and invalid shared string indexes fail during
-/// materialization without creating a dirty materialized session.
-/// Dirty save uses a standalone worksheet projection from the sparse store; it
-/// does not preserve source wrapper metadata such as
-/// sheetPr, sheetViews, sheetFormatPr, cols, autoFilter, mergeCells,
-/// dataValidations, conditionalFormatting, ignoredErrors, pageMargins,
-/// pageSetup, hyperlinks, or tableParts. Relationship-bearing wrapper metadata
-/// can leave source worksheet `.rels` and linked parts preserved as opaque
-/// package artifacts; they are not pruned, repaired, or semantically
-/// synchronized. Range/reference wrapper metadata is not recalculated or
-/// synchronized with dirty sparse-cell edits.
-/// Source comments and processing instructions outside cells may be ignored
-/// during materialization and are not preserved by dirty projection; comments
-/// or processing instructions inside cells remain unsupported.
-/// Source cell `ph` phonetic markers are ignored. Known formula metadata
-/// attributes `t` / `ref` / `si` / `aca` / `ca` / `bx` / `dt2D` / `dtr` /
-/// `del1` / `del2` / `r1` / `r2` are accepted but not preserved: formula text
-/// is imported as plain formula text. Unknown formula attributes still fail
-/// fast. Source-order shared formula followers are imported as plain formula
-/// text by translating A1-style and whole-axis relative references from the
-/// source definition cell to the follower cell. The translator honors `$` absolute
-/// row/column markers, translates whole-column / whole-row ranges such as
-/// `A:A` and `1:1`, emits `#REF!` for translated references outside Excel
-/// bounds, and skips double-quoted strings, quoted sheet-name tokens
-/// themselves, and bracketed external/structured-reference tokens. A1 and
-/// whole-axis references after a sheet qualifier are still handled as ordinary
-/// relative references by this narrow translator. Internally, raw sheet
-/// qualifier spans are exposed for later dependency-audit work, but sheet names,
-/// external workbook targets, and 3D reference semantics are not validated.
-/// Function names, named ranges, and structured-reference contents are left
-/// unchanged rather than parsed.
-/// This remains a narrow translator, not a complete Excel formula parser.
-/// Unresolved metadata-only shared formula cells
-/// can only materialize from cached scalar `<v>` values when present.
-/// It does not
-/// sort or repair source rows/cells, merge duplicate coordinates, preserve row
-/// or unsupported cell metadata attributes, coerce invalid numeric payloads,
-/// accept empty or missing source error payloads, migrate
-/// sharedStrings indexes, migrate or merge source style ids, import
-/// unsupported value-wrapper shapes, tolerate non-whitespace source worksheet
-/// text outside wrapper metadata or sheetData, source sheetData text outside
-/// rows, source row text outside cells, or source cell text outside `<v>` /
-/// `<t>` / `<f>` wrappers, preserve inline rich text formatting, import inline
-/// phonetic metadata, repair malformed inline rich
-/// text metadata, infer or clamp invalid/out-of-range source coordinates,
-/// tolerate malformed XML/entity text, malformed source attributes, duplicate worksheet
-/// roots or duplicate sheetData boundaries, repair invalid row/cell nesting,
-/// infer missing row scope for non-empty rows or cells, preserve source
-/// worksheet wrapper metadata during dirty projection, evaluate formulas,
-/// preserve formula metadata or cached formula results for formula-text cells,
-/// implement a complete formula parser, rebuild calcChain, update
-/// tables/drawings/defined names/range metadata, or repair relationships.
-/// Non-default caller-supplied StyleId values are rejected by both set_cell()
-/// overloads until a public existing-workbook style policy exists. An explicit
-/// default StyleId{0} is accepted and normalized to no style handle; dirty
-/// save_as() output omits `s="0"`. Source cells with an unqualified `s` value
-/// exactly equal to `0` (for example `s="0"`, `s='0'`, or `s = "0"`) are
-/// normalized the same way during materialization. Canonical non-zero unsigned
-/// decimal source style ids are validated against the source styles.xml
-/// `cellXfs` table, materialized as numeric passthrough handles, and written
-/// back by dirty projection while the source styles part is preserved.
-/// `set_cells()`, `set_row()`, `set_column()`, and `append_row()` share the
-/// full-cell replacement style boundary of `set_cell()` for their new or
-/// overwritten cells: explicit default StyleId{0} is normalized to no style
-/// handle, caller-supplied non-default style ids are rejected, appended cells do
-/// not inherit source styles, and overwritten cells drop prior source styles.
-/// `set_cell_value()`, `set_cell_values()`, `set_row_values()`, and
-/// `set_column_values()` can replace cell values while preserving currently
-/// materialized source style handles on those coordinates. Explicit default
-/// StyleId{0} input is accepted as no caller style for these value-only writes:
-/// existing source handles still win, and missing target cells stay unstyled.
-/// `clear_cell_value()`, no-argument `clear_cell_values()`, `clear_row()`,
-/// `clear_rows()`, `clear_column()`, `clear_columns()`, and the
-/// `clear_cell_values()` range / batch overloads can turn existing
-/// materialized cells into explicit blanks while preserving those same style
-/// handles; missing cells are successful no-ops and range or coordinate batch
-/// clears do not synthesize blank records for missing coordinates. This does
-/// not migrate or merge styles, synthesize styles for missing cells, create
-/// tombstones, or allow caller-supplied foreign style handles.
-/// `erase_cell()`, the `erase_cells()` overloads, `erase_row()`, `erase_rows()`,
-/// `erase_column()`, and `erase_columns()` remove active sparse records instead
-/// of writing explicit blanks. `insert_rows()`, `delete_rows()`,
-/// `insert_columns()`, and `delete_columns()` are the first small-file
-/// structural shift helpers: they move/delete represented sparse cells in this
-/// materialized store, translate relative references in moved formula cells,
-/// rewrite supported references in stationary materialized formula cells when
-/// the structural edit affects those references, and leave workbook/worksheet
-/// metadata for caller review. The formula scanner is lexical and narrow:
-/// string literal text, structured-reference bracket content, quoted sheet-name
-/// token text, bracketed external-workbook token text, function names, and
-/// name-like tokens are preserved as token text rather than treated as cells.
-/// Empty, valueless,
-/// unquoted, unterminated, padded,
-/// signed, leading-zero,
-/// entity-encoded, missing workbook styles metadata, or out-of-range source
-/// style tokens, duplicate style attributes, and qualified style-like
-/// attributes such as `x:s` remain unsupported.
+/// Materialization is a narrow cell-value projection rather than a lossless
+/// worksheet object model. Plain blank, numeric, boolean, scalar string, error,
+/// formula-text, inline-string, and workbook-backed shared-string cells can
+/// become CellValue records. Source style ids are same-workbook numeric
+/// passthrough handles only. Worksheet metadata, relationships, drawings,
+/// comments, tables, validations, hyperlinks, macros, and unknown extensions are
+/// outside the materialized state and remain governed by Patch preservation.
+///
+/// WorksheetEditorOptions defaults to
+/// WorksheetMaterializationPolicy::RejectKnownLosses. It rejects materialization
+/// before session registration when a referenced cell would discard known source
+/// semantics, including inline/shared rich text or phonetic/extension metadata,
+/// formula metadata, or cached formula results. Callers may explicitly select
+/// AllowLossyProjection to flatten those supported cells into plain text or
+/// formula text. Discarded semantics cannot be reconstructed by save_as(), and
+/// the projection policy participates in session option matching.
+///
+/// Dirty projection may reuse or append to a narrowly validated source
+/// sharedStrings table and otherwise writes inline strings. It does not evaluate
+/// formulas, generate cached values, rebuild calcChain, migrate styles, repair
+/// relationships, synchronize range-bearing metadata, or provide large-file
+/// low-memory random editing. Non-default caller-supplied StyleId values remain
+/// unsupported; value-only writes can preserve already materialized source style
+/// handles, while erase operations remove sparse records.
 class WorksheetEditor {
 public:
     /// Returns the planned worksheet name for this borrowed handle.
@@ -1914,6 +1710,26 @@ public:
     /// materialized WorksheetEditor diagnostics are clean.
     [[nodiscard]] bool has_pending_changes() const noexcept;
 
+    /// Returns whether the editor has changes not included in its most recent
+    /// successful save_as() output.
+    ///
+    /// Unlike has_pending_changes(), this is a save-watermark diagnostic. It is
+    /// false for a newly opened editor and becomes false after a successful
+    /// save_as(). A later successful Patch edit or dirty WorksheetEditor
+    /// mutation makes it true again. Failed edits and failed save_as() calls do
+    /// not advance or reset the watermark. Retained staged Patch state may keep
+    /// has_pending_changes() true while this method is false.
+    [[nodiscard]] bool has_unsaved_changes() const noexcept;
+
+    /// Returns a coarse count of successful changes since the most recent
+    /// successful save_as().
+    ///
+    /// This is a diagnostic watermark count, not a semantic diff or package
+    /// part count. Dirty materialized sessions count once per worksheet until
+    /// save_as() flushes them. Failed edits and failed save_as() calls leave the
+    /// value unchanged.
+    [[nodiscard]] std::size_t unsaved_change_count() const noexcept;
+
     /// Returns a coarse count of successful public edit calls queued in this
     /// facade.
     ///
@@ -2286,8 +2102,8 @@ public:
     /// @param options Per-materialization sparse-store guardrails.
     /// @throws FastXlsxError if the workbook is not open, the sheet is missing,
     /// a whole-sheet replacement is already queued for this sheet, options do
-    /// not match an existing materialized session, or source worksheet loading
-    /// fails. Missing-sheet and materialization failures do not update
+    /// not match an existing materialized session, the selected projection
+    /// policy rejects known source losses, or source worksheet loading fails. Missing-sheet and materialization failures do not update
     /// last_edit_error().
     [[nodiscard]] WorksheetEditor worksheet(
         std::string_view sheet_name, WorksheetEditorOptions options = {});

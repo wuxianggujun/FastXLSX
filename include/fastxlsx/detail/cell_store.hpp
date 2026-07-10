@@ -27,6 +27,7 @@ struct WorkbookSharedStringsSnapshot {
     std::string zip_path;
     std::string xml;
     std::vector<std::string> strings;
+    std::vector<bool> lossy_items;
 };
 
 /// Worksheet-local sparse coordinate for the internal in-memory editor store.
@@ -156,9 +157,16 @@ load_workbook_shared_strings_snapshot(const PackageReader& reader);
 /// These limits are intentionally internal. They are budget checks for future
 /// in-memory editor materialization, not exact process RSS controls and not a
 /// public WorkbookEditor options contract.
+enum class CellStoreMaterializationPolicy {
+    AllowLossyProjection,
+    RejectKnownLosses,
+};
+
 struct CellStoreOptions {
     std::optional<std::size_t> max_cells;
     std::optional<std::size_t> memory_budget_bytes;
+    CellStoreMaterializationPolicy materialization_policy =
+        CellStoreMaterializationPolicy::AllowLossyProjection;
 };
 
 enum class CellStoreBatchStylePolicy {

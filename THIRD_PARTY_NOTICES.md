@@ -1,56 +1,25 @@
 # Third-Party Notices
 
-FastXLSX itself is licensed under the MIT License. See `LICENSE`.
+FastXLSX 本身使用 MIT License，见 `LICENSE`。发布制品前应以 resolved vcpkg baseline 和实际安装包复核许可证文本。
 
-This file records third-party dependency notices for the current repository
-state. Before publishing a release artifact, verify the exact license metadata
-from the resolved vcpkg baseline and include any required upstream license text
-in the distributed package.
-
-## Runtime dependencies used by the default build
-
-### stb
-
-- Purpose: PNG/JPEG header probing, image pixel decoding helpers, and validation
-  for streaming-only new-workbook image insertion.
-- Source: vcpkg port `stb`.
-- Current vcpkg license metadata observed in local validation:
-  `MIT OR CC-PDDC`.
-- Integration boundary: header-only dependency found through vcpkg's
-  `FindStb.cmake`; `STB_IMAGE_IMPLEMENTATION` is defined in one `.cpp` file.
-
-## Optional runtime dependencies
-
-These are used only when configured with `FASTXLSX_ENABLE_MINIZIP_NG=ON` and
-the `planned-runtime` vcpkg feature.
+## Default Production Features
 
 ### minizip-ng
 
-- Purpose: opt-in ZIP package writer/read support for DEFLATE paths.
-- Source: vcpkg port `minizip-ng` with `default-features=false` and `zlib`
-  feature enabled.
-- License: verify from the resolved vcpkg package before release packaging.
+- vcpkg feature：`runtime-minizip`，port `minizip-ng[core,zlib]`。
+- 用途：stored + DEFLATE ZIP package reader/writer。
+- 当前实现 private link；安装配置在启用时要求 consumer 可解析 minizip-ng。
+- License：按 resolved vcpkg metadata/上游包复核。
 
-### zlib
+### stb
 
-- Purpose: compression backend selected by the current minizip-ng vcpkg feature.
-- Source: transitive vcpkg dependency of `minizip-ng[zlib]`.
-- License: verify from the resolved vcpkg package before release packaging.
+- vcpkg feature：`images`。
+- 用途：PNG/JPEG metadata、decode 与当前图片切片。
+- Header-only，只用于 FastXLSX 实现编译；关闭 images 时不需要 stb。
+- vcpkg metadata 当前为 `MIT OR CC-PDDC`，发布前复核。
 
-## Planned but not linked by default
+## Non-runtime / Future Features
 
-The following ports are recorded in `vcpkg.json` feature groups for future work
-or opt-in validation. They must not be presented as default runtime
-dependencies unless the build actually links them.
-
-- `zlib-ng`
-- `expat`
-- `pugixml`
-- `catch2`
-- `benchmark`
-
-## Non-dependency policy
-
-FastXLSX does not vendor third-party source into `src/` or `include/`. Do not
-add `OpenXLSX`, `xlnt`, `libxlsxwriter`, or `QXlsx` as runtime dependencies;
-they may only be used as references or benchmark comparison points.
+- `planned-xml`：zlib-ng、Expat、pugixml；当前源码未链接。
+- `planned-dev`：Catch2、Google Benchmark 候选；当前未由 feature 自动接线。
+- `reference-benchmarks`：OpenXLSX、xlnt，只用于 opt-in benchmark，不进入 FastXLSX runtime。

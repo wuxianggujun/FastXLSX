@@ -33,7 +33,7 @@ struct ImageInfo {
 
 /// Decoded PNG/JPEG pixels owned by the caller.
 ///
-/// API mode: small Phase 5 / stb image pixel helper. Width and height are
+/// API mode: optional stb-backed image pixel helper. Width and height are
 /// pixel dimensions reported by `stb_image`; channel_count is the decoded
 /// component count returned by `stbi_load` without forcing a different output
 /// channel layout. Pixels are tightly packed row-major bytes and have
@@ -55,15 +55,16 @@ struct ImagePixels {
 /// Reads PNG/JPEG image dimensions and channel count from a file.
 ///
 /// API mode: small media metadata helper used by the current streaming image
-/// insertion slice for validation. FastXLSX requires the default `stb`
-/// dependency and uses `stb_image` header probing through file callbacks. This
+/// insertion slice for validation. Builds with `FASTXLSX_HAS_IMAGES=1` use
+/// `stb_image` header probing through file callbacks; builds with
+/// `FASTXLSX_HAS_IMAGES=0` keep the symbol available but throw FastXlsxError. This
 /// does not decode a full pixel buffer or retain image bytes. It has no
 /// OpenXML side effects, does not allocate media parts, does not write drawing
 /// XML or relationships, and does not touch worksheet streaming rows.
 ///
-/// @throws FastXlsxError if the file cannot be opened, the file is empty, the
-/// format is outside the current PNG/JPEG slice, or stb cannot read image
-/// metadata.
+/// @throws FastXlsxError if image support is disabled, the file cannot be
+/// opened, the file is empty, the format is outside the current PNG/JPEG slice,
+/// or stb cannot read image metadata.
 [[nodiscard]] ImageInfo read_image_info(const std::filesystem::path& path);
 
 /// Reads PNG/JPEG image dimensions and channel count from memory.
@@ -74,8 +75,9 @@ struct ImagePixels {
 /// create OpenXML package parts, and does not provide existing-workbook image
 /// preservation.
 ///
-/// @throws FastXlsxError if the span is empty, the format is outside the
-/// current PNG/JPEG slice, or stb cannot read image metadata.
+/// @throws FastXlsxError if image support is disabled, the span is empty, the
+/// format is outside the current PNG/JPEG slice, or stb cannot read image
+/// metadata.
 [[nodiscard]] ImageInfo read_image_info(std::span<const std::byte> bytes);
 
 /// Decodes PNG/JPEG pixels from a file into an owned byte buffer.
@@ -92,7 +94,7 @@ struct ImagePixels {
 
 /// Decodes PNG/JPEG pixels from memory into an owned byte buffer.
 ///
-/// API mode: small Phase 5 / stb image pixel helper. The byte span is consumed
+/// API mode: optional stb-backed image pixel helper. The byte span is consumed
 /// only for the duration of the call; FastXLSX does not retain the encoded
 /// bytes. This allocates a complete decoded pixel buffer, does not force output
 /// channel conversion, does not create OpenXML package parts, and does not

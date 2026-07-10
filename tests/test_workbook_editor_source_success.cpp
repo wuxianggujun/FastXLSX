@@ -199,7 +199,7 @@ void check_reopened_source_success_dirty_output(
 {
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
-    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
 
     check_workbook_editor_public_clean_state(
         reopened_editor, prefix + " fresh reopen");
@@ -253,7 +253,7 @@ void test_public_worksheet_editor_materializes_source_supported_values()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -498,7 +498,7 @@ void test_public_worksheet_editor_structural_shift_source_supported_values()
             const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == source_cell_count,
                 scenario_text + " setup should materialize source scalar cells");
             check(!sheet.has_pending_changes(),
@@ -556,7 +556,7 @@ void test_public_worksheet_editor_structural_shift_source_supported_values()
                 noop_output, expected_range, expected_cells, scenario_text + " no-op output");
 
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -771,7 +771,7 @@ void test_public_worksheet_editor_materializes_source_scalar_string_cells()
         "source scalar-string fixture should contain t=str cells");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -972,7 +972,7 @@ void test_public_worksheet_editor_structural_shift_source_scalar_string_cells()
                 scenario_text + " fixture should contain source t=str scalar cells");
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == source_cell_count,
                 scenario_text + " setup should materialize source t=str cells");
             check(!sheet.has_pending_changes(),
@@ -1032,7 +1032,7 @@ void test_public_worksheet_editor_structural_shift_source_scalar_string_cells()
                 noop_output, expected_range, expected_cells, scenario_text + " no-op output");
 
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -1243,7 +1243,7 @@ void test_public_worksheet_editor_flattens_source_inline_rich_text()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
@@ -1432,7 +1432,7 @@ void test_public_worksheet_editor_structural_shift_source_inline_rich_text()
                 scenario_text + " fixture should contain ignored rich text metadata");
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == source_cell_count,
                 scenario_text + " setup should materialize source inline rich text cells");
             check(!sheet.has_pending_changes(),
@@ -1496,7 +1496,7 @@ void test_public_worksheet_editor_structural_shift_source_inline_rich_text()
                 noop_output, expected_range, expected_cells, scenario_text + " no-op output");
 
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -1751,7 +1751,7 @@ void test_public_worksheet_editor_materializes_prefixed_source_inline_strings()
         "prefixed inline fixture should carry self-closing ignored metadata");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -2007,7 +2007,7 @@ void test_public_worksheet_editor_structural_shift_prefixed_source_inline_string
                 scenario_text + " fixture should include ignored prefixed metadata text");
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == source_cell_count,
                 scenario_text + " setup should materialize prefixed inline cells");
             check(!sheet.has_pending_changes(),
@@ -2080,7 +2080,7 @@ void test_public_worksheet_editor_structural_shift_prefixed_source_inline_string
                 noop_output, expected_range, expected_cells, scenario_text + " no-op output");
 
             fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -2315,7 +2315,7 @@ void test_public_worksheet_editor_materializes_source_default_style_attribute_as
         "source default-style fixture should contain an explicit s=0 attribute with whitespace around equals");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -2534,7 +2534,7 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
             const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == 0,
                 "empty source worksheet should materialize as an empty sparse store");
             check(!sheet.try_cell("A1").has_value(),
@@ -2566,7 +2566,7 @@ void test_public_worksheet_editor_materializes_empty_source_worksheets()
                 std::string("empty source ") + std::string(tag)
                     + " no-op save should not mutate the source package");
             fastxlsx::WorkbookEditor noop_editor = fastxlsx::WorkbookEditor::open(noop_output);
-            fastxlsx::WorksheetEditor noop_sheet = noop_editor.worksheet("Data");
+            fastxlsx::WorksheetEditor noop_sheet = noop_editor.worksheet("Data", lossy_source_materialization_options());
             check_workbook_editor_public_clean_state(
                 noop_editor, std::string("empty source ") + std::string(tag) + " no-op fresh reopen");
             check(!noop_sheet.has_pending_changes(),
@@ -2762,7 +2762,7 @@ void test_public_worksheet_editor_preserves_source_wrapper_metadata_on_dirty_she
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
@@ -2962,7 +2962,7 @@ void test_public_worksheet_editor_preserves_relationship_wrapper_metadata_withou
         "source relationship-wrapper fixture should contain a table part");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a2 = sheet.try_cell("A2");
     const std::optional<fastxlsx::CellValue> b2 = sheet.try_cell("B2");
@@ -3194,7 +3194,7 @@ void test_public_worksheet_editor_preserves_range_wrapper_metadata_on_dirty_shee
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -3417,7 +3417,7 @@ void test_public_worksheet_editor_preserves_source_wrapper_comments_and_processi
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
@@ -3625,7 +3625,7 @@ void test_public_worksheet_editor_read_only_materialization_keeps_noop_save_as_c
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");

@@ -343,6 +343,77 @@ void test_successful_save_as_preserves_public_facade_state()
         "follow-up edits should not mutate the earlier successful save_as output");
 }
 
+void test_unsaved_change_watermark_tracks_successful_saves()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-unsaved-watermark-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-unsaved-watermark-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-unsaved-watermark-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(!editor.has_unsaved_changes(),
+        "newly opened editor should not report unsaved changes");
+    check(editor.unsaved_change_count() == 0,
+        "newly opened editor should have zero unsaved change count");
+
+    editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(31.0)}});
+    check(editor.has_unsaved_changes(),
+        "successful Patch edit should report unsaved changes");
+    check(editor.unsaved_change_count() == 1,
+        "one successful Patch edit should increment unsaved change count");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(std::filesystem::path {}); }),
+        "failed save_as should preserve unsaved watermark");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "failed save_as should not reset unsaved change state");
+
+    editor.save_as(output);
+    check(!editor.has_unsaved_changes(),
+        "successful save_as should clear unsaved change state");
+    check(editor.unsaved_change_count() == 0,
+        "successful save_as should reset unsaved change count");
+    check(editor.has_pending_changes(),
+        "successful save_as should retain staged Patch diagnostics");
+    check(editor.pending_change_count() == 1,
+        "successful save_as should retain staged Patch edit count");
+
+    editor.rename_sheet("Data", "RenamedData");
+    check(editor.has_unsaved_changes() && editor.unsaved_change_count() == 1,
+        "edit after save_as should create a new unsaved watermark delta");
+    editor.save_as(second_output);
+    check(!editor.has_unsaved_changes() && editor.unsaved_change_count() == 0,
+        "second successful save_as should advance the watermark again");
+}
+void test_unsaved_change_watermark_moves_with_editor_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-unsaved-move-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-unsaved-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor source_editor = fastxlsx::WorkbookEditor::open(source);
+    source_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::number(41.0)}});
+
+    fastxlsx::WorkbookEditor moved_editor(std::move(source_editor));
+    check(!source_editor.has_unsaved_changes() && source_editor.unsaved_change_count() == 0,
+        "moved-from editor should report no unsaved state");
+    check(moved_editor.has_unsaved_changes() && moved_editor.unsaved_change_count() == 1,
+        "move construction should preserve unsaved watermark state");
+
+    fastxlsx::WorkbookEditor assigned_editor = fastxlsx::WorkbookEditor::open(source);
+    assigned_editor = std::move(moved_editor);
+    check(!moved_editor.has_unsaved_changes() && moved_editor.unsaved_change_count() == 0,
+        "move-assigned-from editor should report no unsaved state");
+    check(assigned_editor.has_unsaved_changes() && assigned_editor.unsaved_change_count() == 1,
+        "move assignment should preserve unsaved watermark state");
+
+    assigned_editor.save_as(output);
+    check(!assigned_editor.has_unsaved_changes()
+            && assigned_editor.unsaved_change_count() == 0,
+        "successful save after move assignment should advance the moved watermark");
+}
 void test_empty_rows_emit_empty_sheet_data()
 {
     const std::filesystem::path source =
@@ -438,6 +509,8 @@ int main()
         test_noop_save_as_keeps_editor_usable_for_later_edits();
         test_failed_save_as_preserves_public_facade_state();
         test_successful_save_as_preserves_public_facade_state();
+        test_unsaved_change_watermark_tracks_successful_saves();
+        test_unsaved_change_watermark_moves_with_editor_state();
         test_empty_rows_emit_empty_sheet_data();
         test_text_uses_inline_strings_and_preserves_shared_strings();
         test_calc_metadata_requests_recalculation_without_inventing_calcchain();

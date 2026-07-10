@@ -96,6 +96,8 @@ void check_source_max_coordinate_read_only_noop_reopened_output(
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
@@ -170,6 +172,8 @@ void check_source_max_coordinate_erase_reopened_output(
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
@@ -315,6 +319,8 @@ void check_source_max_coordinate_fresh_reopen_restore_after_erase(
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(input);
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
     fastxlsx::WorksheetEditor reopened_sheet =
         reopened_editor.worksheet("Data", options);
@@ -452,6 +458,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_and_erases_
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -711,6 +719,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_formula_and
         "source max-coordinate formula fixture should contain a stale cached value");
 
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -972,6 +982,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_error_and_e
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -1259,6 +1271,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_shared_stri
         "source max-coordinate shared string fixture should store the edge cell as t=s");
 
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -1582,6 +1596,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_scalar_valu
             "source max-coordinate scalar fixture should contain the edge cell");
 
         fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
         options.max_cells = 8;
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -1895,6 +1911,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_empty_inlin
             "source max-coordinate empty inline fixture should contain the edge cell");
 
         fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
         options.max_cells = 8;
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
@@ -2187,6 +2205,8 @@ void test_public_worksheet_editor_materializes_source_max_coordinate_rich_shared
         "source max-coordinate rich shared string fixture should store the edge as t=s");
 
     fastxlsx::WorksheetEditorOptions options;
+    options.materialization_policy =
+        fastxlsx::WorksheetMaterializationPolicy::AllowLossyProjection;
     options.max_cells = 8;
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);

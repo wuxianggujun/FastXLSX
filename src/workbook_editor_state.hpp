@@ -35,6 +35,10 @@ namespace detail {
     const WorksheetEditorOptions& options)
 {
     CellStoreOptions store_options;
+    store_options.materialization_policy = options.materialization_policy
+            == WorksheetMaterializationPolicy::RejectKnownLosses
+        ? CellStoreMaterializationPolicy::RejectKnownLosses
+        : CellStoreMaterializationPolicy::AllowLossyProjection;
     store_options.max_cells = options.max_cells;
     store_options.memory_budget_bytes = options.memory_budget_bytes;
     return store_options;
@@ -84,6 +88,7 @@ struct WorkbookEditor::Impl {
     detail::WorkbookEditorSheetCatalogPlan sheet_catalog;
     detail::MaterializedWorksheetSessionRegistry materialized_sessions;
     std::size_t pending_public_edit_count = 0;
+    std::size_t saved_public_edit_count = 0;
     detail::WorkbookEditorPendingSheetDataPayloads pending_sheet_data_payloads;
     std::map<std::string, std::map<std::string, std::size_t, std::less<>>, std::less<>>
         pending_targeted_cell_replacements;
@@ -127,6 +132,25 @@ struct WorkbookEditor::Impl {
             detail::flush_workbook_editor_dirty_materialized_sessions_to_patch_plan(
                 editor, materialized_sessions, sheet_catalog);
         pending_public_edit_count += result.flushed_worksheet_count;
+    }
+
+    [[nodiscard]] bool has_unsaved_changes() const noexcept
+    {
+        return pending_public_edit_count != saved_public_edit_count
+            || materialized_sessions.dirty_session_count() != 0;
+    }
+
+    [[nodiscard]] std::size_t unsaved_change_count() const noexcept
+    {
+        const std::size_t staged_changes = pending_public_edit_count >= saved_public_edit_count
+            ? pending_public_edit_count - saved_public_edit_count
+            : pending_public_edit_count;
+        return staged_changes + materialized_sessions.dirty_session_count();
+    }
+
+    void mark_saved() noexcept
+    {
+        saved_public_edit_count = pending_public_edit_count;
     }
 
     [[nodiscard]] bool has_pending_sheet_data_payload(std::string_view sheet_name) const noexcept

@@ -6,12 +6,13 @@
   "homepage": "https://github.com/wuxianggujun/FastXLSX",
   "license": "MIT",
   "builtin-baseline": "81de6771512413aaf89ea77add5ad1fda126b9d0",
-  "dependencies": [
-    "stb"
+  "default-features": [
+    "runtime-minizip",
+    "images"
   ],
   "features": {
-    "planned-runtime": {
-      "description": "Opt-in runtime dependencies for the minizip-ng package writer backend and planned ZIP/XML reader/editor work.",
+    "runtime-minizip": {
+      "description": "Production ZIP reader/writer support for stored and DEFLATE XLSX packages.",
       "dependencies": [
         {
           "name": "minizip-ng",
@@ -19,7 +20,18 @@
           "features": [
             "zlib"
           ]
-        },
+        }
+      ]
+    },
+    "images": {
+      "description": "PNG/JPEG metadata, decoding, streaming insertion, and existing-media replacement support.",
+      "dependencies": [
+        "stb"
+      ]
+    },
+    "planned-xml": {
+      "description": "Future XML/parser dependencies that are not linked by the current implementation.",
+      "dependencies": [
         "zlib-ng",
         "expat",
         "pugixml"

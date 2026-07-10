@@ -8,49 +8,72 @@
   "configurePresets": [
     {
       "name": "windows-nmake-release",
-      "displayName": "Windows NMake Release",
-      "description": "Configure FastXLSX with NMake and the default vcpkg manifest dependencies.",
+      "displayName": "Windows NMake Release Production",
+      "description": "Production profile with DEFLATE reader/writer and image support enabled through default vcpkg features.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "FASTXLSX_BUILD_TESTS": "ON",
-        "FASTXLSX_BUILD_EXAMPLES": "OFF"
+        "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_IMAGES": "ON"
       }
     },
     {
       "name": "windows-nmake-release-vcpkg",
-      "displayName": "Windows NMake Release with vcpkg Toolchain",
-      "description": "Compatibility preset for the default vcpkg-backed NMake Release configuration.",
-      "generator": "NMake Makefiles",
-      "binaryDir": "${sourceDir}/build/windows-nmake-release-vcpkg",
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "FASTXLSX_BUILD_TESTS": "ON",
-        "FASTXLSX_BUILD_EXAMPLES": "OFF"
-      }
+      "displayName": "Windows NMake Release Production Compatibility",
+      "description": "Compatibility alias for the production vcpkg-backed NMake Release profile.",
+      "inherits": "windows-nmake-release",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-vcpkg"
     },
     {
       "name": "windows-nmake-release-minizip",
-      "displayName": "Windows NMake Release with minizip-ng",
-      "description": "Configure the opt-in minizip-ng package writer backend through vcpkg planned-runtime.",
+      "displayName": "Windows NMake Release Production Compatibility (minizip)",
+      "description": "Compatibility alias retained for existing scripts; production already enables minizip-ng.",
+      "inherits": "windows-nmake-release",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-minizip"
+    },
+    {
+      "name": "windows-nmake-release-stored",
+      "displayName": "Windows NMake Release Stored Bootstrap",
+      "description": "Dependency-light stored ZIP bootstrap profile with images enabled and DEFLATE disabled.",
       "generator": "NMake Makefiles",
-      "binaryDir": "${sourceDir}/build/windows-nmake-release-minizip",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-stored",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "FASTXLSX_BUILD_TESTS": "ON",
         "FASTXLSX_BUILD_EXAMPLES": "OFF",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "OFF",
+        "FASTXLSX_ENABLE_IMAGES": "ON",
+        "VCPKG_MANIFEST_NO_DEFAULT_FEATURES": "ON",
+        "VCPKG_MANIFEST_FEATURES": "images"
+      }
+    },
+    {
+      "name": "windows-nmake-release-no-images",
+      "displayName": "Windows NMake Release without Images",
+      "description": "Production DEFLATE profile without stb/image support; builds the library and public disabled-feature stubs.",
+      "generator": "NMake Makefiles",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-no-images",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "FASTXLSX_BUILD_TESTS": "OFF",
+        "FASTXLSX_BUILD_EXAMPLES": "ON",
+        "FASTXLSX_BUILD_FEATURE_SMOKES": "ON",
         "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
-        "VCPKG_MANIFEST_FEATURES": "planned-runtime"
+        "FASTXLSX_ENABLE_IMAGES": "OFF",
+        "VCPKG_MANIFEST_NO_DEFAULT_FEATURES": "ON",
+        "VCPKG_MANIFEST_FEATURES": "runtime-minizip"
       }
     },
     {
       "name": "windows-nmake-release-benchmark",
-      "displayName": "Windows NMake Release Benchmark",
-      "description": "Configure opt-in manual FastXLSX benchmarks with default vcpkg dependencies.",
+      "displayName": "Windows NMake Release Benchmark Production",
+      "description": "Manual benchmarks with the production DEFLATE and image feature profile.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release-benchmark",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -58,29 +81,22 @@
         "CMAKE_BUILD_TYPE": "Release",
         "FASTXLSX_BUILD_TESTS": "OFF",
         "FASTXLSX_BUILD_EXAMPLES": "OFF",
-        "FASTXLSX_BUILD_BENCHMARKS": "ON"
+        "FASTXLSX_BUILD_BENCHMARKS": "ON",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_IMAGES": "ON"
       }
     },
     {
       "name": "windows-nmake-release-benchmark-minizip",
-      "displayName": "Windows NMake Release Benchmark with minizip-ng",
-      "description": "Configure opt-in manual FastXLSX benchmarks with the minizip-ng backend.",
-      "generator": "NMake Makefiles",
-      "binaryDir": "${sourceDir}/build/windows-nmake-release-benchmark-minizip",
-      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "FASTXLSX_BUILD_TESTS": "OFF",
-        "FASTXLSX_BUILD_EXAMPLES": "OFF",
-        "FASTXLSX_BUILD_BENCHMARKS": "ON",
-        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
-        "VCPKG_MANIFEST_FEATURES": "planned-runtime"
-      }
+      "displayName": "Windows NMake Release Benchmark Compatibility (minizip)",
+      "description": "Compatibility alias retained for existing benchmark scripts.",
+      "inherits": "windows-nmake-release-benchmark",
+      "binaryDir": "${sourceDir}/build/windows-nmake-release-benchmark-minizip"
     },
     {
       "name": "windows-nmake-release-reference-benchmark",
       "displayName": "Windows NMake Release Reference Benchmarks",
-      "description": "Configure opt-in third-party XLSX writer reference benchmark adapters.",
+      "description": "Opt-in third-party XLSX writer reference benchmark adapters.",
       "generator": "NMake Makefiles",
       "binaryDir": "${sourceDir}/build/windows-nmake-release-reference-benchmark",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
@@ -90,69 +106,46 @@
         "FASTXLSX_BUILD_EXAMPLES": "OFF",
         "FASTXLSX_BUILD_BENCHMARKS": "ON",
         "FASTXLSX_BUILD_REFERENCE_BENCHMARKS": "ON",
+        "FASTXLSX_ENABLE_MINIZIP_NG": "ON",
+        "FASTXLSX_ENABLE_IMAGES": "ON",
         "VCPKG_MANIFEST_FEATURES": "reference-benchmarks"
       }
     }
   ],
   "buildPresets": [
-    {
-      "name": "windows-nmake-release",
-      "configurePreset": "windows-nmake-release"
-    },
-    {
-      "name": "windows-nmake-release-vcpkg",
-      "configurePreset": "windows-nmake-release-vcpkg"
-    },
-    {
-      "name": "windows-nmake-release-minizip",
-      "configurePreset": "windows-nmake-release-minizip"
-    },
-    {
-      "name": "windows-nmake-release-benchmark",
-      "configurePreset": "windows-nmake-release-benchmark"
-    },
-    {
-      "name": "windows-nmake-release-benchmark-minizip",
-      "configurePreset": "windows-nmake-release-benchmark-minizip"
-    },
-    {
-      "name": "windows-nmake-release-reference-benchmark",
-      "configurePreset": "windows-nmake-release-reference-benchmark"
-    }
+    { "name": "windows-nmake-release", "configurePreset": "windows-nmake-release" },
+    { "name": "windows-nmake-release-vcpkg", "configurePreset": "windows-nmake-release-vcpkg" },
+    { "name": "windows-nmake-release-minizip", "configurePreset": "windows-nmake-release-minizip" },
+    { "name": "windows-nmake-release-stored", "configurePreset": "windows-nmake-release-stored" },
+    { "name": "windows-nmake-release-no-images", "configurePreset": "windows-nmake-release-no-images" },
+    { "name": "windows-nmake-release-benchmark", "configurePreset": "windows-nmake-release-benchmark" },
+    { "name": "windows-nmake-release-benchmark-minizip", "configurePreset": "windows-nmake-release-benchmark-minizip" },
+    { "name": "windows-nmake-release-reference-benchmark", "configurePreset": "windows-nmake-release-reference-benchmark" }
   ],
   "testPresets": [
     {
       "name": "windows-nmake-release",
       "configurePreset": "windows-nmake-release",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "timeout": 60
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "timeout": 60 }
     },
     {
       "name": "windows-nmake-release-vcpkg",
       "configurePreset": "windows-nmake-release-vcpkg",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "timeout": 60
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "timeout": 60 }
     },
     {
       "name": "windows-nmake-release-minizip",
       "configurePreset": "windows-nmake-release-minizip",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "noTestsAction": "error",
-        "timeout": 60
-      }
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "timeout": 60 }
+    },
+    {
+      "name": "windows-nmake-release-stored",
+      "configurePreset": "windows-nmake-release-stored",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "timeout": 60 }
     }
   ]
 }

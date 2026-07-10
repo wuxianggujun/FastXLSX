@@ -1,299 +1,46 @@
-# Formula Support
+# 公式支持边界
 
-FastXLSX does **not** implement an in-process Excel formula evaluator.
+## 当前支持
 
-Current formula support is formula-compatible XLSX editing: FastXLSX can write,
-read, materialize, audit, and narrowly rewrite selected formula text, then ask
-Excel-compatible applications to recalculate by setting workbook calculation
-metadata. It does not evaluate formulas in-process.
+- `Cell`、`CellView` 和 `CellValue` 可保存公式文本。
+- Streaming 和 small workbook 路径把公式写入 worksheet XML。
+- Existing-file editor 提供公式引用审计、worksheet rename 相关策略和窄 row/column shift 重写。
+- `WorkbookEditor::request_full_calculation()` 可请求办公软件打开时重新计算。
+- Existing formula text、defined names 和 calc metadata 在未修改时按 Patch preservation 策略处理。
 
-Recommended positioning:
+## 计算模型
 
-> FastXLSX supports formula-compatible XLSX editing, not embedded Excel
-> calculation.
+FastXLSX 不包含公式计算引擎：
 
-## Current supported behavior
+- 不求值公式。
+- 不生成或承诺更新 cached value。
+- 不完整重建 `calcChain.xml`。
+- 不保证所有 Excel 公式语法、structured references、external links 或 dynamic arrays 都能被重写。
 
-| Area | Current behavior |
-| --- | --- |
-| Formula tokenizer | Internal `tokenize_formula()` exposes a lexical foundation for formula editing/audit work. It preserves source spans for string literals, quoted sheet-name tokens, bracketed external/structured-reference tokens, function/identifier text, numbers, comparison operators such as `<=` / `>=` / `<>`, punctuation including array-constant braces/separators, and the narrow A1-style reference tokens currently understood by FastXLSX. Incomplete string/bracket spans are preserved as single tokens for audit safety instead of being repaired. |
-| Reference qualifier classifier | Internal `classify_formula_reference_qualifier()` decodes quoted sheet names and classifies scanned references as unqualified, local sheet, external workbook, 3D sheet range, or external-workbook 3D sheet range. This is reused by formula audits and safe sheet-name rewrites. |
-| New workbook formula cells | `Cell::formula(...)`, `CellView::formula(...)`, and `CellValue::formula(...)` write worksheet `<f>` formula text. Callers pass formula text without a leading `=`. |
-| Recalculation request | Workbooks containing formula cells request recalculation with `fullCalcOnLoad`. Patch/edit paths also clean stale `calcChain.xml` metadata when the current policy requires it. |
-| Existing workbook formula read | `WorksheetEditor` can materialize supported source formula cells as `CellValueKind::Formula`. Stale cached `<v>` values are not treated as authoritative results. |
-| Shared formula read | Source shared formula definitions and source-order followers are materialized as ordinary formula text when the definition has already been seen. The translator handles a narrow A1-style relative-reference subset. |
-| Array/dataTable formula metadata | Formula text can be imported lossily as plain formula text. Known metadata is accepted only to preserve compatibility at the materialized value boundary. |
-| Formula reference audits | `WorkbookEditor::formula_reference_audits()`, `source_formula_reference_audits()`, and `defined_name_formula_reference_audits()` expose local sheet references, rename risks, external-workbook qualifiers, and 3D-like sheet-range qualifiers as diagnostics. Local sheet matching is ASCII case-insensitive while preserving the formula text's original qualifier spelling in diagnostics. `formula_reference_audits()` only inspects already-materialized `WorksheetEditor` sessions; `source_formula_reference_audits()` scans source worksheet formula XML read-only without materializing or rewriting it; the definedName audit uses the current planned `xl/workbook.xml` when a small workbook rewrite is queued, otherwise the source workbook metadata. These audit APIs do not queue edits, dirty/create materialized sessions, change pending edit diagnostics, or update `last_edit_error()`. |
-| Rename-time formula rewrite | Default `rename_sheet()` is catalog-only and preserves worksheet formula text plus direct definedName formula text, including case-varied local qualifiers such as `data!` / `DATA!`; the audit APIs report those as stale source-name risks after the catalog rename. `WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames` rewrites direct workbook definedName formulas. `RewriteDefinedNamesAndMaterializedWorksheetFormulas` also rewrites already-materialized worksheet formula cells. In rename chains, the opt-in path rewrites both the current old planned sheet name and the original source sheet name when they differ, while still using the narrow sheet-qualified reference rewriter. That rewriter matches local sheet qualifiers ASCII case-insensitively, always emits quoted formula sheet qualifiers, XML-escapes rewritten definedName text, and still skips external-workbook qualifiers, 3D sheet ranges, structured references, and string literals. |
+调用方需要最新计算结果时，应请求 full calculation，并由 Excel、LibreOffice 或其他计算引擎完成求值。
 
-## Important boundaries
+## 引用重写边界
 
-| Item | Boundary |
-| --- | --- |
-| Formula evaluation | Not implemented. FastXLSX does not calculate `SUM`, `VLOOKUP`, dynamic arrays, volatile functions, date math, or any Excel function result. |
-| Cached formula values | Not generated, not trusted as fresh results, and dirty projection drops stale cached results. |
-| Full formula parser | Not implemented. The current parser/auditor is a narrow scanner for reference diagnostics and selected sheet-name rewrites. |
-| Tokenizer recovery | The tokenizer preserves malformed/incomplete lexical spans for diagnostics. It does not repair formulas or guarantee that Excel accepts the formula. |
-| Shared formula preservation | Dirty materialized output is flattened to ordinary `<f>...</f>` formula cells. It does not preserve shared formula `si` / `ref` metadata. Untouched worksheet parts can still be preserved by copy-original paths. |
-| Array formulas / data tables / dynamic arrays | Metadata is not preserved after dirty output, spill range evaluation is not implemented, and data table recalculation is not implemented. |
-| External workbook and 3D references | Classified for audit only. FastXLSX does not validate external workbook targets, evaluate 3D references, or repair linked workbooks. |
-| Dependency graph | Not implemented. FastXLSX does not build Excel's calculation dependency graph. |
-| `calcChain.xml` rebuild | Not implemented. Rebuild requests are rejected; supported edit paths either preserve or remove stale calcChain metadata according to policy. |
-| Full sheet rename formula sync | Not implemented. Default `rename_sheet()` does not rewrite materialized worksheet formulas, non-materialized source worksheet formulas, or direct definedName formula text; it only exposes stale risks through audits. Explicit policies only cover direct definedNames and already-materialized worksheet formulas. |
+公式重写必须：
 
-## Shared formula materialization details
+- 区分相对、绝对和 mixed references。
+- 避免修改字符串字面量和无法识别的 token。
+- 对超出支持范围的语法 audit 或 fail，不静默猜测。
+- 在状态变更前完成输入与 guardrail 检查。
+- 与 worksheet rename、row/column insert/delete 的实际 materialized/Patch 范围一致。
 
-When a source worksheet stores a shared formula:
+结构编辑当前不代表 tables、charts、validations、conditional formatting 或其他 metadata 中公式的完整同步。
 
-- the definition cell formula text is imported directly;
-- a source-order follower can be expanded when its shared formula definition was
-  already seen;
-- relative A1 references are translated by the row/column offset from the
-  definition cell to the follower cell;
-- absolute references with `$` keep their absolute row/column component;
-- out-of-range translated references become `#REF!`;
-- quoted string text, quoted sheet-name token text, bracketed external or
-  structured-reference token text, function names, named ranges, whole-row /
-  whole-column references, and structured-reference contents remain outside the
-  full-parser boundary.
+## 验证
 
-This is enough for common Excel/LibreOffice-style shared formula storage shapes,
-but it is still not a complete formula grammar.
+- unit test：公式文本、引用解析、rename/shift、无效输入和边界坐标。
+- OpenXML：`<f>` 文本、calc properties、calcChain preserve/remove 策略。
+- Existing-file：defined names、跨 sheet 引用、失败恢复和 reopened output。
+- Office smoke：请求重算后的打开行为；不能把 Office 重算结果写成 FastXLSX 自身求值。
 
-## Why FastXLSX Does Not Evaluate Formulas
+## 非目标
 
-Excel-compatible formula evaluation is a separate large subsystem:
-
-- function catalog and compatibility quirks;
-- dependency graph and recalculation order;
-- volatile functions and workbook calculation settings;
-- date/time serial behavior and locale-independent parsing;
-- array formulas, dynamic arrays, data tables, external links, and 3D references;
-- cached value generation and `calcChain.xml` rebuild.
-
-For an XLSX editing library, the practical first-class requirement is usually to
-preserve or rewrite formula text safely and let Excel-compatible applications
-recalculate. Formula evaluation is outside the current product boundary and must
-not appear as a hidden side effect of the editor.
-
-## Verification entry points
-
-Default CTest coverage includes formula scanner/materialization and editor
-integration tests:
-
-```powershell
-ctest --preset windows-nmake-release -R "fastxlsx\.(formula|workbook_editor\.)" --output-on-failure
-```
-
-Focused local QA scenarios:
-
-```powershell
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_source_formula_audit `
-  --work-dir build\qa\workbook-editor-source-formula-audit `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_formula_rename_rewrite `
-  --work-dir build\qa\workbook-editor-formula-rename-rewrite `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_formula_rename_escaped_sheet_name `
-  --work-dir build\qa\workbook-editor-formula-rename-escaped-sheet `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_formula_rename_chain_rewrite `
-  --work-dir build\qa\workbook-editor-formula-rename-chain `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_formula_rename_defined_names_only `
-  --work-dir build\qa\workbook-editor-formula-rename-defined-names `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_formula_rename_default_audit `
-  --work-dir build\qa\workbook-editor-formula-rename-default `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_shared_formula_materialization `
-  --work-dir build\qa\workbook-editor-shared-formula-materialization `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_shared_formula_office_like_materialization `
-  --work-dir build\qa\workbook-editor-shared-formula-office-like-materialization `
-  --excel-verify
-
-py tools\run_workbook_editor_qa.py `
-  --scenario generated_shared_formula_boundary_materialization `
-  --work-dir build\qa\workbook-editor-shared-formula-boundaries
-```
-
-The boundary scenario intentionally uses synthetic parser-boundary formula text,
-so it is validated with ZIP/XML and `openpyxl`; it is not an Excel UI
-compatibility smoke.
-
-The generated shared-formula QA reports now include explicit formula evidence:
-`formula_output.shared_metadata_removed`, `cached_formula_values_removed`,
-`stale_cached_values_removed`, `checked_formula_cells`, `output_formula_cells`,
-and `openpyxl.formula_cells`. This keeps the shared-formula materialization
-claim auditable from the JSON report without manually unpacking the workbook.
-
-`generated_formula_rename_rewrite` is the focused local QA for the explicit
-rename formula policy. It materializes only the `Formula` sheet, renames
-`Data` to `RenamedData` with
-`RewriteDefinedNamesAndMaterializedWorksheetFormulas`, and verifies by ZIP/XML,
-`openpyxl`, and Excel COM that direct local definedName and materialized
-worksheet formula references are rewritten while external-workbook references,
-3D sheet-range references, string literals, and the non-materialized
-`Unmaterialized` worksheet formula remain unchanged. This is still opt-in
-formula text rewrite evidence only, not default rename behavior or formula
-evaluation.
-The materialized formula rewrite guard regression also proves recovery hygiene:
-a memory-budget rejection preserves the public diagnostic through a no-op
-`save_as()`, then a later valid opt-in rewrite clears `last_edit_error()`,
-updates the planned catalog, rewrites the materialized formula, and keeps the
-rejected target text out of the recovered output.
-Representative explicit formula rewrite success regressions also seed a prior
-failed public edit diagnostic before the valid rename and verify the success
-clears `last_edit_error()` across definedName-only, materialized worksheet
-formula, combined, case-varied, chained alias, and multi-session materialized
-formula rewrite paths.
-The formula rewrite failed-save regression then verifies the already-successful
-combined rewrite state survives a missing-parent `save_as()` failure: the
-planned catalog, rewritten definedName, dirty materialized formula session,
-public summaries, empty `last_edit_error()`, and later safe retry output all
-remain consistent.
-The post-rewrite mutation regression also proves the rewritten materialized
-worksheet session remains usable: an invalid follow-up mutation records
-`last_edit_error()` without corrupting the rewritten formula, a later valid
-mutation clears the diagnostic, and the saved/reopened workbook contains both
-the rewritten formula and the later materialized edit without leaking the
-rejected payload.
-The same-sheet replacement regression pins the matching Patch boundary:
-after formula rewrite dirties the materialized `Formula` session,
-`replace_sheet_data("Formula", ...)` is rejected without queuing replacement
-payload or corrupting the rewritten formula, while a replacement on `Other
-Sheet` still succeeds and saves beside the rewritten formula state.
-
-`generated_formula_rename_escaped_sheet_name` is the focused local QA for the
-same explicit rewrite policy when the new sheet name contains formula/XML
-special characters. It renames `Data` to `Renamed & O'Brien` and verifies
-quoted formula qualifiers such as `'Renamed & O''Brien'!A1`, XML-escaped sheet
-catalog / definedName text, unchanged external-workbook references, unchanged
-3D sheet ranges, unchanged string literals, unchanged non-materialized
-worksheet formulas, and no invented calcChain.
-
-`generated_formula_rename_chain_rewrite` is the focused local QA for chained
-renames. It first renames `Data` to `TemporaryData` without formula rewrite,
-then renames `TemporaryData` to `FinalData` with
-`RewriteDefinedNamesAndMaterializedWorksheetFormulas`. ZIP/XML, `openpyxl`, and
-Excel COM verify that both original-source `Data!A1` references and current
-planned-name `TemporaryData!B1` references are rewritten to `FinalData` in
-direct definedNames and already-materialized worksheet formulas, while
-external-workbook references, 3D sheet ranges, string literals,
-non-materialized worksheet formulas, and calcChain absence remain on the
-documented boundary.
-
-`generated_formula_rename_defined_names_only` is the middle policy QA for
-`WorkbookEditorRenameFormulaPolicy::RewriteDefinedNames`. It materializes only
-the `Formula` sheet, renames `Data` to `RenamedData`, and verifies that direct
-local definedNames are rewritten while already-materialized worksheet formulas,
-external-workbook references, 3D sheet-range references, string literals, the
-non-materialized worksheet formula, and calcChain absence remain unchanged.
-
-`generated_formula_rename_default_audit` is the paired default-policy QA. It
-uses the same generated workbook but calls default `rename_sheet("Data",
-"RenamedData")`, then verifies by ZIP/XML, `openpyxl`, and Excel COM that the
-workbook sheet catalog is renamed while direct local definedNames,
-already-materialized worksheet formulas, external-workbook references, 3D
-sheet-range references, string literals, non-materialized worksheet formulas,
-and calcChain absence remain unchanged. The tool report must still expose
-rename-risk audits for stale source-name formula and definedName references.
-Default-policy CTest coverage now also pins the case-varied boundary: after
-default `rename_sheet("Data", "Renamed & Data")`, materialized formula audits,
-source worksheet formula audits, and definedName audits all preserve the
-original `data!` / `DATA!` spelling while mapping those tokens to source
-`Data` and planned `Renamed & Data`. The saved package still preserves the
-formula XML and definedName bodies unchanged.
-The source-read case-varied regression also pins public state hygiene:
-`source_formula_reference_audits()` does not increment the public edit count,
-change pending-change state, create replacement diagnostics, create
-materialized diagnostics, add pending edit summaries, or update
-`last_edit_error()`.
-The ordinary source-read regression pins the same state hygiene before rename
-and also verifies `source_formula_reference_audits()` does not update
-`last_edit_error()` while scanning non-materialized source worksheet formulas.
-The shared-formula source-read regression pins the same public state hygiene
-before and after default catalog-only rename while expanding source-order
-shared formula followers without materializing worksheet sessions.
-The definedName audit regression pins the same state hygiene after default
-catalog-only rename: `defined_name_formula_reference_audits()` reports stale
-source-name direct definedName references without incrementing public edit
-count, changing pending-change state, or creating replacement/materialized
-diagnostics, pending edit summaries, or `last_edit_error()`.
-The materialized worksheet audit regression pins the same boundary for already
-opened `WorksheetEditor` sessions: the initial `formula_reference_audits()` scan
-exposes sheet-qualified formula references without incrementing public edit
-count, changing pending-change state, or creating replacement/materialized
-diagnostics, pending edit summaries, or `last_edit_error()`. The post-rename
-materialized regression pins the same boundary while reporting stale
-source-name formula references after default catalog-only rename.
-The non-materialized worksheet audit regression pins the empty-read side of the
-same contract: `formula_reference_audits()` returns no entries before
-`worksheet()` opens a session and still does not create materialized sessions,
-replacement diagnostics, pending edit summaries, pending-change state, or
-`last_edit_error()`.
-
-External fixture smoke can target xlnt/OpenXLSX or other sample workbooks kept
-outside this repository:
-
-```powershell
-py tools\run_workbook_editor_qa.py `
-  --fixture-root C:\path\to\xlnt\tests\data `
-  --scenario external_formula_fixture_materialized_smoke `
-  --fixture-glob "*formula*.xlsx" `
-  --formula-shared-only `
-  --work-dir build\qa\workbook-editor-shared-formula-fixtures
-```
-
-These fixture runs are local QA evidence only. They are not vendored runtime
-dependencies and are not part of default CI.
-
-2026-06-22 local fixture evidence used the minizip-enabled QA tool against a
-temporary xlnt sparse checkout, then removed that checkout. Reports:
-
-- `build\qa\xlnt-shared-formula-fixtures-2026-06-22\report.json`:
-  `18_formulae.xlsx:Sheet1` had 15 formula elements, 3 shared formula
-  elements, 1 shared definition, 2 metadata-only followers; dirty output kept
-  15 ordinary formula elements and 0 shared formula metadata elements, with
-  Excel COM status `ok`.
-- `build\qa\xlnt-source-formula-fixtures-2026-06-22\report.json`:
-  three formula-bearing xlnt worksheets scanned read-only with no failures.
-- `build\qa\xlnt-defined-name-fixtures-2026-06-22\report.json`:
-  `19_defined_names.xlsx` preserved 6 direct definedName records, with Excel
-  COM status `ok`.
-
-The same formula-compatible boundary was also rerun against temporary
-Python-generated fixtures from `openpyxl 3.1.2` and `XlsxWriter 3.2.0`.
-`build\qa\python-writer-formula-fixtures-2026-06-22\report.json` recorded 6
-cases total: two source-formula-audit cases, two dirty materialized rename
-cases, and two definedName preservation cases. Each formula workbook had 5
-formula cells on the target sheet; source audits saw 6 qualified references,
-2 rename-risk references, and Excel COM status `ok`; dirty rename outputs kept
-5 ordinary formulas and 0 shared-formula metadata; definedName preservation
-kept 3 direct definedName records per workbook, with Excel COM status `ok`.
-The temporary source fixture root was removed after validation.
-
-A focused definedName audit rerun is recorded in
-`build\qa\python-writer-defined-name-audit-2026-06-22\report.json`. It uses
-temporary `openpyxl 3.1.2` and `XlsxWriter 3.2.0` workbooks with 3 local
-sheet-qualified definedName references each, and confirms the QA layer reports
-the public audit counts: 3 definedName references, 3 current-workbook sheet
-matches, and zero rename-risk, external-workbook, or 3D sheet-range references
-per workbook. This remains diagnostic evidence only; it does not add formula
-evaluation, name-manager editing, or default rename-time formula rewriting.
+- Excel-compatible calculation engine。
+- cached value/materialized result API。
+- 完整 formula grammar 和 dependency graph。
+- 完整 calcChain rebuild。

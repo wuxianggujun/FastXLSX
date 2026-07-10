@@ -18,15 +18,15 @@ option(FASTXLSX_BUILD_EXAMPLES "Build FastXLSX examples" OFF)
 option(FASTXLSX_BUILD_BENCHMARKS "Build FastXLSX manual benchmark tools" OFF)
 option(FASTXLSX_BUILD_REFERENCE_BENCHMARKS "Build opt-in third-party XLSX writer reference benchmark adapters" OFF)
 option(FASTXLSX_BUILD_QA_TOOLS "Build opt-in local QA tools" OFF)
-option(FASTXLSX_ENABLE_DOM_EDITING "Enable optional DOM-based editing helpers" ON)
-option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for the internal production ZIP writer backend" OFF)
+option(FASTXLSX_BUILD_FEATURE_SMOKES "Build small compile/runtime feature-profile smoke tools" OFF)
+option(FASTXLSX_ENABLE_MINIZIP_NG "Use minizip-ng for production stored/DEFLATE ZIP read and write" ON)
+option(FASTXLSX_ENABLE_IMAGES "Enable stb-backed PNG/JPEG APIs and XLSX image features" ON)
 
-add_library(fastxlsx
+set(_fastxlsx_sources
     src/cell_store.cpp
     src/cell_value.cpp
     src/formula.cpp
     src/formula_reference_audit.cpp
-    src/image.cpp
     src/opc.cpp
     src/package_editor.cpp
     src/package_reader.cpp
@@ -52,6 +52,14 @@ add_library(fastxlsx
     src/zip_store_writer.cpp
 )
 
+if(FASTXLSX_ENABLE_IMAGES)
+    list(APPEND _fastxlsx_sources src/image.cpp)
+else()
+    list(APPEND _fastxlsx_sources src/image_disabled.cpp)
+endif()
+
+add_library(fastxlsx ${_fastxlsx_sources})
+
 target_include_directories(fastxlsx PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
@@ -61,17 +69,22 @@ target_compile_features(fastxlsx PUBLIC cxx_std_20)
 
 add_library(FastXLSX::fastxlsx ALIAS fastxlsx)
 
-if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
-    list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/stb")
-    list(APPEND _fastxlsx_stb_include_dirs "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
+if(FASTXLSX_ENABLE_IMAGES)
+    if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+        list(APPEND CMAKE_MODULE_PATH "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/stb")
+        list(APPEND _fastxlsx_stb_include_dirs "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include")
+    endif()
+    file(GLOB _fastxlsx_stb_module_dirs "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/*/share/stb")
+    list(APPEND CMAKE_MODULE_PATH ${_fastxlsx_stb_module_dirs})
+    file(GLOB _fastxlsx_stb_manifest_include_dirs "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/*/include")
+    list(APPEND _fastxlsx_stb_include_dirs ${_fastxlsx_stb_manifest_include_dirs})
+    find_path(Stb_INCLUDE_DIR NAMES stb_image.h PATHS ${_fastxlsx_stb_include_dirs} NO_DEFAULT_PATH)
+    find_package(Stb MODULE REQUIRED)
+    target_include_directories(fastxlsx PRIVATE ${Stb_INCLUDE_DIR})
+    target_compile_definitions(fastxlsx PUBLIC FASTXLSX_HAS_IMAGES=1)
+else()
+    target_compile_definitions(fastxlsx PUBLIC FASTXLSX_HAS_IMAGES=0)
 endif()
-file(GLOB _fastxlsx_stb_module_dirs "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/*/share/stb")
-list(APPEND CMAKE_MODULE_PATH ${_fastxlsx_stb_module_dirs})
-file(GLOB _fastxlsx_stb_manifest_include_dirs "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg_installed/*/include")
-list(APPEND _fastxlsx_stb_include_dirs ${_fastxlsx_stb_manifest_include_dirs})
-find_path(Stb_INCLUDE_DIR NAMES stb_image.h PATHS ${_fastxlsx_stb_include_dirs} NO_DEFAULT_PATH)
-find_package(Stb MODULE REQUIRED)
-target_include_directories(fastxlsx PRIVATE ${Stb_INCLUDE_DIR})
 
 if(FASTXLSX_ENABLE_MINIZIP_NG)
     find_package(minizip-ng CONFIG REQUIRED)
@@ -97,6 +110,14 @@ endif()
 if(FASTXLSX_BUILD_QA_TOOLS)
     add_subdirectory(tools)
 endif()
+if(FASTXLSX_BUILD_FEATURE_SMOKES)
+    add_executable(fastxlsx_image_disabled_smoke
+        tools/feature_smoke/image_disabled_smoke.cpp
+    )
+    target_link_libraries(fastxlsx_image_disabled_smoke PRIVATE FastXLSX::fastxlsx)
+    target_compile_features(fastxlsx_image_disabled_smoke PRIVATE cxx_std_20)
+endif()
+
 
 install(
     TARGETS fastxlsx

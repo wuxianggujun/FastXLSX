@@ -231,7 +231,7 @@ void check_reopened_lazy_shared_strings_dirty_output(
 {
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
-    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data", lossy_source_materialization_options());
 
     check_workbook_editor_public_clean_state(
         reopened_editor, prefix + " fresh reopen");
@@ -289,7 +289,7 @@ void check_reopened_lazy_shared_strings_dirty_output(
 
     bool shared_failed = false;
     try {
-        (void)reopened_editor.worksheet("Shared");
+        (void)reopened_editor.worksheet("Shared", lossy_source_materialization_options());
     } catch (const fastxlsx::FastXlsxError& error) {
         shared_failed = true;
         check_contains(error.what(), expected_shared_failure,
@@ -339,7 +339,7 @@ void check_reopened_shared_strings_output(
 {
     const std::string prefix(scenario);
     fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
-    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_data = reopened_editor.worksheet("Data", lossy_source_materialization_options());
 
     check_workbook_editor_public_clean_state(
         reopened_editor, prefix + " fresh reopen");
@@ -448,7 +448,7 @@ void test_public_worksheet_editor_defers_source_shared_strings_until_index_cells
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -616,7 +616,7 @@ void test_public_worksheet_editor_defers_duplicate_shared_strings_relationship_u
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
             && a1->number_value() == 7.0,
@@ -757,7 +757,7 @@ void test_public_worksheet_editor_defers_malformed_shared_strings_xml_until_inde
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
             && a1->number_value() == 11.0,
@@ -900,7 +900,7 @@ void test_public_worksheet_editor_defers_wrong_shared_strings_content_type_until
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Number
             && a1->number_value() == 13.0,
@@ -1054,7 +1054,7 @@ void test_public_worksheet_editor_materializes_source_shared_strings()
     const auto rewritten_source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -1304,7 +1304,7 @@ void test_public_worksheet_editor_reuses_duplicate_dirty_shared_strings()
         "duplicate dirty sharedStrings fixture should start with a sharedStrings part");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
             && a1->text_value() == "seed-text",
@@ -1406,7 +1406,7 @@ void test_public_worksheet_editor_reuses_existing_dirty_shared_strings_without_r
     const std::string shared_strings_before = source_entries.at("xl/sharedStrings.xml");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
             && a1->text_value() == "source-reuse",
@@ -1596,7 +1596,7 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
                 scenario_text + " fixture should include xml:space shared string text");
 
             fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
             check(sheet.cell_count() == 6,
                 scenario_text + " setup should materialize all source shared strings");
             check(!sheet.has_pending_changes(),
@@ -1668,7 +1668,7 @@ void test_public_worksheet_editor_shifts_source_shared_strings_records()
             fastxlsx::WorkbookEditor reopened_editor =
                 fastxlsx::WorkbookEditor::open(noop_output);
             fastxlsx::WorksheetEditor reopened_sheet =
-                reopened_editor.worksheet("Data");
+                reopened_editor.worksheet("Data", lossy_source_materialization_options());
             check(!reopened_sheet.has_pending_changes(),
                 scenario_text + " fresh reopen should start clean");
             reopened_sheet.set_cell(
@@ -1878,7 +1878,7 @@ void test_public_worksheet_editor_accepts_legal_source_shared_strings_xml_declar
         const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
         fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
         const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
         check(a1.has_value() && a1->kind() == fastxlsx::CellValueKind::Text
@@ -2081,7 +2081,7 @@ void test_public_worksheet_editor_flattens_rich_source_shared_strings()
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -2281,7 +2281,7 @@ void test_public_worksheet_editor_materializes_prefixed_source_shared_strings()
         "prefixed sharedStrings fixture should carry self-closing ignored metadata");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -2469,7 +2469,7 @@ void test_public_worksheet_editor_materializes_local_names_without_namespace_val
         "wrong-namespace local-name fixture should use a non-spreadsheetml worksheet URI");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -2655,7 +2655,7 @@ void test_public_worksheet_editor_materializes_source_shared_strings_xml_space_a
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
@@ -2835,7 +2835,7 @@ void test_public_worksheet_editor_ignores_source_shared_strings_counts_and_unkno
         "source sharedStrings metadata fixture should carry unknown root attributes");
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
-    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", lossy_source_materialization_options());
 
     const std::optional<fastxlsx::CellValue> a1 = sheet.try_cell("A1");
     const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");

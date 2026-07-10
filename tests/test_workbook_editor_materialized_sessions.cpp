@@ -2435,6 +2435,134 @@ void test_public_worksheet_editor_invalid_shifts_preserve_dirty_state_and_recove
         "invalid public shift recovery save should clear dirty materialized memory");
 }
 
+void test_public_worksheet_editor_shifted_state_survives_invalid_shift_recovery()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source(
+            "fastxlsx-workbook-editor-materialized-shifted-invalid-recovery-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-materialized-shifted-invalid-recovery-output.xlsx");
+    const std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-c3"));
+
+    sheet.insert_rows(2, 1);
+    sheet.insert_columns(2, 1);
+    const std::size_t shifted_cell_count = sheet.cell_count();
+    const std::size_t shifted_memory = sheet.estimated_memory_usage();
+
+    const auto check_shifted_state_preserved = [&](std::string_view label) {
+        check(sheet.has_pending_changes(),
+            std::string(label) + " should keep the shifted handle dirty");
+        check(editor.pending_change_count() == 0,
+            std::string(label) + " should not queue coarse public edits before save");
+        check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+            std::string(label) + " should preserve shifted materialized names");
+        check(editor.pending_materialized_cell_count() == shifted_cell_count,
+            std::string(label) + " should preserve shifted materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            std::string(label) + " should preserve shifted materialized memory");
+        check(sheet.cell_count() == shifted_cell_count,
+            std::string(label) + " should preserve shifted sparse count");
+        check(sheet.estimated_memory_usage() == shifted_memory,
+            std::string(label) + " should preserve shifted sparse memory");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                sheet.get_cell("C1").number_value() == 1.0 &&
+                sheet.get_cell("A3").text_value() == "placeholder-a2" &&
+                sheet.get_cell("D4").text_value() == "dirty-c3",
+            std::string(label) + " should preserve shifted source and dirty cells");
+        check(!sheet.try_cell("B1").has_value() &&
+                !sheet.try_cell("A2").has_value() &&
+                !sheet.try_cell("C3").has_value(),
+            std::string(label) + " should keep pre-shift coordinates empty");
+
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+        check(row_one.size() == 2 &&
+                row_one[0].reference.row == 1 &&
+                row_one[0].reference.column == 1 &&
+                row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                row_one[0].value.text_value() == "placeholder-a1" &&
+                row_one[1].reference.row == 1 &&
+                row_one[1].reference.column == 3 &&
+                row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                row_one[1].value.number_value() == 1.0,
+            std::string(label) + " should preserve shifted row one snapshot order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> row_four = sheet.row_cells(4);
+        check(row_four.size() == 1 &&
+                row_four[0].reference.row == 4 &&
+                row_four[0].reference.column == 4 &&
+                row_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                row_four[0].value.text_value() == "dirty-c3",
+            std::string(label) + " should preserve shifted dirty row snapshot");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+            sheet.column_cells(4);
+        check(column_four.size() == 1 &&
+                column_four[0].reference.row == 4 &&
+                column_four[0].reference.column == 4 &&
+                column_four[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                column_four[0].value.text_value() == "dirty-c3",
+            std::string(label) + " should preserve shifted dirty column snapshot");
+    };
+
+    check(!editor.last_edit_error().has_value(),
+        "successful public shifts should leave diagnostics clear");
+    check_shifted_state_preserved("successful public shifts");
+
+    check(threw_fastxlsx_error([&] { sheet.insert_rows(1048576, 2); }),
+        "shifted invalid public recovery should reject row count past the Excel limit");
+    check(editor.last_edit_error().has_value(),
+        "shifted invalid row count failure should leave a public edit diagnostic");
+    check_shifted_state_preserved("shifted invalid row count failure");
+
+    check(threw_fastxlsx_error([&] { sheet.delete_columns(0, 1); }),
+        "shifted invalid public recovery should reject column zero deletion");
+    check(editor.last_edit_error().has_value(),
+        "shifted invalid column zero failure should leave a public edit diagnostic");
+    check_shifted_state_preserved("shifted invalid column zero failure");
+
+    sheet.insert_rows(10, 1);
+    sheet.delete_rows(10, 1);
+    sheet.insert_columns(10, 1);
+    sheet.delete_columns(10, 1);
+
+    check(!editor.last_edit_error().has_value(),
+        "shifted valid no-ops should clear invalid shift diagnostics");
+    check_shifted_state_preserved("shifted valid no-op recovery");
+
+    editor.save_as(output);
+    const std::map<std::string, std::string> output_entries =
+        fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "shifted invalid recovery save should not mutate the source package");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D4"/>)",
+        "shifted invalid recovery save should persist shifted bounds");
+    check_contains(worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
+        "shifted invalid recovery save should persist shifted source number");
+    check_contains(worksheet_xml,
+        R"(<c r="D4" t="inlineStr"><is><t>dirty-c3</t></is></c>)",
+        "shifted invalid recovery save should persist shifted dirty cell");
+    check_contains(worksheet_xml, "placeholder-a2",
+        "shifted invalid recovery save should persist shifted source text");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "shifted invalid recovery save should not persist pre-shift B1");
+    check_not_contains(worksheet_xml, R"(r="A2")",
+        "shifted invalid recovery save should not persist pre-shift A2");
+    check_not_contains(worksheet_xml, R"(r="C3")",
+        "shifted invalid recovery save should not persist pre-shift dirty coordinate");
+    check(!sheet.has_pending_changes(),
+        "shifted invalid recovery save should clean the borrowed handle");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "shifted invalid recovery save should clear dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "shifted invalid recovery save should clear dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "shifted invalid recovery save should clear dirty materialized memory");
+}
+
 void test_internal_materialized_session_assignment_from_moved_from_source_clears_target()
 {
     const std::filesystem::path source =
@@ -3829,6 +3957,7 @@ int main()
         test_public_worksheet_editor_disjoint_shifts_clear_diagnostics_preserve_dirty_state();
         test_public_worksheet_editor_boundary_shifts_clear_diagnostics_preserve_dirty_state();
         test_public_worksheet_editor_invalid_shifts_preserve_dirty_state_and_recover();
+        test_public_worksheet_editor_shifted_state_survives_invalid_shift_recovery();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

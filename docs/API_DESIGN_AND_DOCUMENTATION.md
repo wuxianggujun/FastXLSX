@@ -32,6 +32,7 @@
 - In-memory API 必须提供 cell count、内存估算和 guardrail，并定义失败前状态不污染。
 - Existing-workbook style-only API 在 style registry/migration contract 建立前，只能复用同一 materialized workbook 中已校验的 source StyleId 或清除现有句柄；range mutation 必须定义 sparse mapping、missing-target、overlap snapshot 与 batch preflight 语义。不得接受任意 caller non-default StyleId，并必须声明 styles.xml 是 preserve 而不是 edit。
 - Cross-worksheet In-memory API 必须验证 borrowed handle 属于同一当前 `WorkbookEditor`，明确 source/destination dirty ownership、live snapshot 时点、同坐标行为和目标 guardrail；不得把 same-workbook sparse copy 描述为 worksheet clone、cross-workbook migration 或 linked-object copy。
+- Cross-worksheet move 是双状态 mutation：实现必须在 active sessions 外构造 source-removal 与 destination-overlay candidates，验证两边 guardrail 后只以 noexcept commit 发布，并覆盖 destination preflight failure、save failure retry 与 reopen；禁止先删 source 再尝试写 destination。
 - Cross-worksheet style-only mapping 还必须要求 mapped target 已表示，先完成 source optional StyleId snapshot 与全目标 preflight，再发布 destination-only batch；source gaps 不得合成 target，unstyled source 的 clear 语义和 styles.xml preserve 边界必须显式记录。
 - Public structured diagnostics 只暴露稳定业务/语义分类与调用方可理解的上下文；XML token、parser state、part path、relationship id 和 internal type 不得成为 public contract。Typed exception 应保留 `FastXlsxError` 基类兼容性，并明确哪些相邻失败仍是通用错误。
 - 数值写入必须拒绝非 finite 值，不能序列化 `nan`、`inf` 或 `-inf`。

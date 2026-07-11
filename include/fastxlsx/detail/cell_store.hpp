@@ -12,6 +12,8 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace fastxlsx::detail {
@@ -228,6 +230,22 @@ public:
 
     [[nodiscard]] const CellStoreOptions& options() const noexcept;
     [[nodiscard]] const std::map<CellPosition, CellRecord>& records() const noexcept;
+
+    /// Exchanges two fully preflighted sparse stores without allocation.
+    /// Internal multi-session mutations use this as their noexcept commit step.
+    void swap(CellStore& other) noexcept
+    {
+        static_assert(std::is_nothrow_swappable_v<CellStoreOptions>);
+        static_assert(noexcept(cells_.swap(other.cells_)));
+        using std::swap;
+        swap(options_, other.options_);
+        cells_.swap(other.cells_);
+    }
+
+    friend void swap(CellStore& left, CellStore& right) noexcept
+    {
+        left.swap(right);
+    }
 
 private:
     CellStoreOptions options_;

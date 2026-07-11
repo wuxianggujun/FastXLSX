@@ -1065,6 +1065,49 @@ public:
     void move_cells(std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Moves represented sparse cells from another materialized worksheet.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. This editor
+    /// is the destination. `source_sheet` and destination must be valid borrowed
+    /// handles owned by the same current WorkbookEditor state, and both sessions
+    /// must already be materialized. `source` is a 1-based inclusive range and
+    /// `destination` names the top-left cell of the same-sized target footprint.
+    /// Represented source records are removed from the source candidate and
+    /// overlaid onto the destination candidate; source gaps preserve target
+    /// records. An empty sparse source range is a clean no-op.
+    ///
+    /// CellValue payloads and validated workbook-local StyleId handles move with
+    /// represented records. Formula text is translated by the source-to-target
+    /// row/column delta using the same narrow A1 translator as move_cells();
+    /// formulas are not evaluated and cached values are not generated.
+    ///
+    /// Owner/session identity, source/destination bounds, target footprint, and
+    /// both CellStore candidates are fully validated before active state changes.
+    /// The source-removal and destination-overlay candidates are committed only
+    /// through noexcept store swaps, so target max_cells/memory guardrail or
+    /// staging failures publish neither half. An effective move dirties both
+    /// sessions; failed save_as() retains both sides for retry.
+    ///
+    /// This is same-workbook sparse record movement, not worksheet relocation or
+    /// full Excel cross-sheet cut/paste. It does not move row/column metadata,
+    /// merged cells, tables, filters, validations, conditional formatting,
+    /// hyperlinks, drawings/charts/VBA, defined names, relationships,
+    /// sharedStrings/styles metadata, or calcChain, and it does not accept a
+    /// source handle from another WorkbookEditor.
+    void move_cells_from(WorksheetEditor& source_sheet, CellRange source,
+        WorksheetCellReference destination);
+
+    /// Moves represented cells from another worksheet using A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the target top-left
+    /// cell. Same-owner validation, source removal, sparse target overlay,
+    /// formula translation, StyleId preservation, dual-candidate commit,
+    /// diagnostics, save retry, and non-goals match the CellRange overload.
+    void move_cells_from(WorksheetEditor& source_sheet,
+        std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Copies one represented cell's existing style handle to another cell.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. Source and

@@ -332,6 +332,126 @@ void test_cross_sheet_copy_live_source_and_failures()
         "different-owner copy rejection should preserve destination cell state");
 }
 
+void test_cross_sheet_move_dual_session_save_retry_and_reopen()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-move-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-cross-sheet-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+
+    destination_sheet.move_cells_from(source_sheet, "A1:B2", "B2");
+    check(source_sheet.cell_count() == 0
+            && !source_sheet.contains_cell("A1")
+            && !source_sheet.contains_cell("B1")
+            && !source_sheet.contains_cell("A2"),
+        "move_cells_from should remove represented records from the source session");
+    check(source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "effective cross-sheet move should dirty both materialized sessions");
+    check(destination_sheet.cell_count() == destination_cell_count,
+        "cross-sheet move overlay should keep destination count when targets exist");
+    check(destination_sheet.get_cell("B2").kind() == fastxlsx::CellValueKind::Number
+            && destination_sheet.get_cell("B2").number_value() == 10.0,
+        "move_cells_from should transfer the source number");
+    check_formula(destination_sheet.get_cell("C2"),
+        "B2+$A$1+B$1+$A2", source.formula_style,
+        "move_cells_from should translate formula references and preserve style");
+    check(destination_sheet.get_cell("B3").text_value() == "source-a2",
+        "move_cells_from should transfer represented sparse text");
+    check(destination_sheet.get_cell("C3").text_value() == "gap-c3",
+        "move_cells_from should preserve targets under source gaps");
+
+    check(throws_fastxlsx_error(
+              [&] { editor.save_as(fastxlsx::test::artifact_dir()); }),
+        "cross-sheet move save to a directory should fail after staging");
+    check(source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes()
+            && source_sheet.cell_count() == 0,
+        "failed cross-sheet move save should retain both dirty session states");
+    check_formula(destination_sheet.get_cell("C2"),
+        "B2+$A$1+B$1+$A2", source.formula_style,
+        "failed cross-sheet move save should preserve destination projection");
+
+    editor.save_as(output);
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "successful cross-sheet move retry should clear both session dirty states");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "cross-sheet move save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "cross-sheet move should preserve source styles.xml bytes");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_source = reopened.worksheet("Source");
+    fastxlsx::WorksheetEditor reopened_destination = reopened.worksheet("Destination");
+    check(reopened_source.cell_count() == 0 && !reopened_source.used_range().has_value(),
+        "reopened cross-sheet move output should omit moved source records");
+    check(reopened_destination.get_cell("B2").number_value() == 10.0
+            && reopened_destination.get_cell("B3").text_value() == "source-a2"
+            && reopened_destination.get_cell("C3").text_value() == "gap-c3",
+        "reopened cross-sheet move output should preserve sparse destination overlay");
+    check_formula(reopened_destination.get_cell("C2"),
+        "B2+$A$1+B$1+$A2", source.formula_style,
+        "reopened cross-sheet move output should preserve translated styled formula");
+}
+
+void test_cross_sheet_move_failures_preserve_both_sessions()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-move-guards.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditorOptions destination_options;
+    destination_options.max_cells = 7;
+    fastxlsx::WorksheetEditor destination_sheet =
+        editor.worksheet("Destination", destination_options);
+    const std::size_t source_cell_count = source_sheet.cell_count();
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.move_cells_from(source_sheet, "A1:B2", "E5");
+    }), "move_cells_from should enforce destination max_cells before dual commit");
+    check(source_sheet.cell_count() == source_cell_count
+            && source_sheet.contains_cell("A1")
+            && source_sheet.contains_cell("B1")
+            && source_sheet.contains_cell("A2")
+            && destination_sheet.cell_count() == destination_cell_count
+            && !destination_sheet.contains_cell("E5"),
+        "destination guard failure should publish neither source removal nor target overlay");
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes()
+            && editor.last_edit_error().has_value(),
+        "cross-sheet move guard failure should preserve both clean sessions");
+
+    source_sheet.move_cells_from(source_sheet, "A1:B2", "A1");
+    destination_sheet.move_cells_from(source_sheet, "D4:E5", "A1");
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.last_edit_error().has_value(),
+        "same-session same-location and empty cross-sheet moves should be clean no-ops");
+
+    fastxlsx::WorkbookEditor other_editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor other_source = other_editor.worksheet("Source");
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.move_cells_from(other_source, "A1", "B2");
+    }), "move_cells_from should reject a source owned by another WorkbookEditor");
+    check(source_sheet.cell_count() == source_cell_count
+            && destination_sheet.get_cell("B2").text_value() == "old-b2"
+            && !destination_sheet.has_pending_changes(),
+        "different-owner move rejection should preserve local source and destination state");
+}
+
 void test_move_cells_sparse_transfer_save_retry_and_reopen()
 {
     const CopyCellsSource source =
@@ -461,6 +581,8 @@ int main()
         test_copy_cells_failures_preserve_clean_state();
         test_cross_sheet_copy_sparse_overlay_save_retry_and_reopen();
         test_cross_sheet_copy_live_source_and_failures();
+        test_cross_sheet_move_dual_session_save_retry_and_reopen();
+        test_cross_sheet_move_failures_preserve_both_sessions();
         test_move_cells_sparse_transfer_save_retry_and_reopen();
         test_move_cells_overlap_reads_snapshot();
         test_move_cells_failures_preserve_clean_state();

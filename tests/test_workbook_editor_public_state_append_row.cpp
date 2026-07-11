@@ -728,12 +728,237 @@ void test_public_worksheet_editor_append_row_appends_after_sparse_max_row()
         inspect_append_row_output);
 }
 
+void test_public_worksheet_editor_append_row_does_not_inherit_source_styles()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-style-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-style-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-style-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-append-row-style-second-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("append-row-source-tail"),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    sheet.append_row({
+        fastxlsx::CellValue::text("append-row-unstyled"),
+        fastxlsx::CellValue::number(8.0),
+        fastxlsx::CellValue::formula("A2+B1"),
+        fastxlsx::CellValue::blank(),
+    });
+
+    const fastxlsx::CellValue source_a1 = sheet.get_cell("A1");
+    check(source_a1.kind() == fastxlsx::CellValueKind::Number &&
+            source_a1.number_value() == 1.0 &&
+            source_a1.has_style() &&
+            source_a1.style_id().value() == non_default_style.value(),
+        "append_row should preserve existing source style handles");
+    const fastxlsx::CellValue appended_a2 = sheet.get_cell("A2");
+    check(appended_a2.kind() == fastxlsx::CellValueKind::Text &&
+            appended_a2.text_value() == "append-row-unstyled" &&
+            !appended_a2.has_style(),
+        "append_row should not inherit styles for appended text cells");
+    const fastxlsx::CellValue appended_b2 = sheet.get_cell("B2");
+    check(appended_b2.kind() == fastxlsx::CellValueKind::Number &&
+            appended_b2.number_value() == 8.0 &&
+            !appended_b2.has_style(),
+        "append_row should not inherit styles for appended number cells");
+    const fastxlsx::CellValue appended_c2 = sheet.get_cell("C2");
+    check(appended_c2.kind() == fastxlsx::CellValueKind::Formula &&
+            appended_c2.text_value() == "A2+B1" &&
+            !appended_c2.has_style(),
+        "append_row should not inherit styles for appended formula cells");
+    const fastxlsx::CellValue appended_d2 = sheet.get_cell("D2");
+    check(appended_d2.kind() == fastxlsx::CellValueKind::Blank &&
+            !appended_d2.has_style(),
+        "append_row should not inherit styles for appended blank cells");
+    check(sheet.cell_count() == 6,
+        "styled append_row should keep source and appended sparse records");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 4,
+        "styled append_row should extend bounds to the appended row");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "styled append_row dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "successful styled append_row should keep diagnostics clear");
+
+    const auto inspect_styled_append_row_output =
+        [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 6,
+                prefix + " reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                prefix + " reopened output should keep appended row bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0 &&
+                    reopened_a1.has_style() &&
+                    reopened_a1.style_id().value() == non_default_style.value(),
+                prefix + " reopened output should preserve source A1 style");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "append-row-source-tail" &&
+                    !reopened_b1.has_style(),
+                prefix + " reopened output should preserve source tail");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "append-row-unstyled" &&
+                    !reopened_a2.has_style(),
+                prefix + " reopened output should read unstyled appended A2");
+            const fastxlsx::CellValue reopened_b2 = reopened_sheet.get_cell("B2");
+            check(reopened_b2.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b2.number_value() == 8.0 &&
+                    !reopened_b2.has_style(),
+                prefix + " reopened output should read unstyled appended B2");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c2.text_value() == "A2+B1" &&
+                    !reopened_c2.has_style(),
+                prefix + " reopened output should read unstyled appended C2");
+            const fastxlsx::CellValue reopened_d2 = reopened_sheet.get_cell("D2");
+            check(reopened_d2.kind() == fastxlsx::CellValueKind::Blank &&
+                    !reopened_d2.has_style(),
+                prefix + " reopened output should read unstyled appended D2");
+        };
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled append_row save should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "styled append_row save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "styled append_row should persist appended row bounds");
+    check_contains(worksheet_xml, R"(<c r="A1" s=")" +
+            std::to_string(non_default_style.value()) + R"("><v>1</v></c>)",
+        "styled append_row should preserve source styled A1");
+    check_contains(worksheet_xml,
+        R"(<row r="2"><c r="A2" t="inlineStr"><is><t>append-row-unstyled</t></is></c>)",
+        "styled append_row should persist appended A2 without a style id");
+    check_contains(worksheet_xml, R"(<c r="B2"><v>8</v></c>)",
+        "styled append_row should persist appended B2 without a style id");
+    check_contains(worksheet_xml, R"(<c r="C2"><f>A2+B1</f></c>)",
+        "styled append_row should persist appended C2 without a style id");
+    check_contains(worksheet_xml, R"(<c r="D2"/>)",
+        "styled append_row should persist appended D2 without a style id");
+    check_not_contains(worksheet_xml, R"(<c r="A2" s=")",
+        "styled append_row should not write a style id on appended A2");
+    check_not_contains(worksheet_xml, R"(<c r="B2" s=")",
+        "styled append_row should not write a style id on appended B2");
+    check_not_contains(worksheet_xml, R"(<c r="C2" s=")",
+        "styled append_row should not write a style id on appended C2");
+    check_not_contains(worksheet_xml, R"(<c r="D2" s=")",
+        "styled append_row should not write a style id on appended D2");
+    check_reopened_clean_sheet_output(output, "Styled", "styled append_row",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_append_row_output(reopened_sheet, "styled append_row");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    check(!sheet.has_pending_changes(),
+        "styled append_row saved handle should be clean after save");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled append_row saved handle should clear dirty materialized diagnostics");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "styled append_row saved handle should keep one materialized handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "styled append_row saved handle should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled append_row saved handle should keep diagnostics clear");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "styled append_row no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "styled append_row no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled append_row no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "styled append_row no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled append_row no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "styled append_row no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "styled append_row no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "styled append_row no-op output should match materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled append_row no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Styled", "styled append_row no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_append_row_output(
+                reopened_sheet, "styled append_row no-op save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "styled append_row second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "styled append_row second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled append_row second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "styled append_row second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled append_row second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop, "styled append_row second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop, "styled append_row second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "styled append_row second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "styled append_row second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled append_row second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Styled", "styled append_row second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_append_row_output(
+                reopened_sheet, "styled append_row second no-op save");
+        });
+}
+
 } // namespace
 
 int main()
 {
     try {
         test_public_worksheet_editor_append_row_appends_after_sparse_max_row();
+        test_public_worksheet_editor_append_row_does_not_inherit_source_styles();
         std::cout << "WorkbookEditor public-state append row tests passed\n";
         return 0;
     } catch (const std::exception& error) {

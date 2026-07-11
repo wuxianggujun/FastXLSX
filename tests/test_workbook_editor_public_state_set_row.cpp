@@ -712,12 +712,350 @@ void test_public_worksheet_editor_set_row_replaces_sparse_row()
         inspect_set_row_output);
 }
 
+void test_public_worksheet_editor_set_row_replacement_drops_source_styles()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-row-full-style-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-row-full-style-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-row-full-style-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("set-row-full-target-tail"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(2.0).with_style(non_default_style),
+            fastxlsx::CellView::text("set-row-full-non-target"),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    sheet.set_row(1, {
+        fastxlsx::CellValue::text("row-replacement-unstyled"),
+        fastxlsx::CellValue::number(42.0),
+        fastxlsx::CellValue::formula("A1+B1"),
+    });
+
+    const fastxlsx::CellValue live_a1 = sheet.get_cell("A1");
+    check(live_a1.kind() == fastxlsx::CellValueKind::Text &&
+            live_a1.text_value() == "row-replacement-unstyled" &&
+            !live_a1.has_style(),
+        "set_row full replacement should drop overwritten source style ids");
+    const fastxlsx::CellValue live_a2 = sheet.get_cell("A2");
+    check(live_a2.kind() == fastxlsx::CellValueKind::Number &&
+            live_a2.number_value() == 2.0 &&
+            live_a2.has_style() &&
+            live_a2.style_id().value() == non_default_style.value(),
+        "set_row full replacement should preserve non-target source style ids");
+    const fastxlsx::CellValue live_c1 = sheet.get_cell("C1");
+    check(live_c1.kind() == fastxlsx::CellValueKind::Formula &&
+            live_c1.text_value() == "A1+B1" &&
+            !live_c1.has_style(),
+        "set_row full replacement should insert new row values without style ids");
+    check(sheet.cell_count() == 5,
+        "set_row full replacement should replace only the target-row sparse records");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "set_row full replacement should keep target and non-target bounds");
+    check(sheet.has_pending_changes(),
+        "set_row full replacement should dirty the materialized worksheet");
+    check(editor.pending_materialized_cell_count() == 5,
+        "set_row full replacement should expose aggregate materialized count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "set_row full replacement dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "successful set_row full replacement should keep diagnostics clear");
+
+    const auto check_row_a1_projection =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "row-replacement-unstyled" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled replacement A1");
+        };
+    const auto check_row_b1_projection =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Number &&
+                    snapshot.value.number_value() == 42.0 &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled replacement B1");
+        };
+    const auto check_row_c1_projection =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 3 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Formula &&
+                    snapshot.value.text_value() == "A1+B1" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled replacement C1");
+        };
+    const auto check_row_a2_projection =
+        [non_default_style](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Number &&
+                    snapshot.value.number_value() == 2.0 &&
+                    snapshot.value.has_style() &&
+                    snapshot.value.style_id().value() == non_default_style.value(),
+                prefix + " should preserve non-target styled A2");
+        };
+    const auto check_row_b2_projection =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "set-row-full-non-target" &&
+                    !snapshot.value.has_style(),
+                prefix + " should preserve non-target unstyled B2");
+        };
+
+    const auto inspect_set_row_replacement_output =
+        [check_row_a1_projection, check_row_b1_projection, check_row_c1_projection,
+            check_row_a2_projection, check_row_b2_projection](
+            fastxlsx::WorksheetEditor& reopened_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 5,
+                prefix + " reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                prefix + " reopened output should keep bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                reopened_sheet.sparse_cells();
+            check(cells.size() == 5,
+                prefix + " reopened sparse_cells should expose five records");
+            if (cells.size() == 5) {
+                check_row_a1_projection(cells[0],
+                    prefix + " reopened sparse_cells");
+                check_row_b1_projection(cells[1],
+                    prefix + " reopened sparse_cells");
+                check_row_c1_projection(cells[2],
+                    prefix + " reopened sparse_cells");
+                check_row_a2_projection(cells[3],
+                    prefix + " reopened sparse_cells");
+                check_row_b2_projection(cells[4],
+                    prefix + " reopened sparse_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 3,
+                prefix + " reopened row_cells should expose target row records");
+            if (row_one.size() == 3) {
+                check_row_a1_projection(row_one[0],
+                    prefix + " reopened row_cells");
+                check_row_b1_projection(row_one[1],
+                    prefix + " reopened row_cells");
+                check_row_c1_projection(row_one[2],
+                    prefix + " reopened row_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                reopened_sheet.row_cells(2);
+            check(row_two.size() == 2,
+                prefix + " reopened row_cells should expose non-target row records");
+            if (row_two.size() == 2) {
+                check_row_a2_projection(row_two[0],
+                    prefix + " reopened row_cells");
+                check_row_b2_projection(row_two[1],
+                    prefix + " reopened row_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                reopened_sheet.column_cells(1);
+            check(column_one.size() == 2,
+                prefix + " reopened column_cells should expose A1 and A2");
+            if (column_one.size() == 2) {
+                check_row_a1_projection(column_one[0],
+                    prefix + " reopened column_cells");
+                check_row_a2_projection(column_one[1],
+                    prefix + " reopened column_cells");
+            }
+
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "row-replacement-unstyled" &&
+                    !reopened_a1.has_style(),
+                prefix + " reopened output should read replacement A1 without style");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a2.number_value() == 2.0 &&
+                    reopened_a2.has_style(),
+                prefix + " reopened output should keep non-target A2 styled");
+        };
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_row full replacement save should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "set_row full replacement save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "set_row full replacement should persist target and non-target bounds");
+    check_contains(worksheet_xml,
+        R"(<row r="1"><c r="A1" t="inlineStr"><is><t>row-replacement-unstyled</t></is></c>)",
+        "set_row full replacement should persist A1 without a style id");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>42</v></c>)",
+        "set_row full replacement should persist B1 without a style id");
+    check_contains(worksheet_xml, R"(<c r="C1"><f>A1+B1</f></c>)",
+        "set_row full replacement should persist C1 without a style id");
+    check_contains(worksheet_xml,
+        R"(<c r="A2" s=")" + std::to_string(non_default_style.value()) +
+            R"("><v>2</v></c>)",
+        "set_row full replacement should preserve non-target styled A2");
+    check_contains(worksheet_xml, "set-row-full-non-target",
+        "set_row full replacement should preserve non-target row cells");
+    check_not_contains(worksheet_xml, R"(<c r="A1" s=")",
+        "set_row full replacement should not keep the old source style on A1");
+    check_not_contains(worksheet_xml, "set-row-full-target-tail",
+        "set_row full replacement should omit overwritten target-row tail");
+    check_not_contains(worksheet_xml, R"(<v>1</v>)",
+        "set_row full replacement should omit overwritten styled A1 number");
+    check_reopened_clean_sheet_output(output, "Styled", "set_row full replacement",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_set_row_replacement_output(
+                reopened_sheet, "set_row full replacement");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    const auto check_set_row_replacement_saved_snapshot =
+        [&](std::size_t expected_pending_count, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(sheet.cell_count() == 5,
+                prefix + " should keep saved sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                sheet.sparse_cells();
+            check(cells.size() == 5,
+                prefix + " should expose five saved records");
+            if (cells.size() == 5) {
+                check_row_a1_projection(cells[0],
+                    prefix + " sparse_cells");
+                check_row_b1_projection(cells[1],
+                    prefix + " sparse_cells");
+                check_row_c1_projection(cells[2],
+                    prefix + " sparse_cells");
+                check_row_a2_projection(cells[3],
+                    prefix + " sparse_cells");
+                check_row_b2_projection(cells[4],
+                    prefix + " sparse_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                sheet.row_cells(1);
+            check(row_one.size() == 3,
+                prefix + " should expose target row snapshots");
+            if (row_one.size() == 3) {
+                check_row_a1_projection(row_one[0],
+                    prefix + " row_cells");
+                check_row_b1_projection(row_one[1],
+                    prefix + " row_cells");
+                check_row_c1_projection(row_one[2],
+                    prefix + " row_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                sheet.row_cells(2);
+            check(row_two.size() == 2,
+                prefix + " should expose non-target row snapshots");
+            if (row_two.size() == 2) {
+                check_row_a2_projection(row_two[0],
+                    prefix + " row_cells");
+                check_row_b2_projection(row_two[1],
+                    prefix + " row_cells");
+            }
+
+            check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+                prefix + " should keep saved bounds");
+            check(!sheet.has_pending_changes(),
+                prefix + " should keep the materialized handle clean");
+            check(editor.pending_change_count() == expected_pending_count,
+                prefix + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                prefix + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                prefix + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                prefix + " should keep dirty materialized memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                prefix + " should keep dirty summaries empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                prefix + " should keep diagnostics clear");
+        };
+    check_set_row_replacement_saved_snapshot(
+        pending_count_after_save, "set_row full replacement saved handle");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_row full replacement no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_row full replacement no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_row full replacement no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_row full replacement no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_row full replacement no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_row full replacement no-op save should keep diagnostics clear");
+    check_set_row_replacement_saved_snapshot(
+        pending_count_after_save, "set_row full replacement no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "set_row full replacement no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "set_row full replacement no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "set_row full replacement no-op output should match materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_row full replacement no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "set_row full replacement no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_set_row_replacement_output(
+                reopened_sheet, "set_row full replacement no-op save");
+        });
+}
+
 } // namespace
 
 int main()
 {
     try {
         test_public_worksheet_editor_set_row_replaces_sparse_row();
+        test_public_worksheet_editor_set_row_replacement_drops_source_styles();
         std::cout << "WorkbookEditor public-state set row tests passed\n";
         return 0;
     } catch (const std::exception& error) {

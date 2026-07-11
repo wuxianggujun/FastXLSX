@@ -1,5 +1,31 @@
 #include "test_package_editor_core_common.hpp"
 
+class ScopedPackageEditorChunkPartReplacementStagedHook {
+public:
+    explicit ScopedPackageEditorChunkPartReplacementStagedHook(
+        fastxlsx::detail::PackageEditorChunkPartReplacementStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_chunk_part_replacement_staged_hook(
+            hook);
+    }
+
+    ~ScopedPackageEditorChunkPartReplacementStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_chunk_part_replacement_staged_hook(
+            nullptr);
+    }
+
+    ScopedPackageEditorChunkPartReplacementStagedHook(
+        const ScopedPackageEditorChunkPartReplacementStagedHook&) = delete;
+    ScopedPackageEditorChunkPartReplacementStagedHook& operator=(
+        const ScopedPackageEditorChunkPartReplacementStagedHook&) = delete;
+};
+
+void fail_package_editor_chunk_part_replacement_after_staging()
+{
+    throw std::runtime_error("injected chunk part replacement commit failure");
+}
+
 void test_package_editor_noop_save_preserves_all_source_entries()
 {
     const LinkedObjectSourcePackage source =
@@ -424,6 +450,107 @@ void test_package_editor_staged_chunk_part_replacement_writes_chunks()
         restore_editor.reader(), restore_output_reader, opaque_part.zip_path());
     check_entry_bytes(
         restore_output_reader, opaque_part.zip_path(), expected_chunked_opaque);
+}
+
+void test_package_editor_chunk_replacement_staging_failure_preserves_state_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-chunk-replacement-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-chunk-replacement-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-chunk-replacement-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const std::string prior_workbook =
+        R"(<workbook><sheets><sheet name="Queued" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+    const std::string replacement_opaque = "retried opaque chunk bytes";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, prior_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "prior workbook replacement before injected chunk replacement failure");
+    editor.remove_part(opaque_part,
+        "prior opaque removal before injected chunk replacement failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorChunkPartReplacementStagedHook hook(
+            fail_package_editor_chunk_part_replacement_after_staging);
+        try {
+            editor.replace_part_chunks(opaque_part,
+                {fastxlsx::detail::PackageEntryChunk::memory(replacement_opaque)},
+                "opaque chunk replacement with injected commit failure");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "injected chunk part replacement commit failure",
+                "chunk replacement staged failure should preserve injected context");
+        }
+    }
+    check(failed,
+        "PackageEditor should surface injected chunk part replacement failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "chunk replacement staging failure should preserve prior edit plan size");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "chunk replacement staging failure should preserve prior notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "chunk replacement staging failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "chunk replacement staging failure should preserve removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "chunk replacement staging failure should preserve omitted-entry audits");
+    check(editor.edit_plan().find_removed_part(opaque_part) != nullptr,
+        "chunk replacement staging failure should preserve prior opaque removal");
+    check(editor.edit_plan().find_part(opaque_part) == nullptr,
+        "chunk replacement staging failure should not publish opaque replacement");
+    check(editor.manifest().find_part(opaque_part) == nullptr,
+        "chunk replacement staging failure should preserve removed opaque manifest state");
+
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan = editor.planned_output();
+    check_output_entry_plan(failed_plan.entries, opaque_part.zip_path(),
+        fastxlsx::detail::PartWriteMode::CopyOriginal, true, false, false, true,
+        "chunk replacement staging failure should preserve opaque omission");
+    check_output_entry_staged_replacement_chunks(failed_plan.entries,
+        opaque_part.zip_path(), false,
+        "chunk replacement staging failure should not publish staged chunks");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check(failed_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "chunk replacement staging failure should preserve prior workbook replacement");
+    check(failed_reader.find_entry(opaque_part.zip_path()) == nullptr,
+        "chunk replacement staging failure should preserve prior opaque omission");
+    check(failed_reader.read_entry("[Content_Types].xml") == source.content_types,
+        "chunk replacement staging failure should preserve content types bytes");
+
+    editor.replace_part_chunks(opaque_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(replacement_opaque)},
+        "opaque chunk replacement retry after staged failure");
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check(retry_reader.read_entry("xl/workbook.xml") == prior_workbook,
+        "chunk replacement retry should preserve prior workbook replacement");
+    check(retry_reader.read_entry(opaque_part.zip_path()) == replacement_opaque,
+        "chunk replacement retry should write replacement opaque bytes");
+    check(editor.edit_plan().find_removed_part(opaque_part) == nullptr,
+        "chunk replacement retry should clear stale removed-part audit");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "chunk replacement retry should restore opaque manifest state");
 }
 
 void test_package_editor_source_part_stored_entry_chunks_reference_source_package_payload()
@@ -1633,6 +1760,7 @@ int main(int argc, char* argv[])
             test_package_editor_file_backs_copy_original_package_part_source_entries();
             test_package_editor_replaces_one_part_and_preserves_unknown_parts();
             test_package_editor_staged_chunk_part_replacement_writes_chunks();
+            test_package_editor_chunk_replacement_staging_failure_preserves_state_and_retries();
             test_package_editor_source_part_stored_entry_chunks_reference_source_package_payload();
             test_package_editor_prevalidated_staged_chunk_part_replacement_by_name();
             test_package_editor_staged_chunk_range_reader_slices_memory_and_file_chunks();

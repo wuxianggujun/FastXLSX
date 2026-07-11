@@ -22,6 +22,7 @@
 - Internal `PackageEditor::set_document_properties()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；同时纠正文档中将该 internal helper 误写为 `WorkbookEditor` public 能力的表述。
 - Internal `PackageEditor::remove_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再发布部分 removal 状态，既有 replacement 可保存并可安全重试。
 - Internal materialized `PackageEditor::replace_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 replacement，后续 retry 可恢复 source part。
+- Internal non-worksheet `PackageEditor::replace_part_chunks()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 chunk replacement，后续 retry 可恢复 source part。
 
 ### Documentation
 

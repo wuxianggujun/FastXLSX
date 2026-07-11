@@ -4865,6 +4865,13 @@ package_editor_materialized_part_replacement_staged_hook() noexcept
     return hook;
 }
 
+PackageEditorChunkPartReplacementStagedHook&
+package_editor_chunk_part_replacement_staged_hook() noexcept
+{
+    static PackageEditorChunkPartReplacementStagedHook hook = nullptr;
+    return hook;
+}
+
 void run_package_editor_source_copy_temp_files_hook(
     std::span<const std::filesystem::path> temporary_source_files)
 {
@@ -4904,6 +4911,14 @@ void run_package_editor_part_removal_staged_hook()
 void run_package_editor_materialized_part_replacement_staged_hook()
 {
     if (auto hook = package_editor_materialized_part_replacement_staged_hook();
+        hook != nullptr) {
+        hook();
+    }
+}
+
+void run_package_editor_chunk_part_replacement_staged_hook()
+{
+    if (auto hook = package_editor_chunk_part_replacement_staged_hook();
         hook != nullptr) {
         hook();
     }
@@ -6490,20 +6505,33 @@ void PackageEditor::replace_part_chunks(
         reason = "target package part staged stream rewrite";
     }
 
+    PackageManifest updated_manifest = manifest_;
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
     if (planned_part == nullptr) {
-        restore_source_part_manifest_state(manifest_, reader_, *source_part);
-        planned_part = manifest_.find_part(part_name);
-        if (planned_part == nullptr) {
+        restore_source_part_manifest_state(updated_manifest, reader_, *source_part);
+        if (updated_manifest.find_part(part_name) == nullptr) {
             throw FastXlsxError("replacement part was not restored");
         }
     }
 
-    upsert_part_replacement_chunks(replacements_, part_name, std::move(chunks),
+    upsert_part_replacement_chunks(updated_replacements, part_name, std::move(chunks),
         PartWriteMode::StreamRewrite, reason);
-    manifest_.set_part_write_mode(part_name, PartWriteMode::StreamRewrite);
-    edit_plan_.set_part(part_name, PartWriteMode::StreamRewrite, reason);
-    restore_active_part_entry_state_after_replacement(edit_plan_, entry_replacements_,
-        omitted_entries_, reader_, manifest_, part_name);
+    updated_manifest.set_part_write_mode(part_name, PartWriteMode::StreamRewrite);
+    updated_edit_plan.set_part(part_name, PartWriteMode::StreamRewrite, reason);
+    restore_active_part_entry_state_after_replacement(updated_edit_plan,
+        updated_entry_replacements, updated_omitted_entries, reader_, updated_manifest,
+        part_name);
+
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_chunk_part_replacement_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
 void PackageEditor::remove_part(
@@ -7853,6 +7881,12 @@ void testing_set_package_editor_materialized_part_replacement_staged_hook(
     PackageEditorMaterializedPartReplacementStagedHook hook) noexcept
 {
     package_editor_materialized_part_replacement_staged_hook() = hook;
+}
+
+void testing_set_package_editor_chunk_part_replacement_staged_hook(
+    PackageEditorChunkPartReplacementStagedHook hook) noexcept
+{
+    package_editor_chunk_part_replacement_staged_hook() = hook;
 }
 #endif
 

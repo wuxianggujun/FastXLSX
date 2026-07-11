@@ -1132,6 +1132,48 @@ public:
     void copy_cell_styles(std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Copies represented styles from another materialized worksheet.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. This editor
+    /// is the destination. `source_sheet` and the destination must be valid
+    /// borrowed handles owned by the same current WorkbookEditor state, and both
+    /// worksheets must already be materialized. Only represented source records
+    /// participate, and every mapped target for those records must already be
+    /// represented. Source gaps leave target styles unchanged.
+    ///
+    /// The source session remains unchanged. Each mapped destination keeps its
+    /// current CellValue while receiving the source record's optional validated
+    /// workbook-local StyleId; an unstyled source clears the mapped target style.
+    /// The source style snapshot and every target are resolved before one batch
+    /// is published. Copying between different worksheets at identical
+    /// coordinates is still evaluated rather than treated as a same-session
+    /// no-op. Empty sparse source ranges and all-equal mapped styles are clean
+    /// no-ops.
+    ///
+    /// Owner/session validity, bounds, target footprint, represented targets,
+    /// and CellStore guardrails are checked before destination mutation. Failure
+    /// preserves both sessions and dirty/save state apart from this
+    /// WorkbookEditor's last_edit_error(). Dirty save_as() changes only mapped
+    /// destination `s` attributes and preserves styles.xml bytes.
+    ///
+    /// This does not copy values/formulas, accept cross-workbook handles, create
+    /// or merge styles, expose a style registry, format source gaps, copy
+    /// worksheet metadata, edit conditional/theme formatting, or migrate style
+    /// tables.
+    void copy_cell_styles_from(const WorksheetEditor& source_sheet,
+        CellRange source, WorksheetCellReference destination);
+
+    /// Copies represented styles from another worksheet using A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the mapped target
+    /// top-left cell. Same-owner validation, stable source snapshot,
+    /// represented-target requirements, atomic batch publication, diagnostics,
+    /// save behavior, and non-goals match the CellRange overload.
+    void copy_cell_styles_from(const WorksheetEditor& source_sheet,
+        std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Clears one represented cell's existing style without changing its value.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. Row and

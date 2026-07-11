@@ -385,6 +385,12 @@ public:
 
     void copy_cell_styles(const CellRange& source, CellPosition destination)
     {
+        copy_cell_styles_from(*this, source, destination);
+    }
+
+    void copy_cell_styles_from(const MaterializedWorksheetSession& source_session,
+        const CellRange& source, CellPosition destination)
+    {
         if (source.first_row == 0 || source.first_column == 0
             || source.first_row > source.last_row
             || source.first_column > source.last_column
@@ -406,7 +412,7 @@ public:
             throw FastXlsxError(
                 "MaterializedWorksheetSession::copy_cell_styles() destination range exceeds Excel limits");
         }
-        if (destination.row == source.first_row
+        if (&source_session == this && destination.row == source.first_row
             && destination.column == source.first_column) {
             return;
         }
@@ -416,7 +422,7 @@ public:
             std::optional<StyleId> style_id;
         };
         std::vector<SourceStyleSnapshot> source_styles;
-        for (const auto& [position, record] : store_.records()) {
+        for (const auto& [position, record] : source_session.store_.records()) {
             if (position.row < source.first_row || position.row > source.last_row
                 || position.column < source.first_column
                 || position.column > source.last_column) {

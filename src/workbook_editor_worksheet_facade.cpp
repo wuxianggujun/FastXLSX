@@ -569,6 +569,48 @@ void WorksheetEditor::copy_cells(std::string_view source_range_reference,
         WorksheetCellReference {destination.row, destination.column});
 }
 
+void WorksheetEditor::move_cells(CellRange source, WorksheetCellReference destination)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_range(source);
+        detail::validate_worksheet_editor_cell_coordinate(
+            destination.row, destination.column);
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->move_cells(source,
+            detail::CellPosition {destination.row, destination.column});
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::move_cells(std::string_view source_range_reference,
+    std::string_view destination_cell_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange source {};
+    detail::WorksheetEditorCellCoordinate destination {};
+    try {
+        source = detail::parse_worksheet_editor_a1_cell_range(source_range_reference);
+        destination =
+            detail::parse_worksheet_editor_a1_cell_reference(destination_cell_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+
+    move_cells(source,
+        WorksheetCellReference {destination.row, destination.column});
+}
+
 void WorksheetEditor::set_cell_value(
     std::uint32_t row, std::uint32_t column, const CellValue& value)
 {

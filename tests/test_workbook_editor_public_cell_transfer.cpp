@@ -188,6 +188,125 @@ void test_copy_cells_failures_preserve_clean_state()
         "same-location copy_cells should be a clean no-op and clear diagnostics");
 }
 
+void test_move_cells_sparse_transfer_save_retry_and_reopen()
+{
+    const CopyCellsSource source =
+        write_copy_cells_source("fastxlsx-workbook-editor-move-cells-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output =
+        fastxlsx::test::artifact_path("fastxlsx-workbook-editor-move-cells-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.move_cells("A1:B2", "C3");
+    check(!sheet.contains_cell("A1") && !sheet.contains_cell("B1")
+            && !sheet.contains_cell("A2"),
+        "move_cells should remove represented source records");
+    check(sheet.get_cell("C3").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("C3").number_value() == 10.0,
+        "move_cells should transfer the source number to the target offset");
+    check_formula(sheet.get_cell("D3"), "C3+$A$1+C$1+$A3", source.formula_style,
+        "move_cells should translate formula references and preserve source style");
+    check(sheet.get_cell("C4").kind() == fastxlsx::CellValueKind::Text
+            && sheet.get_cell("C4").text_value() == "source-a2",
+        "move_cells should transfer the represented sparse text cell");
+    check(sheet.get_cell("D4").kind() == fastxlsx::CellValueKind::Text
+            && sheet.get_cell("D4").text_value() == "target-d4",
+        "move_cells should leave target cells under source gaps unchanged");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes(),
+        "move_cells should dirty the materialized session and save watermark");
+
+    check(throws_fastxlsx_error(
+              [&] { editor.save_as(fastxlsx::test::artifact_dir()); }),
+        "move_cells save to a directory should fail after staging");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes()
+            && !sheet.contains_cell("A1"),
+        "failed move_cells save should preserve current transferred state");
+    check_formula(sheet.get_cell("D3"), "C3+$A$1+C$1+$A3", source.formula_style,
+        "failed move_cells save should preserve translated formula state");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "successful move_cells retry should clear dirty and unsaved state");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "move_cells save_as should leave the source package unchanged");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(!reopened_sheet.contains_cell("A1") && !reopened_sheet.contains_cell("B1")
+            && !reopened_sheet.contains_cell("A2"),
+        "reopened move_cells output should omit moved source records");
+    check(reopened_sheet.get_cell("C3").number_value() == 10.0,
+        "reopened move_cells output should contain the transferred number");
+    check_formula(reopened_sheet.get_cell("D3"), "C3+$A$1+C$1+$A3",
+        source.formula_style,
+        "reopened move_cells output should preserve translated styled formula");
+    check(reopened_sheet.get_cell("C4").text_value() == "source-a2"
+            && reopened_sheet.get_cell("D4").text_value() == "target-d4",
+        "reopened move_cells output should preserve sparse target overlay semantics");
+}
+
+void test_move_cells_overlap_reads_snapshot()
+{
+    const CopyCellsSource source =
+        write_copy_cells_source("fastxlsx-workbook-editor-move-cells-overlap-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.move_cells("A1:B1", "B1");
+    check(!sheet.contains_cell("A1"),
+        "overlapping move_cells should remove the original source coordinate");
+    check(sheet.get_cell("B1").kind() == fastxlsx::CellValueKind::Number
+            && sheet.get_cell("B1").number_value() == 10.0,
+        "overlapping move_cells should transfer the original first source cell");
+    check_formula(sheet.get_cell("C1"), "B1+$A$1+B$1+$A1", source.formula_style,
+        "overlapping move_cells should translate the original formula snapshot");
+}
+
+void test_move_cells_failures_preserve_clean_state()
+{
+    const CopyCellsSource source =
+        write_copy_cells_source("fastxlsx-workbook-editor-move-cells-guard-source.xlsx");
+    std::size_t exact_source_memory = 0;
+    {
+        fastxlsx::WorkbookEditor probe = fastxlsx::WorkbookEditor::open(source.path);
+        exact_source_memory = probe.worksheet("Data").estimated_memory_usage();
+    }
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_source_memory;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+    const std::size_t source_cell_count = sheet.cell_count();
+
+    check(throws_fastxlsx_error(
+              [&] { sheet.move_cells("A1:B2", "XFD1048576"); }),
+        "move_cells should reject a target footprint outside Excel limits");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && sheet.cell_count() == source_cell_count
+            && sheet.contains_cell("A1") && !sheet.contains_cell("C3"),
+        "move_cells bounds failure should preserve clean sparse state");
+
+    check(throws_fastxlsx_error(
+              [&] { sheet.move_cells("A1:B2", "XFC1048575"); }),
+        "move_cells should enforce memory budget after formula translation");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && sheet.cell_count() == source_cell_count
+            && sheet.contains_cell("A1") && sheet.contains_cell("B1")
+            && !sheet.contains_cell("XFC1048575")
+            && sheet.get_cell("D4").text_value() == "target-d4",
+        "move_cells memory failure should not publish source removal or target overlay");
+    check(editor.last_edit_error().has_value(),
+        "move_cells mutation failure should update last_edit_error");
+
+    sheet.move_cells("A1:B2", "A1");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && sheet.cell_count() == source_cell_count
+            && !editor.last_edit_error().has_value(),
+        "same-location move_cells should be a clean no-op and clear diagnostics");
+}
+
 } // namespace
 
 int main()
@@ -196,10 +315,14 @@ int main()
         test_copy_cells_sparse_overlay_save_retry_and_reopen();
         test_copy_cells_overlap_reads_snapshot();
         test_copy_cells_failures_preserve_clean_state();
-        std::cout << "WorkbookEditor public copy_cells tests passed\n";
+        test_move_cells_sparse_transfer_save_retry_and_reopen();
+        test_move_cells_overlap_reads_snapshot();
+        test_move_cells_failures_preserve_clean_state();
+        std::cout << "WorkbookEditor public cell transfer tests passed\n";
         return 0;
     } catch (const std::exception& error) {
-        std::cerr << "WorkbookEditor public copy_cells test failed: " << error.what() << '\n';
+        std::cerr << "WorkbookEditor public cell transfer test failed: "
+                  << error.what() << '\n';
         return 1;
     }
 }

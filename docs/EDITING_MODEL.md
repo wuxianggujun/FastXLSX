@@ -48,6 +48,7 @@ source worksheet events -> strict/lossy projection -> sparse CellStore -> edits 
 - Row/column insert/delete 中 formula record 的坐标 shift 与引用 rewrite 是两件事：无论公式单元格本身是否移动，surviving formula 都使用同一 structural rewriter，只调整被插入/删除轴实际影响的引用；普通 copy/move delta translation 仅用于 cell transfer API。
 - Cross-sheet sparse move 同样只接受同一 owner，但属于双 session mutation：source removal 和 destination overlay 必须先在各自 CellStore candidates 中通过 coordinate/guardrail preflight，随后以 noexcept swap 发布两边并同时标记 dirty。任一候选失败不得泄漏 source 删除或 destination 写入，失败 save 必须保留双边 retry 状态。
 - Cross-sheet style-only copy 遵循同一 owner/session identity：先冻结 source 的 live optional StyleId snapshot 并验证所有 mapped destination records，再批量替换目标 `s` attribute；destination values 与 styles.xml 保持不变。不同 owner、missing target 或发布前 guardrail 失败不污染任一 session。
+- Cross-sheet style-only move 在同一 owner/session identity 上增加双状态提交：source optional StyleId snapshot 与全部 mapped targets 冻结后，独立构造 source-clear/destination-overlay candidates，两边 guardrail 都成功才 noexcept 发布。每个 session 只在自身最终样式变化时 dirty；unstyled source 因此可以只清除 destination。同坐标跨 sheet 不是 no-op，CellValue 与 styles.xml 保持不变。
 - Strict rejection 不注册 session、不排队 edit、不改变 pending/unsaved count，也不覆盖 `last_edit_error()`。
 - Worksheet metadata、relationships、tables、drawings、validations、comments 等不进入 `CellStore`，不能假设会随 cell structural edit 语义同步。
 

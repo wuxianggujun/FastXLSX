@@ -373,6 +373,84 @@ void test_public_cross_sheet_style_copy_save_retry_and_reopen()
         "reopened cross-sheet style output should preserve copied style");
 }
 
+void test_public_cross_sheet_style_move_save_retry_and_reopen()
+{
+    const StyleEditSource source = write_cross_sheet_style_source(
+        "fastxlsx-workbook-editor-cross-sheet-style-move-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-cross-sheet-style-move-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+    const std::size_t source_cell_count = source_sheet.cell_count();
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+
+    destination_sheet.move_cell_styles_from(source_sheet, "A1:B2", "B2");
+    check(source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "effective cross-sheet style move should dirty both changed sessions");
+    check(source_sheet.cell_count() == source_cell_count
+            && destination_sheet.cell_count() == destination_cell_count,
+        "cross-sheet style move should preserve both sparse cell counts");
+    check(source_sheet.get_cell("B1").text_value() == "A1*2"
+            && !source_sheet.get_cell("B1").has_style(),
+        "cross-sheet style move should clear the represented source formula style only");
+    check(source_sheet.get_cell("A2").text_value() == "source-percent"
+            && !source_sheet.get_cell("A2").has_style(),
+        "cross-sheet style move should clear the represented source text style only");
+    check(destination_sheet.get_cell("B2").number_value() == 0.25
+            && !destination_sheet.get_cell("B2").has_style(),
+        "cross-sheet unstyled source should clear only the mapped destination style");
+    check(destination_sheet.get_cell("C2").text_value() == "A2",
+        "cross-sheet style move should preserve the mapped destination formula");
+    check_style(destination_sheet.get_cell("C2"), source.decimal_style,
+        "cross-sheet style move should apply the stable source style snapshot");
+    check_style(destination_sheet.get_cell("B3"), source.percent_style,
+        "cross-sheet style move should preserve an already-equal destination style");
+    check(!destination_sheet.contains_cell("C3"),
+        "cross-sheet style move should not synthesize targets under source gaps");
+
+    check(throws_fastxlsx_error(
+              [&] { editor.save_as(fastxlsx::test::artifact_dir()); }),
+        "cross-sheet style move save to a directory should fail after staging");
+    check(source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "failed cross-sheet style move save should preserve both dirty sessions");
+    check(!source_sheet.get_cell("B1").has_style(),
+        "failed cross-sheet style move save should preserve the source clear");
+    check_style(destination_sheet.get_cell("C2"), source.decimal_style,
+        "failed cross-sheet style move save should preserve the destination overlay");
+
+    editor.save_as(output);
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "successful cross-sheet style move retry should clear both dirty sessions");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "cross-sheet style move save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "cross-sheet style move should preserve source styles.xml bytes");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_source = reopened.worksheet("Source");
+    fastxlsx::WorksheetEditor reopened_destination = reopened.worksheet("Destination");
+    check(!reopened_source.get_cell("B1").has_style()
+            && !reopened_source.get_cell("A2").has_style(),
+        "reopened cross-sheet style move output should preserve source clears");
+    check(reopened_destination.get_cell("B2").number_value() == 0.25
+            && !reopened_destination.get_cell("B2").has_style(),
+        "reopened cross-sheet style move output should preserve destination clear");
+    check(reopened_destination.get_cell("C2").text_value() == "A2",
+        "reopened cross-sheet style move output should preserve destination value");
+    check_style(reopened_destination.get_cell("C2"), source.decimal_style,
+        "reopened cross-sheet style move output should preserve destination style");
+}
+
 void test_public_cross_sheet_style_copy_failures_and_live_source()
 {
     const StyleEditSource source = write_cross_sheet_style_source(
@@ -413,6 +491,86 @@ void test_public_cross_sheet_style_copy_failures_and_live_source()
         "copy_cell_styles_from should preserve target value while reading live source style");
     check_style(destination_sheet.get_cell("A1"), source.decimal_style,
         "copy_cell_styles_from should apply live source style at identical cross-sheet coordinates");
+}
+
+void test_public_cross_sheet_style_move_failures_noops_and_dirty_ownership()
+{
+    const StyleEditSource source = write_cross_sheet_style_source(
+        "fastxlsx-workbook-editor-cross-sheet-style-move-guards.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+        fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+
+        check(throws_fastxlsx_error([&] {
+            destination_sheet.move_cell_styles_from(source_sheet, "A1:B1", "C2");
+        }), "move_cell_styles_from should reject a missing mapped destination");
+        check_style(source_sheet.get_cell("B1"), source.decimal_style,
+            "missing mapped destination should preserve the source style");
+        check_style(destination_sheet.get_cell("C2"), source.percent_style,
+            "missing mapped destination should not publish an earlier destination clear");
+        check(!source_sheet.has_pending_changes()
+                && !destination_sheet.has_pending_changes()
+                && !editor.has_unsaved_changes()
+                && editor.last_edit_error().has_value(),
+            "cross-sheet style move target failure should preserve both clean sessions");
+
+        destination_sheet.move_cell_styles_from(source_sheet, "D4:E5", "A1");
+        destination_sheet.move_cell_styles_from(source_sheet, "A1", "A2");
+        source_sheet.move_cell_styles_from(source_sheet, "B1", "B1");
+        check(!source_sheet.has_pending_changes()
+                && !destination_sheet.has_pending_changes()
+                && !editor.has_unsaved_changes()
+                && !editor.last_edit_error().has_value(),
+            "empty, equal-final-state, and same-session same-footprint style moves should be clean no-ops");
+
+        fastxlsx::WorkbookEditor other_editor =
+            fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor other_source = other_editor.worksheet("Source");
+        check(throws_fastxlsx_error([&] {
+            destination_sheet.move_cell_styles_from(other_source, "B1", "B1");
+        }), "move_cell_styles_from should reject another WorkbookEditor owner");
+        check(throws_fastxlsx_error([&] {
+            destination_sheet.move_cell_styles_from(source_sheet, "A1:a2", "B1");
+        }), "move_cell_styles_from should reject an invalid lowercase source range");
+        check(!source_sheet.has_pending_changes()
+                && !destination_sheet.has_pending_changes()
+                && !editor.has_unsaved_changes()
+                && editor.last_edit_error().has_value(),
+            "cross-sheet style move owner/parse failures should preserve clean state");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+        fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+
+        destination_sheet.move_cell_styles_from(source_sheet, "A1", "A1");
+        check(!source_sheet.has_pending_changes()
+                && destination_sheet.has_pending_changes()
+                && editor.has_unsaved_changes(),
+            "moving an unstyled source to a styled destination should dirty only the destination");
+        check(!source_sheet.get_cell("A1").has_style()
+                && !destination_sheet.get_cell("A1").has_style(),
+            "one-sided cross-sheet style move should preserve source and clear destination");
+    }
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+        fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+
+        destination_sheet.move_cell_styles_from(source_sheet, "B1", "B1");
+        check(source_sheet.has_pending_changes()
+                && destination_sheet.has_pending_changes()
+                && editor.has_unsaved_changes(),
+            "identical coordinates on different worksheets should still move the style");
+        check(!source_sheet.get_cell("B1").has_style(),
+            "identical-coordinate cross-sheet style move should clear the source");
+        check_style(destination_sheet.get_cell("B1"), source.decimal_style,
+            "identical-coordinate cross-sheet style move should update the destination");
+    }
 }
 
 void test_public_style_edit_failures_and_noops_preserve_clean_state()
@@ -527,7 +685,9 @@ int main()
         test_public_style_range_edits_overlap_save_and_reopen();
         test_public_style_moves_overlap_save_retry_and_reopen();
         test_public_cross_sheet_style_copy_save_retry_and_reopen();
+        test_public_cross_sheet_style_move_save_retry_and_reopen();
         test_public_cross_sheet_style_copy_failures_and_live_source();
+        test_public_cross_sheet_style_move_failures_noops_and_dirty_ownership();
         test_public_style_edit_failures_and_noops_preserve_clean_state();
         std::cout << "WorkbookEditor public style edit tests passed\n";
         return 0;

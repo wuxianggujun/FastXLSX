@@ -1403,6 +1403,47 @@ public:
         std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Moves represented styles from another materialized worksheet.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. This editor
+    /// is the destination. `source_sheet` and the destination must be valid
+    /// borrowed handles owned by the same current WorkbookEditor state, and both
+    /// worksheets must already be materialized. Only represented source records
+    /// participate, and every mapped target must already be represented.
+    ///
+    /// The source and destination CellValue payloads remain unchanged. Source
+    /// optional StyleId handles are frozen before mutation, participating source
+    /// styles are cleared, and the snapshot is overlaid on mapped destination
+    /// records. An unstyled source clears its mapped target. Each session is
+    /// marked dirty only when its final style state changes; an empty sparse
+    /// source or an all-equal final state is a clean no-op. Passing the same
+    /// materialized worksheet delegates to move_cell_styles().
+    ///
+    /// Owner/session validity, bounds, target footprint, represented targets,
+    /// and both CellStore guardrails are checked while building independent
+    /// source/destination candidates. Only after both candidates succeed are
+    /// changed sessions published through noexcept swaps. Failure preserves
+    /// both active sessions and dirty/save state apart from this WorkbookEditor's
+    /// last_edit_error(). Failed save_as() preserves both dirty projections for
+    /// retry; successful save preserves styles.xml bytes.
+    ///
+    /// This does not move values/formulas, accept cross-workbook handles, create
+    /// or merge styles, expose a style registry, synthesize cells, move worksheet
+    /// metadata, or migrate style tables.
+    void move_cell_styles_from(WorksheetEditor& source_sheet, CellRange source,
+        WorksheetCellReference destination);
+
+    /// Moves represented styles from another worksheet using A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the mapped target
+    /// top-left cell. Same-owner validation, source clearing, stable style
+    /// snapshot, represented-target requirements, dual-candidate publication,
+    /// diagnostics, save behavior, and non-goals match the CellRange overload.
+    void move_cell_styles_from(WorksheetEditor& source_sheet,
+        std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Clears one represented cell's existing style without changing its value.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. Row and

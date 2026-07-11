@@ -1685,6 +1685,488 @@ void test_public_worksheet_editor_set_column_accepts_default_style_id_as_unstyle
         });
 }
 
+void test_public_worksheet_editor_set_column_style_rejection_preserves_dirty_session()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-column-style-rejection-dirty-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-column-style-rejection-dirty-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-column-style-rejection-dirty-noop-output.xlsx");
+    const std::filesystem::path recovery_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-column-style-rejection-dirty-recovery-output.xlsx");
+    const std::filesystem::path recovery_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-column-style-rejection-dirty-recovery-noop-output.xlsx");
+
+    fastxlsx::StyleId source_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        source_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(source_style),
+            fastxlsx::CellView::text("set-column-dirty-source-b1"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("set-column-dirty-source-a2"),
+        });
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    check_contains(source_entries.at("xl/worksheets/sheet1.xml"),
+        R"(<c r="A1" s=")" + std::to_string(source_style.value()) + R"("><v>1</v></c>)",
+        "set_column dirty style rejection source fixture should start with styled A1");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    const auto check_styled_a1 =
+        [source_style](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Number &&
+                    snapshot.value.number_value() == 1.0 &&
+                    snapshot.value.has_style() &&
+                    snapshot.value.style_id().value() == source_style.value(),
+                prefix + " should expose source-styled A1");
+        };
+    const auto check_source_a2 =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "set-column-dirty-source-a2" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled source A2");
+        };
+    const auto check_dirty_b1 =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "set-column-dirty-kept" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose preserved dirty B1");
+        };
+    const auto check_dirty_b2 =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Formula &&
+                    snapshot.value.text_value() == "A1" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose preserved dirty B2 formula");
+        };
+    const auto check_recovered_b1 =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "set-column-dirty-recovered" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose recovered dirty B1");
+        };
+    const auto check_recovered_b2 =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Blank &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose recovered dirty B2 blank");
+        };
+    const auto check_recovered_b3 =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 3 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Boolean &&
+                    snapshot.value.boolean_value() &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose recovered dirty B3 boolean");
+        };
+    const auto check_dirty_views =
+        [&](fastxlsx::WorksheetEditor& current_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(current_sheet.cell_count() == 4,
+                prefix + " should keep the represented sparse count");
+            check_cell_range_equals(current_sheet.used_range(), 1, 1, 2, 2,
+                prefix + " should keep the represented bounds");
+            check(current_sheet.contains_cell("A1") &&
+                    current_sheet.contains_cell("B1") &&
+                    current_sheet.contains_cell("A2") &&
+                    current_sheet.contains_cell("B2"),
+                prefix + " contains_cell should keep represented cells visible");
+            check(!current_sheet.contains_cell("C1") &&
+                    !current_sheet.contains_cell("B3"),
+                prefix + " contains_cell should keep rejected cells absent");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                current_sheet.sparse_cells();
+            check(cells.size() == 4,
+                prefix + " sparse_cells should expose four represented records");
+            if (cells.size() == 4) {
+                check_styled_a1(cells[0], prefix + " sparse_cells");
+                check_dirty_b1(cells[1], prefix + " sparse_cells");
+                check_source_a2(cells[2], prefix + " sparse_cells");
+                check_dirty_b2(cells[3], prefix + " sparse_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                current_sheet.column_cells(2);
+            check(column_two.size() == 2,
+                prefix + " column_cells should expose dirty column two");
+            if (column_two.size() == 2) {
+                check_dirty_b1(column_two[0], prefix + " column_cells");
+                check_dirty_b2(column_two[1], prefix + " column_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                current_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                prefix + " row_cells should expose row one");
+            if (row_one.size() == 2) {
+                check_styled_a1(row_one[0], prefix + " row_cells");
+                check_dirty_b1(row_one[1], prefix + " row_cells");
+            }
+
+            const fastxlsx::CellValue a1 = current_sheet.get_cell("A1");
+            check(a1.kind() == fastxlsx::CellValueKind::Number &&
+                    a1.number_value() == 1.0 &&
+                    a1.has_style() &&
+                    a1.style_id().value() == source_style.value(),
+                prefix + " get_cell should preserve source-styled A1");
+            const fastxlsx::CellValue b1 = current_sheet.get_cell("B1");
+            check(b1.kind() == fastxlsx::CellValueKind::Text &&
+                    b1.text_value() == "set-column-dirty-kept" &&
+                    !b1.has_style(),
+                prefix + " get_cell should preserve dirty B1 without a style");
+            const fastxlsx::CellValue b2 = current_sheet.get_cell("B2");
+            check(b2.kind() == fastxlsx::CellValueKind::Formula &&
+                    b2.text_value() == "A1" &&
+                    !b2.has_style(),
+                prefix + " get_cell should preserve dirty B2 without a style");
+        };
+    const auto check_recovery_views =
+        [&](fastxlsx::WorksheetEditor& current_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(current_sheet.cell_count() == 5,
+                prefix + " should keep the represented sparse count");
+            check_cell_range_equals(current_sheet.used_range(), 1, 1, 3, 2,
+                prefix + " should keep the represented bounds");
+            check(current_sheet.contains_cell("A1") &&
+                    current_sheet.contains_cell("B1") &&
+                    current_sheet.contains_cell("A2") &&
+                    current_sheet.contains_cell("B2") &&
+                    current_sheet.contains_cell("B3"),
+                prefix + " contains_cell should keep represented cells visible");
+            check(!current_sheet.contains_cell("C1") &&
+                    !current_sheet.contains_cell("A3"),
+                prefix + " contains_cell should keep rejected cells absent");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                current_sheet.sparse_cells();
+            check(cells.size() == 5,
+                prefix + " sparse_cells should expose five represented records");
+            if (cells.size() == 5) {
+                check_styled_a1(cells[0], prefix + " sparse_cells");
+                check_recovered_b1(cells[1], prefix + " sparse_cells");
+                check_source_a2(cells[2], prefix + " sparse_cells");
+                check_recovered_b2(cells[3], prefix + " sparse_cells");
+                check_recovered_b3(cells[4], prefix + " sparse_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                current_sheet.column_cells(2);
+            check(column_two.size() == 3,
+                prefix + " column_cells should expose recovered column two");
+            if (column_two.size() == 3) {
+                check_recovered_b1(column_two[0], prefix + " column_cells");
+                check_recovered_b2(column_two[1], prefix + " column_cells");
+                check_recovered_b3(column_two[2], prefix + " column_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                current_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                prefix + " row_cells should expose row one");
+            if (row_one.size() == 2) {
+                check_styled_a1(row_one[0], prefix + " row_cells");
+                check_recovered_b1(row_one[1], prefix + " row_cells");
+            }
+
+            const fastxlsx::CellValue a1 = current_sheet.get_cell("A1");
+            check(a1.kind() == fastxlsx::CellValueKind::Number &&
+                    a1.number_value() == 1.0 &&
+                    a1.has_style() &&
+                    a1.style_id().value() == source_style.value(),
+                prefix + " get_cell should preserve source-styled A1");
+            const fastxlsx::CellValue b1 = current_sheet.get_cell("B1");
+            check(b1.kind() == fastxlsx::CellValueKind::Text &&
+                    b1.text_value() == "set-column-dirty-recovered" &&
+                    !b1.has_style(),
+                prefix + " get_cell should preserve recovered B1 without a style");
+            const fastxlsx::CellValue b2 = current_sheet.get_cell("B2");
+            check(b2.kind() == fastxlsx::CellValueKind::Blank &&
+                    !b2.has_style(),
+                prefix + " get_cell should preserve recovered B2 without a style");
+            const fastxlsx::CellValue b3 = current_sheet.get_cell("B3");
+            check(b3.kind() == fastxlsx::CellValueKind::Boolean &&
+                    b3.boolean_value() &&
+                    !b3.has_style(),
+                prefix + " get_cell should preserve recovered B3 without a style");
+        };
+
+    sheet.set_column(2, {
+        fastxlsx::CellValue::text("set-column-dirty-kept").with_style(fastxlsx::StyleId {}),
+        fastxlsx::CellValue::formula("A1").with_style(fastxlsx::StyleId {}),
+    });
+    check(!editor.last_edit_error().has_value(),
+        "set_column dirty style rejection setup should start diagnostic-clean");
+    check(sheet.has_pending_changes(),
+        "set_column dirty style rejection setup should dirty the materialized sheet");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "set_column dirty style rejection setup");
+    check_dirty_views(sheet, "set_column dirty style rejection setup");
+
+    bool failed = false;
+    try {
+        sheet.set_column(3, {
+            fastxlsx::CellValue::text("set-column-dirty-rejected")
+                .with_style(source_style),
+        });
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "StyleId",
+            "set_column dirty style rejection should expose the unsupported StyleId boundary");
+    }
+    check(failed,
+        "set_column dirty style rejection should reject caller-supplied non-default StyleId values");
+    check(editor.last_edit_error().has_value() &&
+            editor.last_edit_error()->find("StyleId") != std::string::npos,
+        "set_column dirty style rejection should retain the public StyleId diagnostic");
+    check(sheet.has_pending_changes(),
+        "set_column dirty style rejection should keep the prior dirty materialized sheet");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "set_column dirty style rejection",
+        editor.last_edit_error());
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_column dirty style rejection should not queue replacement diagnostics");
+    check_dirty_views(sheet, "set_column dirty style rejection live");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+        workbook_editor_public_catalog_snapshot(editor);
+    editor.save_as(output);
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_save, "set_column dirty style rejection save");
+    check(!sheet.has_pending_changes(),
+        "set_column dirty style rejection save should clean the materialized sheet");
+    check(editor.pending_change_count() == 1,
+        "set_column dirty style rejection save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "set_column dirty style rejection save should clear dirty materialized diagnostics");
+    check(editor.last_edit_error().has_value() &&
+            editor.last_edit_error()->find("StyleId") != std::string::npos,
+        "set_column dirty style rejection save should preserve the rejection diagnostic");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_column dirty style rejection save should not queue replacement diagnostics");
+    check_dirty_views(sheet, "set_column dirty style rejection saved handle");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "set_column dirty style rejection save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "set-column-dirty-kept",
+        "set_column dirty style rejection save should persist prior dirty B1");
+    check_contains(worksheet_xml, R"(<c r="B2"><f>A1</f></c>)",
+        "set_column dirty style rejection save should persist prior dirty B2 formula");
+    check_not_contains(worksheet_xml, "set-column-dirty-rejected",
+        "set_column dirty style rejection save should not leak rejected payloads");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" s=")" + std::to_string(source_style.value()) + R"("><v>1</v></c>)",
+        "set_column dirty style rejection save should keep source A1 styled");
+    check_not_contains(worksheet_xml, R"(<c r="B1" s=")",
+        "set_column dirty style rejection save should keep dirty B1 unstyled");
+    check_not_contains(worksheet_xml, R"(<c r="B2" s=")",
+        "set_column dirty style rejection save should keep dirty B2 unstyled");
+    check_not_contains(worksheet_xml, R"(s="0")",
+        "set_column dirty style rejection save should not write default style ids");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column dirty style rejection save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        output, "Styled", "set_column dirty style rejection save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_dirty_views(reopened_sheet, "set_column dirty style rejection save");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "set_column dirty style rejection noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "set_column dirty style rejection noop save");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_column dirty style rejection noop save should not add another handoff");
+    check(!sheet.has_pending_changes(),
+        "set_column dirty style rejection noop save should keep the sheet clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "set_column dirty style rejection noop save should keep dirty diagnostics clear");
+    check(editor.last_edit_error().has_value() &&
+            editor.last_edit_error()->find("StyleId") != std::string::npos,
+        "set_column dirty style rejection noop save should preserve the rejection diagnostic");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_column dirty style rejection noop save should not queue replacement diagnostics");
+    check_dirty_views(sheet, "set_column dirty style rejection noop saved handle");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "set_column dirty style rejection noop output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column dirty style rejection noop save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "set_column dirty style rejection noop save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_dirty_views(reopened_sheet, "set_column dirty style rejection noop save");
+        });
+
+    sheet.set_column(2, {
+        fastxlsx::CellValue::text("set-column-dirty-recovered")
+            .with_style(fastxlsx::StyleId {}),
+        fastxlsx::CellValue::blank().with_style(fastxlsx::StyleId {}),
+        fastxlsx::CellValue::boolean(true).with_style(fastxlsx::StyleId {}),
+    });
+    check(!editor.last_edit_error().has_value(),
+        "set_column dirty style rejection recovery should clear the retained StyleId diagnostic");
+    check(sheet.has_pending_changes(),
+        "set_column dirty style rejection recovery should dirty the materialized sheet again");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", pending_count_after_save,
+        "set_column dirty style rejection recovery");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_column dirty style rejection recovery should not queue replacement diagnostics");
+    check_recovery_views(sheet, "set_column dirty style rejection recovery live");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_recovery_save =
+        workbook_editor_public_catalog_snapshot(editor);
+    editor.save_as(recovery_output);
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_recovery_save,
+        "set_column dirty style rejection recovery save");
+    check(!sheet.has_pending_changes(),
+        "set_column dirty style rejection recovery save should clean the materialized sheet");
+    check(editor.pending_change_count() == pending_count_after_save + 1,
+        "set_column dirty style rejection recovery save should record one more materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "set_column dirty style rejection recovery save should clear dirty materialized diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_column dirty style rejection recovery save should keep diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "set_column dirty style rejection recovery save should not queue replacement diagnostics");
+    check_recovery_views(sheet, "set_column dirty style rejection recovery saved handle");
+
+    const auto recovery_entries = fastxlsx::test::read_zip_entries(recovery_output);
+    check(recovery_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "set_column dirty style rejection recovery save should preserve source styles.xml bytes");
+    const std::string recovery_worksheet_xml =
+        recovery_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(recovery_worksheet_xml, "set-column-dirty-source-a2",
+        "set_column dirty style rejection recovery save should preserve source A2");
+    check_contains(recovery_worksheet_xml, "set-column-dirty-recovered",
+        "set_column dirty style rejection recovery save should persist recovered B1");
+    check_contains(recovery_worksheet_xml, R"(<c r="B2"/>)",
+        "set_column dirty style rejection recovery save should persist recovered B2 blank");
+    check_contains(recovery_worksheet_xml, R"(<c r="B3" t="b"><v>1</v></c>)",
+        "set_column dirty style rejection recovery save should persist recovered B3 boolean");
+    check_not_contains(recovery_worksheet_xml, "set-column-dirty-kept",
+        "set_column dirty style rejection recovery save should replace prior dirty B1");
+    check_not_contains(recovery_worksheet_xml, R"(<c r="B2"><f>A1</f></c>)",
+        "set_column dirty style rejection recovery save should replace prior dirty B2 formula");
+    check_not_contains(recovery_worksheet_xml, "set-column-dirty-source-b1",
+        "set_column dirty style rejection recovery save should not revive source B1");
+    check_not_contains(recovery_worksheet_xml, "set-column-dirty-rejected",
+        "set_column dirty style rejection recovery save should not leak rejected payloads");
+    check_contains(recovery_worksheet_xml,
+        R"(<c r="A1" s=")" + std::to_string(source_style.value()) + R"("><v>1</v></c>)",
+        "set_column dirty style rejection recovery save should keep source A1 styled");
+    check_not_contains(recovery_worksheet_xml, R"(<c r="B1" s=")",
+        "set_column dirty style rejection recovery save should keep recovered B1 unstyled");
+    check_not_contains(recovery_worksheet_xml, R"(<c r="B2" s=")",
+        "set_column dirty style rejection recovery save should keep recovered B2 unstyled");
+    check_not_contains(recovery_worksheet_xml, R"(<c r="B3" s=")",
+        "set_column dirty style rejection recovery save should keep recovered B3 unstyled");
+    check_not_contains(recovery_worksheet_xml, R"(s="0")",
+        "set_column dirty style rejection recovery save should not write default style ids");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column dirty style rejection recovery save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        recovery_output, "Styled", "set_column dirty style rejection recovery save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_recovery_views(
+                reopened_sheet, "set_column dirty style rejection recovery save");
+        });
+
+    const std::size_t pending_count_after_recovery_save =
+        editor.pending_change_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_recovery_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_recovery_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(recovery_noop_output);
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_recovery_noop,
+        "set_column dirty style rejection recovery noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_recovery_noop,
+        "set_column dirty style rejection recovery noop save");
+    check(editor.pending_change_count() == pending_count_after_recovery_save,
+        "set_column dirty style rejection recovery noop save should not add another handoff");
+    check(!sheet.has_pending_changes(),
+        "set_column dirty style rejection recovery noop save should keep the sheet clean");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "set_column dirty style rejection recovery noop save should keep dirty diagnostics clear");
+    check(!editor.last_edit_error().has_value(),
+        "set_column dirty style rejection recovery noop save should keep diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "set_column dirty style rejection recovery noop save should not queue replacement diagnostics");
+    check_recovery_views(
+        sheet, "set_column dirty style rejection recovery noop saved handle");
+    const auto recovery_noop_entries =
+        fastxlsx::test::read_zip_entries(recovery_noop_output);
+    check(recovery_noop_entries == recovery_entries,
+        "set_column dirty style rejection recovery noop output should match the recovered output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_column dirty style rejection recovery noop save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        recovery_noop_output, "Styled",
+        "set_column dirty style rejection recovery noop save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_recovery_views(
+                reopened_sheet, "set_column dirty style rejection recovery noop save");
+        });
+}
+
 } // namespace
 
 int main()
@@ -1693,6 +2175,7 @@ int main()
         test_public_worksheet_editor_set_column_replaces_sparse_column();
         test_public_worksheet_editor_set_column_replacement_drops_source_styles();
         test_public_worksheet_editor_set_column_accepts_default_style_id_as_unstyled();
+        test_public_worksheet_editor_set_column_style_rejection_preserves_dirty_session();
         std::cout << "WorkbookEditor public-state set column tests passed\n";
         return 0;
     } catch (const std::exception& error) {

@@ -28,6 +28,17 @@ void check(bool condition, std::string_view message)
         throw TestFailure(std::string(message));
     }
 }
+
+bool threw_fastxlsx_error(const std::function<void()>& action)
+{
+    try {
+        action();
+    } catch (const fastxlsx::FastXlsxError&) {
+        return true;
+    }
+    return false;
+}
+
 void check_contains(
     const std::string& haystack, std::string_view needle, std::string_view message)
 {
@@ -1824,6 +1835,1230 @@ void test_public_worksheet_editor_append_row_style_rejection_preserves_dirty_ses
         });
 }
 
+void test_public_worksheet_editor_append_row_noop_and_guardrails()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-append-row-guards-source.xlsx");
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-empty-noop-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-empty-noop-second-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        check(threw_fastxlsx_error([&] {
+            sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+        }), "invalid mutation should seed last_edit_error before append_row empty no-op");
+        check(editor.last_edit_error().has_value(),
+            "invalid mutation should populate last_edit_error before append_row empty no-op");
+
+        sheet.append_row({});
+        check(!editor.last_edit_error().has_value(),
+            "empty append_row should clear prior public edit diagnostics");
+        check(!sheet.has_pending_changes(),
+            "empty append_row should not dirty a clean materialized worksheet");
+        check(!editor.has_pending_changes(),
+            "empty append_row should not make the editor dirty");
+        check(sheet.cell_count() == 3,
+            "empty append_row should not create sparse row metadata");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check(!sheet.has_pending_changes(),
+            "empty append_row no-op save should keep the materialized sheet clean");
+        check(!editor.has_pending_changes(),
+            "empty append_row no-op save should keep the editor clean");
+        check(editor.pending_change_count() == 0,
+            "empty append_row no-op save should not record a materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "empty append_row no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "empty append_row no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "empty append_row no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save,
+            "empty append_row no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save,
+            "empty append_row no-op save");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "empty append_row no-op save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty append_row no-op save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(output, "empty append_row no-op save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "empty append_row second no-op save should keep the materialized sheet clean");
+        check(!editor.has_pending_changes(),
+            "empty append_row second no-op save should keep the editor clean");
+        check(editor.pending_change_count() == 0,
+            "empty append_row second no-op save should not record a materialized handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0,
+            "empty append_row second no-op save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "empty append_row second no-op save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "empty append_row second no-op save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "empty append_row second no-op save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "empty append_row second no-op save");
+        check(fastxlsx::test::read_zip_entries(noop_output) == output_entries,
+            "empty append_row second no-op output should match the first no-op output");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "empty append_row second no-op save should leave the first no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "empty append_row second no-op save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(
+            noop_output, "empty append_row second no-op save");
+    }
+
+    {
+        const std::filesystem::path style_id_source = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-style-id-source.xlsx");
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-style-reject-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-style-reject-noop-output.xlsx");
+        fastxlsx::StyleId non_default_style;
+        {
+            fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(style_id_source);
+            non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+            fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("StyleIds");
+            styled_sheet.append_row({
+                fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            });
+            writer.close();
+        }
+
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        bool failed = false;
+        try {
+            sheet.append_row({
+                fastxlsx::CellValue::text("append-row-styled-rejected")
+                    .with_style(non_default_style),
+            });
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "StyleId",
+                "append_row style rejection should expose the unsupported StyleId boundary");
+        }
+        check(failed, "append_row should reject caller-supplied non-default StyleId values");
+        check(editor.last_edit_error().has_value(),
+            "failed append_row style mutation should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(), "StyleId",
+                "append_row style rejection diagnostic should mention StyleId");
+        }
+        check_workbook_editor_public_no_pending_state(editor, "append_row style rejection");
+        check(!sheet.has_pending_changes(),
+            "append_row style rejection should keep the materialized sheet clean");
+        check(sheet.cell_count() == 3,
+            "append_row style rejection should preserve sparse cell count");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row style rejection should not leave rejected appended cells readable");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "append_row style rejection should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "append_row style rejection should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "append_row style rejection should preserve source A2");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row style rejection should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "append_row style rejection save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row style rejection save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row style rejection save");
+        check(!sheet.has_pending_changes(),
+            "append_row style rejection save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row style rejection save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row style rejection save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row style rejection save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(output, "append_row style rejection save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row style rejection noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row style rejection noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row style rejection noop save");
+        check(!sheet.has_pending_changes(),
+            "append_row style rejection noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row style rejection noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "append_row style rejection noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "append_row style rejection noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row style rejection noop save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(
+            noop_output, "append_row style rejection noop save");
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-width-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-width-failure-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        std::vector<fastxlsx::CellValue> too_wide(
+            16385, fastxlsx::CellValue::number(1.0));
+
+        bool failed = false;
+        try {
+            sheet.append_row(too_wide);
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "16384",
+                "append_row width failure should expose the Excel column limit");
+        }
+        check(failed, "append_row should reject more than 16384 values");
+        check(!sheet.has_pending_changes(),
+            "width failure should not dirty the materialized worksheet");
+        check(sheet.cell_count() == 3,
+            "width failure should preserve sparse cell count");
+        check(!sheet.try_cell("A3").has_value(),
+            "width failure should not leak rejected appended cells");
+        check(editor.last_edit_error().has_value(),
+            "append_row width failure should update last_edit_error");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row width failure");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row width failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "append_row width failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row width failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row width failure save");
+        check(!sheet.has_pending_changes(),
+            "append_row width failure save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row width failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row width failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row width failure save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(output, "append_row width failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row width failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row width failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row width failure noop save");
+        check(!sheet.has_pending_changes(),
+            "append_row width failure noop save should keep the materialized sheet clean");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row width failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "append_row width failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "append_row width failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row width failure noop save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(
+            noop_output, "append_row width failure noop save");
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-row-limit-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-row-limit-failure-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+        sheet.set_cell("XFD1048576", fastxlsx::CellValue::text("edge-row"));
+        const std::size_t dirty_count = sheet.cell_count();
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text("past-edge")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "1048576",
+                "append_row row-limit failure should expose the Excel row limit");
+        }
+        check(failed, "append_row should reject appending past the Excel row limit");
+        check(sheet.cell_count() == dirty_count,
+            "row-limit failure should preserve the previously dirty sparse store");
+        check(sheet.get_cell("XFD1048576").text_value() == "edge-row",
+            "row-limit failure should preserve the existing edge-row edit");
+        check(!sheet.try_cell("A3").has_value(),
+            "row-limit failure should not leak rejected appended values");
+        check(editor.last_edit_error().has_value(),
+            "append_row row-limit failure should update last_edit_error");
+        const std::optional<std::string> row_limit_error = editor.last_edit_error();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "append_row row-limit failure", row_limit_error);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        editor.save_as(output);
+        check(editor.last_edit_error() == row_limit_error,
+            "append_row row-limit failure save should retain the diagnostic");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row row-limit failure save");
+        check(editor.has_pending_changes(),
+            "append_row row-limit failure save should retain the saved handoff state");
+        check(editor.pending_change_count() == 1,
+            "append_row row-limit failure save should retain one saved handoff");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row row-limit failure save should not leave dirty summaries");
+        check(!sheet.has_pending_changes(),
+            "append_row row-limit failure save should flush the edge-row edit");
+        check(sheet.cell_count() == dirty_count,
+            "append_row row-limit failure save should keep the materialized read model");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row row-limit failure save should clear dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row row-limit failure save should clear dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row row-limit failure save should clear dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row row-limit failure save should not queue replacement diagnostics");
+
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row row-limit failure save should leave the source package unchanged");
+        const std::string& worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, R"(<dimension ref="A1:XFD1048576"/>)",
+            "append_row row-limit failure save should expand the worksheet dimension");
+        check_contains(
+            worksheet_xml,
+            R"(<c r="XFD1048576" t="inlineStr"><is><t>edge-row</t></is></c>)",
+            "append_row row-limit failure save should persist the existing edge-row edit");
+        check_not_contains(worksheet_xml, "past-edge",
+            "append_row row-limit failure save should omit the rejected append payload");
+
+        const auto inspect_row_limit_failure_output =
+            [dirty_count](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == dirty_count,
+                    "append_row row-limit failure reopen should preserve sparse cell count");
+                check_cell_range_equals(
+                    reopened_sheet.used_range(), 1, 1, 1048576, 16384,
+                    "append_row row-limit failure reopen should preserve max used range");
+                check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1",
+                    "append_row row-limit failure reopen should preserve source A1");
+                check(reopened_sheet.get_cell("B1").number_value() == 1.0,
+                    "append_row row-limit failure reopen should preserve source B1");
+                check(reopened_sheet.get_cell("A2").text_value() == "placeholder-a2",
+                    "append_row row-limit failure reopen should preserve source A2");
+                check(reopened_sheet.get_cell("XFD1048576").text_value() == "edge-row",
+                    "append_row row-limit failure reopen should preserve the edge-row edit");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    "append_row row-limit failure reopen should not expose rejected values");
+            };
+        check_reopened_clean_sheet_output(
+            output, "Data", "append_row row-limit failure save",
+            inspect_row_limit_failure_output);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row row-limit failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row row-limit failure noop save");
+        check(editor.has_pending_changes(),
+            "append_row row-limit failure noop save should retain the saved handoff state");
+        check(editor.pending_change_count() == 1,
+            "append_row row-limit failure noop save should retain one saved handoff");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row row-limit failure noop save should not leave dirty summaries");
+        check(!sheet.has_pending_changes(),
+            "append_row row-limit failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row row-limit failure noop save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row row-limit failure noop save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row row-limit failure noop save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row row-limit failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "append_row row-limit failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row row-limit failure noop save should leave the source package unchanged");
+        check_reopened_clean_sheet_output(
+            noop_output, "Data", "append_row row-limit failure noop save",
+            inspect_row_limit_failure_output);
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-max-cells-failure-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-max-cells-failure-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text("max-cells-rejected")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+                "append_row max_cells failure should expose the guardrail diagnostic");
+        }
+        check(failed, "append_row should reject new sparse records past max_cells");
+        check(editor.last_edit_error().has_value(),
+            "append_row max_cells failure should update last_edit_error");
+        if (editor.last_edit_error().has_value()) {
+            check_contains(*editor.last_edit_error(), "max_cells",
+                "append_row max_cells failure diagnostic should mention max_cells");
+        }
+        check(!sheet.has_pending_changes(),
+            "append_row max_cells failure should keep the materialized sheet clean");
+        check(sheet.cell_count() == 3,
+            "append_row max_cells failure should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "append_row max_cells failure should preserve sparse memory estimate");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row max_cells failure should not leave rejected cells readable");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "append_row max_cells failure should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "append_row max_cells failure should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "append_row max_cells failure should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row max_cells failure");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row max_cells failure should not expose dirty materialized names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row max_cells failure should not expose dirty materialized cell count");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row max_cells failure should not expose dirty materialized memory");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row max_cells failure should not queue replacement diagnostics");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_save =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_save =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_save, "append_row max_cells failure save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_save, "append_row max_cells failure save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row max_cells failure save");
+        check(!sheet.has_pending_changes(),
+            "append_row max_cells failure save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row max_cells failure save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row max_cells failure save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row max_cells failure save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row max_cells failure save should not queue replacement diagnostics");
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(output_entries == source_entries,
+            "append_row max_cells failure save should copy source entries");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row max_cells failure save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(output, "append_row max_cells failure save");
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop, "append_row max_cells failure noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop, "append_row max_cells failure noop save");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row max_cells failure noop save");
+        check(!sheet.has_pending_changes(),
+            "append_row max_cells failure noop save should keep the materialized sheet clean");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row max_cells failure noop save should keep dirty materialized names clear");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row max_cells failure noop save should keep dirty materialized cell count clear");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row max_cells failure noop save should keep dirty materialized memory clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row max_cells failure noop save should not queue replacement diagnostics");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == source_entries,
+            "append_row max_cells failure noop save should still copy source entries");
+        check(noop_entries == output_entries,
+            "append_row max_cells failure noop output should match the first output");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row max_cells failure noop save should leave the source package unchanged");
+        check_reopened_default_data_sheet_output(
+            noop_output, "append_row max_cells failure noop save");
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-memory-budget-recovery-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-memory-budget-recovery-noop-output.xlsx");
+        const std::filesystem::path reacquired_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-memory-budget-recovery-reacquire-noop-output.xlsx");
+        const std::filesystem::path second_reacquired_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-memory-budget-recovery-reacquire-second-noop-output.xlsx");
+        const std::filesystem::path reacquired_post_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-append-row-memory-budget-recovery-reacquire-post-noop-output.xlsx");
+        const std::string rejected_value =
+            "append-row-memory-rejected-" + std::string(4096, 'm');
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+        const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.memory_budget_bytes = exact_memory_budget;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+        check(baseline_memory == exact_memory_budget,
+            "append_row memory-budget precondition should load with an exact sparse budget");
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text(rejected_value)});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+                "append_row memory-budget failure should expose the guardrail diagnostic");
+        }
+        check(failed, "append_row should enforce memory_budget_bytes on new sparse records");
+        check(editor.last_edit_error().has_value(),
+            "append_row memory-budget failure should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "append_row memory-budget failure should keep the materialized sheet clean");
+        check(!editor.has_pending_changes(),
+            "append_row memory-budget failure should keep the editor clean");
+        check(sheet.cell_count() == 3,
+            "append_row memory-budget failure should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "append_row memory-budget failure should preserve sparse memory estimate");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row memory-budget failure should not leave rejected cells readable");
+        check(sheet.get_cell("A1").text_value() == "placeholder-a1",
+            "append_row memory-budget failure should preserve source A1");
+        check(sheet.get_cell("B1").number_value() == 1.0,
+            "append_row memory-budget failure should preserve source B1");
+        check(sheet.get_cell("A2").text_value() == "placeholder-a2",
+            "append_row memory-budget failure should preserve source A2");
+        check_workbook_editor_public_no_pending_state(
+            editor, "append_row memory-budget failure");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row memory-budget failure should not queue replacement diagnostics");
+
+        sheet.erase_cell("A2");
+        sheet.append_row({fastxlsx::CellValue::text("append-mb-ok")});
+        check(!editor.last_edit_error().has_value(),
+            "successful append_row memory-budget recovery should clear last_edit_error");
+        check(sheet.has_pending_changes(),
+            "successful append_row memory-budget recovery should dirty the session");
+        check(editor.has_pending_changes(),
+            "successful append_row memory-budget recovery should dirty the editor");
+        check(sheet.cell_count() == 3,
+            "append_row memory-budget recovery should keep the sparse count stable");
+        check(sheet.estimated_memory_usage() <= exact_memory_budget,
+            "append_row memory-budget recovery should stay within the exact memory budget");
+        check(sheet.get_cell("A2").text_value() == "append-mb-ok",
+            "append_row memory-budget recovery should write the replacement appended row");
+        check(!sheet.try_cell("A3").has_value(),
+            "append_row memory-budget recovery should keep the rejected row absent");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row memory-budget recovery save should leave the source package unchanged");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "append-mb-ok",
+            "append_row memory-budget recovery should persist through save_as");
+        check_not_contains(worksheet_xml, "append-row-memory-rejected",
+            "rejected append_row memory-budget payload should not leak into saved output");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "append_row memory-budget recovery should not resurrect erased source cells");
+
+        const auto inspect_append_row_memory_budget_recovery_output_with_a2 =
+            [](fastxlsx::WorksheetEditor& reopened_sheet,
+                std::string_view expected_a2,
+                std::string_view prefix) {
+                const std::string label(prefix);
+                check(reopened_sheet.cell_count() == 3,
+                    label + " should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    label + " should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    label + " should keep source-backed A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    label + " should keep source-backed B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == expected_a2,
+                    label + " should read A2");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    label + " should keep rejected A3 absent");
+            };
+        const auto inspect_append_row_memory_budget_recovery_output =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                inspect_append_row_memory_budget_recovery_output_with_a2(
+                    reopened_sheet,
+                    "append-mb-ok",
+                    "append_row memory-budget recovery reopened output");
+            };
+        const auto inspect_append_row_memory_budget_post_noop_output =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                inspect_append_row_memory_budget_recovery_output_with_a2(
+                    reopened_sheet,
+                    "mb-2",
+                    "append_row memory-budget recovery post-noop output");
+            };
+        check_reopened_clean_sheet_output(output, "Data",
+            "append_row memory-budget recovery",
+            inspect_append_row_memory_budget_recovery_output);
+        const auto check_append_row_memory_budget_recovery_saved_snapshot =
+            [&](fastxlsx::WorkbookEditor& owner,
+                fastxlsx::WorksheetEditor& handle,
+                std::size_t expected_pending_count,
+                std::string_view prefix) {
+                const std::string label(prefix);
+                check(handle.cell_count() == 3,
+                    label + " should keep the represented sparse count");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                    handle.sparse_cells();
+                check(cells.size() == 3,
+                    label + " should expose the three represented records");
+                if (cells.size() == 3) {
+                    check(cells[0].reference.row == 1 &&
+                            cells[0].reference.column == 1 &&
+                            cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[0].value.text_value() == "placeholder-a1",
+                        label + " should keep A1 source text first");
+                    check(cells[1].reference.row == 1 &&
+                            cells[1].reference.column == 2 &&
+                            cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                            cells[1].value.number_value() == 1.0,
+                        label + " should keep B1 source number second");
+                    check(cells[2].reference.row == 2 &&
+                            cells[2].reference.column == 1 &&
+                            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[2].value.text_value() == "append-mb-ok",
+                        label + " should keep recovered A2 text last");
+                }
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                    handle.row_cells(1);
+                check(row_one.size() == 2 &&
+                        row_one[0].reference.row == 1 &&
+                        row_one[0].reference.column == 1 &&
+                        row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_one[0].value.text_value() == "placeholder-a1" &&
+                        row_one[1].reference.row == 1 &&
+                        row_one[1].reference.column == 2 &&
+                        row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        row_one[1].value.number_value() == 1.0,
+                    label + " should keep row-one source cells");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                    handle.row_cells(2);
+                check(row_two.size() == 1 &&
+                        row_two[0].reference.row == 2 &&
+                        row_two[0].reference.column == 1 &&
+                        row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[0].value.text_value() == "append-mb-ok",
+                    label + " should keep row-two recovery text");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                    handle.column_cells(1);
+                check(column_one.size() == 2 &&
+                        column_one[0].reference.row == 1 &&
+                        column_one[0].reference.column == 1 &&
+                        column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[0].value.text_value() == "placeholder-a1" &&
+                        column_one[1].reference.row == 2 &&
+                        column_one[1].reference.column == 1 &&
+                        column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[1].value.text_value() == "append-mb-ok",
+                    label + " should keep column-one source and recovery cells");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                    handle.column_cells(2);
+                check(column_two.size() == 1 &&
+                        column_two[0].reference.row == 1 &&
+                        column_two[0].reference.column == 2 &&
+                        column_two[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        column_two[0].value.number_value() == 1.0,
+                    label + " should keep column-two source number");
+                check(!handle.try_cell("A3").has_value(),
+                    label + " should keep rejected A3 absent");
+                check_cell_range_equals(handle.used_range(), 1, 1, 2, 2,
+                    label + " should keep compact bounds");
+                check(!handle.has_pending_changes(),
+                    label + " should keep the handle clean");
+                check(owner.pending_change_count() == expected_pending_count,
+                    label + " should not add another materialized handoff");
+                check(owner.pending_materialized_worksheet_names().empty(),
+                    label + " should keep dirty materialized names empty");
+                check(owner.pending_materialized_cell_count() == 0,
+                    label + " should keep dirty materialized cells empty");
+                check(owner.estimated_pending_materialized_memory_usage() == 0,
+                    label + " should keep dirty materialized memory empty");
+                check(owner.pending_worksheet_edits().empty(),
+                    label + " should keep dirty summaries empty");
+                check_workbook_editor_no_replacement_diagnostics(
+                    owner,
+                    label + " should keep replacement diagnostics empty");
+                check(!owner.last_edit_error().has_value(),
+                    label + " should keep diagnostics clear");
+            };
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "append_row memory-budget recovery noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "append_row memory-budget recovery noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row memory-budget recovery noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row memory-budget recovery noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row memory-budget recovery noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row memory-budget recovery noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor,
+            "append_row memory-budget recovery noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "append_row memory-budget recovery noop save should keep diagnostics clear");
+        check_append_row_memory_budget_recovery_saved_snapshot(
+            editor,
+            sheet,
+            pending_count_after_save,
+            "append_row memory-budget recovery saved handle");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "append_row memory-budget recovery noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "append_row memory-budget recovery noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "append_row memory-budget recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row memory-budget recovery noop save should leave the source package unchanged");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "append_row memory-budget recovery noop save",
+            inspect_append_row_memory_budget_recovery_output);
+
+        fastxlsx::WorkbookEditor reacquired_editor = fastxlsx::WorkbookEditor::open(output);
+        fastxlsx::WorksheetEditor reacquired_sheet =
+            reacquired_editor.worksheet("Data", options);
+        check(!reacquired_editor.last_edit_error().has_value(),
+            "append_row memory-budget recovery strict-options reacquire should keep diagnostics clear");
+        check_workbook_editor_public_no_pending_state(
+            reacquired_editor,
+            "append_row memory-budget recovery strict-options reacquire");
+        check(reacquired_sheet.estimated_memory_usage() <= exact_memory_budget,
+            "append_row memory-budget recovery strict-options reacquire should stay within the original budget");
+        inspect_append_row_memory_budget_recovery_output(reacquired_sheet);
+        check_append_row_memory_budget_recovery_saved_snapshot(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row memory-budget recovery strict-options reacquired handle");
+
+        const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(reacquired_editor);
+        const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(reacquired_editor);
+        reacquired_editor.save_as(reacquired_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            reacquired_editor, reacquired_save_state_before_noop,
+            "append_row memory-budget recovery strict-options reacquired noop save");
+        check_workbook_editor_public_catalog_preserved(
+            reacquired_editor, reacquired_catalog_before_noop,
+            "append_row memory-budget recovery strict-options reacquired noop save");
+        check_append_row_memory_budget_recovery_saved_snapshot(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row memory-budget recovery strict-options reacquired noop save");
+        const auto reacquired_noop_entries =
+            fastxlsx::test::read_zip_entries(reacquired_noop_output);
+        check(reacquired_noop_entries == output_entries,
+            "append_row memory-budget recovery strict-options reacquired noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "append_row memory-budget recovery strict-options reacquired noop save should leave the saved input unchanged");
+        check_reopened_clean_sheet_output(
+            reacquired_noop_output, "Data",
+            "append_row memory-budget recovery strict-options reacquired noop save",
+            inspect_append_row_memory_budget_recovery_output);
+
+        const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(reacquired_editor);
+        const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(reacquired_editor);
+        reacquired_editor.save_as(second_reacquired_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            reacquired_editor, reacquired_save_state_before_second_noop,
+            "append_row memory-budget recovery strict-options reacquired second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            reacquired_editor, reacquired_catalog_before_second_noop,
+            "append_row memory-budget recovery strict-options reacquired second noop save");
+        check_append_row_memory_budget_recovery_saved_snapshot(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row memory-budget recovery strict-options reacquired second noop save");
+        const auto second_reacquired_noop_entries =
+            fastxlsx::test::read_zip_entries(second_reacquired_noop_output);
+        check(second_reacquired_noop_entries == reacquired_noop_entries,
+            "append_row memory-budget recovery strict-options reacquired second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "append_row memory-budget recovery strict-options reacquired second noop save should leave the saved input unchanged");
+        check_reopened_clean_sheet_output(
+            second_reacquired_noop_output, "Data",
+            "append_row memory-budget recovery strict-options reacquired second noop save",
+            inspect_append_row_memory_budget_recovery_output);
+
+        reacquired_sheet.set_cell_value("A2", fastxlsx::CellValue::text("mb-2"));
+        check(!reacquired_editor.last_edit_error().has_value(),
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should keep diagnostics clear");
+        check(reacquired_sheet.has_pending_changes(),
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should dirty the sheet");
+        check(reacquired_editor.has_pending_changes(),
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should dirty the editor");
+        check(reacquired_sheet.cell_count() == 3,
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should keep sparse count stable");
+        check(reacquired_sheet.estimated_memory_usage() <= exact_memory_budget,
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should stay within the original budget");
+        check(reacquired_editor.pending_materialized_cell_count() == 3,
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should expose dirty sparse count");
+        const fastxlsx::CellValue post_noop_a2 = reacquired_sheet.get_cell("A2");
+        check(post_noop_a2.kind() == fastxlsx::CellValueKind::Text &&
+                post_noop_a2.text_value() == "mb-2",
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should overwrite A2");
+        check(!reacquired_sheet.try_cell("A3").has_value(),
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should keep rejected A3 absent");
+        check_public_state_single_data_dirty_materialized_summary(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row memory-budget recovery strict-options reacquired post-noop edit");
+        check_workbook_editor_no_replacement_diagnostics(
+            reacquired_editor,
+            "append_row memory-budget recovery strict-options reacquired post-noop edit should not queue replacement diagnostics");
+
+        reacquired_editor.save_as(reacquired_post_noop_output);
+        check(!reacquired_sheet.has_pending_changes(),
+            "append_row memory-budget recovery strict-options reacquired post-noop save should clean the sheet");
+        check(reacquired_editor.pending_change_count() == 1,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should keep one handoff");
+        check(reacquired_editor.pending_materialized_worksheet_names().empty(),
+            "append_row memory-budget recovery strict-options reacquired post-noop save should not expose dirty worksheet names");
+        check(reacquired_editor.pending_materialized_cell_count() == 0,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should not expose dirty materialized cells");
+        check(reacquired_editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should not expose dirty materialized memory");
+        check(reacquired_editor.pending_worksheet_edits().empty(),
+            "append_row memory-budget recovery strict-options reacquired post-noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            reacquired_editor,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should not queue replacement diagnostics");
+        check(!reacquired_editor.last_edit_error().has_value(),
+            "append_row memory-budget recovery strict-options reacquired post-noop save should keep diagnostics clear");
+        const auto reacquired_post_noop_entries =
+            fastxlsx::test::read_zip_entries(reacquired_post_noop_output);
+        const std::string reacquired_post_noop_xml =
+            reacquired_post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(reacquired_post_noop_xml, "mb-2",
+            "append_row memory-budget recovery strict-options reacquired post-noop save should persist the later overwrite");
+        check_not_contains(reacquired_post_noop_xml, "append-mb-ok",
+            "append_row memory-budget recovery strict-options reacquired post-noop save should replace the earlier A2 text");
+        check_not_contains(reacquired_post_noop_xml, "append-row-memory-rejected",
+            "append_row memory-budget recovery strict-options reacquired post-noop save should not leak rejected payload");
+        check_not_contains(reacquired_post_noop_xml, "placeholder-a2",
+            "append_row memory-budget recovery strict-options reacquired post-noop save should keep erased A2 absent");
+        check(reacquired_noop_entries == output_entries,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should leave first no-op output stable");
+        check(second_reacquired_noop_entries == reacquired_noop_entries,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should leave second no-op output stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should leave the saved input unchanged");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row memory-budget recovery strict-options reacquired post-noop save should leave the source package unchanged");
+        check_reopened_clean_sheet_output(
+            reacquired_post_noop_output, "Data",
+            "append_row memory-budget recovery strict-options reacquired post-noop save",
+            inspect_append_row_memory_budget_post_noop_output);
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-noop-output.xlsx");
+        const std::filesystem::path reacquired_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-reacquire-noop-output.xlsx");
+        const std::filesystem::path second_reacquired_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-append-row-guards-reacquire-second-noop-output.xlsx");
+        const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditorOptions options;
+        options.max_cells = 3;
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+        const std::size_t baseline_memory = sheet.estimated_memory_usage();
+
+        bool failed = false;
+        try {
+            sheet.append_row({fastxlsx::CellValue::text("max-cells-rejected")});
+        } catch (const fastxlsx::FastXlsxError& error) {
+            failed = true;
+            check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+                "append_row should expose CellStore max_cells guardrail diagnostics");
+        }
+        check(failed, "append_row should enforce max_cells on new sparse records");
+        check(editor.last_edit_error().has_value(),
+            "failed append_row max_cells mutation should update last_edit_error");
+        check(!sheet.has_pending_changes(),
+            "failed append_row max_cells mutation should not dirty the session");
+        check(sheet.cell_count() == 3,
+            "failed append_row max_cells mutation should preserve sparse cell count");
+        check(sheet.estimated_memory_usage() == baseline_memory,
+            "failed append_row max_cells mutation should preserve sparse memory estimate");
+        check(!sheet.try_cell("A3").has_value(),
+            "failed append_row max_cells mutation should not leave rejected cells readable");
+
+        sheet.erase_cell("A2");
+        sheet.append_row({fastxlsx::CellValue::text("append-after-erase")});
+        check(!editor.last_edit_error().has_value(),
+            "successful append_row after budget release should clear last_edit_error");
+        check(sheet.get_cell("A2").text_value() == "append-after-erase",
+            "append_row should use the current maximum represented row after erase");
+        check(sheet.cell_count() == 3,
+            "append_row after erase should stay within the exact max_cells budget");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row guardrail recovery save should leave the source package unchanged");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(worksheet_xml, "append-after-erase",
+            "append_row after guardrail recovery should persist through save_as");
+        check_not_contains(worksheet_xml, "max-cells-rejected",
+            "rejected append_row value should not leak into saved output");
+        check_not_contains(worksheet_xml, "placeholder-a2",
+            "append_row after erase should not resurrect erased source cells");
+
+        const auto inspect_append_row_guardrail_recovery_output =
+            [](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "append_row guardrail recovery reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                    "append_row guardrail recovery reopened output should keep compact bounds");
+                const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+                check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1.text_value() == "placeholder-a1",
+                    "append_row guardrail recovery reopened output should keep source-backed A1");
+                const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+                check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_b1.number_value() == 1.0,
+                    "append_row guardrail recovery reopened output should keep source-backed B1");
+                const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+                check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a2.text_value() == "append-after-erase",
+                    "append_row guardrail recovery reopened output should read appended A2");
+                check(!reopened_sheet.try_cell("A3").has_value(),
+                    "append_row guardrail recovery reopened output should keep rejected A3 absent");
+            };
+        check_reopened_clean_sheet_output(output, "Data", "append_row guardrail recovery",
+            inspect_append_row_guardrail_recovery_output);
+        const auto check_append_row_guardrail_recovery_saved_snapshot =
+            [&](fastxlsx::WorkbookEditor& owner,
+                fastxlsx::WorksheetEditor& handle,
+                std::size_t expected_pending_count,
+                std::string_view prefix) {
+                const std::string label(prefix);
+                check(handle.cell_count() == 3,
+                    label + " should keep the represented sparse count");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                    handle.sparse_cells();
+                check(cells.size() == 3,
+                    label + " should expose the three represented records");
+                if (cells.size() == 3) {
+                    check(cells[0].reference.row == 1 &&
+                            cells[0].reference.column == 1 &&
+                            cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[0].value.text_value() == "placeholder-a1",
+                        label + " should keep A1 source text first");
+                    check(cells[1].reference.row == 1 &&
+                            cells[1].reference.column == 2 &&
+                            cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                            cells[1].value.number_value() == 1.0,
+                        label + " should keep B1 source number second");
+                    check(cells[2].reference.row == 2 &&
+                            cells[2].reference.column == 1 &&
+                            cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                            cells[2].value.text_value() == "append-after-erase",
+                        label + " should keep appended A2 recovery text last");
+                }
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                    handle.row_cells(1);
+                check(row_one.size() == 2 &&
+                        row_one[0].reference.row == 1 &&
+                        row_one[0].reference.column == 1 &&
+                        row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_one[0].value.text_value() == "placeholder-a1" &&
+                        row_one[1].reference.row == 1 &&
+                        row_one[1].reference.column == 2 &&
+                        row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        row_one[1].value.number_value() == 1.0,
+                    label + " should keep row-one source cells");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                    handle.row_cells(2);
+                check(row_two.size() == 1 &&
+                        row_two[0].reference.row == 2 &&
+                        row_two[0].reference.column == 1 &&
+                        row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_two[0].value.text_value() == "append-after-erase",
+                    label + " should keep row-two recovery text");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                    handle.column_cells(1);
+                check(column_one.size() == 2 &&
+                        column_one[0].reference.row == 1 &&
+                        column_one[0].reference.column == 1 &&
+                        column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[0].value.text_value() == "placeholder-a1" &&
+                        column_one[1].reference.row == 2 &&
+                        column_one[1].reference.column == 1 &&
+                        column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        column_one[1].value.text_value() == "append-after-erase",
+                    label + " should keep column-one source and recovery cells");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                    handle.column_cells(2);
+                check(column_two.size() == 1 &&
+                        column_two[0].reference.row == 1 &&
+                        column_two[0].reference.column == 2 &&
+                        column_two[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        column_two[0].value.number_value() == 1.0,
+                    label + " should keep column-two source number");
+                check(!handle.try_cell("A3").has_value(),
+                    label + " should keep rejected A3 absent");
+                check_cell_range_equals(handle.used_range(), 1, 1, 2, 2,
+                    label + " should keep compact bounds");
+                check(!handle.has_pending_changes(),
+                    label + " should keep the handle clean");
+                check(owner.pending_change_count() == expected_pending_count,
+                    label + " should not add another materialized handoff");
+                check(owner.pending_materialized_worksheet_names().empty(),
+                    label + " should keep dirty materialized names empty");
+                check(owner.pending_materialized_cell_count() == 0,
+                    label + " should keep dirty materialized cells empty");
+                check(owner.estimated_pending_materialized_memory_usage() == 0,
+                    label + " should keep dirty materialized memory empty");
+                check(owner.pending_worksheet_edits().empty(),
+                    label + " should keep dirty summaries empty");
+                check_workbook_editor_no_replacement_diagnostics(
+                    owner,
+                    label + " should keep replacement diagnostics empty");
+                check(!owner.last_edit_error().has_value(),
+                    label + " should keep diagnostics clear");
+            };
+
+        const std::size_t pending_count_after_save = editor.pending_change_count();
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "append_row guardrail recovery noop save should keep the materialized handle clean");
+        check(editor.pending_change_count() == pending_count_after_save,
+            "append_row guardrail recovery noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "append_row guardrail recovery noop save should not expose dirty worksheet names");
+        check(editor.pending_materialized_cell_count() == 0,
+            "append_row guardrail recovery noop save should not expose dirty materialized cells");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "append_row guardrail recovery noop save should not expose dirty materialized memory");
+        check(editor.pending_worksheet_edits().empty(),
+            "append_row guardrail recovery noop save should not expose dirty summaries");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "append_row guardrail recovery noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "append_row guardrail recovery noop save should keep diagnostics clear");
+        check_append_row_guardrail_recovery_saved_snapshot(
+            editor,
+            sheet,
+            pending_count_after_save,
+            "append_row guardrail recovery saved handle");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "append_row guardrail recovery noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "append_row guardrail recovery noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "append_row guardrail recovery noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(source) == source_entries,
+            "append_row guardrail recovery noop save should leave the source package unchanged");
+        check_reopened_clean_sheet_output(noop_output, "Data",
+            "append_row guardrail recovery noop save",
+            inspect_append_row_guardrail_recovery_output);
+
+        fastxlsx::WorkbookEditor reacquired_editor = fastxlsx::WorkbookEditor::open(output);
+        fastxlsx::WorksheetEditor reacquired_sheet =
+            reacquired_editor.worksheet("Data", options);
+        check(!reacquired_editor.last_edit_error().has_value(),
+            "append_row guardrail recovery strict-options reacquire should keep diagnostics clear");
+        check_workbook_editor_public_no_pending_state(
+            reacquired_editor,
+            "append_row guardrail recovery strict-options reacquire");
+        inspect_append_row_guardrail_recovery_output(reacquired_sheet);
+        check_append_row_guardrail_recovery_saved_snapshot(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row guardrail recovery strict-options reacquired handle");
+
+        const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(reacquired_editor);
+        const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(reacquired_editor);
+        reacquired_editor.save_as(reacquired_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            reacquired_editor, reacquired_save_state_before_noop,
+            "append_row guardrail recovery strict-options reacquired noop save");
+        check_workbook_editor_public_catalog_preserved(
+            reacquired_editor, reacquired_catalog_before_noop,
+            "append_row guardrail recovery strict-options reacquired noop save");
+        check_append_row_guardrail_recovery_saved_snapshot(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row guardrail recovery strict-options reacquired noop save");
+        const auto reacquired_noop_entries =
+            fastxlsx::test::read_zip_entries(reacquired_noop_output);
+        check(reacquired_noop_entries == output_entries,
+            "append_row guardrail recovery strict-options reacquired noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "append_row guardrail recovery strict-options reacquired noop save should leave the saved input unchanged");
+        check_reopened_clean_sheet_output(
+            reacquired_noop_output, "Data",
+            "append_row guardrail recovery strict-options reacquired noop save",
+            inspect_append_row_guardrail_recovery_output);
+
+        const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(reacquired_editor);
+        const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(reacquired_editor);
+        reacquired_editor.save_as(second_reacquired_noop_output);
+        check_workbook_editor_public_save_state_preserved(
+            reacquired_editor, reacquired_save_state_before_second_noop,
+            "append_row guardrail recovery strict-options reacquired second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            reacquired_editor, reacquired_catalog_before_second_noop,
+            "append_row guardrail recovery strict-options reacquired second noop save");
+        check_append_row_guardrail_recovery_saved_snapshot(
+            reacquired_editor,
+            reacquired_sheet,
+            0,
+            "append_row guardrail recovery strict-options reacquired second noop save");
+        const auto second_reacquired_noop_entries =
+            fastxlsx::test::read_zip_entries(second_reacquired_noop_output);
+        check(second_reacquired_noop_entries == reacquired_noop_entries,
+            "append_row guardrail recovery strict-options reacquired second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "append_row guardrail recovery strict-options reacquired second noop save should leave the saved input unchanged");
+        check_reopened_clean_sheet_output(
+            second_reacquired_noop_output, "Data",
+            "append_row guardrail recovery strict-options reacquired second noop save",
+            inspect_append_row_guardrail_recovery_output);
+    }
+}
+
 } // namespace
 
 int main()
@@ -1833,6 +3068,7 @@ int main()
         test_public_worksheet_editor_append_row_does_not_inherit_source_styles();
         test_public_worksheet_editor_append_row_accepts_default_style_id_as_unstyled();
         test_public_worksheet_editor_append_row_style_rejection_preserves_dirty_session();
+        test_public_worksheet_editor_append_row_noop_and_guardrails();
         std::cout << "WorkbookEditor public-state append row tests passed\n";
         return 0;
     } catch (const std::exception& error) {

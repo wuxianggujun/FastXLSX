@@ -645,12 +645,792 @@ void test_public_worksheet_editor_set_cell_replacement_drops_source_style()
         });
 }
 
+void test_public_worksheet_editor_set_cell_accepts_default_style_id_as_unstyled()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-default-style-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-default-style-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-default-style-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-default-style-second-noop-output.xlsx");
+    const std::filesystem::path post_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-default-style-post-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("default-style-tail"),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_worksheet_xml = source_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(source_worksheet_xml, R"(<c r="A1" s="1">)",
+        "default StyleId source fixture should start with styled A1");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    sheet.set_cell(
+        "A1",
+        fastxlsx::CellValue::text("default-style-normalized")
+            .with_style(fastxlsx::StyleId {}));
+
+    const fastxlsx::CellValue live_a1 = sheet.get_cell("A1");
+    check(live_a1.kind() == fastxlsx::CellValueKind::Text &&
+            live_a1.text_value() == "default-style-normalized" &&
+            !live_a1.has_style(),
+        "set_cell explicit default StyleId should normalize replacement A1 to unstyled");
+    const fastxlsx::CellValue live_b1 = sheet.get_cell("B1");
+    check(live_b1.kind() == fastxlsx::CellValueKind::Text &&
+            live_b1.text_value() == "default-style-tail" &&
+            !live_b1.has_style(),
+        "set_cell explicit default StyleId should keep tail B1 unstyled");
+    check(sheet.cell_count() == 2,
+        "set_cell explicit default StyleId should keep represented sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 1, 2,
+        "set_cell explicit default StyleId should keep row bounds");
+    check(sheet.has_pending_changes(),
+        "set_cell explicit default StyleId should dirty the materialized worksheet");
+    check(editor.pending_materialized_cell_count() == 2,
+        "set_cell explicit default StyleId should keep aggregate materialized count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "set_cell explicit default StyleId dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell explicit default StyleId should keep diagnostics clear");
+
+    const auto check_unstyled_default_style_projection =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "default-style-normalized" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled replacement A1");
+        };
+    const auto check_default_style_tail_projection =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "default-style-tail" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled tail B1");
+        };
+
+    check(sheet.contains_cell("A1") && sheet.contains_cell("B1"),
+        "set_cell explicit default StyleId should keep represented cells queryable");
+    check(!sheet.contains_cell("A2") && !sheet.contains_cell("D4"),
+        "set_cell explicit default StyleId should keep unrelated missing cells absent");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_row_one =
+        sheet.row_cells(1);
+    check(live_row_one.size() == 2,
+        "set_cell explicit default StyleId row_cells should expose row-one records");
+    if (live_row_one.size() == 2) {
+        check_unstyled_default_style_projection(live_row_one[0],
+            "set_cell explicit default StyleId row_cells");
+        check_default_style_tail_projection(live_row_one[1],
+            "set_cell explicit default StyleId row_cells");
+    }
+    check(sheet.row_cells(2).empty(),
+        "set_cell explicit default StyleId row_cells should keep row two empty");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_column_one =
+        sheet.column_cells(1);
+    check(live_column_one.size() == 1,
+        "set_cell explicit default StyleId column_cells should expose A1 only");
+    if (live_column_one.size() == 1) {
+        check_unstyled_default_style_projection(live_column_one[0],
+            "set_cell explicit default StyleId column_cells");
+    }
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_column_two =
+        sheet.column_cells(2);
+    check(live_column_two.size() == 1,
+        "set_cell explicit default StyleId column_cells should expose B1 only");
+    if (live_column_two.size() == 1) {
+        check_default_style_tail_projection(live_column_two[0],
+            "set_cell explicit default StyleId column_cells");
+    }
+    check(sheet.column_cells(3).empty(),
+        "set_cell explicit default StyleId column_cells should keep column three empty");
+
+    const auto inspect_default_style_output =
+        [check_unstyled_default_style_projection,
+            check_default_style_tail_projection](
+            fastxlsx::WorksheetEditor& reopened_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 2,
+                prefix + " reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                prefix + " reopened output should keep row bounds");
+            check(reopened_sheet.contains_cell("A1") &&
+                    reopened_sheet.contains_cell("B1"),
+                prefix + " reopened contains_cell should keep represented cells queryable");
+            check(!reopened_sheet.contains_cell("A2") &&
+                    !reopened_sheet.contains_cell("D4"),
+                prefix + " reopened contains_cell should keep missing cells absent");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                reopened_sheet.sparse_cells();
+            check(cells.size() == 2,
+                prefix + " reopened sparse_cells should expose two records");
+            if (cells.size() == 2) {
+                check_unstyled_default_style_projection(cells[0],
+                    prefix + " reopened sparse_cells");
+                check_default_style_tail_projection(cells[1],
+                    prefix + " reopened sparse_cells");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                prefix + " reopened row_cells should expose row-one records");
+            if (row_one.size() == 2) {
+                check_unstyled_default_style_projection(row_one[0],
+                    prefix + " reopened row_cells");
+                check_default_style_tail_projection(row_one[1],
+                    prefix + " reopened row_cells");
+            }
+            check(reopened_sheet.row_cells(2).empty(),
+                prefix + " reopened row_cells should keep row two empty");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                reopened_sheet.column_cells(1);
+            check(column_one.size() == 1,
+                prefix + " reopened column_cells should expose A1 only");
+            if (column_one.size() == 1) {
+                check_unstyled_default_style_projection(column_one[0],
+                    prefix + " reopened column_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                reopened_sheet.column_cells(2);
+            check(column_two.size() == 1,
+                prefix + " reopened column_cells should expose B1 only");
+            if (column_two.size() == 1) {
+                check_default_style_tail_projection(column_two[0],
+                    prefix + " reopened column_cells");
+            }
+            check(reopened_sheet.column_cells(3).empty(),
+                prefix + " reopened column_cells should keep column three empty");
+
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "default-style-normalized" &&
+                    !reopened_a1.has_style(),
+                prefix + " reopened output should read A1 without a style handle");
+        };
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell explicit default StyleId save should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "set_cell explicit default StyleId save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:B1"/>)",
+        "set_cell explicit default StyleId should keep the projected dimension");
+    check_contains(worksheet_xml,
+        R"(<c r="A1" t="inlineStr"><is><t>default-style-normalized</t></is></c>)",
+        "set_cell explicit default StyleId should persist A1 without a style id");
+    check_not_contains(worksheet_xml, R"(<c r="A1" s=")",
+        "set_cell explicit default StyleId should not keep the old source style on A1");
+    check_not_contains(worksheet_xml, R"(s="0")",
+        "set_cell explicit default StyleId should not write default style ids");
+    check_reopened_clean_sheet_output(output, "Styled", "set_cell explicit default StyleId",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_default_style_output(
+                reopened_sheet, "set_cell explicit default StyleId");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell explicit default StyleId no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_cell explicit default StyleId no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell explicit default StyleId no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell explicit default StyleId no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_cell explicit default StyleId no-op save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell explicit default StyleId no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "set_cell explicit default StyleId no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "set_cell explicit default StyleId no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "set_cell explicit default StyleId no-op output should match materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell explicit default StyleId no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "set_cell explicit default StyleId no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_default_style_output(
+                reopened_sheet, "set_cell explicit default StyleId no-op save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell explicit default StyleId second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_cell explicit default StyleId second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell explicit default StyleId second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell explicit default StyleId second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_cell explicit default StyleId second no-op save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell explicit default StyleId second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "set_cell explicit default StyleId second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "set_cell explicit default StyleId second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "set_cell explicit default StyleId second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "set_cell explicit default StyleId second no-op save should leave the materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "set_cell explicit default StyleId second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell explicit default StyleId second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Styled",
+        "set_cell explicit default StyleId second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_default_style_output(
+                reopened_sheet,
+                "set_cell explicit default StyleId second no-op save");
+        });
+
+    sheet.set_cell(
+        "A1",
+        fastxlsx::CellValue::formula("B1").with_style(fastxlsx::StyleId {}));
+    const fastxlsx::CellValue post_noop_live_a1 = sheet.get_cell("A1");
+    check(post_noop_live_a1.kind() == fastxlsx::CellValueKind::Formula &&
+            post_noop_live_a1.text_value() == "B1" &&
+            !post_noop_live_a1.has_style(),
+        "set_cell explicit default StyleId post-noop edit should keep A1 formula unstyled");
+    check(sheet.cell_count() == 2,
+        "set_cell explicit default StyleId post-noop edit should keep sparse count stable");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 1, 2,
+        "set_cell explicit default StyleId post-noop edit should keep row bounds");
+    check(sheet.has_pending_changes(),
+        "set_cell explicit default StyleId post-noop edit should dirty the materialized sheet");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_cell explicit default StyleId post-noop edit should not record a handoff before save");
+    check(editor.pending_materialized_cell_count() == 2,
+        "set_cell explicit default StyleId post-noop edit should expose dirty sparse count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", pending_count_after_save,
+        "set_cell explicit default StyleId post-noop edit dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell explicit default StyleId post-noop edit should keep diagnostics clear");
+
+    editor.save_as(post_noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell explicit default StyleId post-noop save should clean the materialized sheet");
+    check(editor.pending_change_count() == pending_count_after_save + 1,
+        "set_cell explicit default StyleId post-noop save should record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell explicit default StyleId post-noop save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell explicit default StyleId post-noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_cell explicit default StyleId post-noop save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell explicit default StyleId post-noop save should keep diagnostics clear");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell explicit default StyleId post-noop save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "set_cell explicit default StyleId post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "set_cell explicit default StyleId post-noop save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "set_cell explicit default StyleId post-noop save should leave the second no-op output unchanged");
+    check(post_noop_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "set_cell explicit default StyleId post-noop save should preserve source styles.xml bytes");
+
+    const std::string post_noop_worksheet_xml =
+        post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(post_noop_worksheet_xml, R"(<dimension ref="A1:B1"/>)",
+        "set_cell explicit default StyleId post-noop save should keep the projected dimension");
+    check_contains(post_noop_worksheet_xml, R"(<c r="A1"><f>B1</f></c>)",
+        "set_cell explicit default StyleId post-noop save should persist A1 formula without a style id");
+    check_contains(post_noop_worksheet_xml,
+        R"(<c r="B1" t="inlineStr"><is><t>default-style-tail</t></is></c>)",
+        "set_cell explicit default StyleId post-noop save should keep B1 unstyled");
+    check_not_contains(post_noop_worksheet_xml, R"(<c r="A1" s=")",
+        "set_cell explicit default StyleId post-noop save should not revive the old source style on A1");
+    check_not_contains(post_noop_worksheet_xml, R"(s="0")",
+        "set_cell explicit default StyleId post-noop save should not write default style ids");
+    check_not_contains(post_noop_worksheet_xml, "default-style-normalized",
+        "set_cell explicit default StyleId post-noop save should replace the earlier A1 text");
+
+    check_reopened_clean_sheet_output(
+        post_noop_output, "Styled",
+        "set_cell explicit default StyleId post-noop save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "set_cell explicit default StyleId post-noop reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "set_cell explicit default StyleId post-noop reopened output should keep bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                "set_cell explicit default StyleId post-noop reopened row_cells should expose row one");
+            if (row_one.size() == 2) {
+                check(row_one[0].reference.row == 1 &&
+                        row_one[0].reference.column == 1 &&
+                        row_one[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        row_one[0].value.text_value() == "B1" &&
+                        !row_one[0].value.has_style(),
+                    "set_cell explicit default StyleId post-noop reopened row_cells should expose unstyled A1 formula");
+                check_default_style_tail_projection(row_one[1],
+                    "set_cell explicit default StyleId post-noop reopened row_cells");
+            }
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_a1.text_value() == "B1" &&
+                    !reopened_a1.has_style(),
+                "set_cell explicit default StyleId post-noop reopened output should read A1 formula without a style handle");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "default-style-tail" &&
+                    !reopened_b1.has_style(),
+                "set_cell explicit default StyleId post-noop reopened output should keep B1 unstyled");
+        });
+}
+
+void test_public_worksheet_editor_set_cell_value_accepts_default_style_id_as_style_preserving_value_edit()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-default-style-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-default-style-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-default-style-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-value-default-style-second-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("value-only-default-tail"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("value-only-default-a2"),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const std::string source_worksheet_xml = source_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(source_worksheet_xml, R"(<c r="A1" s="1">)",
+        "set_cell_value explicit default StyleId source fixture should start with styled A1");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    sheet.set_cell_value(
+        "A1",
+        fastxlsx::CellValue::number(2.5).with_style(fastxlsx::StyleId {}));
+    sheet.set_cell_value(
+        1, 2, fastxlsx::CellValue::blank().with_style(fastxlsx::StyleId {}));
+    sheet.set_cell_value(
+        2, 3, fastxlsx::CellValue::formula("A1+B1").with_style(fastxlsx::StyleId {}));
+
+    const fastxlsx::CellValue live_a1 = sheet.get_cell("A1");
+    check(live_a1.kind() == fastxlsx::CellValueKind::Number &&
+            live_a1.number_value() == 2.5 &&
+            live_a1.has_style() &&
+            live_a1.style_id().value() == non_default_style.value(),
+        "set_cell_value explicit default StyleId should preserve source style on A1");
+    const fastxlsx::CellValue live_b1 = sheet.get_cell("B1");
+    check(live_b1.kind() == fastxlsx::CellValueKind::Blank &&
+            !live_b1.has_style(),
+        "set_cell_value explicit default StyleId should keep unstyled B1 blank unstyled");
+    const fastxlsx::CellValue live_a2 = sheet.get_cell("A2");
+    check(live_a2.kind() == fastxlsx::CellValueKind::Text &&
+            live_a2.text_value() == "value-only-default-a2" &&
+            !live_a2.has_style(),
+        "set_cell_value explicit default StyleId should keep untouched A2 unstyled");
+    const fastxlsx::CellValue live_c2 = sheet.get_cell("C2");
+    check(live_c2.kind() == fastxlsx::CellValueKind::Formula &&
+            live_c2.text_value() == "A1+B1" &&
+            !live_c2.has_style(),
+        "set_cell_value explicit default StyleId should insert missing C2 without a style");
+
+    const auto check_value_default_a1_snapshot =
+        [non_default_style](
+            const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Number &&
+                    snapshot.value.number_value() == 2.5 &&
+                    snapshot.value.has_style() &&
+                    snapshot.value.style_id().value() == non_default_style.value(),
+                prefix + " should preserve source-styled A1");
+        };
+    const auto check_value_default_b1_snapshot =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 1 &&
+                    snapshot.reference.column == 2 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Blank &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled B1 blank");
+        };
+    const auto check_value_default_a2_snapshot =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 1 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Text &&
+                    snapshot.value.text_value() == "value-only-default-a2" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled A2 text");
+        };
+    const auto check_value_default_c2_snapshot =
+        [](const fastxlsx::WorksheetCellSnapshot& snapshot, std::string_view scenario) {
+            const std::string prefix(scenario);
+            check(snapshot.reference.row == 2 &&
+                    snapshot.reference.column == 3 &&
+                    snapshot.value.kind() == fastxlsx::CellValueKind::Formula &&
+                    snapshot.value.text_value() == "A1+B1" &&
+                    !snapshot.value.has_style(),
+                prefix + " should expose unstyled C2 formula");
+        };
+
+    check(sheet.contains_cell("A1") && sheet.contains_cell("B1") &&
+            sheet.contains_cell("A2") && sheet.contains_cell("C2"),
+        "set_cell_value explicit default StyleId should keep represented cells queryable");
+    check(!sheet.contains_cell("B2") && !sheet.contains_cell("D4"),
+        "set_cell_value explicit default StyleId should keep unrelated missing cells absent");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_row_one =
+        sheet.row_cells(1);
+    check(live_row_one.size() == 2,
+        "set_cell_value explicit default StyleId row_cells should expose row one");
+    if (live_row_one.size() == 2) {
+        check_value_default_a1_snapshot(live_row_one[0],
+            "set_cell_value explicit default StyleId row_cells");
+        check_value_default_b1_snapshot(live_row_one[1],
+            "set_cell_value explicit default StyleId row_cells");
+    }
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_row_two =
+        sheet.row_cells(2);
+    check(live_row_two.size() == 2,
+        "set_cell_value explicit default StyleId row_cells should expose sparse row two");
+    if (live_row_two.size() == 2) {
+        check_value_default_a2_snapshot(live_row_two[0],
+            "set_cell_value explicit default StyleId row_cells");
+        check_value_default_c2_snapshot(live_row_two[1],
+            "set_cell_value explicit default StyleId row_cells");
+    }
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_column_one =
+        sheet.column_cells(1);
+    check(live_column_one.size() == 2,
+        "set_cell_value explicit default StyleId column_cells should expose column one");
+    if (live_column_one.size() == 2) {
+        check_value_default_a1_snapshot(live_column_one[0],
+            "set_cell_value explicit default StyleId column_cells");
+        check_value_default_a2_snapshot(live_column_one[1],
+            "set_cell_value explicit default StyleId column_cells");
+    }
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_column_two =
+        sheet.column_cells(2);
+    check(live_column_two.size() == 1,
+        "set_cell_value explicit default StyleId column_cells should expose B1 only");
+    if (live_column_two.size() == 1) {
+        check_value_default_b1_snapshot(live_column_two[0],
+            "set_cell_value explicit default StyleId column_cells");
+    }
+    const std::vector<fastxlsx::WorksheetCellSnapshot> live_column_three =
+        sheet.column_cells(3);
+    check(live_column_three.size() == 1,
+        "set_cell_value explicit default StyleId column_cells should expose C2 only");
+    if (live_column_three.size() == 1) {
+        check_value_default_c2_snapshot(live_column_three[0],
+            "set_cell_value explicit default StyleId column_cells");
+    }
+    check(sheet.row_cells(3).empty() && sheet.column_cells(4).empty(),
+        "set_cell_value explicit default StyleId sparse views should keep gaps empty");
+    check(sheet.cell_count() == 4,
+        "set_cell_value explicit default StyleId should keep source plus inserted sparse count");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 3,
+        "set_cell_value explicit default StyleId should extend bounds to C2");
+    check(sheet.has_pending_changes(),
+        "set_cell_value explicit default StyleId should dirty the materialized worksheet");
+    check(editor.pending_materialized_cell_count() == 4,
+        "set_cell_value explicit default StyleId should expose aggregate materialized count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "set_cell_value explicit default StyleId dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell_value explicit default StyleId should keep diagnostics clear");
+
+    const auto inspect_default_style_value_only_output =
+        [non_default_style, check_value_default_a1_snapshot,
+            check_value_default_b1_snapshot, check_value_default_a2_snapshot,
+            check_value_default_c2_snapshot](
+            fastxlsx::WorksheetEditor& reopened_sheet,
+            std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 4,
+                prefix + " reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                prefix + " reopened output should keep bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 2.5 &&
+                    reopened_a1.has_style() &&
+                    reopened_a1.style_id().value() == non_default_style.value(),
+                prefix + " reopened output should preserve source style on A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Blank &&
+                    !reopened_b1.has_style(),
+                prefix + " reopened output should keep B1 blank unstyled");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "value-only-default-a2" &&
+                    !reopened_a2.has_style(),
+                prefix + " reopened output should keep A2 unstyled");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c2.text_value() == "A1+B1" &&
+                    !reopened_c2.has_style(),
+                prefix + " reopened output should keep inserted C2 unstyled");
+            check(reopened_sheet.contains_cell("A1") &&
+                    reopened_sheet.contains_cell("B1") &&
+                    reopened_sheet.contains_cell("A2") &&
+                    reopened_sheet.contains_cell("C2"),
+                prefix + " reopened output should keep represented cells queryable");
+            check(!reopened_sheet.contains_cell("B2") &&
+                    !reopened_sheet.contains_cell("D4"),
+                prefix + " reopened output should keep unrelated missing cells absent");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 2,
+                prefix + " reopened row_cells should expose row one");
+            if (row_one.size() == 2) {
+                check_value_default_a1_snapshot(row_one[0],
+                    prefix + " reopened row_cells");
+                check_value_default_b1_snapshot(row_one[1],
+                    prefix + " reopened row_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                reopened_sheet.row_cells(2);
+            check(row_two.size() == 2,
+                prefix + " reopened row_cells should expose sparse row two");
+            if (row_two.size() == 2) {
+                check_value_default_a2_snapshot(row_two[0],
+                    prefix + " reopened row_cells");
+                check_value_default_c2_snapshot(row_two[1],
+                    prefix + " reopened row_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                reopened_sheet.column_cells(1);
+            check(column_one.size() == 2,
+                prefix + " reopened column_cells should expose column one");
+            if (column_one.size() == 2) {
+                check_value_default_a1_snapshot(column_one[0],
+                    prefix + " reopened column_cells");
+                check_value_default_a2_snapshot(column_one[1],
+                    prefix + " reopened column_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                reopened_sheet.column_cells(2);
+            check(column_two.size() == 1,
+                prefix + " reopened column_cells should expose B1 only");
+            if (column_two.size() == 1) {
+                check_value_default_b1_snapshot(column_two[0],
+                    prefix + " reopened column_cells");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                reopened_sheet.column_cells(3);
+            check(column_three.size() == 1,
+                prefix + " reopened column_cells should expose C2 only");
+            if (column_three.size() == 1) {
+                check_value_default_c2_snapshot(column_three[0],
+                    prefix + " reopened column_cells");
+            }
+            check(reopened_sheet.row_cells(3).empty() &&
+                    reopened_sheet.column_cells(4).empty(),
+                prefix + " reopened sparse views should keep gaps empty");
+        };
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "set_cell_value explicit default StyleId save should clean the materialized worksheet");
+    check(editor.pending_change_count() == 1,
+        "set_cell_value explicit default StyleId save should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell_value explicit default StyleId save should clear dirty diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell_value explicit default StyleId save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_cell_value explicit default StyleId save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell_value explicit default StyleId save should keep diagnostics clear");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_value explicit default StyleId save should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "set_cell_value explicit default StyleId save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string styled_a1 =
+        R"(<c r="A1" s=")" + std::to_string(non_default_style.value()) + R"("><v>2.5</v></c>)";
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C2"/>)",
+        "set_cell_value explicit default StyleId should project extended bounds");
+    check_contains(worksheet_xml, styled_a1,
+        "set_cell_value explicit default StyleId should persist source-styled A1");
+    check_contains(worksheet_xml, R"(<c r="B1"/>)",
+        "set_cell_value explicit default StyleId should persist B1 blank without style");
+    check_contains(worksheet_xml, "value-only-default-a2",
+        "set_cell_value explicit default StyleId should keep untouched A2 text");
+    check_contains(worksheet_xml, R"(<c r="C2"><f>A1+B1</f></c>)",
+        "set_cell_value explicit default StyleId should persist C2 formula without style");
+    check_not_contains(worksheet_xml, R"(<c r="B1" s=")",
+        "set_cell_value explicit default StyleId should not write a style id on B1");
+    check_not_contains(worksheet_xml, R"(<c r="C2" s=")",
+        "set_cell_value explicit default StyleId should not write a style id on C2");
+    check_not_contains(worksheet_xml, R"(s="0")",
+        "set_cell_value explicit default StyleId should not write default style ids");
+    check_reopened_clean_sheet_output(
+        output, "Styled", "set_cell_value explicit default StyleId",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_default_style_value_only_output(
+                reopened_sheet, "set_cell_value explicit default StyleId");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell_value explicit default StyleId no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_cell_value explicit default StyleId no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell_value explicit default StyleId no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell_value explicit default StyleId no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_cell_value explicit default StyleId no-op save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell_value explicit default StyleId no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "set_cell_value explicit default StyleId no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "set_cell_value explicit default StyleId no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "set_cell_value explicit default StyleId no-op output should match materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_value explicit default StyleId no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "set_cell_value explicit default StyleId no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_default_style_value_only_output(
+                reopened_sheet, "set_cell_value explicit default StyleId no-op save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "set_cell_value explicit default StyleId second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "set_cell_value explicit default StyleId second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "set_cell_value explicit default StyleId second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "set_cell_value explicit default StyleId second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "set_cell_value explicit default StyleId second no-op save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "set_cell_value explicit default StyleId second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "set_cell_value explicit default StyleId second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "set_cell_value explicit default StyleId second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "set_cell_value explicit default StyleId second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "set_cell_value explicit default StyleId second no-op save should leave the materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "set_cell_value explicit default StyleId second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "set_cell_value explicit default StyleId second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Styled",
+        "set_cell_value explicit default StyleId second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_default_style_value_only_output(
+                reopened_sheet,
+                "set_cell_value explicit default StyleId second no-op save");
+        });
+}
+
 } // namespace
 
 int main()
 {
     try {
         test_public_worksheet_editor_set_cell_replacement_drops_source_style();
+        test_public_worksheet_editor_set_cell_accepts_default_style_id_as_unstyled();
+        test_public_worksheet_editor_set_cell_value_accepts_default_style_id_as_style_preserving_value_edit();
         std::cout << "WorkbookEditor public-state set cell tests passed\n";
         return 0;
     } catch (const std::exception& error) {

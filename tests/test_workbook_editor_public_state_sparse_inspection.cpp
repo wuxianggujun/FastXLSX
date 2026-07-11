@@ -3,6 +3,7 @@
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook_editor.hpp>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -536,6 +537,250 @@ void test_row_and_column_cells_snapshot()
         noop_output, second_noop_output, std::nullopt, "row/column snapshots", inspect);
 }
 
+void check_source_projection(fastxlsx::WorksheetEditor& sheet, std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    const auto cells = sheet.sparse_cells();
+    check(sheet.cell_count() == 3 && cells.size() == 3
+            && cells[0].reference.row == 1 && cells[0].reference.column == 1
+            && cells[0].value.kind() == fastxlsx::CellValueKind::Text
+            && cells[0].value.text_value() == "placeholder-a1"
+            && cells[1].reference.row == 1 && cells[1].reference.column == 2
+            && cells[1].value.kind() == fastxlsx::CellValueKind::Number
+            && cells[1].value.number_value() == 1.0
+            && cells[2].reference.row == 2 && cells[2].reference.column == 1
+            && cells[2].value.kind() == fastxlsx::CellValueKind::Text
+            && cells[2].value.text_value() == "placeholder-a2",
+        prefix + " should retain source sparse ordering and values");
+    const auto row_one = sheet.row_cells(1);
+    const auto column_one = sheet.column_cells(1);
+    check(row_one.size() == 2
+            && row_one[0].value.text_value() == "placeholder-a1"
+            && row_one[1].value.number_value() == 1.0,
+        prefix + " should retain row-one snapshots");
+    check(column_one.size() == 2
+            && column_one[0].value.text_value() == "placeholder-a1"
+            && column_one[1].value.text_value() == "placeholder-a2",
+        prefix + " should retain column-one snapshots");
+    check_bounds(sheet, 1, 1, 2, 2, scenario);
+    check(!sheet.contains_cell("C3") && !sheet.try_cell("C3").has_value(),
+        prefix + " should keep missing C3 absent");
+}
+
+void check_clean_no_pending_state(const fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditor& sheet,
+    const std::optional<std::string>& expected_error,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    check(!editor.has_pending_changes() && !editor.has_unsaved_changes()
+            && editor.unsaved_change_count() == 0
+            && editor.pending_change_count() == 0
+            && !sheet.has_pending_changes(),
+        prefix + " should remain clean with no handoff");
+    check(editor.pending_materialized_worksheet_names().empty()
+            && editor.pending_materialized_cell_count() == 0
+            && editor.estimated_pending_materialized_memory_usage() == 0
+            && editor.pending_worksheet_edits().empty()
+            && editor.pending_replacement_cell_count() == 0
+            && editor.pending_targeted_cell_replacement_count() == 0,
+        prefix + " should expose no pending diagnostics");
+    check(editor.last_edit_error() == expected_error,
+        prefix + " should preserve expected last_edit_error");
+}
+
+void test_row_and_column_invalid_reads_preserve_diagnostics()
+{
+    const std::filesystem::path source = write_source(
+        "fastxlsx-workbook-editor-public-row-column-cells-invalid-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-row-column-cells-invalid-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-row-column-cells-invalid-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(throws_fastxlsx_error([&] {
+        sheet.set_cell(0, 1,
+            fastxlsx::CellValue::text("invalid-row-column-read-sentinel"));
+    }), "invalid mutation should seed row/column read diagnostic");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid mutation should record row/column read diagnostic");
+    const EditorPublicStateSnapshot before_reads = snapshot(editor);
+    const auto check_invalid_read = [&](auto&& action, std::string_view scenario) {
+        check(throws_fastxlsx_error(action),
+            std::string(scenario) + " should reject invalid coordinate");
+        check_snapshot_preserved(editor, before_reads, scenario);
+        check_clean_no_pending_state(editor, sheet, prior_error, scenario);
+        check(sheet.cell_count() == 3
+                && sheet.estimated_memory_usage() == baseline_memory,
+            std::string(scenario) + " should preserve sparse state");
+    };
+    check_invalid_read([&] { (void)sheet.row_cells(0); }, "row_cells row zero");
+    check_invalid_read([&] { (void)sheet.row_cells(1048577); },
+        "row_cells row overflow");
+    check_invalid_read([&] { (void)sheet.column_cells(0); },
+        "column_cells column zero");
+    check_invalid_read([&] { (void)sheet.column_cells(16385); },
+        "column_cells column overflow");
+    check(sheet.row_cells(10).empty() && sheet.column_cells(10).empty(),
+        "valid missing row and column reads should return empty snapshots");
+    check_snapshot_preserved(editor, before_reads,
+        "valid missing row and column reads");
+    check_source_projection(sheet, "row/column invalid reads live session");
+
+    const EditorPublicStateSnapshot before_save = snapshot(editor);
+    editor.save_as(output);
+    check_snapshot_preserved(editor, before_save,
+        "row/column invalid reads first no-op save");
+    check_clean_no_pending_state(editor, sheet, prior_error,
+        "row/column invalid reads first saved session");
+    check_source_projection(sheet, "row/column invalid reads first saved session");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries,
+        "row/column invalid reads first output should copy source entries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column invalid reads first save should preserve source package");
+    check_reopened_output(output, "row/column invalid reads first reopen",
+        [](fastxlsx::WorksheetEditor& reopened) {
+            check_source_projection(reopened, "row/column invalid reads reopened source");
+        });
+
+    const EditorPublicStateSnapshot before_second_save = snapshot(editor);
+    editor.save_as(noop_output);
+    check_snapshot_preserved(editor, before_second_save,
+        "row/column invalid reads second no-op save");
+    check_clean_no_pending_state(editor, sheet, prior_error,
+        "row/column invalid reads second saved session");
+    check_source_projection(sheet, "row/column invalid reads second saved session");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries
+            && fastxlsx::test::read_zip_entries(output) == output_entries
+            && fastxlsx::test::read_zip_entries(source) == source_entries,
+        "row/column invalid reads second save should preserve all files");
+    check_reopened_output(noop_output, "row/column invalid reads second reopen",
+        [](fastxlsx::WorksheetEditor& reopened) {
+            check_source_projection(reopened, "row/column invalid reads second reopened source");
+        });
+}
+
+void check_source_range_projections(
+    fastxlsx::WorksheetEditor& sheet, std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    const auto check_three = [&](const auto& cells, std::string_view view) {
+        check(cells.size() == 3
+                && cells[0].reference.row == 1 && cells[0].reference.column == 1
+                && cells[0].value.text_value() == "placeholder-a1"
+                && cells[1].reference.row == 1 && cells[1].reference.column == 2
+                && cells[1].value.number_value() == 1.0
+                && cells[2].reference.row == 2 && cells[2].reference.column == 1
+                && cells[2].value.text_value() == "placeholder-a2",
+            prefix + " " + std::string(view) + " should retain source cells");
+    };
+    check_three(sheet.sparse_cells(), "full snapshot");
+    check_three(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}),
+        "CellRange snapshot");
+    check_three(sheet.sparse_cells("A1:B2"), "A1 range snapshot");
+    const std::array<fastxlsx::WorksheetCellReference, 4> requested {
+        fastxlsx::WorksheetCellReference {1, 1},
+        fastxlsx::WorksheetCellReference {1, 2},
+        fastxlsx::WorksheetCellReference {2, 1},
+        fastxlsx::WorksheetCellReference {3, 3}};
+    check_three(sheet.sparse_cells(requested), "requested snapshot");
+    check_three(sheet.sparse_cells({{1, 1}, {1, 2}, {2, 1}, {3, 3}}),
+        "initializer snapshot");
+    check(sheet.sparse_cells(fastxlsx::CellRange {3, 3, 4, 4}).empty()
+            && sheet.sparse_cells("C3:D4").empty(),
+        prefix + " should keep missing ranges empty");
+}
+
+void test_sparse_cells_invalid_ranges_preserve_diagnostics()
+{
+    const std::filesystem::path source = write_source(
+        "fastxlsx-workbook-editor-public-sparse-range-error-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-sparse-range-error-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-sparse-range-error-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(throws_fastxlsx_error([&] {
+        sheet.set_cell(0, 1, fastxlsx::CellValue::text("invalid-range-sentinel"));
+    }), "invalid mutation should seed sparse-range diagnostic");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "invalid mutation should record sparse-range diagnostic");
+    if (prior_error.has_value()) {
+        check_contains(*prior_error, "WorksheetEditor cell coordinate is invalid",
+            "sparse-range prior diagnostic should identify invalid coordinate");
+    }
+    const EditorPublicStateSnapshot before_reads = snapshot(editor);
+    const std::array<fastxlsx::CellRange, 4> invalid_ranges {
+        fastxlsx::CellRange {2, 1, 1, 2},
+        fastxlsx::CellRange {0, 1, 1, 1},
+        fastxlsx::CellRange {1, 1, 1048577, 1},
+        fastxlsx::CellRange {1, 1, 1, 16385}};
+    for (const fastxlsx::CellRange invalid : invalid_ranges) {
+        check(throws_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid); }),
+            "invalid CellRange snapshot should throw");
+        check_snapshot_preserved(editor, before_reads,
+            "invalid CellRange snapshot");
+    }
+    const std::array<std::string_view, 6> invalid_references {
+        "a1:B2", "A1:B2:C3", "B2:A1", "A:C", "$A$1:$B$2", "Data!A1:B2"};
+    for (const std::string_view invalid : invalid_references) {
+        check(throws_fastxlsx_error([&] { (void)sheet.sparse_cells(invalid); }),
+            "invalid A1 range snapshot should throw");
+        check_snapshot_preserved(editor, before_reads,
+            "invalid A1 range snapshot");
+    }
+    check_clean_no_pending_state(editor, sheet, prior_error,
+        "invalid sparse-range reads");
+    check(sheet.cell_count() == 3 && sheet.estimated_memory_usage() == baseline_memory,
+        "invalid sparse-range reads should preserve sparse state");
+    check_source_range_projections(sheet, "valid reads after invalid sparse ranges");
+    check_snapshot_preserved(editor, before_reads,
+        "valid reads after invalid sparse ranges");
+
+    const EditorPublicStateSnapshot before_save = snapshot(editor);
+    editor.save_as(output);
+    check_snapshot_preserved(editor, before_save,
+        "invalid sparse ranges first no-op save");
+    check_clean_no_pending_state(editor, sheet, prior_error,
+        "invalid sparse ranges first saved session");
+    check_source_range_projections(sheet, "invalid sparse ranges first saved session");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries == source_entries
+            && fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid sparse ranges first save should copy and preserve source");
+    check_reopened_output(output, "invalid sparse ranges first reopen",
+        [](fastxlsx::WorksheetEditor& reopened) {
+            check_source_projection(reopened, "invalid sparse ranges reopened source");
+            check_source_range_projections(reopened, "invalid sparse ranges reopened ranges");
+        });
+
+    const EditorPublicStateSnapshot before_second_save = snapshot(editor);
+    editor.save_as(noop_output);
+    check_snapshot_preserved(editor, before_second_save,
+        "invalid sparse ranges second no-op save");
+    check_clean_no_pending_state(editor, sheet, prior_error,
+        "invalid sparse ranges second saved session");
+    check_source_range_projections(sheet, "invalid sparse ranges second saved session");
+    check(fastxlsx::test::read_zip_entries(noop_output) == output_entries
+            && fastxlsx::test::read_zip_entries(output) == output_entries
+            && fastxlsx::test::read_zip_entries(source) == source_entries,
+        "invalid sparse ranges second save should preserve all files");
+    check_reopened_output(noop_output, "invalid sparse ranges second reopen",
+        [](fastxlsx::WorksheetEditor& reopened) {
+            check_source_range_projections(reopened,
+                "invalid sparse ranges second reopened ranges");
+        });
+}
+
 } // namespace
 
 int main()
@@ -544,6 +789,8 @@ int main()
         test_used_range_tracks_sparse_bounds();
         test_contains_cell_tracks_represented_state();
         test_row_and_column_cells_snapshot();
+        test_row_and_column_invalid_reads_preserve_diagnostics();
+        test_sparse_cells_invalid_ranges_preserve_diagnostics();
         std::cout << "WorkbookEditor public-state sparse inspection tests passed\n";
         return 0;
     } catch (const std::exception& error) {

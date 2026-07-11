@@ -1080,6 +1080,68 @@ public:
         std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Moves represented source values while preserving source and destination styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Represented
+    /// source coordinates are first replaced with explicit blank values while
+    /// retaining their workbook-local StyleId handles, matching
+    /// clear_cell_value(). Their pre-edit values are then overlaid onto the
+    /// target footprint, so an overlapping target can replace a source blank;
+    /// existing mapped
+    /// targets retain their pre-edit StyleId and missing targets are inserted
+    /// unstyled. Source gaps preserve target records. Overlap reads source
+    /// values and both style sets from a stable pre-edit snapshot.
+    ///
+    /// Formula text is translated by the source-to-target coordinate delta.
+    /// Bounds and CellStore guardrails are validated on a candidate store before
+    /// active state is swapped, so failure publishes neither source clearing nor
+    /// destination writes. Moving to the source top-left or moving an empty
+    /// sparse range is a clean no-op.
+    ///
+    /// This is sparse value movement, not full cut/paste. It does not move style
+    /// handles, erase source records, update worksheet metadata or linked
+    /// objects, migrate sharedStrings/styles, evaluate formulas, or rebuild
+    /// calcChain.
+    void move_cell_values(CellRange source, WorksheetCellReference destination);
+
+    /// Moves represented values using strict uppercase A1 references.
+    ///
+    /// Parsing, explicit source blanks, source/destination style preservation,
+    /// formula translation, overlap snapshots, guardrails, diagnostics, and
+    /// non-goals match the CellRange overload.
+    void move_cell_values(std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
+    /// Moves represented values from another materialized worksheet.
+    ///
+    /// This editor is the destination. Both borrowed handles must belong to the
+    /// same current WorkbookEditor and both worksheets must be materialized.
+    /// Source records become explicit blanks with their source StyleId retained;
+    /// destination values receive translated payloads while retaining existing
+    /// destination StyleId handles. Missing mapped targets are inserted
+    /// unstyled and source gaps preserve destination records.
+    ///
+    /// Source and destination CellStore candidates are fully validated before
+    /// noexcept swaps publish either side. A guardrail, owner, session, bounds,
+    /// or formula-translation failure preserves both active sessions apart from
+    /// last_edit_error(). An effective move dirties both sessions and failed
+    /// save_as() retains both sides for retry.
+    ///
+    /// This is same-workbook value-only movement, not cross-workbook transfer,
+    /// worksheet relocation, style-table migration, metadata cut/paste, formula
+    /// evaluation, or calcChain rebuild.
+    void move_cell_values_from(WorksheetEditor& source_sheet,
+        CellRange source, WorksheetCellReference destination);
+
+    /// Moves values from another worksheet using strict uppercase A1 references.
+    ///
+    /// Parsing, same-owner validation, explicit source blanks, style ownership,
+    /// dual-candidate publication, save retry, and non-goals match the CellRange
+    /// overload.
+    void move_cell_values_from(WorksheetEditor& source_sheet,
+        std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Moves represented sparse cells to another location in this worksheet.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. `source` is

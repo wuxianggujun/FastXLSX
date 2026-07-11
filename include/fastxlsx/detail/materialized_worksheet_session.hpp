@@ -435,6 +435,21 @@ public:
         dirty_ = true;
     }
 
+    void move_cell_values(const CellRange& source, CellPosition destination)
+    {
+        move_cell_values_from(*this, source, destination);
+    }
+
+    void move_cell_values_from(MaterializedWorksheetSession& source_session,
+        const CellRange& source, CellPosition destination)
+    {
+        if (&source_session == this) {
+            move_cell_values_within_session(source, destination);
+            return;
+        }
+        move_cell_values_between_sessions(source_session, source, destination);
+    }
+
     void move_cells(const CellRange& source, CellPosition destination)
     {
         transfer_cells(*this, source, destination, true, "move_cells");
@@ -717,6 +732,144 @@ private:
             return false;
         }
         return !left.has_value() || left->value() == right->value();
+    }
+
+    static void validate_value_move(
+        const CellRange& source, CellPosition destination, std::string_view operation)
+    {
+        if (source.first_row == 0 || source.first_column == 0
+            || source.first_row > source.last_row
+            || source.first_column > source.last_column
+            || source.last_row > max_excel_rows
+            || source.last_column > max_excel_columns) {
+            throw FastXlsxError(std::string(operation) + " requires a valid source range");
+        }
+        if (destination.row == 0 || destination.row > max_excel_rows
+            || destination.column == 0 || destination.column > max_excel_columns) {
+            throw FastXlsxError(std::string(operation) + " requires a valid destination cell");
+        }
+
+        const std::uint32_t row_span = source.last_row - source.first_row;
+        const std::uint32_t column_span = source.last_column - source.first_column;
+        if (destination.row > max_excel_rows - row_span
+            || destination.column > max_excel_columns - column_span) {
+            throw FastXlsxError(
+                std::string(operation) + " destination range exceeds Excel limits");
+        }
+    }
+
+    struct ValueMoveRecord {
+        CellPosition source;
+        CellPosition destination;
+        CellRecord source_blank;
+        CellRecord destination_value;
+    };
+
+    [[nodiscard]] static std::vector<ValueMoveRecord> plan_value_move(
+        const CellStore& source_store, const CellStore& destination_store,
+        const CellRange& source, CellPosition destination)
+    {
+        const FormulaTranslationDelta delta {
+            static_cast<std::int64_t>(destination.row)
+                - static_cast<std::int64_t>(source.first_row),
+            static_cast<std::int64_t>(destination.column)
+                - static_cast<std::int64_t>(source.first_column),
+        };
+        std::vector<ValueMoveRecord> records;
+        for (const auto& [position, record] : source_store.records()) {
+            if (position.row < source.first_row || position.row > source.last_row
+                || position.column < source.first_column
+                || position.column > source.last_column) {
+                continue;
+            }
+
+            const CellPosition destination_position {
+                destination.row + (position.row - source.first_row),
+                destination.column + (position.column - source.first_column),
+            };
+            CellRecord source_blank = CellRecord::from_value(CellValue::blank());
+            source_blank.style_id = record.style_id;
+
+            CellRecord destination_value = record;
+            if (record.kind == CellValueKind::Formula) {
+                destination_value.text_value =
+                    translate_formula_references(record.text_value, delta);
+            }
+            destination_value.style_id.reset();
+            const CellRecord* destination_record = destination_store.try_cell(
+                destination_position.row, destination_position.column);
+            if (destination_record != nullptr && destination_record->style_id.has_value()) {
+                destination_value.style_id = destination_record->style_id;
+            }
+            records.push_back(ValueMoveRecord {position, destination_position,
+                std::move(source_blank), std::move(destination_value)});
+        }
+        return records;
+    }
+
+    void move_cell_values_within_session(
+        const CellRange& source, CellPosition destination)
+    {
+        constexpr std::string_view operation =
+            "MaterializedWorksheetSession::move_cell_values()";
+        validate_value_move(source, destination, operation);
+        if (destination.row == source.first_row
+            && destination.column == source.first_column) {
+            return;
+        }
+
+        std::vector<ValueMoveRecord> records =
+            plan_value_move(store_, store_, source, destination);
+        if (records.empty()) {
+            return;
+        }
+
+        std::map<CellPosition, CellRecord> next_records = store_.records();
+        for (ValueMoveRecord& record : records) {
+            next_records[record.source] = std::move(record.source_blank);
+        }
+        for (ValueMoveRecord& record : records) {
+            next_records[record.destination] = std::move(record.destination_value);
+        }
+
+        CellStore next_store(store_.options());
+        next_store.replace_records(std::move(next_records));
+        store_.swap(next_store);
+        dirty_ = true;
+    }
+
+    void move_cell_values_between_sessions(
+        MaterializedWorksheetSession& source_session,
+        const CellRange& source, CellPosition destination)
+    {
+        constexpr std::string_view operation =
+            "MaterializedWorksheetSession::move_cell_values_from()";
+        validate_value_move(source, destination, operation);
+
+        std::vector<ValueMoveRecord> records =
+            plan_value_move(source_session.store_, store_, source, destination);
+        if (records.empty()) {
+            return;
+        }
+
+        std::map<CellPosition, CellRecord> next_source_records =
+            source_session.store_.records();
+        std::map<CellPosition, CellRecord> next_destination_records = store_.records();
+        for (ValueMoveRecord& record : records) {
+            next_source_records[record.source] = std::move(record.source_blank);
+            next_destination_records[record.destination] =
+                std::move(record.destination_value);
+        }
+
+        CellStore next_source_store(source_session.store_.options());
+        next_source_store.replace_records(std::move(next_source_records));
+        CellStore next_destination_store(store_.options());
+        next_destination_store.replace_records(std::move(next_destination_records));
+
+        source_session.store_.swap(next_source_store);
+        store_.swap(next_destination_store);
+        source_session.dirty_ = true;
+        dirty_ = true;
     }
 
     void move_cells_between_sessions(MaterializedWorksheetSession& source_session,

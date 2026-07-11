@@ -78,7 +78,8 @@ CopyCellsSource write_cross_sheet_copy_source(std::string_view name)
     fastxlsx::WorksheetWriter destination_sheet = writer.add_worksheet("Destination");
     destination_sheet.append_row({fastxlsx::CellView::text("destination-a1")});
     destination_sheet.append_row({fastxlsx::CellView::text("destination-a2"),
-        fastxlsx::CellView::text("old-b2"), fastxlsx::CellView::text("old-c2")});
+        fastxlsx::CellView::text("old-b2").with_style(source.formula_style),
+        fastxlsx::CellView::text("old-c2")});
     destination_sheet.append_row({fastxlsx::CellView::text("destination-a3"),
         fastxlsx::CellView::text("old-b3"), fastxlsx::CellView::text("gap-c3")});
 
@@ -332,6 +333,161 @@ void test_cross_sheet_copy_live_source_and_failures()
         "different-owner copy rejection should preserve destination cell state");
 }
 
+void test_value_only_copy_preserves_destination_styles()
+{
+    const CopyCellsSource source = write_copy_cells_source(
+        "fastxlsx-workbook-editor-copy-cell-values-source.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t source_cell_count = sheet.cell_count();
+
+    sheet.copy_cell_style("B1", "D4");
+    sheet.copy_cell_values("A1", "D4");
+    const fastxlsx::CellValue styled_number = sheet.get_cell("D4");
+    check(styled_number.kind() == fastxlsx::CellValueKind::Number
+            && styled_number.number_value() == 10.0
+            && styled_number.has_style()
+            && styled_number.style_id().value() == source.formula_style.value(),
+        "copy_cell_values should replace the value while preserving target style");
+
+    sheet.copy_cell_values("B1", "C3");
+    const fastxlsx::CellValue inserted_formula = sheet.get_cell("C3");
+    check(inserted_formula.kind() == fastxlsx::CellValueKind::Formula
+            && inserted_formula.text_value() == "B3+$A$1+B$1+$A3"
+            && !inserted_formula.has_style(),
+        "copy_cell_values should translate formulas and insert missing targets unstyled");
+
+    sheet.copy_cell_values("A1:B1", "B1");
+    const fastxlsx::CellValue overlapping_number = sheet.get_cell("B1");
+    check(overlapping_number.kind() == fastxlsx::CellValueKind::Number
+            && overlapping_number.number_value() == 10.0
+            && overlapping_number.has_style()
+            && overlapping_number.style_id().value() == source.formula_style.value(),
+        "overlapping value-only copy should preserve the pre-edit target style");
+    const fastxlsx::CellValue overlapping_formula = sheet.get_cell("C1");
+    check(overlapping_formula.kind() == fastxlsx::CellValueKind::Formula
+            && overlapping_formula.text_value() == "B1+$A$1+B$1+$A1"
+            && !overlapping_formula.has_style(),
+        "overlapping value-only copy should read source formula snapshot and ignore source style");
+    check(sheet.cell_count() == source_cell_count + 2
+            && sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "effective same-sheet value-only copies should update sparse and dirty state");
+}
+
+void test_cross_sheet_value_only_copy_save_retry_and_reopen()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-value-copy-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-cross-sheet-value-copy-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditor destination_sheet = editor.worksheet("Destination");
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+
+    destination_sheet.copy_cell_values_from(source_sheet, "A1:B2", "B2");
+    check(!source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "cross-sheet value-only copy should leave source clean and dirty destination");
+    check(destination_sheet.cell_count() == destination_cell_count,
+        "cross-sheet value-only overlay should keep count when targets exist");
+    const fastxlsx::CellValue preserved_style_number = destination_sheet.get_cell("B2");
+    check(preserved_style_number.kind() == fastxlsx::CellValueKind::Number
+            && preserved_style_number.number_value() == 10.0
+            && preserved_style_number.has_style()
+            && preserved_style_number.style_id().value() == source.formula_style.value(),
+        "copy_cell_values_from should preserve an existing mapped target style");
+    const fastxlsx::CellValue unstyled_formula = destination_sheet.get_cell("C2");
+    check(unstyled_formula.kind() == fastxlsx::CellValueKind::Formula
+            && unstyled_formula.text_value() == "B2+$A$1+B$1+$A2"
+            && !unstyled_formula.has_style(),
+        "copy_cell_values_from should ignore source style and preserve unstyled target state");
+    check(destination_sheet.get_cell("B3").text_value() == "source-a2"
+            && destination_sheet.get_cell("C3").text_value() == "gap-c3",
+        "copy_cell_values_from should copy represented text and preserve source-gap target");
+
+    check(throws_fastxlsx_error(
+              [&] { editor.save_as(fastxlsx::test::artifact_dir()); }),
+        "cross-sheet value copy save to a directory should fail after staging");
+    check(!source_sheet.has_pending_changes()
+            && destination_sheet.has_pending_changes()
+            && editor.has_unsaved_changes(),
+        "failed value-only save should preserve source-clean and destination-dirty state");
+    check(destination_sheet.get_cell("B2").has_style()
+            && !destination_sheet.get_cell("C2").has_style(),
+        "failed value-only save should preserve destination style decisions");
+
+    editor.save_as(output);
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "successful value-only retry should clear destination dirty state");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "value-only save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "value-only copy should preserve source styles.xml bytes");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_destination = reopened.worksheet("Destination");
+    const fastxlsx::CellValue reopened_number = reopened_destination.get_cell("B2");
+    check(reopened_number.number_value() == 10.0
+            && reopened_number.has_style()
+            && reopened_number.style_id().value() == source.formula_style.value(),
+        "reopened value-only output should preserve target style and copied number");
+    const fastxlsx::CellValue reopened_formula = reopened_destination.get_cell("C2");
+    check(reopened_formula.text_value() == "B2+$A$1+B$1+$A2"
+            && !reopened_formula.has_style(),
+        "reopened value-only output should preserve translated formula without source style");
+}
+
+void test_cross_sheet_value_only_copy_failures_preserve_state()
+{
+    const CopyCellsSource source = write_cross_sheet_copy_source(
+        "fastxlsx-workbook-editor-cross-sheet-value-copy-guards.xlsx");
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Source");
+    fastxlsx::WorksheetEditorOptions destination_options;
+    destination_options.max_cells = 7;
+    fastxlsx::WorksheetEditor destination_sheet =
+        editor.worksheet("Destination", destination_options);
+    const std::size_t source_cell_count = source_sheet.cell_count();
+    const std::size_t destination_cell_count = destination_sheet.cell_count();
+
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.copy_cell_values_from(source_sheet, "A1:B2", "E5");
+    }), "copy_cell_values_from should enforce destination max_cells guardrail");
+    check(source_sheet.cell_count() == source_cell_count
+            && destination_sheet.cell_count() == destination_cell_count
+            && destination_sheet.get_cell("B2").text_value() == "old-b2"
+            && !destination_sheet.contains_cell("E5")
+            && !source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.has_unsaved_changes(),
+        "value-only guard failure should preserve both sessions and destination styles");
+
+    source_sheet.copy_cell_values("A1:B2", "A1");
+    destination_sheet.copy_cell_values_from(source_sheet, "D4:E5", "A1");
+    check(!source_sheet.has_pending_changes()
+            && !destination_sheet.has_pending_changes()
+            && !editor.last_edit_error().has_value(),
+        "same-location and empty-source value-only copies should be clean no-ops");
+
+    fastxlsx::WorkbookEditor other_editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor other_source = other_editor.worksheet("Source");
+    check(throws_fastxlsx_error([&] {
+        destination_sheet.copy_cell_values_from(other_source, "A1", "B2");
+    }), "copy_cell_values_from should reject another WorkbookEditor owner");
+    check(destination_sheet.get_cell("B2").text_value() == "old-b2"
+            && destination_sheet.get_cell("B2").has_style()
+            && !destination_sheet.has_pending_changes(),
+        "different-owner value-only rejection should preserve destination record");
+}
+
 void test_cross_sheet_move_dual_session_save_retry_and_reopen()
 {
     const CopyCellsSource source = write_cross_sheet_copy_source(
@@ -581,6 +737,9 @@ int main()
         test_copy_cells_failures_preserve_clean_state();
         test_cross_sheet_copy_sparse_overlay_save_retry_and_reopen();
         test_cross_sheet_copy_live_source_and_failures();
+        test_value_only_copy_preserves_destination_styles();
+        test_cross_sheet_value_only_copy_save_retry_and_reopen();
+        test_cross_sheet_value_only_copy_failures_preserve_state();
         test_cross_sheet_move_dual_session_save_retry_and_reopen();
         test_cross_sheet_move_failures_preserve_both_sessions();
         test_move_cells_sparse_transfer_save_retry_and_reopen();

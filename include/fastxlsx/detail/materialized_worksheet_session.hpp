@@ -353,6 +353,88 @@ public:
         transfer_cells(source_session, source, destination, false, "copy_cells_from");
     }
 
+    void copy_cell_values(const CellRange& source, CellPosition destination)
+    {
+        copy_cell_values_from(*this, source, destination);
+    }
+
+    void copy_cell_values_from(const MaterializedWorksheetSession& source_session,
+        const CellRange& source, CellPosition destination)
+    {
+        if (source.first_row == 0 || source.first_column == 0
+            || source.first_row > source.last_row
+            || source.first_column > source.last_column
+            || source.last_row > max_excel_rows
+            || source.last_column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_values_from() requires a valid source range");
+        }
+        if (destination.row == 0 || destination.row > max_excel_rows
+            || destination.column == 0 || destination.column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_values_from() requires a valid destination cell");
+        }
+
+        const std::uint32_t row_span = source.last_row - source.first_row;
+        const std::uint32_t column_span = source.last_column - source.first_column;
+        if (destination.row > max_excel_rows - row_span
+            || destination.column > max_excel_columns - column_span) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_values_from() destination range exceeds Excel limits");
+        }
+        if (&source_session == this && destination.row == source.first_row
+            && destination.column == source.first_column) {
+            return;
+        }
+
+        const FormulaTranslationDelta delta {
+            static_cast<std::int64_t>(destination.row)
+                - static_cast<std::int64_t>(source.first_row),
+            static_cast<std::int64_t>(destination.column)
+                - static_cast<std::int64_t>(source.first_column),
+        };
+        struct ValueTransfer {
+            CellPosition destination;
+            CellRecord record;
+        };
+        std::vector<ValueTransfer> transferred_records;
+        for (const auto& [position, record] : source_session.store_.records()) {
+            if (position.row < source.first_row || position.row > source.last_row
+                || position.column < source.first_column
+                || position.column > source.last_column) {
+                continue;
+            }
+
+            const CellPosition destination_position {
+                destination.row + (position.row - source.first_row),
+                destination.column + (position.column - source.first_column),
+            };
+            CellRecord transferred_record = record;
+            if (record.kind == CellValueKind::Formula) {
+                transferred_record.text_value =
+                    translate_formula_references(record.text_value, delta);
+            }
+            transferred_record.style_id.reset();
+            const CellRecord* destination_record =
+                store_.try_cell(destination_position.row, destination_position.column);
+            if (destination_record != nullptr && destination_record->style_id.has_value()) {
+                transferred_record.style_id = destination_record->style_id;
+            }
+            transferred_records.push_back(
+                ValueTransfer {destination_position, std::move(transferred_record)});
+        }
+        if (transferred_records.empty()) {
+            return;
+        }
+
+        std::map<CellPosition, CellRecord> next_records = store_.records();
+        for (ValueTransfer& transferred : transferred_records) {
+            next_records[transferred.destination] = std::move(transferred.record);
+        }
+        store_.replace_records(std::move(next_records));
+        dirty_ = true;
+    }
+
     void move_cells(const CellRange& source, CellPosition destination)
     {
         transfer_cells(*this, source, destination, true, "move_cells");

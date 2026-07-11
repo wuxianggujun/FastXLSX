@@ -1021,6 +1021,65 @@ public:
         std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Copies represented source values while preserving destination styles.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. `source` is
+    /// a 1-based inclusive range and `destination` names the top-left cell of a
+    /// same-sized target footprint in this worksheet. Only represented source
+    /// records participate; source gaps preserve target records. Existing mapped
+    /// targets keep their current workbook-local StyleId, while copied values at
+    /// missing target coordinates are inserted unstyled. Source styles are not
+    /// copied. Overlapping copies use stable pre-edit source values and target
+    /// styles.
+    ///
+    /// Formula text is translated by the source-to-destination row/column delta
+    /// using the same narrow A1 translator as copy_cells(); formulas are not
+    /// evaluated and cached values are not generated. Source/destination bounds,
+    /// target footprint, max_cells, and memory_budget_bytes are checked before
+    /// the active destination store is replaced. Failure preserves sparse and
+    /// dirty/save state apart from WorkbookEditor::last_edit_error().
+    ///
+    /// This is sparse value overlay, not full copy/paste. It does not copy style
+    /// handles or worksheet metadata, create missing source-gap cells, migrate
+    /// sharedStrings/styles, update linked objects, or rebuild calcChain.
+    void copy_cell_values(CellRange source, WorksheetCellReference destination);
+
+    /// Copies represented source values using strict uppercase A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the target top-left
+    /// cell. Sparse overlay, destination-style preservation, formula translation,
+    /// guardrails, diagnostics, and non-goals match the CellRange overload.
+    void copy_cell_values(std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
+    /// Copies represented values from another materialized worksheet.
+    ///
+    /// This editor is the destination. `source_sheet` and destination must be
+    /// valid borrowed handles owned by the same current WorkbookEditor state,
+    /// and both worksheets must already be materialized. The source's current
+    /// live sparse values are mapped to the destination while each represented
+    /// destination keeps its pre-edit StyleId; missing mapped targets are
+    /// inserted unstyled. The source session remains unchanged and only an
+    /// effective destination copy becomes dirty.
+    ///
+    /// Owner/session identity, bounds, target footprint, formula translation,
+    /// target guardrails, failure-before-state-change, and sparse source-gap
+    /// behavior match copy_cells_from(). Source StyleId handles are deliberately
+    /// ignored. This is not cross-workbook copy, style migration, worksheet
+    /// cloning, linked metadata copy, formula evaluation, or calcChain rebuild.
+    void copy_cell_values_from(const WorksheetEditor& source_sheet,
+        CellRange source, WorksheetCellReference destination);
+
+    /// Copies values from another materialized worksheet using A1 references.
+    ///
+    /// Parsing, same-owner validation, live source snapshot, destination-style
+    /// preservation, formula translation, target guardrails, diagnostics, and
+    /// non-goals match the CellRange overload.
+    void copy_cell_values_from(const WorksheetEditor& source_sheet,
+        std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Moves represented sparse cells to another location in this worksheet.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. `source` is

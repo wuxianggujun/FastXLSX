@@ -4872,6 +4872,13 @@ package_editor_chunk_part_replacement_staged_hook() noexcept
     return hook;
 }
 
+PackageEditorWorksheetPartReplacementStagedHook&
+package_editor_worksheet_part_replacement_staged_hook() noexcept
+{
+    static PackageEditorWorksheetPartReplacementStagedHook hook = nullptr;
+    return hook;
+}
+
 void run_package_editor_source_copy_temp_files_hook(
     std::span<const std::filesystem::path> temporary_source_files)
 {
@@ -4919,6 +4926,14 @@ void run_package_editor_materialized_part_replacement_staged_hook()
 void run_package_editor_chunk_part_replacement_staged_hook()
 {
     if (auto hook = package_editor_chunk_part_replacement_staged_hook();
+        hook != nullptr) {
+        hook();
+    }
+}
+
+void run_package_editor_worksheet_part_replacement_staged_hook()
+{
+    if (auto hook = package_editor_worksheet_part_replacement_staged_hook();
         hook != nullptr) {
         hook();
     }
@@ -6490,11 +6505,13 @@ void PackageEditor::replace_part_chunks(
     const PackagePart* target_package_part =
         planned_part != nullptr ? planned_part : source_part;
     if (target_package_part->content_type == content_type_worksheet) {
-        replace_worksheet_part_chunks(std::move(part_name), std::move(chunks));
-        edit_plan_.add_note(
+        std::vector<std::string> commit_notes;
+        commit_notes.emplace_back(
             "generic staged package part chunk replacement targeting a worksheet part "
             "was routed through worksheet-aware validation, dependency/relationship "
             "audit, and calc metadata handling");
+        replace_worksheet_part_chunks_with_commit_notes(std::move(part_name),
+            std::move(chunks), {}, {}, std::move(commit_notes));
         return;
     }
 
@@ -6639,6 +6656,15 @@ void PackageEditor::replace_worksheet_part_chunks(PartName worksheet_part,
     std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
     std::string reason)
 {
+    replace_worksheet_part_chunks_with_commit_notes(std::move(worksheet_part),
+        std::move(chunks), policy, std::move(reason), {});
+}
+
+void PackageEditor::replace_worksheet_part_chunks_with_commit_notes(
+    PartName worksheet_part, std::vector<PackageEntryChunk> chunks,
+    const ReferencePolicy& policy, std::string reason,
+    std::vector<std::string> commit_notes)
+{
     if (chunks.empty()) {
         throw FastXlsxError("staged worksheet replacement requires at least one chunk");
     }
@@ -6659,15 +6685,16 @@ void PackageEditor::replace_worksheet_part_chunks(PartName worksheet_part,
         reason =
             "target worksheet part staged stream rewrite chunks validated and audited through one event-reader chunk-source pass";
     }
+    commit_notes.emplace_back(
+        "worksheet staged chunk replacement validates worksheet root/events and "
+        "collects payload dependency audit plus relationship-id audit together "
+        "from the provided staged chunks through one chunk-source audit reader");
     replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part), std::move(chunks),
         policy, std::move(replacement_audit.payload_audit.notes),
         std::move(replacement_audit.payload_audit.audits),
         std::move(replacement_audit.relationship_reference_audit.notes),
-        std::move(replacement_audit.relationship_reference_audit.audits), std::move(reason));
-    edit_plan_.add_note(
-        "worksheet staged chunk replacement validates worksheet root/events and "
-        "collects payload dependency audit plus relationship-id audit together "
-        "from the provided staged chunks through one chunk-source audit reader");
+        std::move(replacement_audit.relationship_reference_audit.audits), std::move(reason),
+        true, true, std::move(commit_notes));
 }
 
 void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
@@ -6677,7 +6704,7 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<std::string> relationship_reference_notes,
     std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
     std::string replacement_reason, bool enforce_payload_policy,
-    bool validate_staged_chunk_crc32)
+    bool validate_staged_chunk_crc32, std::vector<std::string> commit_notes)
 {
     if (chunks.empty()) {
         throw FastXlsxError("staged worksheet replacement requires at least one chunk");
@@ -6700,7 +6727,12 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             payload_audit, policy, "worksheet replacement");
     }
 
-    if (manifest_.find_part(target_worksheet_part) == nullptr) {
+    PackageManifest updated_manifest = manifest_;
+    EditPlan updated_edit_plan = edit_plan_;
+    std::vector<PackagePartReplacement> updated_replacements = replacements_;
+    std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
+    std::vector<std::string> updated_omitted_entries = omitted_entries_;
+    if (updated_manifest.find_part(target_worksheet_part) == nullptr) {
         const PackagePart* source_part =
             reader_.part_index().find_part(target_worksheet_part);
         if (source_part == nullptr) {
@@ -6708,22 +6740,22 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
                 "worksheet replacement target is not present in the source package for "
                 + worksheet_part_diagnostic_context(target_worksheet_part));
         }
-        restore_source_part_manifest_state(manifest_, reader_, *source_part);
-        if (manifest_.find_part(target_worksheet_part) == nullptr) {
+        restore_source_part_manifest_state(updated_manifest, reader_, *source_part);
+        if (updated_manifest.find_part(target_worksheet_part) == nullptr) {
             throw FastXlsxError("worksheet replacement target was not restored for "
                 + worksheet_part_diagnostic_context(target_worksheet_part));
         }
     }
 
     const EditPlan worksheet_plan =
-        PartRewritePlanner(manifest_).plan_worksheet_stream_rewrite(worksheet_part, policy);
-    PackageManifest updated_manifest = manifest_;
+        PartRewritePlanner(updated_manifest).plan_worksheet_stream_rewrite(
+            worksheet_part, policy);
     const PartName workbook_part = reader_.workbook_part();
 
     std::string updated_workbook_xml;
     if (worksheet_plan.full_calculation_on_load()) {
         updated_workbook_xml = request_full_calculation_in_workbook_xml(
-            current_planned_materialized_workbook_xml(reader_, replacements_,
+            current_planned_materialized_workbook_xml(reader_, updated_replacements,
                 "worksheet rewrite calc metadata"));
     }
 
@@ -6748,57 +6780,60 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     if (replacement_reason.empty()) {
         replacement_reason = "target worksheet part stream rewrite";
     }
-    upsert_part_replacement_chunks(replacements_, target_worksheet_part,
+    upsert_part_replacement_chunks(updated_replacements, target_worksheet_part,
         std::move(chunks), PartWriteMode::StreamRewrite, replacement_reason);
     updated_manifest.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
-    edit_plan_.set_part(target_worksheet_part, PartWriteMode::StreamRewrite,
+    updated_edit_plan.set_part(target_worksheet_part, PartWriteMode::StreamRewrite,
         replacement_reason);
-    restore_active_part_entry_state_after_replacement(edit_plan_, entry_replacements_,
-        omitted_entries_, reader_, manifest_, target_worksheet_part);
+    restore_active_part_entry_state_after_replacement(updated_edit_plan,
+        updated_entry_replacements, updated_omitted_entries, reader_, updated_manifest,
+        target_worksheet_part);
 
-    merge_copy_original_dependency_reasons(edit_plan_, worksheet_plan);
+    merge_copy_original_dependency_reasons(updated_edit_plan, worksheet_plan);
     audit_preserved_relationship_entries(
-        edit_plan_, reader_, worksheet_plan, target_worksheet_part);
+        updated_edit_plan, reader_, worksheet_plan, target_worksheet_part);
 
     if (worksheet_plan.full_calculation_on_load()) {
-        edit_plan_.request_full_calculation(worksheet_plan.calc_chain_action());
-        edit_plan_.set_part(workbook_part, PartWriteMode::LocalDomRewrite,
+        updated_edit_plan.request_full_calculation(worksheet_plan.calc_chain_action());
+        updated_edit_plan.set_part(workbook_part, PartWriteMode::LocalDomRewrite,
             "workbook calcPr fullCalcOnLoad updated for worksheet rewrite; definedNames preserved for policy review");
-        upsert_part_replacement(replacements_, workbook_part,
+        upsert_part_replacement(updated_replacements, workbook_part,
             std::move(updated_workbook_xml), PartWriteMode::LocalDomRewrite,
             "workbook calcPr fullCalcOnLoad updated for worksheet rewrite; definedNames preserved for policy review",
             &workbook_part);
-        remove_entry_replacement(entry_replacements_, workbook_part.zip_path());
-        remove_omitted_entry(omitted_entries_, workbook_part.zip_path());
+        remove_entry_replacement(updated_entry_replacements, workbook_part.zip_path());
+        remove_omitted_entry(updated_omitted_entries, workbook_part.zip_path());
         if (!rewrite_workbook_relationships) {
-            audit_preserved_relationship_entry(edit_plan_, reader_, workbook_part);
+            audit_preserved_relationship_entry(updated_edit_plan, reader_, workbook_part);
         }
     }
 
     if (remove_calc_chain) {
         const std::string calc_chain_relationship_entry =
             relationship_entry_name_for_source_part(calc_chain_part);
-        remove_part_replacement(replacements_, calc_chain_part);
-        remove_entry_replacement(entry_replacements_, calc_chain_part.zip_path());
-        remove_entry_replacement(entry_replacements_, calc_chain_relationship_entry);
-        merge_removed_part_audit(edit_plan_, worksheet_plan, calc_chain_part);
+        remove_part_replacement(updated_replacements, calc_chain_part);
+        remove_entry_replacement(updated_entry_replacements, calc_chain_part.zip_path());
+        remove_entry_replacement(
+            updated_entry_replacements, calc_chain_relationship_entry);
+        merge_removed_part_audit(updated_edit_plan, worksheet_plan, calc_chain_part);
     }
 
     if (omit_calc_chain) {
         const std::string calc_chain_relationship_entry =
             relationship_entry_name_for_source_part(calc_chain_part);
-        add_omitted_part_entries(omitted_entries_, calc_chain_part);
+        add_omitted_part_entries(updated_omitted_entries, calc_chain_part);
         if (reader_.find_entry(calc_chain_relationship_entry) != nullptr) {
-            edit_plan_.remove_package_entry(calc_chain_relationship_entry,
+            updated_edit_plan.remove_package_entry(calc_chain_relationship_entry,
                 "calcChain-owned relationships omitted with removed calcChain part",
                 PackageEntryAuditKind::SourceRelationships, calc_chain_part.value());
         }
     }
 
     if (rewrite_content_types) {
-        upsert_entry_replacement(reader_, entry_replacements_, "[Content_Types].xml",
+        upsert_entry_replacement(reader_, updated_entry_replacements, "[Content_Types].xml",
             serialize_content_types(updated_manifest.content_types()));
-        edit_plan_.set_package_entry("[Content_Types].xml", PartWriteMode::LocalDomRewrite,
+        updated_edit_plan.set_package_entry(
+            "[Content_Types].xml", PartWriteMode::LocalDomRewrite,
             "content types updated for worksheet calcChain removal",
             PackageEntryAuditKind::ContentTypes);
     }
@@ -6808,9 +6843,10 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             updated_manifest.relationships_for(workbook_part);
         const std::string workbook_relationship_entry =
             relationship_entry_name_for_source_part(workbook_part);
-        upsert_entry_replacement(reader_, entry_replacements_, workbook_relationship_entry,
-            serialize_relationships(*workbook_relationships));
-        edit_plan_.set_package_entry(workbook_relationship_entry, PartWriteMode::LocalDomRewrite,
+        upsert_entry_replacement(reader_, updated_entry_replacements,
+            workbook_relationship_entry, serialize_relationships(*workbook_relationships));
+        updated_edit_plan.set_package_entry(
+            workbook_relationship_entry, PartWriteMode::LocalDomRewrite,
             "workbook relationships updated for worksheet calcChain removal",
             PackageEntryAuditKind::SourceRelationships, workbook_part.value());
     }
@@ -6820,30 +6856,39 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
     }
     for (const std::string& note : worksheet_plan.notes()) {
-        edit_plan_.add_note(note);
+        updated_edit_plan.add_note(note);
     }
     for (std::string& note : payload_audit.notes) {
-        edit_plan_.add_note(std::move(note));
+        updated_edit_plan.add_note(std::move(note));
     }
     for (std::string& note : relationship_reference_audit.notes) {
-        edit_plan_.add_note(std::move(note));
+        updated_edit_plan.add_note(std::move(note));
     }
     for (const RelationshipTargetAudit& audit : worksheet_plan.relationship_target_audits()) {
-        edit_plan_.add_relationship_target_audit(audit);
+        updated_edit_plan.add_relationship_target_audit(audit);
     }
     for (const WorkbookPayloadDependencyAudit& audit :
         worksheet_plan.workbook_payload_dependency_audits()) {
-        edit_plan_.add_workbook_payload_dependency_audit(audit);
+        updated_edit_plan.add_workbook_payload_dependency_audit(audit);
     }
     for (WorksheetRelationshipReferenceAudit& audit :
         relationship_reference_audit.audits) {
-        edit_plan_.add_worksheet_relationship_reference_audit(std::move(audit));
+        updated_edit_plan.add_worksheet_relationship_reference_audit(std::move(audit));
     }
     for (WorksheetPayloadDependencyAudit& audit : payload_audit.audits) {
-        edit_plan_.add_worksheet_payload_dependency_audit(std::move(audit));
+        updated_edit_plan.add_worksheet_payload_dependency_audit(std::move(audit));
+    }
+    for (std::string& note : commit_notes) {
+        updated_edit_plan.add_note(std::move(note));
     }
 
-    manifest_ = std::move(updated_manifest);
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    run_package_editor_worksheet_part_replacement_staged_hook();
+#endif
+
+    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
 }
 
 void PackageEditor::replace_worksheet_part_from_chunk_source_by_name(
@@ -6867,15 +6912,16 @@ void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet
     std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
     std::string reason)
 {
-    replace_worksheet_part_chunks(
-        resolve_worksheet_part_by_name_for_patch(
-            reader_, manifest_, replacements_, sheet_name),
-        std::move(chunks), policy, std::move(reason));
-    edit_plan_.add_note(
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
         "by-name worksheet staged chunk replacement resolves the worksheet part "
         "through the planned/source workbook catalog and then validates, audits, "
         "and commits the provided chunks without any materialized worksheet "
         "string entry point");
+    replace_worksheet_part_chunks_with_commit_notes(
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, sheet_name),
+        std::move(chunks), policy, std::move(reason), std::move(commit_notes));
 }
 
 void PackageEditor::replace_worksheet_part_prevalidated_chunks_by_name(
@@ -7887,6 +7933,12 @@ void testing_set_package_editor_chunk_part_replacement_staged_hook(
     PackageEditorChunkPartReplacementStagedHook hook) noexcept
 {
     package_editor_chunk_part_replacement_staged_hook() = hook;
+}
+
+void testing_set_package_editor_worksheet_part_replacement_staged_hook(
+    PackageEditorWorksheetPartReplacementStagedHook hook) noexcept
+{
+    package_editor_worksheet_part_replacement_staged_hook() = hook;
 }
 #endif
 

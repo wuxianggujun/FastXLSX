@@ -1,5 +1,171 @@
 #include "test_package_editor_core_common.hpp"
 
+class ScopedPackageEditorWorksheetPartReplacementStagedHook {
+public:
+    explicit ScopedPackageEditorWorksheetPartReplacementStagedHook(
+        fastxlsx::detail::PackageEditorWorksheetPartReplacementStagedHook hook)
+    {
+        fastxlsx::detail::testing_set_package_editor_worksheet_part_replacement_staged_hook(
+            hook);
+    }
+
+    ~ScopedPackageEditorWorksheetPartReplacementStagedHook()
+    {
+        fastxlsx::detail::testing_set_package_editor_worksheet_part_replacement_staged_hook(
+            nullptr);
+    }
+
+    ScopedPackageEditorWorksheetPartReplacementStagedHook(
+        const ScopedPackageEditorWorksheetPartReplacementStagedHook&) = delete;
+    ScopedPackageEditorWorksheetPartReplacementStagedHook& operator=(
+        const ScopedPackageEditorWorksheetPartReplacementStagedHook&) = delete;
+};
+
+void fail_package_editor_worksheet_part_replacement_after_staging()
+{
+    throw std::runtime_error("injected worksheet part replacement commit failure");
+}
+
+void test_package_editor_worksheet_staged_failure_preserves_state_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-worksheet-staging-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-worksheet-staging-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-worksheet-staging-retry-output.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string prior_opaque = "prior opaque replacement";
+    const std::string replacement_worksheet =
+        R"(<worksheet><sheetData><row r="2"><c r="A2"><f>A1+1</f></c></row></sheetData></worksheet>)";
+    const auto replacement_chunks = [&] {
+        return std::vector<fastxlsx::detail::PackageEntryChunk> {
+            fastxlsx::detail::PackageEntryChunk::memory(replacement_worksheet),
+        };
+    };
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part_chunks(opaque_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(prior_opaque)},
+        "prior opaque replacement before injected worksheet replacement failure");
+
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+    const std::size_t initial_package_entry_count =
+        editor.edit_plan().package_entries().size();
+    const std::size_t initial_removed_part_count =
+        editor.edit_plan().removed_parts().size();
+    const std::size_t initial_removed_package_entry_count =
+        editor.edit_plan().removed_package_entries().size();
+    const std::size_t initial_relationship_target_audit_count =
+        editor.edit_plan().relationship_target_audits().size();
+    const std::size_t initial_worksheet_relationship_audit_count =
+        editor.edit_plan().worksheet_relationship_reference_audits().size();
+    const std::size_t initial_worksheet_payload_audit_count =
+        editor.edit_plan().worksheet_payload_dependency_audits().size();
+    const std::size_t initial_workbook_payload_audit_count =
+        editor.edit_plan().workbook_payload_dependency_audits().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+            fail_package_editor_worksheet_part_replacement_after_staging);
+        try {
+            editor.replace_part_chunks(worksheet_part, replacement_chunks(),
+                "worksheet replacement with injected commit failure");
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "injected worksheet part replacement commit failure",
+                "worksheet replacement staged failure should preserve injected context");
+        }
+    }
+
+    check(failed,
+        "PackageEditor should surface injected worksheet replacement commit failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "worksheet replacement staged failure should preserve edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "worksheet replacement staged failure should preserve notes");
+    check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+        "worksheet replacement staged failure should preserve package-entry audits");
+    check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+        "worksheet replacement staged failure should preserve removed-part audits");
+    check(editor.edit_plan().removed_package_entries().size()
+            == initial_removed_package_entry_count,
+        "worksheet replacement staged failure should preserve removed-entry audits");
+    check(editor.edit_plan().relationship_target_audits().size()
+            == initial_relationship_target_audit_count,
+        "worksheet replacement staged failure should preserve relationship audits");
+    check(editor.edit_plan().worksheet_relationship_reference_audits().size()
+            == initial_worksheet_relationship_audit_count,
+        "worksheet replacement staged failure should preserve worksheet relationship audits");
+    check(editor.edit_plan().worksheet_payload_dependency_audits().size()
+            == initial_worksheet_payload_audit_count,
+        "worksheet replacement staged failure should preserve worksheet payload audits");
+    check(editor.edit_plan().workbook_payload_dependency_audits().size()
+            == initial_workbook_payload_audit_count,
+        "worksheet replacement staged failure should preserve workbook payload audits");
+    check(!editor.edit_plan().full_calculation_on_load(),
+        "worksheet replacement staged failure should not request recalculation");
+    check(editor.edit_plan().calc_chain_action()
+            == fastxlsx::detail::CalcChainAction::Preserve,
+        "worksheet replacement staged failure should preserve calcChain policy");
+    check(!has_note_containing(editor.edit_plan().notes(),
+              {"generic staged package part chunk replacement targeting a worksheet part"}),
+        "worksheet replacement staged failure should not publish generic routing note");
+    check(!has_note_containing(editor.edit_plan().notes(),
+              {"worksheet staged chunk replacement validates worksheet root/events"}),
+        "worksheet replacement staged failure should not publish worksheet audit note");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "worksheet replacement staged failure should keep worksheet copy-original");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "worksheet replacement staged failure should keep workbook copy-original");
+    check_manifest_write_mode(editor, opaque_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "worksheet replacement staged failure should preserve prior opaque replacement");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check_entry_bytes(failed_reader, worksheet_part.zip_path(), source.worksheet);
+    check_entry_bytes(failed_reader, workbook_part.zip_path(), source.workbook);
+    check_entry_bytes(failed_reader, opaque_part.zip_path(), prior_opaque);
+
+    editor.replace_part_chunks(worksheet_part, replacement_chunks(),
+        "worksheet replacement retry after injected commit failure");
+    check(editor.edit_plan().full_calculation_on_load(),
+        "worksheet replacement retry should request recalculation");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"generic staged package part chunk replacement targeting a worksheet part",
+                  "worksheet-aware validation"}),
+        "worksheet replacement retry should publish generic routing note");
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"worksheet staged chunk replacement validates worksheet root/events",
+                  "one chunk-source audit reader"}),
+        "worksheet replacement retry should publish worksheet audit note");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::StreamRewrite,
+        "worksheet replacement retry should publish worksheet stream rewrite");
+    check_manifest_write_mode(editor, workbook_part,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "worksheet replacement retry should publish workbook calc rewrite");
+
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check_entry_bytes(retry_reader, worksheet_part.zip_path(), replacement_worksheet);
+    check_contains(retry_reader.read_entry(workbook_part.zip_path()),
+        "fullCalcOnLoad=\"1\"",
+        "worksheet replacement retry should write workbook calc metadata");
+    check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
+}
+
 void test_package_editor_generic_staged_chunks_route_worksheet_targets()
 {
     const SourcePackage source =
@@ -727,6 +893,7 @@ int main(int argc, char* argv[])
         std::cout << "fastxlsx.package_editor shard: " << shard << '\n';
 
         if (should_run_package_editor_shard(shard, "core-worksheet")) {
+            test_package_editor_worksheet_staged_failure_preserves_state_and_retries();
             test_package_editor_generic_staged_chunks_route_worksheet_targets();
             test_package_editor_replaces_worksheet_with_staged_chunks();
             test_package_editor_replaces_worksheet_by_name_with_staged_chunks();

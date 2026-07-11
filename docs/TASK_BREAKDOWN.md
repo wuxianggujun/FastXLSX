@@ -13,7 +13,7 @@
 
 - 扩展现有 workbook 对象前，逐对象定义 preserve/audit/fail/edit。
 - 将 calc metadata 已采用的副本 staging + noexcept commit 边界扩展到其他跨 relationship/content-type/manifest 的多状态 mutation，并逐项补 failure recovery 回归。
-- 收敛 worksheet-target `replace_part_chunks()` 路由的提交边界：generic audit note 必须和 worksheet replacement 同步发布，不能在委托成功后因 note 分配失败形成“状态已提交但调用抛错”。
+- 收敛 worksheet chunk-source wrapper 的资源与状态提交边界：临时文件所有权必须在 replacement 发布前获得稳定归属，不能在 worksheet commit 后因 `temporary_files_` 或 note 分配失败留下指向已删除文件的 chunks；by-name/prevalidated wrapper notes 也必须随同一 staged commit 发布。
 - 不公开 package mutation foundation。
 
 ## C2 In-memory

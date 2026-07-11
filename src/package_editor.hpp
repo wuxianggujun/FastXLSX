@@ -202,6 +202,10 @@ using PackageEditorChunkPartReplacementStagedHook = void (*)();
 void testing_set_package_editor_chunk_part_replacement_staged_hook(
     PackageEditorChunkPartReplacementStagedHook hook) noexcept;
 
+using PackageEditorWorksheetPartReplacementStagedHook = void (*)();
+void testing_set_package_editor_worksheet_part_replacement_staged_hook(
+    PackageEditorWorksheetPartReplacementStagedHook hook) noexcept;
+
 struct ReplacementCellPayloadScannerTestResult {
     std::size_t start_tag_count = 0;
     std::size_t formula_tag_count = 0;
@@ -528,6 +532,9 @@ private:
         const WorksheetCellReplacementPlan& replacement_plan,
         const ReferencePolicy& policy,
         std::string input_label);
+    void replace_worksheet_part_chunks_with_commit_notes(PartName worksheet_part,
+        std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
+        std::string reason, std::vector<std::string> commit_notes);
     void replace_worksheet_part_prevalidated_chunks(PartName worksheet_part,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
         std::vector<std::string> payload_notes,
@@ -535,7 +542,8 @@ private:
         std::vector<std::string> relationship_reference_notes,
         std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
         std::string replacement_reason, bool enforce_payload_policy = true,
-        bool validate_staged_chunk_crc32 = true);
+        bool validate_staged_chunk_crc32 = true,
+        std::vector<std::string> commit_notes = {});
 
     PackageReader reader_;
     PackageManifest manifest_;

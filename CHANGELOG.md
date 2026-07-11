@@ -23,6 +23,7 @@
 - Internal `PackageEditor::remove_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再发布部分 removal 状态，既有 replacement 可保存并可安全重试。
 - Internal materialized `PackageEditor::replace_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 replacement，后续 retry 可恢复 source part。
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 chunk replacement，后续 retry 可恢复 source part。
+- Internal worksheet chunk replacement 改为跨 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；generic/direct/by-name routing notes 与 audits 在同一次 commit 发布，提交前失败保留既有 replacement、输出语义和 retry 能力。
 
 ### Documentation
 

@@ -1018,6 +1018,59 @@ public:
     void move_cells(std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Copies one represented cell's existing style handle to another cell.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Source and
+    /// destination are 1-based coordinates in this materialized worksheet and
+    /// must both already be represented sparse records. The destination keeps
+    /// its current CellValue payload while receiving the source record's
+    /// optional workbook-local StyleId. An unstyled source clears the
+    /// destination style. Equal source/destination styles, including the same
+    /// coordinate, are successful no-ops that do not dirty the session.
+    ///
+    /// Non-default handles accepted here were loaded from and validated against
+    /// this workbook's existing styles.xml during materialization. The call
+    /// does not accept a caller-supplied StyleId, create or mutate style table
+    /// entries, or copy styles across workbooks. Missing source/destination
+    /// records and invalid coordinates fail before mutation and update
+    /// WorkbookEditor::last_edit_error(). CellStore memory guardrails are
+    /// checked before replacing the destination record. Dirty state is flushed
+    /// through the existing save_as() stage/write/commit transaction; failed
+    /// saves preserve the style-only edit for retry.
+    ///
+    /// Dirty save_as() projects only the destination cell's `s` attribute and
+    /// preserves styles.xml bytes. This is not style creation, validation,
+    /// merge, registry access, range formatting, conditional formatting, theme
+    /// editing, or cross-workbook style migration.
+    void copy_cell_style(std::uint32_t source_row, std::uint32_t source_column,
+        std::uint32_t destination_row, std::uint32_t destination_column);
+
+    /// Copies one represented cell's existing style using strict uppercase A1 references.
+    ///
+    /// Both references must name exactly one represented cell. Parsing,
+    /// style-only replacement, missing-cell failures, dirty state, save retry,
+    /// and non-goals match the coordinate overload.
+    void copy_cell_style(std::string_view source_cell_reference,
+        std::string_view destination_cell_reference);
+
+    /// Clears one represented cell's existing style without changing its value.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Row and
+    /// column are 1-based. A represented styled cell keeps its CellValue and is
+    /// projected without an `s` attribute on dirty save_as(). A missing or
+    /// already unstyled cell is a successful no-op that does not create a
+    /// sparse record or dirty the session. Invalid coordinates fail before
+    /// mutation and update WorkbookEditor::last_edit_error(). This preserves
+    /// styles.xml bytes and does not delete style table entries, rewrite other
+    /// cells, or expose style registry/merge/migration semantics.
+    void clear_cell_style(std::uint32_t row, std::uint32_t column);
+
+    /// Clears one represented cell's style by strict uppercase A1 reference.
+    ///
+    /// Parsing, missing/unstyled no-op behavior, value preservation, save
+    /// projection, diagnostics, and non-goals match the coordinate overload.
+    void clear_cell_style(std::string_view cell_reference);
+
     /// Replaces one sparse-store cell value while preserving its current style.
     ///
     /// This is the safe existing-workbook style boundary for value-only edits:

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -351,6 +352,42 @@ public:
         transfer_cells(source, destination, true, "move_cells");
     }
 
+    void copy_cell_style(CellPosition source, CellPosition destination)
+    {
+        const CellRecord* source_record = store_.try_cell(source.row, source.column);
+        if (source_record == nullptr) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_style() source cell is not represented");
+        }
+        const CellRecord* destination_record =
+            store_.try_cell(destination.row, destination.column);
+        if (destination_record == nullptr) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_style() destination cell is not represented");
+        }
+        if (same_style(source_record->style_id, destination_record->style_id)) {
+            return;
+        }
+
+        CellValue destination_value = destination_record->to_value().without_style();
+        if (source_record->style_id.has_value()) {
+            destination_value = destination_value.with_style(*source_record->style_id);
+        }
+        store_.set_cell(destination.row, destination.column, destination_value);
+        dirty_ = true;
+    }
+
+    void clear_cell_style(CellPosition position)
+    {
+        const CellRecord* record = store_.try_cell(position.row, position.column);
+        if (record == nullptr || !record->style_id.has_value()) {
+            return;
+        }
+
+        store_.set_cell(position.row, position.column, record->to_value().without_style());
+        dirty_ = true;
+    }
+
     [[nodiscard]] const CellRecord* try_cell(
         std::uint32_t row, std::uint32_t column) const
     {
@@ -445,6 +482,15 @@ public:
 private:
     static constexpr std::uint32_t max_excel_rows = 1048576U;
     static constexpr std::uint32_t max_excel_columns = 16384U;
+
+    static bool same_style(
+        const std::optional<StyleId>& left, const std::optional<StyleId>& right) noexcept
+    {
+        if (left.has_value() != right.has_value()) {
+            return false;
+        }
+        return !left.has_value() || left->value() == right->value();
+    }
 
     void transfer_cells(const CellRange& source, CellPosition destination,
         bool erase_source, std::string_view operation)

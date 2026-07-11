@@ -1820,6 +1820,440 @@ void test_public_worksheet_editor_erase_cells_remove_styled_source_records()
         });
 }
 
+void test_public_worksheet_editor_erase_cells_range_reacquires_saved_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-range-erase-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first.xlsx");
+    const std::filesystem::path first_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first-noop.xlsx");
+    const std::filesystem::path first_second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-first-second-noop.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-second-noop.xlsx");
+    const std::filesystem::path reacquired_second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-range-erase-reacquired-second-noop.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(sheet.cell_count() == 3,
+        "public WorksheetEditor should materialize all represented source cells before range erase");
+    sheet.erase_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    check(!sheet.try_cell("A1").has_value(),
+        "public WorksheetEditor range erase should remove A1");
+    check(!sheet.try_cell("B1").has_value(),
+        "public WorksheetEditor range erase should remove B1");
+    check(!sheet.try_cell("A2").has_value(),
+        "public WorksheetEditor range erase should remove A2");
+    check(sheet.cell_count() == 0,
+        "public WorksheetEditor range erase should update sparse cell count");
+    check(sheet.has_pending_changes(),
+        "public WorksheetEditor range erase should dirty the materialized sheet");
+    check(editor.has_pending_changes(),
+        "public WorksheetEditor range erase should dirty the owning editor");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "range erase dirty summary");
+
+    const auto check_reopened_range_erase_empty_projection =
+        [](fastxlsx::WorksheetEditor& reopened_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 0,
+                prefix + " reopened output should stay empty");
+            check(reopened_sheet.sparse_cells().empty(),
+                prefix + " reopened sparse_cells should stay empty");
+            check(reopened_sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}).empty(),
+                prefix + " reopened range sparse_cells should stay empty");
+            check(reopened_sheet.row_cells(1).empty() &&
+                    reopened_sheet.row_cells(2).empty(),
+                prefix + " reopened row_cells should keep erased rows empty");
+            check(reopened_sheet.column_cells(1).empty() &&
+                    reopened_sheet.column_cells(2).empty(),
+                prefix + " reopened column_cells should keep erased columns empty");
+            check(!reopened_sheet.used_range().has_value(),
+                prefix + " reopened output should expose no sparse bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                prefix + " reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                prefix + " reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                prefix + " reopened output should keep erased A2 absent");
+        };
+
+    const auto check_reopened_range_erase_reacquired_projection =
+        [](fastxlsx::WorksheetEditor& reopened_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 1,
+                prefix + " reopened output should contain one sparse cell");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                reopened_sheet.sparse_cells();
+            check(cells.size() == 1,
+                prefix + " reopened sparse_cells should expose C3 only");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 3 &&
+                        cells[0].reference.column == 3 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "range-erase-reacquired",
+                    prefix + " reopened sparse_cells should keep C3 text");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                reopened_sheet.row_cells(3);
+            check(row_three.size() == 1 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 3 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "range-erase-reacquired",
+                prefix + " reopened row_cells should expose C3 only");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                reopened_sheet.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 3 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "range-erase-reacquired",
+                prefix + " reopened column_cells should expose C3 only");
+
+            check_cell_range_equals(reopened_sheet.used_range(), 3, 3, 3, 3,
+                prefix + " reopened output should expose C3 bounds");
+            check(!reopened_sheet.try_cell("A1").has_value(),
+                prefix + " reopened output should keep erased A1 absent");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                prefix + " reopened output should keep erased B1 absent");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                prefix + " reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "range-erase-reacquired",
+                prefix + " reopened output should read post-reacquire C3");
+        };
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "successful save_as should clear range-erased materialized sheet dirty state");
+    check(editor.pending_change_count() == 1,
+        "range erase save_as should expose one materialized worksheet handoff");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase first save should leave the source package unchanged");
+    const std::string first_worksheet_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(first_worksheet_xml, R"(<dimension ref="A1"/>)",
+        "range erase of all represented cells should shrink the projected dimension to A1");
+    check_not_contains(first_worksheet_xml, "placeholder-a1",
+        "range erase save_as should omit erased A1 text");
+    check_not_contains(first_worksheet_xml, "placeholder-a2",
+        "range erase save_as should omit erased A2 text");
+    check_not_contains(first_worksheet_xml, R"(r="B1")",
+        "range erase save_as should omit erased B1 numeric cell");
+    check_contains(first_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "range erase save_as should preserve untouched worksheets");
+    check_reopened_clean_sheet_output(first_output, "Data", "range erase first save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_reopened_range_erase_empty_projection(
+                reopened_sheet, "range erase first save");
+        });
+
+    const std::size_t pending_count_after_first_save = editor.pending_change_count();
+    const auto check_range_erase_empty_saved_snapshot =
+        [&](std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(sheet.cell_count() == 0,
+                prefix + " should keep the saved worksheet empty");
+            check(sheet.sparse_cells().empty(),
+                prefix + " should expose no full sparse snapshots");
+            check(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2}).empty(),
+                prefix + " should expose no erased range snapshots");
+            check(sheet.row_cells(1).empty() && sheet.row_cells(2).empty(),
+                prefix + " should keep erased row snapshots absent");
+            check(sheet.column_cells(1).empty() && sheet.column_cells(2).empty(),
+                prefix + " should keep erased column snapshots absent");
+            check(!sheet.try_cell("A1").has_value() &&
+                    !sheet.try_cell("B1").has_value() &&
+                    !sheet.try_cell("A2").has_value(),
+                prefix + " should keep erased source cells absent");
+            check(!sheet.used_range().has_value(),
+                prefix + " should keep sparse bounds empty");
+            check(!sheet.has_pending_changes(),
+                prefix + " should keep the materialized handle clean");
+            check(editor.pending_change_count() == pending_count_after_first_save,
+                prefix + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                prefix + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                prefix + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                prefix + " should keep dirty materialized memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                prefix + " should keep dirty summaries empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                prefix + " should keep diagnostics clear");
+        };
+    check_range_erase_empty_saved_snapshot("range erase first saved handle");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_first_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_first_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(first_noop_output);
+    check(!sheet.has_pending_changes(),
+        "range erase first no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "range erase first no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "range erase first no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range erase first no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "range erase first no-op save should keep diagnostics clear");
+    check_range_erase_empty_saved_snapshot("range erase first no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_first_noop,
+        "range erase first no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_first_noop,
+        "range erase first no-op save");
+    const auto first_noop_entries = fastxlsx::test::read_zip_entries(first_noop_output);
+    check(first_noop_entries == first_entries,
+        "range erase first no-op output should match the first materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase first no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(first_noop_output, "Data", "range erase first no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_reopened_range_erase_empty_projection(
+                reopened_sheet, "range erase first no-op save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_first_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_first_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(first_second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "range erase first second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "range erase first second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "range erase first second no-op save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range erase first second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "range erase first second no-op save should keep diagnostics clear");
+    check_range_erase_empty_saved_snapshot(
+        "range erase first second no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_first_second_noop,
+        "range erase first second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_first_second_noop,
+        "range erase first second no-op save");
+    check(fastxlsx::test::read_zip_entries(first_second_noop_output) == first_noop_entries,
+        "range erase first second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(first_noop_output) == first_noop_entries,
+        "range erase first second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase first second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(first_second_noop_output, "Data",
+        "range erase first second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_reopened_range_erase_empty_projection(
+                reopened_sheet, "range erase first second no-op save");
+        });
+
+    fastxlsx::WorksheetEditor reacquired = editor.worksheet("Data");
+    check(!reacquired.has_pending_changes(),
+        "matching worksheet reacquire after range erase save_as should be clean");
+    check(reacquired.cell_count() == 0,
+        "matching worksheet reacquire should reuse the erased sparse state");
+    check(!reacquired.try_cell("A1").has_value(),
+        "matching worksheet reacquire should keep erased A1 missing");
+    check(!reacquired.try_cell("B1").has_value(),
+        "matching worksheet reacquire should keep erased B1 missing");
+    check(!reacquired.try_cell("A2").has_value(),
+        "matching worksheet reacquire should keep erased A2 missing");
+
+    reacquired.erase_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    check(!reacquired.has_pending_changes(),
+        "missing-only range erase after matching reacquire should remain a clean no-op");
+    check(!editor.last_edit_error().has_value(),
+        "missing-only range erase after matching reacquire should leave diagnostics clear");
+
+    reacquired.set_cell(3, 3, fastxlsx::CellValue::text("range-erase-reacquired"));
+    check(reacquired.has_pending_changes(),
+        "post-reacquire mutation should dirty the reused materialized sheet");
+
+    editor.save_as(second_output);
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase reacquired save should leave the source package unchanged");
+    const std::string second_worksheet_xml = second_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(second_worksheet_xml, "range-erase-reacquired",
+        "post-reacquire mutation should persist on the second save_as");
+    check_not_contains(second_worksheet_xml, "placeholder-a1",
+        "erased A1 text should not reappear after post-reacquire mutation");
+    check_not_contains(second_worksheet_xml, "placeholder-a2",
+        "erased A2 text should not reappear after post-reacquire mutation");
+    check_not_contains(second_worksheet_xml, R"(r="B1")",
+        "erased B1 numeric cell should not reappear after post-reacquire mutation");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "range erase reacquired no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "range erase reacquired no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "range erase reacquired no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range erase reacquired no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "range erase reacquired no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "range erase reacquired no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "range erase reacquired no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "range erase reacquired no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase reacquired no-op save should leave the source package unchanged");
+
+    const auto check_range_erase_reacquired_saved_snapshots =
+        [&](fastxlsx::WorksheetEditor& handle, std::string_view prefix) {
+            check(handle.cell_count() == 1,
+                std::string(prefix) + " should keep one represented sparse cell");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                handle.sparse_cells();
+            check(cells.size() == 1,
+                std::string(prefix) + " should expose one row-major sparse snapshot");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 3 &&
+                        cells[0].reference.column == 3 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "range-erase-reacquired",
+                    std::string(prefix) + " should keep the saved C3 text snapshot");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_three =
+                handle.row_cells(3);
+            check(row_three.size() == 1 &&
+                    row_three[0].reference.row == 3 &&
+                    row_three[0].reference.column == 3 &&
+                    row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_three[0].value.text_value() == "range-erase-reacquired",
+                std::string(prefix) + " should keep the row-three C3 snapshot");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                handle.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 3 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "range-erase-reacquired",
+                std::string(prefix) + " should keep the column-three C3 snapshot");
+            check(!handle.try_cell("A1").has_value() &&
+                    !handle.try_cell("B1").has_value() &&
+                    !handle.try_cell("A2").has_value(),
+                std::string(prefix) + " should keep erased source cells absent");
+            check_cell_range_equals(handle.used_range(), 3, 3, 3, 3,
+                std::string(prefix) + " should keep the saved C3 bounds");
+            check(!handle.has_pending_changes(),
+                std::string(prefix) + " should keep the handle clean");
+            check(editor.pending_change_count() == 2,
+                std::string(prefix) + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                std::string(prefix) + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                std::string(prefix) + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(prefix) + " should keep dirty materialized memory empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor,
+                std::string(prefix) +
+                    " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                std::string(prefix) + " should keep diagnostics clear");
+        };
+    check_range_erase_reacquired_saved_snapshots(
+        sheet,
+        "range erase reacquired original saved handle");
+    check_range_erase_reacquired_saved_snapshots(
+        reacquired,
+        "range erase reacquired matching saved handle");
+
+    check_reopened_clean_sheet_output(second_output, "Data", "range erase reacquired save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_reopened_range_erase_reacquired_projection(
+                reopened_sheet, "range erase reacquired save");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Data", "range erase reacquired no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_reopened_range_erase_reacquired_projection(
+                reopened_sheet, "range erase reacquired no-op save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_reacquired_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_reacquired_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(reacquired_second_noop_output);
+    check(!sheet.has_pending_changes() && !reacquired.has_pending_changes(),
+        "range erase reacquired second no-op save should keep both handles clean");
+    check(editor.pending_change_count() == 2,
+        "range erase reacquired second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "range erase reacquired second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "range erase reacquired second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "range erase reacquired second no-op save should keep diagnostics clear");
+    check_range_erase_reacquired_saved_snapshots(
+        sheet,
+        "range erase reacquired original second no-op saved handle");
+    check_range_erase_reacquired_saved_snapshots(
+        reacquired,
+        "range erase reacquired matching second no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_reacquired_second_noop,
+        "range erase reacquired second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_reacquired_second_noop,
+        "range erase reacquired second no-op save");
+    const auto reacquired_noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(fastxlsx::test::read_zip_entries(reacquired_second_noop_output) ==
+            reacquired_noop_entries,
+        "range erase reacquired second no-op output should match the first reacquired no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == reacquired_noop_entries,
+        "range erase reacquired second no-op save should leave the first reacquired no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "range erase reacquired second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(reacquired_second_noop_output, "Data",
+        "range erase reacquired second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check_reopened_range_erase_reacquired_projection(
+                reopened_sheet, "range erase reacquired second no-op save");
+        });
+}
+
 } // namespace
 
 int main()
@@ -1828,6 +2262,7 @@ int main()
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_erase_cell_removes_styled_source_record();
         test_public_worksheet_editor_erase_cells_remove_styled_source_records();
+        test_public_worksheet_editor_erase_cells_range_reacquires_saved_state();
         std::cout << "WorkbookEditor public-state erase cell tests passed\n";
         return 0;
     } catch (const std::exception& error) {

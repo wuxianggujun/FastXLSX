@@ -6718,7 +6718,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<std::string> relationship_reference_notes,
     std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
     std::string replacement_reason, bool enforce_payload_policy,
-    bool validate_staged_chunk_crc32, std::vector<std::string> commit_notes)
+    bool validate_staged_chunk_crc32, std::vector<std::string> commit_notes,
+    PartWriteMode target_write_mode)
 {
     if (chunks.empty()) {
         throw FastXlsxError("staged worksheet replacement requires at least one chunk");
@@ -6795,9 +6796,9 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         replacement_reason = "target worksheet part stream rewrite";
     }
     upsert_part_replacement_chunks(updated_replacements, target_worksheet_part,
-        std::move(chunks), PartWriteMode::StreamRewrite, replacement_reason);
-    updated_manifest.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
-    updated_edit_plan.set_part(target_worksheet_part, PartWriteMode::StreamRewrite,
+        std::move(chunks), target_write_mode, replacement_reason);
+    updated_manifest.set_part_write_mode(target_worksheet_part, target_write_mode);
+    updated_edit_plan.set_part(target_worksheet_part, target_write_mode,
         replacement_reason);
     restore_active_part_entry_state_after_replacement(updated_edit_plan,
         updated_entry_replacements, updated_omitted_entries, reader_, updated_manifest,
@@ -6865,7 +6866,7 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
             PackageEntryAuditKind::SourceRelationships, workbook_part.value());
     }
 
-    updated_manifest.set_part_write_mode(target_worksheet_part, PartWriteMode::StreamRewrite);
+    updated_manifest.set_part_write_mode(target_worksheet_part, target_write_mode);
     if (worksheet_plan.full_calculation_on_load()) {
         updated_manifest.set_part_write_mode(workbook_part, PartWriteMode::LocalDomRewrite);
     }
@@ -6966,6 +6967,18 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(
     const ReferencePolicy& policy,
     std::optional<std::string_view> dimension_reference)
 {
+    replace_worksheet_sheet_data_from_chunk_source_with_commit_notes(
+        std::move(worksheet_part), read_next_sheet_data_chunk, policy,
+        dimension_reference, {});
+}
+
+void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_with_commit_notes(
+    PartName worksheet_part,
+    const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
+    const ReferencePolicy& policy,
+    std::optional<std::string_view> dimension_reference,
+    std::vector<std::string> commit_notes)
+{
     const PartName target_worksheet_part = worksheet_part;
     const auto* worksheet = manifest_.find_part(worksheet_part);
     if (worksheet == nullptr) {
@@ -7036,46 +7049,44 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(
     const std::string sheet_data_rewrite_reason =
         "target worksheet part local-DOM rewrite from bounded local sheetData replacement; "
         "rewritten worksheet XML is recorded as file-backed staged chunks";
-    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-        std::move(staged_worksheet_chunks), policy, std::move(preservation_audit.notes),
-        std::move(preservation_audit.audits),
-        std::move(relationship_reference_audit.notes),
-        std::move(relationship_reference_audit.audits), sheet_data_rewrite_reason,
-        false);
-    temporary_files_.push_back(staged_worksheet_file.path());
-    staged_worksheet_file.release();
-
-    edit_plan_.set_part(target_worksheet_part, PartWriteMode::LocalDomRewrite,
-        sheet_data_rewrite_reason);
-    manifest_.set_part_write_mode(target_worksheet_part, PartWriteMode::LocalDomRewrite);
-    if (auto* replacement = find_replacement(replacements_, target_worksheet_part)) {
-        replacement->write_mode = PartWriteMode::LocalDomRewrite;
-        replacement->reason = sheet_data_rewrite_reason;
-    }
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "sheetData replacement uses bounded local worksheet XML rewrite and "
         "chunk-source replacement/output; the replacement sheetData XML is "
         "consumed directly while writing the rewritten worksheet XML to a "
         "PackageEditor-owned file-backed staged chunk for follow-up "
         "planned-input transforms and this is "
         "not the large-file streaming worksheet transformer");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "sheetData replacement validates replacement sheetData root and "
         "collects replacement payload dependency audit while inserting caller "
         "sheetData chunks into the rewritten worksheet output, without staging "
         "or replaying a separate replacement sheetData chunk");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "sheetData replacement bounded local worksheet XML rewrite stores the "
         "rewritten worksheet XML as a PackageEditor-owned file-backed staged "
         "chunk for follow-up planned-input transforms");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "sheetData replacement output writer collects worksheet relationship-id "
         "audit while writing the rewritten staged worksheet chunk, without a "
         "separate post-output worksheet validation or audit reread");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "sheetData replacement output writer collects preserved worksheet "
         "metadata audit while consuming the current worksheet input chunks, "
         "without a separate preservation-only worksheet reread");
+
+    temporary_files_.push_back(staged_worksheet_file.path());
+    try {
+        replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+            std::move(staged_worksheet_chunks), policy,
+            std::move(preservation_audit.notes), std::move(preservation_audit.audits),
+            std::move(relationship_reference_audit.notes),
+            std::move(relationship_reference_audit.audits), sheet_data_rewrite_reason,
+            false, true, std::move(commit_notes), PartWriteMode::LocalDomRewrite);
+    } catch (...) {
+        temporary_files_.pop_back();
+        throw;
+    }
+    staged_worksheet_file.release();
 }
 
 void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_by_name(
@@ -7087,20 +7098,22 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_by_name(
     const PartName worksheet_part =
         resolve_worksheet_part_by_name_for_patch(
             reader_, manifest_, replacements_, sheet_name);
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
+        "by-name sheetData chunk-source replacement resolves the worksheet part "
+        "through the planned/source workbook catalog and consumes replacement "
+        "sheetData XML without routing through the materialized sheetData string "
+        "entry point");
     try {
-        replace_worksheet_sheet_data_from_chunk_source(
-            worksheet_part, read_next_sheet_data_chunk, policy, dimension_reference);
+        replace_worksheet_sheet_data_from_chunk_source_with_commit_notes(
+            worksheet_part, read_next_sheet_data_chunk, policy, dimension_reference,
+            std::move(commit_notes));
     } catch (const std::exception& error) {
         throw FastXlsxError(
             by_name_worksheet_operation_context(
                 "by-name sheetData replacement", sheet_name, worksheet_part)
             + ": " + error.what());
     }
-    edit_plan_.add_note(
-        "by-name sheetData chunk-source replacement resolves the worksheet part "
-        "through the planned/source workbook catalog and consumes replacement "
-        "sheetData XML without routing through the materialized sheetData string "
-        "entry point");
 }
 
 bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(

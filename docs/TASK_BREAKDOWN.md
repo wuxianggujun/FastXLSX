@@ -13,7 +13,7 @@
 
 - 扩展现有 workbook 对象前，逐对象定义 preserve/audit/fail/edit。
 - 将 calc metadata 已采用的副本 staging + noexcept commit 边界扩展到其他跨 relationship/content-type/manifest 的多状态 mutation，并逐项补 failure recovery 回归。
-- 继续收敛 worksheet transform wrapper 的提交边界：sheetData replacement 的 LocalDom write mode、临时文件所有权和 notes，cell transformer 的临时文件所有权/notes，以及 indexed fast path 的 stats/notes 都必须在 worksheet replacement 发布前完成 staging，不能形成“replacement 已提交但 wrapper 抛错”或指向已删除文件的 chunks。
+- 继续收敛 worksheet cell transform 的提交边界：transformer fallback 的临时文件所有权/notes，以及 indexed fast path 的 stats/notes 都必须在 worksheet replacement 发布前完成 staging，不能形成“replacement 已提交但 wrapper 抛错”或指向已删除文件的 chunks。
 - 不公开 package mutation foundation。
 
 ## C2 In-memory

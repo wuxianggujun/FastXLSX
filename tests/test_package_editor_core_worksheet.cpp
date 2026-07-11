@@ -991,6 +991,140 @@ void test_package_editor_prevalidated_by_name_note_commits_atomically()
     check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
 }
 
+void test_package_editor_sheet_data_commit_failure_preserves_state_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-sheet-data-commit-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-sheet-data-commit-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-sheet-data-commit-retry-output.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string prior_opaque = "prior sheetData opaque replacement";
+    const std::string prior_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+    const std::string replacement_sheet_data =
+        R"(<sheetData><row r="2"><c r="B2"><v>22</v></c></row></sheetData>)";
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part(workbook_part, prior_workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "prior workbook replacement before sheetData commit failure");
+        editor.replace_part_chunks(opaque_part,
+            {fastxlsx::detail::PackageEntryChunk::memory(prior_opaque)},
+            "prior opaque replacement before sheetData commit failure");
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_part_count =
+            editor.edit_plan().removed_parts().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+
+        bool failed = false;
+        {
+            ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+                fail_package_editor_worksheet_part_replacement_after_staging);
+            try {
+                editor.replace_worksheet_sheet_data_from_chunk_source_by_name("Sheet1",
+                    make_test_chunk_source({replacement_sheet_data}));
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(),
+                    "injected worksheet part replacement commit failure",
+                    "sheetData staged failure should preserve injected context");
+            }
+        }
+
+        check(failed,
+            "PackageEditor should surface injected sheetData commit failure");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "sheetData commit failure should preserve edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "sheetData commit failure should preserve notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "sheetData commit failure should preserve package-entry audits");
+        check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+            "sheetData commit failure should preserve removed-part audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "sheetData commit failure should preserve removed-entry audits");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"by-name sheetData chunk-source replacement"}),
+            "sheetData commit failure should not publish by-name note");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"sheetData replacement uses bounded local worksheet XML rewrite"}),
+            "sheetData commit failure should not publish transform notes");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "sheetData commit failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "sheetData commit failure should preserve prior workbook replacement");
+        check_manifest_write_mode(editor, opaque_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "sheetData commit failure should preserve prior opaque replacement");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "sheetData commit failure should roll back temporary-file ownership");
+
+        editor.save_as(failed_output);
+        const fastxlsx::detail::PackageReader failed_reader =
+            fastxlsx::detail::PackageReader::open(failed_output);
+        check_entry_bytes(failed_reader, worksheet_part.zip_path(), source.worksheet);
+        check_entry_bytes(failed_reader, workbook_part.zip_path(), prior_workbook);
+        check_entry_bytes(failed_reader, opaque_part.zip_path(), prior_opaque);
+
+        editor.replace_worksheet_sheet_data_from_chunk_source_by_name("Sheet1",
+            make_test_chunk_source({replacement_sheet_data}));
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"by-name sheetData chunk-source replacement",
+                      "planned/source workbook catalog"}),
+            "sheetData retry should publish by-name note atomically");
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"sheetData replacement uses bounded local worksheet XML rewrite",
+                      "PackageEditor-owned file-backed staged chunk"}),
+            "sheetData retry should publish transform notes atomically");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "sheetData retry should publish final LocalDom worksheet mode");
+        const auto* worksheet_plan = editor.edit_plan().find_part(worksheet_part);
+        check(worksheet_plan != nullptr
+                && worksheet_plan->write_mode
+                    == fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "sheetData retry should publish LocalDom edit-plan mode");
+        const fastxlsx::detail::PackageEditorOutputPlan retry_plan =
+            editor.planned_output();
+        check_output_entry_plan(retry_plan.entries, worksheet_part.zip_path(),
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite, true, false, false, false,
+            "sheetData retry output plan should expose final LocalDom mode");
+        check_output_entry_staged_replacement_chunks(retry_plan.entries,
+            worksheet_part.zip_path(), true,
+            "sheetData retry output plan should retain file-backed staged chunks");
+
+        editor.save_as(retry_output);
+        const fastxlsx::detail::PackageReader retry_reader =
+            fastxlsx::detail::PackageReader::open(retry_output);
+        const std::string retry_worksheet =
+            retry_reader.read_entry(worksheet_part.zip_path());
+        check_contains(retry_worksheet, R"(<c r="B2"><v>22</v></c>)",
+            "sheetData retry should write replacement cells");
+        check_not_contains(retry_worksheet, R"(<c r="A1">)",
+            "sheetData retry should remove prior sheetData cells");
+        check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
+    }
+
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "PackageEditor destruction should clean retried sheetData temporary files");
+}
+
 void test_package_editor_replaces_worksheet_by_name_from_chunk_source()
 {
     const SourcePackage source =
@@ -1083,6 +1217,7 @@ int main(int argc, char* argv[])
             test_package_editor_replaces_worksheet_from_chunk_source();
             test_package_editor_chunk_source_commit_failure_cleans_temp_and_retries();
             test_package_editor_prevalidated_by_name_note_commits_atomically();
+            test_package_editor_sheet_data_commit_failure_preserves_state_and_retries();
             test_package_editor_replaces_worksheet_by_name_from_chunk_source();
         }
     } catch (const std::exception& error) {

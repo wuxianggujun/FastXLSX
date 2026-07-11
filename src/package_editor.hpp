@@ -538,6 +538,12 @@ private:
         const ReferencePolicy& policy,
         std::string reason,
         std::vector<std::string> commit_notes);
+    void replace_worksheet_sheet_data_from_chunk_source_with_commit_notes(
+        PartName worksheet_part,
+        const WorksheetInputChunkCallback& read_next_sheet_data_chunk,
+        const ReferencePolicy& policy,
+        std::optional<std::string_view> dimension_reference,
+        std::vector<std::string> commit_notes);
     void replace_worksheet_part_chunks_with_commit_notes(PartName worksheet_part,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
         std::string reason, std::vector<std::string> commit_notes);
@@ -549,7 +555,8 @@ private:
         std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
         std::string replacement_reason, bool enforce_payload_policy = true,
         bool validate_staged_chunk_crc32 = true,
-        std::vector<std::string> commit_notes = {});
+        std::vector<std::string> commit_notes = {},
+        PartWriteMode target_write_mode = PartWriteMode::StreamRewrite);
 
     PackageReader reader_;
     PackageManifest manifest_;

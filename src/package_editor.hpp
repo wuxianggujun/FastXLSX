@@ -567,6 +567,7 @@ private:
         std::string replacement_reason, bool enforce_payload_policy = true,
         bool validate_staged_chunk_crc32 = true,
         std::vector<std::string> commit_notes = {},
+        std::optional<std::filesystem::path> owned_temporary_file = std::nullopt,
         PartWriteMode target_write_mode = PartWriteMode::StreamRewrite,
         std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt);
 

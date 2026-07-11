@@ -24,9 +24,10 @@
 - Internal materialized `PackageEditor::replace_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 replacement，后续 retry 可恢复 source part。
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 chunk replacement，后续 retry 可恢复 source part。
 - Internal worksheet chunk replacement 改为跨 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；generic/direct/by-name routing notes 与 audits 在同一次 commit 发布，提交前失败保留既有 replacement、输出语义和 retry 能力。
-- Internal complete-worksheet chunk-source wrapper 在 replacement commit 前预注册 PackageEditor 临时文件所有权，并在提交失败时回滚注册、删除 staged file；direct/by-name/prevalidated wrapper notes 随 worksheet state 原子发布，避免已提交 chunks 指向已删除文件或调用抛错后泄漏 notes。
+- Internal complete-worksheet chunk-source wrapper 将 PackageEditor 临时文件所有权与 worksheet/package state 一起在副本中 staging，再以 `noexcept` swap 发布；提交前失败由 RAII 删除未发布 staged file，direct/by-name/prevalidated wrapper notes 不会单独泄漏。
 - Internal bounded sheetData replacement 将最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败不再泄漏 StreamRewrite 中间态、notes 或指向已删除临时文件的 chunks，并可在同一 editor 上 retry。
-- Internal worksheet cell transformer fallback 在 commit 前预注册 file-backed output，并将 transform diagnostics 随 worksheet state 发布；indexed direct-range fast path 将 structured telemetry 与 notes 写入 staged replacement/edit-plan 副本。两条路径的提交前失败不再泄漏 temp chunks、telemetry 或 notes，并支持保留既有 patch 后 retry。
+- Internal worksheet cell transformer fallback 将 file-backed output ownership 与 transform diagnostics 随 worksheet state 一次发布；indexed direct-range fast path 将 structured telemetry 与 notes 写入 staged replacement/edit-plan 副本。两条路径的提交前失败不再泄漏 temp chunks、telemetry 或 notes，并支持保留既有 patch 后 retry。
+- 继续拆分 legacy public-state 超大 translation unit，将 source StyleId rejection/public-view 场景迁入现有 style-focused standalone target，同时保持原 shard 行为不变。
 
 ### Documentation
 

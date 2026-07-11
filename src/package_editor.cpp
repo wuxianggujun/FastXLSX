@@ -4965,6 +4965,30 @@ void commit_package_editor_staged_state(
     swap(omitted_entries, updated_omitted_entries);
 }
 
+void commit_package_editor_staged_state_with_temporary_files(
+    PackageManifest& manifest,
+    EditPlan& edit_plan,
+    std::vector<PackagePartReplacement>& replacements,
+    std::vector<PackageEntryReplacement>& entry_replacements,
+    std::vector<std::string>& omitted_entries,
+    std::vector<std::filesystem::path>& temporary_files,
+    PackageManifest& updated_manifest,
+    EditPlan& updated_edit_plan,
+    std::vector<PackagePartReplacement>& updated_replacements,
+    std::vector<PackageEntryReplacement>& updated_entry_replacements,
+    std::vector<std::string>& updated_omitted_entries,
+    std::vector<std::filesystem::path>& updated_temporary_files) noexcept
+{
+    static_assert(std::is_nothrow_swappable_v<std::vector<std::filesystem::path>>);
+
+    commit_package_editor_staged_state(manifest, edit_plan, replacements,
+        entry_replacements, omitted_entries, updated_manifest, updated_edit_plan,
+        updated_replacements, updated_entry_replacements, updated_omitted_entries);
+
+    using std::swap;
+    swap(temporary_files, updated_temporary_files);
+}
+
 PackageEntry materialize_active_package_entry_replacement(const PackageReader& reader,
     const PackageEntryReplacement& replacement, std::string entry_name)
 {
@@ -6650,19 +6674,14 @@ void PackageEditor::replace_worksheet_part_from_chunk_source_with_commit_notes(
         "writes the staged worksheet chunk in one caller chunk-source pass "
         "without reopening that staged chunk for validation or audit");
 
-    temporary_files_.push_back(staged_worksheet_file.path());
-    try {
-        replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-            std::move(staged_worksheet_chunks), policy,
-            std::move(replacement_audit.payload_audit.notes),
-            std::move(replacement_audit.payload_audit.audits),
-            std::move(replacement_audit.relationship_reference_audit.notes),
-            std::move(replacement_audit.relationship_reference_audit.audits),
-            std::move(reason), true, true, std::move(commit_notes));
-    } catch (...) {
-        temporary_files_.pop_back();
-        throw;
-    }
+    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+        std::move(staged_worksheet_chunks), policy,
+        std::move(replacement_audit.payload_audit.notes),
+        std::move(replacement_audit.payload_audit.audits),
+        std::move(replacement_audit.relationship_reference_audit.notes),
+        std::move(replacement_audit.relationship_reference_audit.audits),
+        std::move(reason), true, true, std::move(commit_notes),
+        staged_worksheet_file.path());
     staged_worksheet_file.release();
 }
 
@@ -6719,6 +6738,7 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
     std::string replacement_reason, bool enforce_payload_policy,
     bool validate_staged_chunk_crc32, std::vector<std::string> commit_notes,
+    std::optional<std::filesystem::path> owned_temporary_file,
     PartWriteMode target_write_mode,
     std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats)
 {
@@ -6749,6 +6769,11 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<PackagePartReplacement> updated_replacements = replacements_;
     std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
     std::vector<std::string> updated_omitted_entries = omitted_entries_;
+    std::optional<std::vector<std::filesystem::path>> updated_temporary_files;
+    if (owned_temporary_file.has_value()) {
+        updated_temporary_files.emplace(temporary_files_);
+        updated_temporary_files->push_back(std::move(*owned_temporary_file));
+    }
     if (updated_manifest.find_part(target_worksheet_part) == nullptr) {
         const PackagePart* source_part =
             reader_.part_index().find_part(target_worksheet_part);
@@ -6930,9 +6955,17 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     run_package_editor_worksheet_part_replacement_staged_hook();
 #endif
 
-    commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
-        entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
-        updated_replacements, updated_entry_replacements, updated_omitted_entries);
+    if (updated_temporary_files.has_value()) {
+        commit_package_editor_staged_state_with_temporary_files(manifest_, edit_plan_,
+            replacements_, entry_replacements_, omitted_entries_, temporary_files_,
+            updated_manifest, updated_edit_plan, updated_replacements,
+            updated_entry_replacements, updated_omitted_entries,
+            *updated_temporary_files);
+    } else {
+        commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
+            entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
+            updated_replacements, updated_entry_replacements, updated_omitted_entries);
+    }
 }
 
 void PackageEditor::replace_worksheet_part_from_chunk_source_by_name(
@@ -7103,18 +7136,13 @@ void PackageEditor::replace_worksheet_sheet_data_from_chunk_source_with_commit_n
         "metadata audit while consuming the current worksheet input chunks, "
         "without a separate preservation-only worksheet reread");
 
-    temporary_files_.push_back(staged_worksheet_file.path());
-    try {
-        replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-            std::move(staged_worksheet_chunks), policy,
-            std::move(preservation_audit.notes), std::move(preservation_audit.audits),
-            std::move(relationship_reference_audit.notes),
-            std::move(relationship_reference_audit.audits), sheet_data_rewrite_reason,
-            false, true, std::move(commit_notes), PartWriteMode::LocalDomRewrite);
-    } catch (...) {
-        temporary_files_.pop_back();
-        throw;
-    }
+    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+        std::move(staged_worksheet_chunks), policy,
+        std::move(preservation_audit.notes), std::move(preservation_audit.audits),
+        std::move(relationship_reference_audit.notes),
+        std::move(relationship_reference_audit.audits), sheet_data_rewrite_reason,
+        false, true, std::move(commit_notes), staged_worksheet_file.path(),
+        PartWriteMode::LocalDomRewrite);
     staged_worksheet_file.release();
 }
 
@@ -7268,8 +7296,8 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
         std::move(relationship_reference_audit.notes),
         std::move(relationship_reference_audit.audits),
         "target worksheet part indexed direct-range stream rewrite from worksheet cell replacement",
-        false, false, std::move(commit_notes), PartWriteMode::StreamRewrite,
-        indexed_stats);
+        false, false, std::move(commit_notes), std::nullopt,
+        PartWriteMode::StreamRewrite, indexed_stats);
     return true;
 }
 
@@ -7447,19 +7475,14 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
 
     std::vector<PackageEntryChunk> output_chunks;
     output_chunks.push_back(PackageEntryChunk::file(temp_file.path()));
-    temporary_files_.push_back(temp_file.path());
-    try {
-        replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-            std::move(output_chunks), policy,
-            std::move(stream_analysis.payload_audit.notes),
-            std::move(stream_analysis.payload_audit.audits),
-            std::move(relationship_reference_audit.notes),
-            std::move(relationship_reference_audit.audits),
-            std::move(replacement_reason), true, true, std::move(commit_notes));
-    } catch (...) {
-        temporary_files_.pop_back();
-        throw;
-    }
+    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+        std::move(output_chunks), policy,
+        std::move(stream_analysis.payload_audit.notes),
+        std::move(stream_analysis.payload_audit.audits),
+        std::move(relationship_reference_audit.notes),
+        std::move(relationship_reference_audit.audits),
+        std::move(replacement_reason), true, true, std::move(commit_notes),
+        temp_file.path());
     temp_file.release();
 }
 

@@ -61,7 +61,7 @@ source worksheet events -> strict/lossy projection -> sparse CellStore -> edits 
 ## 状态与失败
 
 - Edit/materialization 先 preflight，成功后才注册或修改状态。
-- `request_full_calculation()`、`rename_sheet()`、internal document-properties rewrite、internal part removal 与 materialized small-part replacement 的跨 plan/replacements/omitted entries/manifest/public diagnostics 变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation，既有 patch 必须保持可保存、可重试。
+- `request_full_calculation()`、`rename_sheet()`、internal document-properties rewrite、internal part removal、materialized small-part replacement 与 file-backed worksheet rewrite 的跨 plan/replacements/omitted entries/manifest/public diagnostics/临时文件所有权变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation，未发布临时文件由 RAII 清理，既有 patch 必须保持可保存、可重试。
 - Malformed source、非法值和 session option mismatch 保持通用 contract/load failure；不得伪装成 strict projection loss。
 - Failed edit/save 不清除 staged state 或 dirty session diagnostics，也不改变 pending/unsaved count、`last_edit_error()` 或 save watermark。
 - Successful `save_as()` 清除 unsaved watermark，但保留可复用 staged state。

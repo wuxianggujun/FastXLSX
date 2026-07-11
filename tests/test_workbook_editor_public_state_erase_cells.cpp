@@ -1308,6 +1308,518 @@ void test_public_worksheet_editor_erase_cell_removes_styled_source_record()
         });
 }
 
+void test_public_worksheet_editor_erase_cells_remove_styled_source_records()
+{
+    const std::filesystem::path source =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-second-noop-output.xlsx");
+    const std::filesystem::path reacquired_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-reacquired-noop-output.xlsx");
+    const std::filesystem::path reacquired_second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-reacquired-second-noop-output.xlsx");
+    const std::filesystem::path reacquired_post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-style-reacquired-post-noop-output.xlsx");
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        {
+            fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+            non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+            styled_sheet.append_row({
+                fastxlsx::CellView::number(1.0).with_style(non_default_style),
+                fastxlsx::CellView::text("erase-cell-range-target"),
+                fastxlsx::CellView::text("cell-range-non-target"),
+            });
+        }
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+    sheet.erase_cells(fastxlsx::CellRange {1, 1, 1, 2});
+
+    check(sheet.cell_count() == 1,
+        "styled erase_cells should remove all target sparse records");
+    check(!sheet.try_cell("A1").has_value() &&
+            !sheet.try_cell("B1").has_value(),
+        "styled erase_cells should remove styled and unstyled target cells");
+    check(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 1, 2}).empty(),
+        "styled erase_cells range snapshot should keep erased target cells absent");
+    const fastxlsx::CellValue live_c1 = sheet.get_cell("C1");
+    check(live_c1.kind() == fastxlsx::CellValueKind::Text &&
+            live_c1.text_value() == "cell-range-non-target" &&
+            !live_c1.has_style(),
+        "styled erase_cells should preserve non-target source cells without style leakage");
+    check(editor.pending_materialized_cell_count() == 1,
+        "styled erase_cells should update aggregate materialized diagnostics");
+    check(sheet.has_pending_changes(),
+        "styled erase_cells should dirty the materialized worksheet");
+    check(!editor.last_edit_error().has_value(),
+        "successful styled erase_cells should keep diagnostics clear");
+
+    const auto inspect_styled_erase_cells_output =
+        [](fastxlsx::WorksheetEditor& reopened_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(reopened_sheet.cell_count() == 1,
+                prefix + " reopened output should keep sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                reopened_sheet.sparse_cells();
+            check(cells.size() == 1,
+                prefix + " reopened sparse_cells should expose C1 only");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 1 &&
+                        cells[0].reference.column == 3 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "cell-range-non-target" &&
+                        !cells[0].value.has_style(),
+                    prefix + " reopened sparse_cells should keep non-target C1 only");
+            }
+            check(reopened_sheet.sparse_cells(
+                    fastxlsx::CellRange {1, 1, 1, 2}).empty(),
+                prefix + " reopened range sparse_cells should keep erased cells absent");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 1 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 3 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "cell-range-non-target" &&
+                    !row_one[0].value.has_style(),
+                prefix + " reopened row_cells should expose non-target C1 only");
+
+            check(reopened_sheet.column_cells(1).empty() &&
+                    reopened_sheet.column_cells(2).empty(),
+                prefix + " reopened column_cells should keep erased columns empty");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                reopened_sheet.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 1 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "cell-range-non-target" &&
+                    !column_three[0].value.has_style(),
+                prefix + " reopened column_cells should expose non-target C1 only");
+
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 3, 1, 3,
+                prefix + " reopened output should shrink to non-target cell");
+            check(!reopened_sheet.try_cell("A1").has_value() &&
+                    !reopened_sheet.try_cell("B1").has_value(),
+                prefix + " reopened output should keep erased target cells absent");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c1.text_value() == "cell-range-non-target" &&
+                    !reopened_c1.has_style(),
+                prefix + " reopened output should keep non-target source cell unstyled");
+        };
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled erase_cells save should leave the source package unchanged");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="C1"/>)",
+        "styled erase_cells should shrink the projected dimension to the non-target cell");
+    check_contains(worksheet_xml, "cell-range-non-target",
+        "styled erase_cells should persist non-target source cells");
+    check_not_contains(worksheet_xml, R"(r="A1")",
+        "styled erase_cells should omit erased styled source cell");
+    check_not_contains(worksheet_xml, R"(r="B1")",
+        "styled erase_cells should omit erased unstyled source cell");
+    check_not_contains(worksheet_xml,
+        R"(s=")" + std::to_string(non_default_style.value()) + R"(")",
+        "styled erase_cells should not leak removed source style ids into sheet data");
+    check_reopened_clean_sheet_output(output, "Styled", "styled erase_cells",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_erase_cells_output(reopened_sheet, "styled erase_cells");
+        });
+
+    fastxlsx::WorkbookEditor reacquired_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reacquired_sheet =
+        reacquired_editor.worksheet("Styled");
+    const auto check_reacquired_editor_clean_state =
+        [&](std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(!reacquired_editor.last_edit_error().has_value(),
+                prefix + " should not expose stale diagnostics");
+            check(!reacquired_editor.has_pending_changes(),
+                prefix + " should keep editor state clean");
+            check(reacquired_editor.pending_change_count() == 0 &&
+                    reacquired_editor.pending_materialized_cell_count() == 0 &&
+                    reacquired_editor.estimated_pending_materialized_memory_usage() == 0 &&
+                    reacquired_editor.pending_replacement_cell_count() == 0 &&
+                    reacquired_editor.estimated_pending_replacement_memory_usage() == 0 &&
+                    reacquired_editor.pending_worksheet_edits().empty(),
+                prefix + " should not expose dirty diagnostics");
+            check(reacquired_editor.pending_materialized_worksheet_names().empty() &&
+                    reacquired_editor.pending_replacement_worksheet_names().empty(),
+                prefix + " should not expose dirty worksheet names");
+        };
+    check_reacquired_editor_clean_state(
+        "styled erase_cells saved-output reacquire");
+    check(!reacquired_sheet.has_pending_changes(),
+        "styled erase_cells saved-output reacquire should keep the sheet clean");
+    inspect_styled_erase_cells_output(
+        reacquired_sheet, "styled erase_cells saved-output reacquire");
+
+    const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reacquired_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reacquired_editor);
+    reacquired_editor.save_as(reacquired_noop_output);
+    check_workbook_editor_public_save_state_preserved(
+        reacquired_editor, reacquired_save_state_before_noop,
+        "styled erase_cells saved-output reacquired noop save");
+    check_workbook_editor_public_catalog_preserved(
+        reacquired_editor, reacquired_catalog_before_noop,
+        "styled erase_cells saved-output reacquired noop save");
+    check_reacquired_editor_clean_state(
+        "styled erase_cells saved-output reacquired noop save");
+    check(!reacquired_sheet.has_pending_changes(),
+        "styled erase_cells saved-output reacquired noop save should keep the sheet clean");
+    inspect_styled_erase_cells_output(
+        reacquired_sheet, "styled erase_cells saved-output reacquired noop save");
+    const auto reacquired_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_noop_output);
+    check(reacquired_noop_entries == output_entries,
+        "styled erase_cells saved-output reacquired noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "styled erase_cells saved-output reacquired noop save should leave the saved input unchanged");
+    check_reopened_clean_sheet_output(
+        reacquired_noop_output, "Styled",
+        "styled erase_cells saved-output reacquired noop save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_erase_cells_output(
+                reopened_sheet,
+                "styled erase_cells saved-output reacquired noop save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(reacquired_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(reacquired_editor);
+    reacquired_editor.save_as(reacquired_second_noop_output);
+    check_workbook_editor_public_save_state_preserved(
+        reacquired_editor, reacquired_save_state_before_second_noop,
+        "styled erase_cells saved-output reacquired second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        reacquired_editor, reacquired_catalog_before_second_noop,
+        "styled erase_cells saved-output reacquired second noop save");
+    check_reacquired_editor_clean_state(
+        "styled erase_cells saved-output reacquired second noop save");
+    check(!reacquired_sheet.has_pending_changes(),
+        "styled erase_cells saved-output reacquired second noop save should keep the sheet clean");
+    inspect_styled_erase_cells_output(
+        reacquired_sheet, "styled erase_cells saved-output reacquired second noop save");
+    const auto reacquired_second_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_second_noop_output);
+    check(reacquired_second_noop_entries == reacquired_noop_entries,
+        "styled erase_cells saved-output reacquired second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(reacquired_noop_output) == reacquired_noop_entries,
+        "styled erase_cells saved-output reacquired second noop save should leave the first noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "styled erase_cells saved-output reacquired second noop save should leave the saved input unchanged");
+    check_reopened_clean_sheet_output(
+        reacquired_second_noop_output, "Styled",
+        "styled erase_cells saved-output reacquired second noop save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_erase_cells_output(
+                reopened_sheet,
+                "styled erase_cells saved-output reacquired second noop save");
+        });
+
+    reacquired_sheet.set_cell("C1",
+        fastxlsx::CellValue::text("styled-erase-cells-final"));
+    check(!reacquired_editor.last_edit_error().has_value(),
+        "styled erase_cells saved-output reacquired post-noop edit should keep diagnostics clear");
+    check(reacquired_sheet.has_pending_changes(),
+        "styled erase_cells saved-output reacquired post-noop edit should dirty the sheet");
+    check(reacquired_editor.has_pending_changes(),
+        "styled erase_cells saved-output reacquired post-noop edit should dirty the editor");
+    check(reacquired_sheet.cell_count() == 1,
+        "styled erase_cells saved-output reacquired post-noop edit should keep sparse count stable");
+    check(!reacquired_sheet.try_cell("A1").has_value() &&
+            !reacquired_sheet.try_cell("B1").has_value(),
+        "styled erase_cells saved-output reacquired post-noop edit should keep erased targets absent");
+    check(reacquired_sheet.sparse_cells(fastxlsx::CellRange {1, 1, 1, 2}).empty(),
+        "styled erase_cells saved-output reacquired post-noop edit should keep erased range snapshots absent");
+    const fastxlsx::CellValue reacquired_final_c1 =
+        reacquired_sheet.get_cell("C1");
+    check(reacquired_final_c1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_final_c1.text_value() == "styled-erase-cells-final" &&
+            !reacquired_final_c1.has_style(),
+        "styled erase_cells saved-output reacquired post-noop edit should overwrite unstyled C1");
+    check_public_state_single_named_dirty_materialized_summary(
+        reacquired_editor,
+        reacquired_sheet,
+        "Styled",
+        0,
+        "styled erase_cells saved-output reacquired post-noop edit");
+    check_workbook_editor_no_replacement_diagnostics(
+        reacquired_editor,
+        "styled erase_cells saved-output reacquired post-noop edit should not queue replacement diagnostics");
+
+    reacquired_editor.save_as(reacquired_post_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "styled erase_cells saved-output reacquired post-noop save should clean the sheet");
+    check(reacquired_editor.pending_change_count() == 1,
+        "styled erase_cells saved-output reacquired post-noop save should keep one materialized handoff");
+    check(reacquired_editor.pending_materialized_worksheet_names().empty(),
+        "styled erase_cells saved-output reacquired post-noop save should not expose dirty worksheet names");
+    check(reacquired_editor.pending_materialized_cell_count() == 0,
+        "styled erase_cells saved-output reacquired post-noop save should not expose dirty materialized cells");
+    check(reacquired_editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled erase_cells saved-output reacquired post-noop save should not expose dirty materialized memory");
+    check(reacquired_editor.pending_worksheet_edits().empty(),
+        "styled erase_cells saved-output reacquired post-noop save should not expose dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reacquired_editor,
+        "styled erase_cells saved-output reacquired post-noop save should not queue replacement diagnostics");
+    check(!reacquired_editor.last_edit_error().has_value(),
+        "styled erase_cells saved-output reacquired post-noop save should keep diagnostics clear");
+    const auto reacquired_post_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_post_noop_output);
+    const std::string reacquired_post_noop_xml =
+        reacquired_post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reacquired_post_noop_xml, R"(<dimension ref="C1"/>)",
+        "styled erase_cells saved-output reacquired post-noop save should keep C1 bounds");
+    check_contains(reacquired_post_noop_xml, "styled-erase-cells-final",
+        "styled erase_cells saved-output reacquired post-noop save should persist the later overwrite");
+    check_not_contains(reacquired_post_noop_xml, "cell-range-non-target",
+        "styled erase_cells saved-output reacquired post-noop save should not keep the old C1 text");
+    check_not_contains(reacquired_post_noop_xml, R"(r="A1")",
+        "styled erase_cells saved-output reacquired post-noop save should keep erased styled A1 absent");
+    check_not_contains(reacquired_post_noop_xml, R"(r="B1")",
+        "styled erase_cells saved-output reacquired post-noop save should keep erased unstyled B1 absent");
+    check_not_contains(reacquired_post_noop_xml,
+        R"(s=")" + std::to_string(non_default_style.value()) + R"(")",
+        "styled erase_cells saved-output reacquired post-noop save should not leak removed style ids");
+    check(fastxlsx::test::read_zip_entries(reacquired_noop_output) == reacquired_noop_entries,
+        "styled erase_cells saved-output reacquired post-noop save should leave the first noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(reacquired_second_noop_output) == reacquired_second_noop_entries,
+        "styled erase_cells saved-output reacquired post-noop save should leave the second noop output unchanged");
+    check(reacquired_noop_entries == output_entries,
+        "styled erase_cells saved-output reacquired post-noop save should leave the first noop output stable");
+    check(reacquired_second_noop_entries == reacquired_noop_entries,
+        "styled erase_cells saved-output reacquired post-noop save should leave the second noop output stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "styled erase_cells saved-output reacquired post-noop save should leave the saved input unchanged");
+    check_reopened_clean_sheet_output(
+        reacquired_post_noop_output, "Styled",
+        "styled erase_cells saved-output reacquired post-noop save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "styled erase_cells post-noop reopened output should keep remaining sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 3, 1, 3,
+                "styled erase_cells post-noop reopened output should keep C1 bounds");
+            check(!reopened_sheet.try_cell("A1").has_value() &&
+                    !reopened_sheet.try_cell("B1").has_value(),
+                "styled erase_cells post-noop reopened output should keep erased targets absent");
+            check(reopened_sheet.sparse_cells(
+                    fastxlsx::CellRange {1, 1, 1, 2}).empty(),
+                "styled erase_cells post-noop reopened output should keep erased range snapshots absent");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                reopened_sheet.sparse_cells();
+            check(cells.size() == 1,
+                "styled erase_cells post-noop reopened sparse_cells should expose C1 only");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 1 &&
+                        cells[0].reference.column == 3 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "styled-erase-cells-final" &&
+                        !cells[0].value.has_style(),
+                    "styled erase_cells post-noop reopened sparse_cells should expose unstyled C1");
+            }
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                reopened_sheet.row_cells(1);
+            check(row_one.size() == 1 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 3 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "styled-erase-cells-final" &&
+                    !row_one[0].value.has_style(),
+                "styled erase_cells post-noop reopened row_cells should expose unstyled C1");
+            check(reopened_sheet.column_cells(1).empty() &&
+                    reopened_sheet.column_cells(2).empty(),
+                "styled erase_cells post-noop reopened column_cells should keep erased columns absent");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                reopened_sheet.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 1 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "styled-erase-cells-final" &&
+                    !column_three[0].value.has_style(),
+                "styled erase_cells post-noop reopened column_cells should expose unstyled C1");
+            const fastxlsx::CellValue reopened_c1 =
+                reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c1.text_value() == "styled-erase-cells-final" &&
+                    !reopened_c1.has_style(),
+                "styled erase_cells post-noop reopened output should read overwritten unstyled C1");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    const auto check_styled_erase_cells_saved_snapshot =
+        [&](std::size_t expected_pending_count, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(sheet.cell_count() == 1,
+                prefix + " should keep the represented sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                sheet.sparse_cells();
+            check(cells.size() == 1,
+                prefix + " should expose one represented record");
+            if (cells.size() == 1) {
+                check(cells[0].reference.row == 1 &&
+                        cells[0].reference.column == 3 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[0].value.text_value() == "cell-range-non-target" &&
+                        !cells[0].value.has_style(),
+                    prefix + " should keep non-target C1 only");
+            }
+            check(sheet.sparse_cells(fastxlsx::CellRange {1, 1, 1, 2}).empty(),
+                prefix + " should keep erased range snapshots absent");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                sheet.row_cells(1);
+            check(row_one.size() == 1 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 3 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "cell-range-non-target" &&
+                    !row_one[0].value.has_style(),
+                prefix + " should keep row-one C1 snapshot");
+
+            check(sheet.column_cells(1).empty() && sheet.column_cells(2).empty(),
+                prefix + " should keep erased column snapshots absent");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                sheet.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 1 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_three[0].value.text_value() == "cell-range-non-target" &&
+                    !column_three[0].value.has_style(),
+                prefix + " should keep column-three C1 snapshot");
+
+            check(!sheet.try_cell("A1").has_value() &&
+                    !sheet.try_cell("B1").has_value(),
+                prefix + " should keep erased target cells absent");
+            check_cell_range_equals(sheet.used_range(), 1, 3, 1, 3,
+                prefix + " should keep the saved C1 bounds");
+            check(!sheet.has_pending_changes(),
+                prefix + " should keep the materialized handle clean");
+            check(editor.pending_change_count() == expected_pending_count,
+                prefix + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                prefix + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                prefix + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                prefix + " should keep dirty materialized memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                prefix + " should keep dirty summaries empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                prefix + " should keep diagnostics clear");
+        };
+    check_styled_erase_cells_saved_snapshot(
+        pending_count_after_save, "styled erase_cells saved handle");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "styled erase_cells no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "styled erase_cells no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled erase_cells no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "styled erase_cells no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "styled erase_cells no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled erase_cells no-op save should keep diagnostics clear");
+    check_styled_erase_cells_saved_snapshot(
+        pending_count_after_save, "styled erase_cells no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "styled erase_cells no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "styled erase_cells no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "styled erase_cells no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled erase_cells no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "styled erase_cells no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_erase_cells_output(
+                reopened_sheet, "styled erase_cells no-op save");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "styled erase_cells second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "styled erase_cells second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled erase_cells second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "styled erase_cells second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "styled erase_cells second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled erase_cells second no-op save should keep diagnostics clear");
+    check_styled_erase_cells_saved_snapshot(
+        pending_count_after_save, "styled erase_cells second no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "styled erase_cells second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "styled erase_cells second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "styled erase_cells second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "styled erase_cells second no-op save should leave the materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "styled erase_cells second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled erase_cells second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Styled", "styled erase_cells second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_styled_erase_cells_output(
+                reopened_sheet, "styled erase_cells second no-op save");
+        });
+}
+
 } // namespace
 
 int main()
@@ -1315,6 +1827,7 @@ int main()
     try {
         test_public_worksheet_editor_erase_cell_auto_flushes_on_save_as();
         test_public_worksheet_editor_erase_cell_removes_styled_source_record();
+        test_public_worksheet_editor_erase_cells_remove_styled_source_records();
         std::cout << "WorkbookEditor public-state erase cell tests passed\n";
         return 0;
     } catch (const std::exception& error) {

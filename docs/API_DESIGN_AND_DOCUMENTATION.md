@@ -31,6 +31,7 @@
 - Patch edit 必须明确 copy/rewrite/remove/audit/fail 行为，以及 sharedStrings、styles、formulas、relationships、content types 和 calc metadata 策略。
 - In-memory API 必须提供 cell count、内存估算和 guardrail，并定义失败前状态不污染。
 - Existing-workbook style-only API 在 style registry/migration contract 建立前，只能复用同一 materialized workbook 中已校验的 source StyleId 或清除现有句柄；range mutation 必须定义 sparse mapping、missing-target、overlap snapshot 与 batch preflight 语义。不得接受任意 caller non-default StyleId，并必须声明 styles.xml 是 preserve 而不是 edit。
+- Style-only move 必须明确 source-clear 与 destination-overlay 的顺序：从 pre-edit snapshot 冻结 optional StyleId，在候选 CellStore 中先清除 represented sources、再覆盖全部已表示的 mapped targets，比较最终状态并通过 guardrail 后一次发布；不能先修改 active source，也不能借 move 合成 cell、移动 CellValue 或引入 style table migration。
 - Cross-worksheet In-memory API 必须验证 borrowed handle 属于同一当前 `WorkbookEditor`，明确 source/destination dirty ownership、live snapshot 时点、同坐标行为和目标 guardrail；不得把 same-workbook sparse copy 描述为 worksheet clone、cross-workbook migration 或 linked-object copy。
 - Value-only copy 必须明确 source StyleId 被忽略、existing destination StyleId 从 pre-edit snapshot 保留、missing destination 插入 unstyled，以及公式仍按 source-to-target delta 平移；不得用 full-cell copy 或 style migration 语义替代。
 - Value-only move 必须同时定义 source 与 destination 的样式所有权：source 采用 `clear_cell_value()` 的显式 blank 并保留 source StyleId，destination 保留 pre-edit StyleId，missing destination 插入 unstyled；跨 worksheet 发布必须使用双 CellStore candidate + noexcept commit。

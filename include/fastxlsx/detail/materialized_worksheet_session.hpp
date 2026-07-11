@@ -581,6 +581,115 @@ public:
         set_cells(updates);
     }
 
+    void move_cell_style(CellPosition source, CellPosition destination)
+    {
+        const CellRecord* source_record = store_.try_cell(source.row, source.column);
+        if (source_record == nullptr) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::move_cell_style() source cell is not represented");
+        }
+        if (store_.try_cell(destination.row, destination.column) == nullptr) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::move_cell_style() destination cell is not represented");
+        }
+        if (source.row == destination.row && source.column == destination.column) {
+            return;
+        }
+
+        move_cell_styles(CellRange {source.row, source.column, source.row, source.column},
+            destination);
+    }
+
+    void move_cell_styles(const CellRange& source, CellPosition destination)
+    {
+        constexpr std::string_view operation =
+            "MaterializedWorksheetSession::move_cell_styles()";
+        if (source.first_row == 0 || source.first_column == 0
+            || source.first_row > source.last_row
+            || source.first_column > source.last_column
+            || source.last_row > max_excel_rows
+            || source.last_column > max_excel_columns) {
+            throw FastXlsxError(std::string(operation) + " requires a valid source range");
+        }
+        if (destination.row == 0 || destination.row > max_excel_rows
+            || destination.column == 0 || destination.column > max_excel_columns) {
+            throw FastXlsxError(std::string(operation) + " requires a valid destination cell");
+        }
+
+        const std::uint32_t row_span = source.last_row - source.first_row;
+        const std::uint32_t column_span = source.last_column - source.first_column;
+        if (destination.row > max_excel_rows - row_span
+            || destination.column > max_excel_columns - column_span) {
+            throw FastXlsxError(
+                std::string(operation) + " destination range exceeds Excel limits");
+        }
+        if (destination.row == source.first_row
+            && destination.column == source.first_column) {
+            return;
+        }
+
+        struct StyleMoveSnapshot {
+            CellPosition source;
+            CellPosition destination;
+            std::optional<StyleId> style_id;
+        };
+        std::vector<StyleMoveSnapshot> style_moves;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.row < source.first_row || position.row > source.last_row
+                || position.column < source.first_column
+                || position.column > source.last_column) {
+                continue;
+            }
+
+            const CellPosition destination_position {
+                destination.row + (position.row - source.first_row),
+                destination.column + (position.column - source.first_column),
+            };
+            if (store_.try_cell(
+                    destination_position.row, destination_position.column)
+                == nullptr) {
+                throw FastXlsxError(std::string(operation)
+                    + " destination cell is not represented");
+            }
+            style_moves.push_back(
+                StyleMoveSnapshot {position, destination_position, record.style_id});
+        }
+        if (style_moves.empty()) {
+            return;
+        }
+
+        std::map<CellPosition, CellRecord> next_records = store_.records();
+        for (const StyleMoveSnapshot& style_move : style_moves) {
+            next_records.at(style_move.source).style_id.reset();
+        }
+        for (const StyleMoveSnapshot& style_move : style_moves) {
+            next_records.at(style_move.destination).style_id = style_move.style_id;
+        }
+
+        bool changed = false;
+        for (const StyleMoveSnapshot& style_move : style_moves) {
+            const CellRecord* source_record =
+                store_.try_cell(style_move.source.row, style_move.source.column);
+            const CellRecord* destination_record = store_.try_cell(
+                style_move.destination.row, style_move.destination.column);
+            if (!same_style(source_record->style_id,
+                    next_records.at(style_move.source).style_id)
+                || !same_style(destination_record->style_id,
+                    next_records.at(style_move.destination).style_id)) {
+                changed = true;
+                break;
+            }
+        }
+        if (!changed) {
+            return;
+        }
+
+        CellStore next_store(store_.options());
+        next_store.replace_records(std::move(next_records));
+        store_.swap(next_store);
+        dirty_ = true;
+    }
+
     void clear_cell_style(CellPosition position)
     {
         const CellRecord* record = store_.try_cell(position.row, position.column);

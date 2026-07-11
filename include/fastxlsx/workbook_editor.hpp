@@ -1298,6 +1298,69 @@ public:
     void copy_cell_styles(std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Moves one represented cell's existing style handle to another cell.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Source and
+    /// destination are 1-based coordinates in this materialized worksheet and
+    /// must both already be represented sparse records. The source keeps its
+    /// current CellValue and becomes unstyled; the destination keeps its
+    /// current CellValue and receives the source record's optional validated
+    /// workbook-local StyleId. Moving an unstyled source clears the destination
+    /// style. The same coordinate is a successful clean no-op.
+    ///
+    /// Source clearing and destination replacement are planned against the
+    /// pre-edit state and published through one guardrail-checked CellStore
+    /// candidate. Failure preserves both cell styles and dirty/save state apart
+    /// from WorkbookEditor::last_edit_error(). Dirty save_as() changes only the
+    /// affected `s` attributes and preserves styles.xml bytes.
+    ///
+    /// This does not move values/formulas, accept caller-supplied StyleId
+    /// values, create or merge styles, expose a style registry, edit worksheet
+    /// metadata, or migrate styles across worksheets or workbooks.
+    void move_cell_style(std::uint32_t source_row, std::uint32_t source_column,
+        std::uint32_t destination_row, std::uint32_t destination_column);
+
+    /// Moves one represented cell's existing style using strict uppercase A1 references.
+    ///
+    /// Both references must name exactly one represented cell. Parsing,
+    /// source clearing, destination replacement, atomic publication, save
+    /// retry, and non-goals match the coordinate overload.
+    void move_cell_style(std::string_view source_cell_reference,
+        std::string_view destination_cell_reference);
+
+    /// Moves represented source styles to a same-sized target footprint.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. Only
+    /// represented source records participate, and every mapped target must
+    /// already be represented. Source gaps leave target styles unchanged.
+    /// Participating source styles are cleared before the stable pre-edit style
+    /// snapshot is overlaid on the destination, so overlapping moves have
+    /// deterministic cut/paste-style ordering while preserving every CellValue.
+    /// An unstyled source clears its mapped target style.
+    ///
+    /// Bounds, the full target footprint, all participating targets, final
+    /// state, and CellStore guardrails are checked before one candidate is
+    /// published. Missing targets or rejected guardrails leave all styles and
+    /// dirty/save state unchanged apart from last_edit_error(). Moving to the
+    /// source top-left, moving an empty sparse source range, or producing the
+    /// same final style state is a successful clean no-op.
+    ///
+    /// Dirty save_as() changes only affected `s` attributes and preserves
+    /// styles.xml bytes. This does not move values/formulas, synthesize cells,
+    /// create or migrate styles, edit row/column or worksheet metadata, or
+    /// provide dense/large-file range formatting.
+    void move_cell_styles(CellRange source, WorksheetCellReference destination);
+
+    /// Moves represented source styles using strict uppercase A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the target top-left
+    /// cell. Sparse mapping, stable overlap, represented-target requirements,
+    /// atomic publication, diagnostics, save behavior, and non-goals match the
+    /// CellRange overload.
+    void move_cell_styles(std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Copies represented styles from another materialized worksheet.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. This editor

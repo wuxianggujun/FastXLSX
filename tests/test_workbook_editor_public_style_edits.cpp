@@ -224,6 +224,80 @@ void test_public_style_range_edits_overlap_save_and_reopen()
         "reopened range style output should preserve range style clearing");
 }
 
+void test_public_style_moves_overlap_save_retry_and_reopen()
+{
+    const StyleEditSource source =
+        write_style_edit_source("fastxlsx-workbook-editor-style-moves-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output =
+        fastxlsx::test::artifact_path("fastxlsx-workbook-editor-style-moves-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t source_cell_count = sheet.cell_count();
+
+    sheet.move_cell_styles("A1:B1", "B1");
+    const fastxlsx::CellValue moved_unstyled_formula = sheet.get_cell("B1");
+    check(moved_unstyled_formula.kind() == fastxlsx::CellValueKind::Formula
+            && moved_unstyled_formula.text_value() == "A1*2"
+            && !moved_unstyled_formula.has_style(),
+        "overlapping move_cell_styles should clear the mapped target from the stable unstyled A1 snapshot");
+    const fastxlsx::CellValue moved_decimal_text = sheet.get_cell("C1");
+    check(moved_decimal_text.kind() == fastxlsx::CellValueKind::Text
+            && moved_decimal_text.text_value() == "styled-text",
+        "move_cell_styles should preserve mapped target values");
+    check_style(moved_decimal_text, source.decimal_style,
+        "overlapping move_cell_styles should apply the stable pre-edit B1 style");
+    check(!sheet.get_cell("A1").has_style(),
+        "move_cell_styles should leave the unstyled source unstyled");
+
+    sheet.move_cell_style(1, 3, 2, 2);
+    check(!sheet.get_cell("C1").has_style()
+            && sheet.get_cell("C1").text_value() == "styled-text",
+        "move_cell_style should clear the represented source style without changing its value");
+    const fastxlsx::CellValue moved_decimal_number = sheet.get_cell("B2");
+    check(moved_decimal_number.kind() == fastxlsx::CellValueKind::Number
+            && moved_decimal_number.number_value() == 0.5,
+        "move_cell_style should preserve the destination value");
+    check_style(moved_decimal_number, source.decimal_style,
+        "move_cell_style should replace the destination style");
+    check(sheet.cell_count() == source_cell_count
+            && sheet.has_pending_changes() && editor.has_unsaved_changes(),
+        "style moves should preserve sparse cell count and dirty the session");
+
+    check(throws_fastxlsx_error(
+              [&] { editor.save_as(fastxlsx::test::artifact_dir()); }),
+        "style move save to a directory should fail after staging");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes(),
+        "failed style move save should preserve dirty and unsaved state");
+    check(!sheet.get_cell("C1").has_style(),
+        "failed style move save should preserve the cleared source style");
+    check_style(sheet.get_cell("B2"), source.decimal_style,
+        "failed style move save should preserve the moved destination style");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "successful style move save retry should clear dirty and unsaved state");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "style move save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "style move save should preserve source styles.xml bytes");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(reopened_sheet.get_cell("B1").text_value() == "A1*2"
+            && !reopened_sheet.get_cell("B1").has_style(),
+        "reopened style move output should preserve the overlapping style clear");
+    check(reopened_sheet.get_cell("C1").text_value() == "styled-text"
+            && !reopened_sheet.get_cell("C1").has_style(),
+        "reopened style move output should preserve the cleared source value and style");
+    check(reopened_sheet.get_cell("B2").number_value() == 0.5,
+        "reopened style move output should preserve the destination value");
+    check_style(reopened_sheet.get_cell("B2"), source.decimal_style,
+        "reopened style move output should preserve the moved destination style");
+}
+
 void test_public_cross_sheet_style_copy_save_retry_and_reopen()
 {
     const StyleEditSource source = write_cross_sheet_style_source(
@@ -368,18 +442,48 @@ void test_public_style_edit_failures_and_noops_preserve_clean_state()
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
         "copy_cell_styles missing-target failure should preserve clean state");
 
+    check(throws_fastxlsx_error([&] { sheet.move_cell_style("D4", "A1"); }),
+        "move_cell_style should reject a missing represented source");
+    check(throws_fastxlsx_error([&] { sheet.move_cell_style("B1", "D4"); }),
+        "move_cell_style should reject a missing represented destination");
+    check_style(sheet.get_cell("B1"), source.decimal_style,
+        "move_cell_style missing-cell failures should preserve the source style");
+    check(!sheet.get_cell("A1").has_style()
+            && !sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "move_cell_style missing-cell failures should preserve clean state");
+
+    check(throws_fastxlsx_error(
+              [&] { sheet.move_cell_styles("B1:C1", "B2"); }),
+        "move_cell_styles should reject a missing mapped destination record");
+    check_style(sheet.get_cell("B1"), source.decimal_style,
+        "move_cell_styles missing-target failure should preserve the source style");
+    check_style(sheet.get_cell("B2"), source.percent_style,
+        "move_cell_styles missing-target failure should not publish an earlier mapped update");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "move_cell_styles missing-target failure should preserve clean state");
+
     sheet.copy_cell_styles("A1:C1", "A1");
     sheet.copy_cell_styles("D4:E5", "A1");
     sheet.clear_cell_styles("D4:E5");
+    sheet.move_cell_styles("A1:C1", "A1");
+    sheet.move_cell_styles("D4:E5", "A1");
+    sheet.move_cell_style("B1", "B1");
+    sheet.move_cell_style("A1", "A2");
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
             && !editor.last_edit_error().has_value(),
-        "same-footprint, empty-source, and missing-only range style edits should be clean no-ops");
+        "same-footprint, same-cell, equal-final-state, empty-source, and missing-only style edits should be clean no-ops");
 
     check(throws_fastxlsx_error(
               [&] { sheet.copy_cell_styles("A1:B1", "XFD1048576"); }),
         "copy_cell_styles should reject a target footprint outside Excel limits");
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
         "copy_cell_styles footprint failure should preserve clean state");
+
+    check(throws_fastxlsx_error(
+              [&] { sheet.move_cell_styles("A1:B1", "XFD1048576"); }),
+        "move_cell_styles should reject a target footprint outside Excel limits");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "move_cell_styles footprint failure should preserve clean state");
 
     sheet.copy_cell_style("B1", "B1");
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
@@ -403,6 +507,15 @@ void test_public_style_edit_failures_and_noops_preserve_clean_state()
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
             && editor.last_edit_error().has_value(),
         "clear_cell_styles parse failure should preserve clean state and record diagnostics");
+
+    check(throws_fastxlsx_error([&] { sheet.move_cell_style("a1", "B1"); }),
+        "move_cell_style should reject invalid lowercase A1 references");
+    check(throws_fastxlsx_error(
+              [&] { sheet.move_cell_styles("A1:a2", "B1"); }),
+        "move_cell_styles should reject invalid lowercase range references");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && editor.last_edit_error().has_value(),
+        "style move parse failures should preserve clean state and record diagnostics");
 }
 
 } // namespace
@@ -412,6 +525,7 @@ int main()
     try {
         test_public_style_edits_save_retry_and_reopen();
         test_public_style_range_edits_overlap_save_and_reopen();
+        test_public_style_moves_overlap_save_retry_and_reopen();
         test_public_cross_sheet_style_copy_save_retry_and_reopen();
         test_public_cross_sheet_style_copy_failures_and_live_source();
         test_public_style_edit_failures_and_noops_preserve_clean_state();

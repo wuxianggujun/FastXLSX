@@ -569,6 +569,58 @@ void WorksheetEditor::copy_cells(std::string_view source_range_reference,
         WorksheetCellReference {destination.row, destination.column});
 }
 
+void WorksheetEditor::copy_cells_from(const WorksheetEditor& source_sheet,
+    CellRange source, WorksheetCellReference destination)
+{
+    WorkbookEditor& destination_owner = owner();
+    WorkbookEditor::Impl& state = *destination_owner.impl_;
+    try {
+        const WorkbookEditor& source_owner = source_sheet.owner();
+        if (&source_owner != &destination_owner) {
+            throw FastXlsxError(
+                "WorksheetEditor::copy_cells_from() requires both worksheets to belong to the same WorkbookEditor");
+        }
+        detail::validate_worksheet_editor_cell_range(source);
+        detail::validate_worksheet_editor_cell_coordinate(
+            destination.row, destination.column);
+
+        const detail::MaterializedWorksheetSession* source_session =
+            state.materialized_sessions.try_session(source_sheet.planned_name_);
+        detail::MaterializedWorksheetSession* destination_session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (source_session == nullptr || destination_session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        destination_session->copy_cells_from(*source_session, source,
+            detail::CellPosition {destination.row, destination.column});
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::copy_cells_from(const WorksheetEditor& source_sheet,
+    std::string_view source_range_reference,
+    std::string_view destination_cell_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange source {};
+    detail::WorksheetEditorCellCoordinate destination {};
+    try {
+        source = detail::parse_worksheet_editor_a1_cell_range(source_range_reference);
+        destination =
+            detail::parse_worksheet_editor_a1_cell_reference(destination_cell_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+
+    copy_cells_from(source_sheet, source,
+        WorksheetCellReference {destination.row, destination.column});
+}
+
 void WorksheetEditor::move_cells(CellRange source, WorksheetCellReference destination)
 {
     WorkbookEditor::Impl& state = *owner().impl_;

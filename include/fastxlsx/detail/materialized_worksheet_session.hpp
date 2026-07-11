@@ -344,12 +344,18 @@ public:
 
     void copy_cells(const CellRange& source, CellPosition destination)
     {
-        transfer_cells(source, destination, false, "copy_cells");
+        transfer_cells(*this, source, destination, false, "copy_cells");
+    }
+
+    void copy_cells_from(const MaterializedWorksheetSession& source_session,
+        const CellRange& source, CellPosition destination)
+    {
+        transfer_cells(source_session, source, destination, false, "copy_cells_from");
     }
 
     void move_cells(const CellRange& source, CellPosition destination)
     {
-        transfer_cells(source, destination, true, "move_cells");
+        transfer_cells(*this, source, destination, true, "move_cells");
     }
 
     void copy_cell_style(CellPosition source, CellPosition destination)
@@ -615,8 +621,9 @@ private:
         return !left.has_value() || left->value() == right->value();
     }
 
-    void transfer_cells(const CellRange& source, CellPosition destination,
-        bool erase_source, std::string_view operation)
+    void transfer_cells(const MaterializedWorksheetSession& source_session,
+        const CellRange& source, CellPosition destination, bool erase_source,
+        std::string_view operation)
     {
         const std::string operation_name =
             "MaterializedWorksheetSession::" + std::string(operation) + "()";
@@ -638,9 +645,13 @@ private:
             || destination.column > max_excel_columns - column_span) {
             throw FastXlsxError(operation_name + " destination range exceeds Excel limits");
         }
-        if (destination.row == source.first_row
+        if (&source_session == this && destination.row == source.first_row
             && destination.column == source.first_column) {
             return;
+        }
+        if (erase_source && &source_session != this) {
+            throw FastXlsxError(operation_name
+                + " cannot erase records from a different materialized session");
         }
 
         const FormulaTranslationDelta delta {
@@ -655,7 +666,7 @@ private:
             CellRecord record;
         };
         std::vector<TransferredRecord> transferred_records;
-        for (const auto& [position, record] : store_.records()) {
+        for (const auto& [position, record] : source_session.store_.records()) {
             if (position.row < source.first_row || position.row > source.last_row
                 || position.column < source.first_column
                 || position.column > source.last_column) {

@@ -42,6 +42,7 @@ source worksheet events -> strict/lossy projection -> sparse CellStore -> edits 
 - `copy_cells()` 是同一 session 内的 sparse overlay：source 已表示记录先从稳定快照复制到目标 footprint，内部样式句柄随记录保留，公式使用窄 A1 translator 按位移重写；source 空洞不代表目标删除。候选 sparse map 通过 guardrail 后才替换 active store，因此越界和预算失败不发布部分复制。
 - `move_cells()` 使用同一 transfer staging，但在候选 map 中先移除 snapshot 中的 represented source records，再 overlay 目标记录；重叠 source/target 不读取中途状态，失败不发布部分 source removal 或 target write。它仍只移动 CellStore 记录，不同步 worksheet metadata。
 - Style-only mutation 只允许在同一 materialized session 内复制已验证的 source StyleId 或清除 target style；单 cell 与 sparse range copy 都要求每个 mapped target 已表示，range overlap 从稳定 source-style snapshot 读取并在全量 preflight 后批量发布。目标 CellValue 保持不变，dirty projection 只改变 cell `s` attribute，styles.xml 继续 copy-original。它不开放 style registry、任意 StyleId 写入、dense range formatting 或跨 workbook migration。
+- Cross-sheet sparse copy 只接受同一当前 `WorkbookEditor` 的两个已 materialize borrowed handles，读取 source 的 live sparse snapshot 并只发布到 destination store；同 workbook StyleId 可随 CellValue 复用，目标 guardrail 在替换前检查。它不是 worksheet clone，不跨 workbook 迁移 style/sharedStrings，也不复制 linked metadata。
 - Strict rejection 不注册 session、不排队 edit、不改变 pending/unsaved count，也不覆盖 `last_edit_error()`。
 - Worksheet metadata、relationships、tables、drawings、validations、comments 等不进入 `CellStore`，不能假设会随 cell structural edit 语义同步。
 

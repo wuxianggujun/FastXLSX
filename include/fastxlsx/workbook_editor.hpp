@@ -974,6 +974,53 @@ public:
     void copy_cells(std::string_view source_range_reference,
         std::string_view destination_cell_reference);
 
+    /// Copies represented sparse cells from another materialized worksheet.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. This
+    /// WorksheetEditor is the destination; `source_sheet` and the destination
+    /// must be valid borrowed handles owned by the same current WorkbookEditor
+    /// state. Both worksheets must already be materialized. `source` is a
+    /// 1-based inclusive range and `destination` names the top-left cell of the
+    /// same-sized target footprint. The source session remains unchanged and
+    /// only the destination session becomes dirty after an effective copy.
+    ///
+    /// Only represented source records are copied; source gaps preserve target
+    /// records. The operation reads the source's current live sparse snapshot,
+    /// including unsaved materialized edits. CellValue payloads and validated
+    /// workbook-local StyleId handles are copied. Formula text is translated by
+    /// the source-to-destination row/column delta using the same narrow A1
+    /// translator as copy_cells(); formulas are not evaluated and cached values
+    /// are not generated. Copying between different worksheets at the same
+    /// coordinates is still an effective copy when represented source records
+    /// differ from the target.
+    ///
+    /// Owner identity, handle/session validity, source/destination bounds,
+    /// target footprint, max_cells, and memory_budget_bytes are checked before
+    /// the destination store is replaced. Failure leaves both sparse stores and
+    /// dirty/save state unchanged apart from this WorkbookEditor's
+    /// last_edit_error(). Temporary staging memory grows with the destination
+    /// store and represented source records.
+    ///
+    /// This is same-workbook sparse cell overlay, not worksheet cloning or full
+    /// Excel cross-sheet copy/paste. It does not copy row/column metadata,
+    /// merged cells, tables, filters, validations, conditional formatting,
+    /// hyperlinks, drawings/charts/VBA, defined names, relationships,
+    /// sharedStrings/styles metadata, or calcChain, and it does not accept a
+    /// source handle from another WorkbookEditor.
+    void copy_cells_from(const WorksheetEditor& source_sheet, CellRange source,
+        WorksheetCellReference destination);
+
+    /// Copies represented cells from another materialized worksheet using A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the target top-left
+    /// cell. Same-owner validation, live source snapshot, sparse overlay,
+    /// formula translation, StyleId reuse, target guardrails, diagnostics, and
+    /// non-goals match the CellRange overload.
+    void copy_cells_from(const WorksheetEditor& source_sheet,
+        std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Moves represented sparse cells to another location in this worksheet.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. `source` is

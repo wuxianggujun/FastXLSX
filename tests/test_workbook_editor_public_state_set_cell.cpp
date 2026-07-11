@@ -3727,6 +3727,600 @@ void test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets()
 }
 
 
+void check_workbook_editor_public_clean_state(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check_workbook_editor_public_no_pending_state(editor, scenario);
+    check_workbook_editor_no_replacement_diagnostics(editor, scenario);
+    check(!editor.last_edit_error().has_value(),
+        prefix + " should keep last_edit_error empty");
+}
+
+void test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-mutation-memory-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-output.xlsx");
+    const std::filesystem::path reacquired_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-reacquired-noop-output.xlsx");
+    const std::filesystem::path reacquired_second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-reacquired-second-noop-output.xlsx");
+    const std::filesystem::path reacquired_post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-reacquired-post-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_memory_budget = sizing_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.memory_budget_bytes = exact_memory_budget;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    const std::size_t baseline_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(!sheet.try_cell("D4").has_value(),
+        "mutation memory-budget test precondition should use a missing target cell");
+
+    bool failed = false;
+    try {
+        sheet.set_cell("D4", fastxlsx::CellValue::text("mutation-memory-oversized"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore memory_budget_bytes guardrail exceeded",
+            "public WorksheetEditor mutation should expose memory budget diagnostics");
+    }
+    check(failed,
+        "public WorksheetEditor should enforce memory_budget_bytes while mutating cells");
+    check(editor.last_edit_error().has_value(),
+        "failed memory-budget mutation should update last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "CellStore memory_budget_bytes guardrail exceeded",
+            "last_edit_error should retain the mutation memory-budget diagnostic");
+    }
+    check(!sheet.has_pending_changes(),
+        "failed memory-budget mutation should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "failed memory-budget mutation should not dirty the editor");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed memory-budget mutation");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed memory-budget mutation should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed memory-budget mutation should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed memory-budget mutation should not expose dirty materialized memory");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "failed memory-budget mutation");
+    check(sheet.cell_count() == baseline_count,
+        "failed memory-budget mutation should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "failed memory-budget mutation should preserve sparse memory estimate");
+    check(!sheet.try_cell("D4").has_value(),
+        "failed memory-budget mutation should not leave the rejected cell readable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed memory-budget mutation should leave the source package unchanged");
+
+    sheet.set_cell("A1", fastxlsx::CellValue::text("tiny"));
+    check(!editor.last_edit_error().has_value(),
+        "successful in-budget mutation should clear last_edit_error");
+    check(sheet.has_pending_changes(),
+        "successful in-budget mutation should dirty the materialized session");
+    check(editor.has_pending_changes(),
+        "successful in-budget mutation should dirty the editor");
+    check(editor.pending_materialized_cell_count() == baseline_count,
+        "successful overwrite should keep the sparse cell count stable");
+    const std::size_t recovered_memory = sheet.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
+        "successful overwrite should expose recovered materialized memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "mutation memory-budget recovery overwrite");
+
+    editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mutation memory-budget recovery save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "tiny",
+        "successful in-budget mutation should persist through save_as");
+    check_not_contains(worksheet_xml, "mutation-memory-oversized",
+        "rejected memory-budget mutation should not leak into saved output");
+    check_reopened_default_data_overwrite_output(output, "mutation memory-budget recovery",
+        "tiny");
+
+    fastxlsx::WorkbookEditor reacquired_editor =
+        fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reacquired_sheet =
+        reacquired_editor.worksheet("Data", options);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation memory-budget recovery same-budget reacquire should keep the sheet clean");
+    check(reacquired_sheet.cell_count() == baseline_count,
+        "mutation memory-budget recovery same-budget reacquire should keep the sparse count");
+    check(reacquired_sheet.estimated_memory_usage() <= exact_memory_budget,
+        "mutation memory-budget recovery same-budget reacquire should stay within budget");
+    check(!reacquired_sheet.try_cell("D4").has_value(),
+        "mutation memory-budget recovery same-budget reacquire should keep rejected D4 absent");
+    check_workbook_editor_public_clean_state(
+        reacquired_editor,
+        "mutation memory-budget recovery same-budget reacquire");
+
+    reacquired_editor.save_as(reacquired_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation memory-budget recovery same-budget reacquired noop save should keep the sheet clean");
+    check(reacquired_sheet.estimated_memory_usage() <= exact_memory_budget,
+        "mutation memory-budget recovery same-budget reacquired noop save should stay within budget");
+    check_workbook_editor_public_clean_state(
+        reacquired_editor,
+        "mutation memory-budget recovery same-budget reacquired noop save");
+    const auto reacquired_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_noop_output);
+    check(reacquired_noop_entries == output_entries,
+        "mutation memory-budget recovery same-budget reacquired noop output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "mutation memory-budget recovery same-budget reacquired noop save should leave the saved input unchanged");
+    check_reopened_default_data_overwrite_output(
+        reacquired_noop_output,
+        "mutation memory-budget recovery same-budget reacquired noop",
+        "tiny");
+
+    const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(reacquired_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(reacquired_editor);
+    reacquired_editor.save_as(reacquired_second_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation memory-budget recovery same-budget reacquired second noop save should keep the sheet clean");
+    check(reacquired_sheet.estimated_memory_usage() <= exact_memory_budget,
+        "mutation memory-budget recovery same-budget reacquired second noop save should stay within budget");
+    check_workbook_editor_public_clean_state(
+        reacquired_editor,
+        "mutation memory-budget recovery same-budget reacquired second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        reacquired_editor,
+        reacquired_save_state_before_second_noop,
+        "mutation memory-budget recovery same-budget reacquired second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        reacquired_editor,
+        reacquired_catalog_before_second_noop,
+        "mutation memory-budget recovery same-budget reacquired second noop save");
+    const auto reacquired_second_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_second_noop_output);
+    check(reacquired_second_noop_entries == reacquired_noop_entries,
+        "mutation memory-budget recovery same-budget reacquired second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "mutation memory-budget recovery same-budget reacquired second noop save should leave the saved input unchanged");
+    check_reopened_default_data_overwrite_output(
+        reacquired_second_noop_output,
+        "mutation memory-budget recovery same-budget reacquired second noop",
+        "tiny");
+
+    reacquired_sheet.set_cell("A1", fastxlsx::CellValue::text("mini"));
+    check(reacquired_sheet.has_pending_changes(),
+        "mutation memory-budget recovery same-budget post-noop overwrite should dirty the sheet");
+    check(reacquired_editor.has_pending_changes(),
+        "mutation memory-budget recovery same-budget post-noop overwrite should dirty the editor");
+    check(reacquired_sheet.estimated_memory_usage() <= exact_memory_budget,
+        "mutation memory-budget recovery same-budget post-noop overwrite should stay within budget");
+    check(reacquired_editor.pending_materialized_cell_count() == baseline_count,
+        "mutation memory-budget recovery same-budget post-noop overwrite should keep sparse count stable");
+    check_workbook_editor_no_replacement_diagnostics(
+        reacquired_editor,
+        "mutation memory-budget recovery same-budget post-noop overwrite");
+    check(!reacquired_editor.last_edit_error().has_value(),
+        "mutation memory-budget recovery same-budget post-noop overwrite should keep diagnostics clear");
+    check_public_state_single_data_dirty_materialized_summary(
+        reacquired_editor,
+        reacquired_sheet,
+        0,
+        "mutation memory-budget recovery same-budget post-noop overwrite");
+
+    reacquired_editor.save_as(reacquired_post_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation memory-budget recovery same-budget post-noop save should clean the sheet");
+    check(reacquired_editor.pending_change_count() == 1,
+        "mutation memory-budget recovery same-budget post-noop save should record one materialized handoff");
+    check(reacquired_editor.pending_materialized_worksheet_names().empty(),
+        "mutation memory-budget recovery same-budget post-noop save should clear dirty materialized names");
+    check(reacquired_editor.pending_materialized_cell_count() == 0,
+        "mutation memory-budget recovery same-budget post-noop save should clear dirty materialized cells");
+    check(reacquired_editor.estimated_pending_materialized_memory_usage() == 0,
+        "mutation memory-budget recovery same-budget post-noop save should clear dirty materialized memory");
+    check(reacquired_editor.pending_worksheet_edits().empty(),
+        "mutation memory-budget recovery same-budget post-noop save should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reacquired_editor,
+        "mutation memory-budget recovery same-budget post-noop save");
+    check(!reacquired_editor.last_edit_error().has_value(),
+        "mutation memory-budget recovery same-budget post-noop save should keep diagnostics clear");
+    const auto reacquired_post_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_post_noop_output);
+    const std::string reacquired_post_noop_xml =
+        reacquired_post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reacquired_post_noop_xml, "mini",
+        "mutation memory-budget recovery same-budget post-noop save should persist the overwrite");
+    check_not_contains(reacquired_post_noop_xml, "mutation-memory-oversized",
+        "mutation memory-budget recovery same-budget post-noop save should not revive rejected D4");
+    check(reacquired_noop_entries == output_entries,
+        "mutation memory-budget recovery same-budget post-noop save should leave the no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(reacquired_second_noop_output) ==
+            reacquired_second_noop_entries,
+        "mutation memory-budget recovery same-budget post-noop save should leave the second no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "mutation memory-budget recovery same-budget post-noop save should leave the saved input unchanged");
+    check_reopened_default_data_overwrite_output(
+        reacquired_post_noop_output,
+        "mutation memory-budget recovery same-budget post-noop",
+        "mini");
+
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-memory-second-noop-output.xlsx");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "successful memory-budget recovery noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "successful memory-budget recovery noop save should not add a second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful memory-budget recovery noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful memory-budget recovery noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful memory-budget recovery noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful memory-budget recovery noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful memory-budget recovery noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "mutation memory-budget recovery noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "mutation memory-budget recovery noop save");
+
+    const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_output_entries == output_entries,
+        "successful memory-budget recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful memory-budget recovery noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(noop_output, "mutation memory-budget recovery noop",
+        "tiny");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "successful memory-budget recovery second noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "successful memory-budget recovery second noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful memory-budget recovery second noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful memory-budget recovery second noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful memory-budget recovery second noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful memory-budget recovery second noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful memory-budget recovery second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "mutation memory-budget recovery second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "mutation memory-budget recovery second noop save");
+
+    const auto second_noop_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_output_entries == noop_output_entries,
+        "successful memory-budget recovery second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_output_entries,
+        "successful memory-budget recovery second noop save should leave the first noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful memory-budget recovery second noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(second_noop_output,
+        "mutation memory-budget recovery second noop",
+        "tiny");
+}
+
+void test_public_worksheet_editor_mutation_max_cells_failure_preserves_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-second-noop-output.xlsx");
+    const std::filesystem::path reacquired_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-reacquired-noop-output.xlsx");
+    const std::filesystem::path reacquired_second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-reacquired-second-noop-output.xlsx");
+    const std::filesystem::path reacquired_post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-mutation-max-cells-reacquired-post-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor sizing_editor = fastxlsx::WorkbookEditor::open(source);
+    const fastxlsx::WorksheetEditor sizing_sheet = sizing_editor.worksheet("Data");
+    const std::size_t exact_max_cells = sizing_sheet.cell_count();
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditorOptions options;
+    options.max_cells = exact_max_cells;
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data", options);
+
+    const std::size_t baseline_count = sheet.cell_count();
+    const std::size_t baseline_memory = sheet.estimated_memory_usage();
+    check(!sheet.try_cell("D4").has_value(),
+        "mutation max-cells test precondition should use a missing target cell");
+
+    bool failed = false;
+    try {
+        sheet.set_cell("D4", fastxlsx::CellValue::text("mutation-max-cells-rejected"));
+    } catch (const fastxlsx::FastXlsxError& error) {
+        failed = true;
+        check_contains(error.what(), "CellStore max_cells guardrail exceeded",
+            "public WorksheetEditor mutation should expose max_cells diagnostics");
+    }
+    check(failed, "public WorksheetEditor should enforce max_cells while mutating cells");
+    check(editor.last_edit_error().has_value(),
+        "failed max_cells mutation should update last_edit_error");
+    if (editor.last_edit_error().has_value()) {
+        check_contains(*editor.last_edit_error(),
+            "CellStore max_cells guardrail exceeded",
+            "last_edit_error should retain the mutation max_cells diagnostic");
+    }
+    check(!sheet.has_pending_changes(),
+        "failed max_cells mutation should not dirty the materialized session");
+    check(!editor.has_pending_changes(),
+        "failed max_cells mutation should not dirty the editor");
+    check_workbook_editor_public_no_pending_state(
+        editor, "failed max_cells mutation");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed max_cells mutation should not expose dirty materialized names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed max_cells mutation should not expose dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed max_cells mutation should not expose dirty materialized memory");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "failed max_cells mutation");
+    check(sheet.cell_count() == baseline_count,
+        "failed max_cells mutation should preserve sparse cell count");
+    check(sheet.estimated_memory_usage() == baseline_memory,
+        "failed max_cells mutation should preserve sparse memory estimate");
+    check(!sheet.try_cell("D4").has_value(),
+        "failed max_cells mutation should not leave the rejected cell readable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "failed max_cells mutation should leave the source package unchanged");
+
+    sheet.set_cell("A1", fastxlsx::CellValue::text("after-max-cells-overwrite"));
+    check(!editor.last_edit_error().has_value(),
+        "successful overwrite under max_cells should clear last_edit_error");
+    check(sheet.has_pending_changes(),
+        "successful overwrite under max_cells should dirty the materialized session");
+    check(editor.has_pending_changes(),
+        "successful overwrite under max_cells should dirty the editor");
+    check(editor.pending_materialized_cell_count() == baseline_count,
+        "successful overwrite under max_cells should keep the sparse cell count stable");
+    const std::size_t recovered_memory = sheet.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == recovered_memory,
+        "successful overwrite under max_cells should expose recovered materialized memory");
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "mutation max-cells recovery overwrite");
+
+    editor.save_as(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "mutation max-cells recovery save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, "after-max-cells-overwrite",
+        "successful overwrite under max_cells should persist through save_as");
+    check_not_contains(worksheet_xml, "mutation-max-cells-rejected",
+        "rejected max_cells mutation should not leak into saved output");
+    check_reopened_default_data_overwrite_output(output, "mutation max-cells recovery",
+        "after-max-cells-overwrite");
+
+    fastxlsx::WorkbookEditor reacquired_editor =
+        fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reacquired_sheet =
+        reacquired_editor.worksheet("Data", options);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation max-cells recovery same-budget reacquire should keep the sheet clean");
+    check(reacquired_sheet.cell_count() == baseline_count,
+        "mutation max-cells recovery same-budget reacquire should keep the sparse count");
+    check(!reacquired_sheet.try_cell("D4").has_value(),
+        "mutation max-cells recovery same-budget reacquire should keep rejected D4 absent");
+    check_workbook_editor_public_clean_state(
+        reacquired_editor,
+        "mutation max-cells recovery same-budget reacquire");
+
+    reacquired_editor.save_as(reacquired_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation max-cells recovery same-budget reacquired noop save should keep the sheet clean");
+    check_workbook_editor_public_clean_state(
+        reacquired_editor,
+        "mutation max-cells recovery same-budget reacquired noop save");
+    const auto reacquired_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_noop_output);
+    check(reacquired_noop_entries == output_entries,
+        "mutation max-cells recovery same-budget reacquired noop output should stay byte-stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "mutation max-cells recovery same-budget reacquired noop save should leave the saved input unchanged");
+    check_reopened_default_data_overwrite_output(
+        reacquired_noop_output,
+        "mutation max-cells recovery same-budget reacquired noop",
+        "after-max-cells-overwrite");
+
+    const WorkbookEditorPublicCatalogSnapshot reacquired_catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(reacquired_editor);
+    const WorkbookEditorPublicSaveStateSnapshot reacquired_save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(reacquired_editor);
+    reacquired_editor.save_as(reacquired_second_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation max-cells recovery same-budget reacquired second noop save should keep the sheet clean");
+    check_workbook_editor_public_clean_state(
+        reacquired_editor,
+        "mutation max-cells recovery same-budget reacquired second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        reacquired_editor,
+        reacquired_save_state_before_second_noop,
+        "mutation max-cells recovery same-budget reacquired second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        reacquired_editor,
+        reacquired_catalog_before_second_noop,
+        "mutation max-cells recovery same-budget reacquired second noop save");
+    const auto reacquired_second_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_second_noop_output);
+    check(reacquired_second_noop_entries == reacquired_noop_entries,
+        "mutation max-cells recovery same-budget reacquired second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "mutation max-cells recovery same-budget reacquired second noop save should leave the saved input unchanged");
+    check_reopened_default_data_overwrite_output(
+        reacquired_second_noop_output,
+        "mutation max-cells recovery same-budget reacquired second noop",
+        "after-max-cells-overwrite");
+
+    reacquired_sheet.set_cell(
+        "A1", fastxlsx::CellValue::text("after-max-cells-reacquire"));
+    check(reacquired_sheet.has_pending_changes(),
+        "mutation max-cells recovery same-budget post-noop overwrite should dirty the sheet");
+    check(reacquired_editor.has_pending_changes(),
+        "mutation max-cells recovery same-budget post-noop overwrite should dirty the editor");
+    check(reacquired_editor.pending_materialized_cell_count() == baseline_count,
+        "mutation max-cells recovery same-budget post-noop overwrite should keep sparse count stable");
+    check_workbook_editor_no_replacement_diagnostics(
+        reacquired_editor,
+        "mutation max-cells recovery same-budget post-noop overwrite");
+    check(!reacquired_editor.last_edit_error().has_value(),
+        "mutation max-cells recovery same-budget post-noop overwrite should keep diagnostics clear");
+    check_public_state_single_data_dirty_materialized_summary(
+        reacquired_editor,
+        reacquired_sheet,
+        0,
+        "mutation max-cells recovery same-budget post-noop overwrite");
+
+    reacquired_editor.save_as(reacquired_post_noop_output);
+    check(!reacquired_sheet.has_pending_changes(),
+        "mutation max-cells recovery same-budget post-noop save should clean the sheet");
+    check(reacquired_editor.pending_change_count() == 1,
+        "mutation max-cells recovery same-budget post-noop save should record one materialized handoff");
+    check(reacquired_editor.pending_materialized_worksheet_names().empty(),
+        "mutation max-cells recovery same-budget post-noop save should clear dirty materialized names");
+    check(reacquired_editor.pending_materialized_cell_count() == 0,
+        "mutation max-cells recovery same-budget post-noop save should clear dirty materialized cells");
+    check(reacquired_editor.estimated_pending_materialized_memory_usage() == 0,
+        "mutation max-cells recovery same-budget post-noop save should clear dirty materialized memory");
+    check(reacquired_editor.pending_worksheet_edits().empty(),
+        "mutation max-cells recovery same-budget post-noop save should clear dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        reacquired_editor,
+        "mutation max-cells recovery same-budget post-noop save");
+    check(!reacquired_editor.last_edit_error().has_value(),
+        "mutation max-cells recovery same-budget post-noop save should keep diagnostics clear");
+    const auto reacquired_post_noop_entries =
+        fastxlsx::test::read_zip_entries(reacquired_post_noop_output);
+    const std::string reacquired_post_noop_xml =
+        reacquired_post_noop_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(reacquired_post_noop_xml, "after-max-cells-reacquire",
+        "mutation max-cells recovery same-budget post-noop save should persist the overwrite");
+    check_not_contains(reacquired_post_noop_xml, "mutation-max-cells-rejected",
+        "mutation max-cells recovery same-budget post-noop save should not revive rejected D4");
+    check(reacquired_noop_entries == output_entries,
+        "mutation max-cells recovery same-budget post-noop save should leave the no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(reacquired_second_noop_output) ==
+            reacquired_second_noop_entries,
+        "mutation max-cells recovery same-budget post-noop save should leave the second no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "mutation max-cells recovery same-budget post-noop save should leave the saved input unchanged");
+    check_reopened_default_data_overwrite_output(
+        reacquired_post_noop_output,
+        "mutation max-cells recovery same-budget post-noop",
+        "after-max-cells-reacquire");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "successful max-cells recovery noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "successful max-cells recovery noop save should not add a second materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful max-cells recovery noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful max-cells recovery noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful max-cells recovery noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful max-cells recovery noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful max-cells recovery noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "mutation max-cells recovery noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "mutation max-cells recovery noop save");
+
+    const auto noop_output_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_output_entries == output_entries,
+        "successful max-cells recovery noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful max-cells recovery noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(noop_output, "mutation max-cells recovery noop",
+        "after-max-cells-overwrite");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "successful max-cells recovery second noop save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "successful max-cells recovery second noop save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful max-cells recovery second noop save should not leave dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful max-cells recovery second noop save should not leave dirty materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful max-cells recovery second noop save should not leave dirty materialized memory");
+    check(editor.pending_worksheet_edits().empty(),
+        "successful max-cells recovery second noop save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "successful max-cells recovery second noop save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "mutation max-cells recovery second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "mutation max-cells recovery second noop save");
+
+    const auto second_noop_output_entries = fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_output_entries == noop_output_entries,
+        "successful max-cells recovery second noop output should match the first noop output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_output_entries,
+        "successful max-cells recovery second noop save should leave the first noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "successful max-cells recovery second noop save should leave the source package unchanged");
+    check_reopened_default_data_overwrite_output(second_noop_output,
+        "mutation max-cells recovery second noop",
+        "after-max-cells-overwrite");
+}
+
+
 int main()
 {
     try {
@@ -3738,6 +4332,8 @@ int main()
         test_public_worksheet_editor_set_cell_value_memory_budget_failure_preserves_state();
         test_public_worksheet_editor_style_rejection_preserves_dirty_session();
         test_public_worksheet_editor_blank_insertions_obey_guardrail_budgets();
+        test_public_worksheet_editor_mutation_memory_budget_failure_preserves_state();
+        test_public_worksheet_editor_mutation_max_cells_failure_preserves_state();
         std::cout << "WorkbookEditor public-state set cell tests passed\n";
         return 0;
     } catch (const std::exception& error) {

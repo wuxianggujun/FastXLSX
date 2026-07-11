@@ -964,7 +964,11 @@ add_fastxlsx_workbook_editor_target(
     test_workbook_editor_public_state.cpp
 )
 if(MSVC)
-    target_compile_options(fastxlsx_workbook_editor_public_state_tests PRIVATE /bigobj)
+    # Keep the legacy oversized translation unit cheap to rebuild until C0
+    # finishes splitting it into independent sources. This affects tests only.
+    target_compile_options(
+        fastxlsx_workbook_editor_public_state_tests PRIVATE /bigobj /Od
+    )
 endif()
 add_fastxlsx_workbook_editor_target(
     fastxlsx_workbook_editor_public_guards_tests

@@ -341,6 +341,69 @@ public:
         dirty_ = true;
     }
 
+    void copy_cells(const CellRange& source, CellPosition destination)
+    {
+        if (source.first_row == 0 || source.first_column == 0
+            || source.first_row > source.last_row
+            || source.first_column > source.last_column
+            || source.last_row > max_excel_rows
+            || source.last_column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cells() requires a valid source range");
+        }
+        if (destination.row == 0 || destination.row > max_excel_rows
+            || destination.column == 0 || destination.column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cells() requires a valid destination cell");
+        }
+
+        const std::uint32_t row_span = source.last_row - source.first_row;
+        const std::uint32_t column_span = source.last_column - source.first_column;
+        if (destination.row > max_excel_rows - row_span
+            || destination.column > max_excel_columns - column_span) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cells() destination range exceeds Excel limits");
+        }
+        if (destination.row == source.first_row
+            && destination.column == source.first_column) {
+            return;
+        }
+
+        const FormulaTranslationDelta delta {
+            static_cast<std::int64_t>(destination.row)
+                - static_cast<std::int64_t>(source.first_row),
+            static_cast<std::int64_t>(destination.column)
+                - static_cast<std::int64_t>(source.first_column),
+        };
+        std::map<CellPosition, CellRecord> copied_records = store_.records();
+        bool copied_any_record = false;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.row < source.first_row || position.row > source.last_row
+                || position.column < source.first_column
+                || position.column > source.last_column) {
+                continue;
+            }
+
+            const CellPosition copied_position {
+                destination.row + (position.row - source.first_row),
+                destination.column + (position.column - source.first_column),
+            };
+            CellRecord copied_record = record;
+            if (record.kind == CellValueKind::Formula) {
+                copied_record.text_value =
+                    translate_formula_references(record.text_value, delta);
+            }
+            copied_records[copied_position] = std::move(copied_record);
+            copied_any_record = true;
+        }
+
+        if (!copied_any_record) {
+            return;
+        }
+        store_.replace_records(std::move(copied_records));
+        dirty_ = true;
+    }
+
     [[nodiscard]] const CellRecord* try_cell(
         std::uint32_t row, std::uint32_t column) const
     {

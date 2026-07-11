@@ -934,6 +934,46 @@ public:
     /// large-file low-memory random-editing path.
     void delete_columns(std::uint32_t first_column, std::uint32_t column_count);
 
+    /// Copies represented sparse cells to another location in this worksheet.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. `source` is
+    /// a 1-based inclusive range and `destination` names the top-left cell of a
+    /// same-sized target footprint. Only sparse records represented inside the
+    /// source range are copied; source gaps do not erase existing target cells.
+    /// Overlapping copies read from a stable pre-edit snapshot. Copying to the
+    /// source top-left cell, or copying a source range with no represented
+    /// records, is a successful no-op that does not dirty the session.
+    ///
+    /// Cell values and materialized workbook-local StyleId handles are copied
+    /// with each represented record. Formula text uses the existing narrow
+    /// A1-style translator with the source-to-destination row/column delta;
+    /// relative references move, absolute anchors remain fixed, and references
+    /// translated outside Excel limits become `#REF!`. Formulas are not
+    /// evaluated and cached values are not generated.
+    ///
+    /// Source/destination validation, target-footprint bounds, max_cells, and
+    /// memory_budget_bytes are preflighted before active sparse state is
+    /// replaced. A rejected copy leaves cells, dirty state, pending/unsaved
+    /// diagnostics, and save retry behavior unchanged apart from updating
+    /// WorkbookEditor::last_edit_error(). Temporary staging memory grows with
+    /// the current sparse store.
+    ///
+    /// This is sparse overlay copy, not complete Excel copy/paste. It does not
+    /// copy or synchronize row/column metadata, merged cells, tables, filters,
+    /// validations, conditional formatting, hyperlinks, drawings/charts/VBA,
+    /// defined names, relationships, sharedStrings/styles metadata, or
+    /// calcChain, and it is not a large-file low-memory random-editing path.
+    void copy_cells(CellRange source, WorksheetCellReference destination);
+
+    /// Copies represented sparse cells using strict uppercase A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`). `destination_cell_reference` names the target top-left
+    /// cell. Parsing, sparse overlay, formula translation, style preservation,
+    /// guardrails, diagnostics, and non-goals match the CellRange overload.
+    void copy_cells(std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Replaces one sparse-store cell value while preserving its current style.
     ///
     /// This is the safe existing-workbook style boundary for value-only edits:

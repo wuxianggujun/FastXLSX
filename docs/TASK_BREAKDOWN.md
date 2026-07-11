@@ -7,7 +7,7 @@
 - 持续核对 public headers、source、tests、CMake 和 `CURRENT_CAPABILITIES.md`。
 - 清理 public/internal 注释中的历史 Phase/future wording。
 - Public API 变更必须补模式、内存、状态、失败、side effect 和 non-goal Doxygen。
-- 将超大 `test_workbook_editor_public_state.cpp` 逐步拆为独立 translation units/shards；拆分前保持行为不变，并保留专用 120 秒 CTest 上限。
+- 将超大 `test_workbook_editor_public_state.cpp` 逐步拆为独立 translation units；剩余 6 个 legacy shard 在拆分期间保持行为不变并保留专用 120 秒 CTest 上限，已拆出的 standalone tests 使用普通 60 秒上限。
 
 ## C1 Patch Facade
 

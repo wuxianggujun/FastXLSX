@@ -27,7 +27,7 @@
 - Internal complete-worksheet chunk-source wrapper 将 PackageEditor 临时文件所有权与 worksheet/package state 一起在副本中 staging，再以 `noexcept` swap 发布；提交前失败由 RAII 删除未发布 staged file，direct/by-name/prevalidated wrapper notes 不会单独泄漏。
 - Internal bounded sheetData replacement 将最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败不再泄漏 StreamRewrite 中间态、notes 或指向已删除临时文件的 chunks，并可在同一 editor 上 retry。
 - Internal worksheet cell transformer fallback 将 file-backed output ownership 与 transform diagnostics 随 worksheet state 一次发布；indexed direct-range fast path 将 structured telemetry 与 notes 写入 staged replacement/edit-plan 副本。两条路径的提交前失败不再泄漏 temp chunks、telemetry 或 notes，并支持保留既有 patch 后 retry。
-- 继续拆分 legacy public-state 超大 translation unit，将 source StyleId rejection/public-view 场景迁入现有 style-focused standalone target，同时保持原 shard 行为不变。
+- 继续拆分 legacy public-state 超大 translation unit，将 source StyleId rejection/public-view 与 source-style clear/erase 场景迁入现有 style-focused standalone target，并移除对应 legacy shard；专用 120 秒 shard 从 7 个降为 6 个，standalone test 保持普通 60 秒上限。
 
 ### Documentation
 

@@ -1919,6 +1919,1387 @@ void test_public_worksheet_editor_rejected_non_default_style_ids_preserve_public
         });
 }
 
+void test_public_worksheet_editor_clear_cell_values_range_and_batch_preserve_source_styles()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-clear-range-batch-style-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-clear-range-batch-style-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-clear-range-batch-style-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-clear-range-batch-style-second-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("range-batch-clear-b1"),
+            fastxlsx::CellView::text("range-batch-keep-c1"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::formula("A1+B1").with_style(non_default_style),
+            fastxlsx::CellView::text("range-batch-clear-b2"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("range-batch-keep-a3"),
+            fastxlsx::CellView::text("range-batch-keep-b3"),
+            fastxlsx::CellView::number(3.0).with_style(non_default_style),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("range-batch-keep-a4"),
+            fastxlsx::CellView::text("range-batch-keep-b4"),
+            fastxlsx::CellView::text("range-batch-keep-c4"),
+            fastxlsx::CellView::text("range-batch-clear-d4"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("range-batch-keep-a5"),
+            fastxlsx::CellView::text("range-batch-keep-b5"),
+            fastxlsx::CellView::text("range-batch-keep-c5"),
+            fastxlsx::CellView::text("range-batch-keep-d5"),
+            fastxlsx::CellView::number(5.0).with_style(non_default_style),
+            fastxlsx::CellView::text("range-batch-clear-f5"),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    sheet.clear_cell_values(fastxlsx::CellRange {1, 1, 1, 2});
+    sheet.clear_cell_values("A2:B2");
+    const std::array<fastxlsx::WorksheetCellReference, 3> span_clear_refs {
+        fastxlsx::WorksheetCellReference {3, 3},
+        fastxlsx::WorksheetCellReference {4, 4},
+        fastxlsx::WorksheetCellReference {9, 9},
+    };
+    sheet.clear_cell_values(span_clear_refs);
+    sheet.clear_cell_values({
+        fastxlsx::WorksheetCellReference {5, 5},
+        fastxlsx::WorksheetCellReference {5, 6},
+        fastxlsx::WorksheetCellReference {10, 10},
+    });
+
+    const auto check_styled_blank =
+        [non_default_style](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Blank &&
+                    value.has_style() &&
+                    value.style_id().value() == non_default_style.value(),
+                message);
+        };
+    const auto check_unstyled_blank =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Blank &&
+                    !value.has_style(),
+                message);
+        };
+    const auto inspect_cleared_range_batch =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 18,
+                prefix + " should keep represented sparse count stable");
+            check_cell_range_equals(inspected_sheet.used_range(), 1, 1, 5, 6,
+                prefix + " should keep source bounds over cleared blanks");
+            check(inspected_sheet.contains_cell("A1") &&
+                    inspected_sheet.contains_cell("B1") &&
+                    inspected_sheet.contains_cell("A2") &&
+                    inspected_sheet.contains_cell("B2") &&
+                    inspected_sheet.contains_cell("C3") &&
+                    inspected_sheet.contains_cell("D4") &&
+                    inspected_sheet.contains_cell("E5") &&
+                    inspected_sheet.contains_cell("F5"),
+                prefix + " should report cleared represented coordinates");
+            check(!inspected_sheet.contains_cell("I9") &&
+                    !inspected_sheet.contains_cell("J10"),
+                prefix + " should keep missing batch clear coordinates absent");
+            check_styled_blank(inspected_sheet.get_cell("A1"),
+                prefix + " should keep CellRange-cleared A1 styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("B1"),
+                prefix + " should keep CellRange-cleared B1 unstyled blank");
+            check_styled_blank(inspected_sheet.get_cell("A2"),
+                prefix + " should keep A1-range-cleared A2 styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("B2"),
+                prefix + " should keep A1-range-cleared B2 unstyled blank");
+            check_styled_blank(inspected_sheet.get_cell("C3"),
+                prefix + " should keep span-cleared C3 styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("D4"),
+                prefix + " should keep span-cleared D4 unstyled blank");
+            check_styled_blank(inspected_sheet.get_cell("E5"),
+                prefix + " should keep initializer-cleared E5 styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("F5"),
+                prefix + " should keep initializer-cleared F5 unstyled blank");
+            check(!inspected_sheet.try_cell("I9").has_value() &&
+                    !inspected_sheet.try_cell("J10").has_value(),
+                prefix + " should not synthesize missing batch clear coordinates");
+            check(inspected_sheet.get_cell("C1").text_value() == "range-batch-keep-c1",
+                prefix + " should preserve non-target C1");
+            check(inspected_sheet.get_cell("A3").text_value() == "range-batch-keep-a3",
+                prefix + " should preserve non-target A3");
+            check(inspected_sheet.get_cell("A5").text_value() == "range-batch-keep-a5",
+                prefix + " should preserve non-target A5");
+        };
+    inspect_cleared_range_batch(sheet, "clear_cell_values range/batch live state");
+    check(sheet.has_pending_changes(),
+        "clear_cell_values range/batch should dirty the materialized worksheet");
+    check(editor.pending_materialized_cell_count() == 18,
+        "clear_cell_values range/batch should expose represented sparse count");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "clear_cell_values range/batch dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values range/batch should keep diagnostics clear");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "clear_cell_values range/batch save should clean the materialized worksheet");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values range/batch save should clear dirty diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values range/batch save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "clear_cell_values range/batch save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values range/batch save should keep diagnostics clear");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clear_cell_values range/batch save should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "clear_cell_values range/batch save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const auto styled_blank_xml = [non_default_style](std::string_view reference) {
+        return R"(<c r=")" + std::string(reference) + R"(" s=")"
+            + std::to_string(non_default_style.value()) + R"("/>)";
+    };
+    check_contains(worksheet_xml, R"(<dimension ref="A1:F5"/>)",
+        "clear_cell_values range/batch should keep the projected dimension");
+    check_contains(worksheet_xml, styled_blank_xml("A1"),
+        "clear_cell_values CellRange should persist styled blank A1");
+    check_contains(worksheet_xml, R"(<c r="B1"/>)",
+        "clear_cell_values CellRange should persist unstyled blank B1");
+    check_contains(worksheet_xml, styled_blank_xml("A2"),
+        "clear_cell_values A1 range should persist styled blank A2");
+    check_contains(worksheet_xml, R"(<c r="B2"/>)",
+        "clear_cell_values A1 range should persist unstyled blank B2");
+    check_contains(worksheet_xml, styled_blank_xml("C3"),
+        "clear_cell_values span should persist styled blank C3");
+    check_contains(worksheet_xml, R"(<c r="D4"/>)",
+        "clear_cell_values span should persist unstyled blank D4");
+    check_contains(worksheet_xml, styled_blank_xml("E5"),
+        "clear_cell_values initializer-list should persist styled blank E5");
+    check_contains(worksheet_xml, R"(<c r="F5"/>)",
+        "clear_cell_values initializer-list should persist unstyled blank F5");
+    check_not_contains(worksheet_xml, R"(r="I9")",
+        "clear_cell_values span should not synthesize missing I9");
+    check_not_contains(worksheet_xml, R"(r="J10")",
+        "clear_cell_values initializer-list should not synthesize missing J10");
+    check_not_contains(worksheet_xml, "range-batch-clear-b1",
+        "clear_cell_values CellRange should omit cleared B1 payload");
+    check_not_contains(worksheet_xml, "range-batch-clear-b2",
+        "clear_cell_values A1 range should omit cleared B2 payload");
+    check_not_contains(worksheet_xml, "range-batch-clear-d4",
+        "clear_cell_values span should omit cleared D4 payload");
+    check_not_contains(worksheet_xml, "range-batch-clear-f5",
+        "clear_cell_values initializer-list should omit cleared F5 payload");
+    check_not_contains(worksheet_xml, R"(<f>A1+B1</f>)",
+        "clear_cell_values A1 range should omit cleared formula payload");
+    check_contains(worksheet_xml, "range-batch-keep-c1",
+        "clear_cell_values range/batch should preserve non-target C1");
+    check_reopened_clean_sheet_output(
+        output, "Styled", "clear_cell_values range/batch save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_cleared_range_batch(reopened_sheet,
+                "clear_cell_values range/batch reopened output");
+        });
+
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "clear_cell_values range/batch no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "clear_cell_values range/batch no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values range/batch no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values range/batch no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "clear_cell_values range/batch no-op save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values range/batch no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "clear_cell_values range/batch no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "clear_cell_values range/batch no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "clear_cell_values range/batch no-op output should match materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clear_cell_values range/batch no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "clear_cell_values range/batch no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_cleared_range_batch(reopened_sheet,
+                "clear_cell_values range/batch no-op reopened output");
+        });
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "clear_cell_values range/batch second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "clear_cell_values range/batch second no-op save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "clear_cell_values range/batch second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "clear_cell_values range/batch second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "clear_cell_values range/batch second no-op save should not queue diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "clear_cell_values range/batch second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "clear_cell_values range/batch second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "clear_cell_values range/batch second no-op save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "clear_cell_values range/batch second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "clear_cell_values range/batch second no-op save should leave the materialized output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "clear_cell_values range/batch second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "clear_cell_values range/batch second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Styled",
+        "clear_cell_values range/batch second no-op save",
+        [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+            inspect_cleared_range_batch(reopened_sheet,
+                "clear_cell_values range/batch second no-op reopened output");
+        });
+}
+
+void test_public_worksheet_editor_clear_row_column_contains_cell_preserves_source_styles()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-clear-row-column-contains-style-source.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("contains-clear-b1"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("contains-clear-a2"),
+            fastxlsx::CellView::number(2.0).with_style(non_default_style),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const auto styled_blank_xml = [non_default_style](std::string_view reference) {
+        return R"(<c r=")" + std::string(reference) + R"(" s=")"
+            + std::to_string(non_default_style.value()) + R"("/>)";
+    };
+    const auto check_styled_blank =
+        [non_default_style](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Blank &&
+                    value.has_style() &&
+                    value.style_id().value() == non_default_style.value(),
+                message);
+        };
+    const auto check_unstyled_blank =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Blank &&
+                    !value.has_style(),
+                message);
+        };
+    const auto check_source_a2 =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Text &&
+                    value.text_value() == "contains-clear-a2" &&
+                    !value.has_style(),
+                message);
+        };
+    const auto check_source_b1 =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Text &&
+                    value.text_value() == "contains-clear-b1" &&
+                    !value.has_style(),
+                message);
+        };
+    const auto check_styled_b2_number =
+        [non_default_style](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Number &&
+                    value.number_value() == 2.0 &&
+                    value.has_style() &&
+                    value.style_id().value() == non_default_style.value(),
+                message);
+        };
+    const auto check_contains_projection =
+        [](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.contains_cell("A1") &&
+                    inspected_sheet.contains_cell("B1") &&
+                    inspected_sheet.contains_cell("A2") &&
+                    inspected_sheet.contains_cell("B2"),
+                prefix + " should keep all represented source coordinates present");
+            check(!inspected_sheet.contains_cell("C3"),
+                prefix + " should keep missing coordinates absent");
+        };
+
+    const auto run_case =
+        [&](std::string_view scenario,
+            const std::filesystem::path& output,
+            const std::filesystem::path& noop_output,
+            const std::filesystem::path& second_noop_output,
+            const std::function<void(fastxlsx::WorksheetEditor&)>& mutate,
+            const std::function<void(fastxlsx::WorksheetEditor&, std::string_view)>& inspect,
+            const std::function<void(const std::string&)>& inspect_xml) {
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+            mutate(sheet);
+            inspect(sheet, std::string(scenario) + " live state");
+            check(sheet.cell_count() == 4,
+                std::string(scenario) + " should keep represented sparse count");
+            check_cell_range_equals(sheet.used_range(), 1, 1, 2, 2,
+                std::string(scenario) + " should keep source bounds over blanks");
+            check(sheet.has_pending_changes(),
+                std::string(scenario) + " should dirty the materialized worksheet");
+            check(editor.pending_materialized_cell_count() == 4,
+                std::string(scenario) + " should expose represented sparse count");
+            check_public_state_single_named_dirty_materialized_summary(
+                editor, sheet, "Styled", 0, std::string(scenario) + " dirty summary");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " should keep diagnostics clear");
+
+            editor.save_as(output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " save should clean the materialized worksheet");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " save should clear dirty diagnostics");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " save should keep diagnostics clear");
+            inspect(sheet, std::string(scenario) + " saved handle");
+
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " save should leave the source package unchanged");
+            check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+                std::string(scenario) + " save should preserve source styles.xml bytes");
+            const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+            check_contains(worksheet_xml, R"(<dimension ref="A1:B2"/>)",
+                std::string(scenario) + " should keep projected bounds");
+            check_not_contains(worksheet_xml, R"(s="0")",
+                std::string(scenario) + " should not write default style ids");
+            inspect_xml(worksheet_xml);
+            check_reopened_clean_sheet_output(
+                output, "Styled", scenario,
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet, std::string(scenario) + " reopened output");
+                });
+
+            const std::size_t pending_count_after_save = editor.pending_change_count();
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " no-op save should keep the materialized sheet clean");
+            check(editor.pending_change_count() == pending_count_after_save,
+                std::string(scenario) + " no-op save should not record another handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " no-op save should keep dirty diagnostics clear");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " no-op save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " no-op save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " no-op save should keep diagnostics clear");
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_noop, std::string(scenario) + " no-op save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_noop, std::string(scenario) + " no-op save");
+            const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+            check(noop_entries == output_entries,
+                std::string(scenario) + " no-op output should match materialized output");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " no-op save should leave the source package unchanged");
+            inspect(sheet, std::string(scenario) + " no-op saved handle");
+            check_reopened_clean_sheet_output(
+                noop_output, "Styled", std::string(scenario) + " no-op save",
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet, std::string(scenario) + " no-op reopened output");
+                });
+
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(second_noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " second no-op save should keep the materialized sheet clean");
+            check(editor.pending_change_count() == pending_count_after_save,
+                std::string(scenario) + " second no-op save should not record another handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " second no-op save should keep dirty diagnostics clear");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " second no-op save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " second no-op save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " second no-op save should keep diagnostics clear");
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_second_noop,
+                std::string(scenario) + " second no-op save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_second_noop,
+                std::string(scenario) + " second no-op save");
+            const auto second_noop_entries =
+                fastxlsx::test::read_zip_entries(second_noop_output);
+            check(second_noop_entries == noop_entries,
+                std::string(scenario) + " second no-op output should match first no-op output");
+            check(fastxlsx::test::read_zip_entries(output) == output_entries,
+                std::string(scenario) + " second no-op save should leave the materialized output unchanged");
+            check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+                std::string(scenario) + " second no-op save should leave the first no-op output unchanged");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " second no-op save should leave the source package unchanged");
+            inspect(sheet, std::string(scenario) + " second no-op saved handle");
+            check_reopened_clean_sheet_output(
+                second_noop_output, "Styled", std::string(scenario) + " second no-op save",
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet, std::string(scenario) + " second no-op reopened output");
+                });
+        };
+
+    run_case(
+        "clear_row contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-row-contains-style-second-noop-output.xlsx"),
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.clear_row(1);
+        },
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            check_contains_projection(inspected_sheet, scenario);
+            check_styled_blank(inspected_sheet.get_cell("A1"),
+                std::string(scenario) + " should keep A1 as a styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("B1"),
+                std::string(scenario) + " should keep B1 as an unstyled blank");
+            check_source_a2(inspected_sheet.get_cell("A2"),
+                std::string(scenario) + " should keep non-target A2 text");
+            check_styled_b2_number(inspected_sheet.get_cell("B2"),
+                std::string(scenario) + " should keep non-target B2 styled number");
+        },
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, styled_blank_xml("A1"),
+                "clear_row contains_cell should persist styled blank A1");
+            check_contains(worksheet_xml, R"(<c r="B1"/>)",
+                "clear_row contains_cell should persist unstyled blank B1");
+            check_contains(worksheet_xml, "contains-clear-a2",
+                "clear_row contains_cell should preserve non-target A2 text");
+            check_contains(worksheet_xml,
+                R"(<c r="B2" s=")" + std::to_string(non_default_style.value()),
+                "clear_row contains_cell should preserve non-target B2 style");
+            check_not_contains(worksheet_xml, "contains-clear-b1",
+                "clear_row contains_cell should omit cleared B1 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "clear_row contains_cell should omit cleared A1 numeric payload");
+        });
+
+    run_case(
+        "clear_rows contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-rows-contains-style-second-noop-output.xlsx"),
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.clear_rows(1, 2);
+        },
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            check_contains_projection(inspected_sheet, scenario);
+            check_styled_blank(inspected_sheet.get_cell("A1"),
+                std::string(scenario) + " should keep A1 as a styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("B1"),
+                std::string(scenario) + " should keep B1 as an unstyled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("A2"),
+                std::string(scenario) + " should keep A2 as an unstyled blank");
+            check_styled_blank(inspected_sheet.get_cell("B2"),
+                std::string(scenario) + " should keep B2 as a styled blank");
+        },
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, styled_blank_xml("A1"),
+                "clear_rows contains_cell should persist styled blank A1");
+            check_contains(worksheet_xml, R"(<c r="B1"/>)",
+                "clear_rows contains_cell should persist unstyled blank B1");
+            check_contains(worksheet_xml, R"(<c r="A2"/>)",
+                "clear_rows contains_cell should persist unstyled blank A2");
+            check_contains(worksheet_xml, styled_blank_xml("B2"),
+                "clear_rows contains_cell should persist styled blank B2");
+            check_not_contains(worksheet_xml, "contains-clear-b1",
+                "clear_rows contains_cell should omit cleared B1 payload");
+            check_not_contains(worksheet_xml, "contains-clear-a2",
+                "clear_rows contains_cell should omit cleared A2 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "clear_rows contains_cell should omit cleared A1 numeric payload");
+            check_not_contains(worksheet_xml, R"(<v>2</v>)",
+                "clear_rows contains_cell should omit cleared B2 numeric payload");
+        });
+
+    run_case(
+        "clear_column contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-column-contains-style-second-noop-output.xlsx"),
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.clear_column(1);
+        },
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            check_contains_projection(inspected_sheet, scenario);
+            check_styled_blank(inspected_sheet.get_cell("A1"),
+                std::string(scenario) + " should keep A1 as a styled blank");
+            check_source_b1(inspected_sheet.get_cell("B1"),
+                std::string(scenario) + " should keep non-target B1 text");
+            check_unstyled_blank(inspected_sheet.get_cell("A2"),
+                std::string(scenario) + " should keep A2 as an unstyled blank");
+            check_styled_b2_number(inspected_sheet.get_cell("B2"),
+                std::string(scenario) + " should keep non-target B2 styled number");
+        },
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, styled_blank_xml("A1"),
+                "clear_column contains_cell should persist styled blank A1");
+            check_contains(worksheet_xml, "contains-clear-b1",
+                "clear_column contains_cell should preserve non-target B1 text");
+            check_contains(worksheet_xml, R"(<c r="A2"/>)",
+                "clear_column contains_cell should persist unstyled blank A2");
+            check_contains(worksheet_xml,
+                R"(<c r="B2" s=")" + std::to_string(non_default_style.value()),
+                "clear_column contains_cell should preserve non-target B2 style");
+            check_not_contains(worksheet_xml, "contains-clear-a2",
+                "clear_column contains_cell should omit cleared A2 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "clear_column contains_cell should omit cleared A1 numeric payload");
+        });
+
+    run_case(
+        "clear_columns contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-clear-columns-contains-style-second-noop-output.xlsx"),
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.clear_columns(1, 2);
+        },
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            check_contains_projection(inspected_sheet, scenario);
+            check_styled_blank(inspected_sheet.get_cell("A1"),
+                std::string(scenario) + " should keep A1 as a styled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("B1"),
+                std::string(scenario) + " should keep B1 as an unstyled blank");
+            check_unstyled_blank(inspected_sheet.get_cell("A2"),
+                std::string(scenario) + " should keep A2 as an unstyled blank");
+            check_styled_blank(inspected_sheet.get_cell("B2"),
+                std::string(scenario) + " should keep B2 as a styled blank");
+        },
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, styled_blank_xml("A1"),
+                "clear_columns contains_cell should persist styled blank A1");
+            check_contains(worksheet_xml, R"(<c r="B1"/>)",
+                "clear_columns contains_cell should persist unstyled blank B1");
+            check_contains(worksheet_xml, R"(<c r="A2"/>)",
+                "clear_columns contains_cell should persist unstyled blank A2");
+            check_contains(worksheet_xml, styled_blank_xml("B2"),
+                "clear_columns contains_cell should persist styled blank B2");
+            check_not_contains(worksheet_xml, "contains-clear-b1",
+                "clear_columns contains_cell should omit cleared B1 payload");
+            check_not_contains(worksheet_xml, "contains-clear-a2",
+                "clear_columns contains_cell should omit cleared A2 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "clear_columns contains_cell should omit cleared A1 numeric payload");
+            check_not_contains(worksheet_xml, R"(<v>2</v>)",
+                "clear_columns contains_cell should omit cleared B2 numeric payload");
+        });
+}
+
+void test_public_worksheet_editor_erase_row_column_contains_cell_removes_source_styles()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-erase-row-column-contains-style-source.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("contains-erase-b1"),
+        });
+        styled_sheet.append_row({
+            fastxlsx::CellView::text("contains-erase-a2"),
+            fastxlsx::CellView::number(2.0).with_style(non_default_style),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const auto check_absent =
+        [](fastxlsx::WorksheetEditor& inspected_sheet,
+            std::string_view reference,
+            std::string_view scenario) {
+            const std::string label = std::string(scenario) + " " +
+                std::string(reference);
+
+            check(!inspected_sheet.contains_cell(reference),
+                label + " should be absent from contains_cell");
+            check(!inspected_sheet.try_cell(reference).has_value(),
+                label + " should be absent from try_cell");
+        };
+    const auto check_b1_text =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Text &&
+                    value.text_value() == "contains-erase-b1" &&
+                    !value.has_style(),
+                message);
+        };
+    const auto check_a2_text =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Text &&
+                    value.text_value() == "contains-erase-a2" &&
+                    !value.has_style(),
+                message);
+        };
+    const auto check_b2_styled_number =
+        [non_default_style](const fastxlsx::CellValue& value,
+            std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Number &&
+                    value.number_value() == 2.0 &&
+                    value.has_style() &&
+                    value.style_id().value() == non_default_style.value(),
+                message);
+        };
+
+    const auto inspect_row_one_erased =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 2,
+                prefix + " should keep two non-target source records");
+            check_cell_range_equals(inspected_sheet.used_range(), 2, 1, 2, 2,
+                prefix + " should shrink bounds to row two");
+            check_absent(inspected_sheet, "A1", prefix);
+            check_absent(inspected_sheet, "B1", prefix);
+            check_absent(inspected_sheet, "C3", prefix);
+            check(inspected_sheet.contains_cell("A2") &&
+                    inspected_sheet.contains_cell("B2"),
+                prefix + " should report remaining row-two coordinates");
+            check_a2_text(inspected_sheet.get_cell("A2"),
+                prefix + " should preserve non-target A2 text");
+            check_b2_styled_number(inspected_sheet.get_cell("B2"),
+                prefix + " should preserve non-target B2 styled number");
+            check(inspected_sheet.row_cells(1).empty(),
+                prefix + " should expose no row-one snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                inspected_sheet.row_cells(2);
+            check(row_two.size() == 2 &&
+                    row_two[0].reference.row == 2 &&
+                    row_two[0].reference.column == 1 &&
+                    row_two[1].reference.row == 2 &&
+                    row_two[1].reference.column == 2,
+                prefix + " should expose row two in column order");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                inspected_sheet.column_cells(1);
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                inspected_sheet.column_cells(2);
+            check(column_one.size() == 1 &&
+                    column_one[0].reference.row == 2 &&
+                    column_one[0].reference.column == 1,
+                prefix + " should expose A2 as the only column-one record");
+            check(column_two.size() == 1 &&
+                    column_two[0].reference.row == 2 &&
+                    column_two[0].reference.column == 2,
+                prefix + " should expose B2 as the only column-two record");
+        };
+    const auto inspect_rows_erased =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 0,
+                prefix + " should remove every represented source record");
+            check(!inspected_sheet.used_range().has_value(),
+                prefix + " should expose no used range");
+            check(inspected_sheet.sparse_cells().empty(),
+                prefix + " should expose no sparse snapshots");
+            check_absent(inspected_sheet, "A1", prefix);
+            check_absent(inspected_sheet, "B1", prefix);
+            check_absent(inspected_sheet, "A2", prefix);
+            check_absent(inspected_sheet, "B2", prefix);
+            check(inspected_sheet.row_cells(1).empty() &&
+                    inspected_sheet.row_cells(2).empty(),
+                prefix + " should expose no row snapshots");
+            check(inspected_sheet.column_cells(1).empty() &&
+                    inspected_sheet.column_cells(2).empty(),
+                prefix + " should expose no column snapshots");
+        };
+    const auto inspect_column_one_erased =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 2,
+                prefix + " should keep two non-target source records");
+            check_cell_range_equals(inspected_sheet.used_range(), 1, 2, 2, 2,
+                prefix + " should shrink bounds to column two");
+            check_absent(inspected_sheet, "A1", prefix);
+            check_absent(inspected_sheet, "A2", prefix);
+            check_absent(inspected_sheet, "C3", prefix);
+            check(inspected_sheet.contains_cell("B1") &&
+                    inspected_sheet.contains_cell("B2"),
+                prefix + " should report remaining column-two coordinates");
+            check_b1_text(inspected_sheet.get_cell("B1"),
+                prefix + " should preserve non-target B1 text");
+            check_b2_styled_number(inspected_sheet.get_cell("B2"),
+                prefix + " should preserve non-target B2 styled number");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                inspected_sheet.row_cells(1);
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                inspected_sheet.row_cells(2);
+            check(row_one.size() == 1 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 2,
+                prefix + " should expose B1 as the only row-one record");
+            check(row_two.size() == 1 &&
+                    row_two[0].reference.row == 2 &&
+                    row_two[0].reference.column == 2,
+                prefix + " should expose B2 as the only row-two record");
+            check(inspected_sheet.column_cells(1).empty(),
+                prefix + " should expose no column-one snapshots");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                inspected_sheet.column_cells(2);
+            check(column_two.size() == 2 &&
+                    column_two[0].reference.row == 1 &&
+                    column_two[0].reference.column == 2 &&
+                    column_two[1].reference.row == 2 &&
+                    column_two[1].reference.column == 2,
+                prefix + " should expose column two in row order");
+        };
+    const auto inspect_columns_erased =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 0,
+                prefix + " should remove every represented source record");
+            check(!inspected_sheet.used_range().has_value(),
+                prefix + " should expose no used range");
+            check(inspected_sheet.sparse_cells().empty(),
+                prefix + " should expose no sparse snapshots");
+            check_absent(inspected_sheet, "A1", prefix);
+            check_absent(inspected_sheet, "B1", prefix);
+            check_absent(inspected_sheet, "A2", prefix);
+            check_absent(inspected_sheet, "B2", prefix);
+            check(inspected_sheet.row_cells(1).empty() &&
+                    inspected_sheet.row_cells(2).empty(),
+                prefix + " should expose no row snapshots");
+            check(inspected_sheet.column_cells(1).empty() &&
+                    inspected_sheet.column_cells(2).empty(),
+                prefix + " should expose no column snapshots");
+        };
+
+    const auto run_case =
+        [&](std::string_view scenario,
+            const std::filesystem::path& output,
+            const std::filesystem::path& noop_output,
+            const std::filesystem::path& second_noop_output,
+            std::size_t expected_cell_count,
+            const std::function<void(fastxlsx::WorksheetEditor&)>& mutate,
+            const std::function<void(fastxlsx::WorksheetEditor&, std::string_view)>& inspect,
+            const std::function<void(const std::string&)>& inspect_xml) {
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+            mutate(sheet);
+            inspect(sheet, std::string(scenario) + " live state");
+            check(sheet.cell_count() == expected_cell_count,
+                std::string(scenario) + " should expose the expected sparse count");
+            check(sheet.has_pending_changes(),
+                std::string(scenario) + " should dirty the materialized worksheet");
+            check(editor.pending_materialized_cell_count() == expected_cell_count,
+                std::string(scenario) + " should expose aggregate represented count");
+            check_public_state_single_named_dirty_materialized_summary(
+                editor, sheet, "Styled", 0, std::string(scenario) + " dirty summary");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " should keep diagnostics clear");
+
+            editor.save_as(output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " save should clean the materialized worksheet");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " save should clear dirty diagnostics");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " save should keep diagnostics clear");
+            inspect(sheet, std::string(scenario) + " saved handle");
+
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " save should leave the source package unchanged");
+            check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+                std::string(scenario) + " save should preserve source styles.xml bytes");
+            const std::string worksheet_xml =
+                output_entries.at("xl/worksheets/sheet1.xml");
+            check_not_contains(worksheet_xml, R"(s="0")",
+                std::string(scenario) + " should not write default style ids");
+            inspect_xml(worksheet_xml);
+            check_reopened_clean_sheet_output(
+                output, "Styled", scenario,
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet,
+                        std::string(scenario) + " reopened output");
+                });
+
+            const std::size_t pending_count_after_save = editor.pending_change_count();
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " no-op save should keep the materialized sheet clean");
+            check(editor.pending_change_count() == pending_count_after_save,
+                std::string(scenario) + " no-op save should not record another handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " no-op save should keep dirty diagnostics clear");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " no-op save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " no-op save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " no-op save should keep diagnostics clear");
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_noop, std::string(scenario) + " no-op save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_noop, std::string(scenario) + " no-op save");
+            const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+            check(noop_entries == output_entries,
+                std::string(scenario) + " no-op output should match materialized output");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " no-op save should leave the source package unchanged");
+            inspect(sheet, std::string(scenario) + " no-op saved handle");
+            check_reopened_clean_sheet_output(
+                noop_output, "Styled", std::string(scenario) + " no-op save",
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet,
+                        std::string(scenario) + " no-op reopened output");
+                });
+
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(second_noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " second no-op save should keep the materialized sheet clean");
+            check(editor.pending_change_count() == pending_count_after_save,
+                std::string(scenario) + " second no-op save should not record another handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " second no-op save should keep dirty diagnostics clear");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " second no-op save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " second no-op save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " second no-op save should keep diagnostics clear");
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_second_noop,
+                std::string(scenario) + " second no-op save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_second_noop,
+                std::string(scenario) + " second no-op save");
+            const auto second_noop_entries =
+                fastxlsx::test::read_zip_entries(second_noop_output);
+            check(second_noop_entries == noop_entries,
+                std::string(scenario) + " second no-op output should match first no-op output");
+            check(fastxlsx::test::read_zip_entries(output) == output_entries,
+                std::string(scenario) + " second no-op save should leave the materialized output unchanged");
+            check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+                std::string(scenario) + " second no-op save should leave the first no-op output unchanged");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " second no-op save should leave the source package unchanged");
+            inspect(sheet, std::string(scenario) + " second no-op saved handle");
+            check_reopened_clean_sheet_output(
+                second_noop_output, "Styled", std::string(scenario) + " second no-op save",
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet,
+                        std::string(scenario) + " second no-op reopened output");
+                });
+        };
+
+    run_case(
+        "erase_row contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-row-contains-style-second-noop-output.xlsx"),
+        2,
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.erase_row(1);
+        },
+        inspect_row_one_erased,
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, R"(<dimension ref="A2:B2"/>)",
+                "erase_row contains_cell should shrink the projected dimension");
+            check_contains(worksheet_xml, "contains-erase-a2",
+                "erase_row contains_cell should preserve non-target A2 text");
+            check_contains(worksheet_xml,
+                R"(<c r="B2" s=")" + std::to_string(non_default_style.value()),
+                "erase_row contains_cell should preserve non-target B2 style");
+            check_not_contains(worksheet_xml, R"(r="A1")",
+                "erase_row contains_cell should omit erased styled A1");
+            check_not_contains(worksheet_xml, R"(r="B1")",
+                "erase_row contains_cell should omit erased B1");
+            check_not_contains(worksheet_xml, "contains-erase-b1",
+                "erase_row contains_cell should omit erased B1 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "erase_row contains_cell should omit erased A1 numeric payload");
+        });
+
+    run_case(
+        "erase_rows contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-rows-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-rows-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-rows-contains-style-second-noop-output.xlsx"),
+        0,
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.erase_rows(1, 2);
+        },
+        inspect_rows_erased,
+        [&](const std::string& worksheet_xml) {
+            check_not_contains(worksheet_xml, R"(r="A1")",
+                "erase_rows contains_cell should omit erased A1");
+            check_not_contains(worksheet_xml, R"(r="B1")",
+                "erase_rows contains_cell should omit erased B1");
+            check_not_contains(worksheet_xml, R"(r="A2")",
+                "erase_rows contains_cell should omit erased A2");
+            check_not_contains(worksheet_xml, R"(r="B2")",
+                "erase_rows contains_cell should omit erased B2");
+            check_not_contains(worksheet_xml, "contains-erase-b1",
+                "erase_rows contains_cell should omit erased B1 payload");
+            check_not_contains(worksheet_xml, "contains-erase-a2",
+                "erase_rows contains_cell should omit erased A2 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "erase_rows contains_cell should omit erased A1 numeric payload");
+            check_not_contains(worksheet_xml, R"(<v>2</v>)",
+                "erase_rows contains_cell should omit erased B2 numeric payload");
+            check_not_contains(worksheet_xml,
+                R"(s=")" + std::to_string(non_default_style.value()) + R"(")",
+                "erase_rows contains_cell should not leak erased source style ids");
+        });
+
+    run_case(
+        "erase_column contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-column-contains-style-second-noop-output.xlsx"),
+        2,
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.erase_column(1);
+        },
+        inspect_column_one_erased,
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, R"(<dimension ref="B1:B2"/>)",
+                "erase_column contains_cell should shrink the projected dimension");
+            check_contains(worksheet_xml, "contains-erase-b1",
+                "erase_column contains_cell should preserve non-target B1 text");
+            check_contains(worksheet_xml,
+                R"(<c r="B2" s=")" + std::to_string(non_default_style.value()),
+                "erase_column contains_cell should preserve non-target B2 style");
+            check_not_contains(worksheet_xml, R"(r="A1")",
+                "erase_column contains_cell should omit erased styled A1");
+            check_not_contains(worksheet_xml, R"(r="A2")",
+                "erase_column contains_cell should omit erased A2");
+            check_not_contains(worksheet_xml, "contains-erase-a2",
+                "erase_column contains_cell should omit erased A2 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "erase_column contains_cell should omit erased A1 numeric payload");
+        });
+
+    run_case(
+        "erase_columns contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-columns-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-columns-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-columns-contains-style-second-noop-output.xlsx"),
+        0,
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.erase_columns(1, 2);
+        },
+        inspect_columns_erased,
+        [&](const std::string& worksheet_xml) {
+            check_not_contains(worksheet_xml, R"(r="A1")",
+                "erase_columns contains_cell should omit erased A1");
+            check_not_contains(worksheet_xml, R"(r="B1")",
+                "erase_columns contains_cell should omit erased B1");
+            check_not_contains(worksheet_xml, R"(r="A2")",
+                "erase_columns contains_cell should omit erased A2");
+            check_not_contains(worksheet_xml, R"(r="B2")",
+                "erase_columns contains_cell should omit erased B2");
+            check_not_contains(worksheet_xml, "contains-erase-b1",
+                "erase_columns contains_cell should omit erased B1 payload");
+            check_not_contains(worksheet_xml, "contains-erase-a2",
+                "erase_columns contains_cell should omit erased A2 payload");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "erase_columns contains_cell should omit erased A1 numeric payload");
+            check_not_contains(worksheet_xml, R"(<v>2</v>)",
+                "erase_columns contains_cell should omit erased B2 numeric payload");
+            check_not_contains(worksheet_xml,
+                R"(s=")" + std::to_string(non_default_style.value()) + R"(")",
+                "erase_columns contains_cell should not leak erased source style ids");
+        });
+}
+
+void test_public_worksheet_editor_erase_cell_range_contains_cell_removes_source_styles()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-erase-cell-range-contains-style-source.xlsx");
+
+    fastxlsx::StyleId erased_style;
+    fastxlsx::StyleId survivor_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        erased_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        survivor_style = writer.add_style(fastxlsx::CellStyle {"#,##0"});
+        check(erased_style.value() != survivor_style.value(),
+            "erase_cell contains_cell fixture should use distinct style ids");
+
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(erased_style),
+            fastxlsx::CellView::text("contains-erase-range-b1"),
+            fastxlsx::CellView::number(3.0).with_style(survivor_style),
+        });
+        writer.close();
+    }
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    const auto check_absent =
+        [](fastxlsx::WorksheetEditor& inspected_sheet,
+            std::string_view reference,
+            std::string_view scenario) {
+            const std::string label = std::string(scenario) + " " +
+                std::string(reference);
+
+            check(!inspected_sheet.contains_cell(reference),
+                label + " should be absent from contains_cell");
+            check(!inspected_sheet.try_cell(reference).has_value(),
+                label + " should be absent from try_cell");
+        };
+    const auto check_b1_text =
+        [](const fastxlsx::CellValue& value, std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Text &&
+                    value.text_value() == "contains-erase-range-b1" &&
+                    !value.has_style(),
+                message);
+        };
+    const auto check_c1_styled_number =
+        [survivor_style](const fastxlsx::CellValue& value,
+            std::string_view message) {
+            check(value.kind() == fastxlsx::CellValueKind::Number &&
+                    value.number_value() == 3.0 &&
+                    value.has_style() &&
+                    value.style_id().value() == survivor_style.value(),
+                message);
+        };
+
+    const auto inspect_single_erased =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 2,
+                prefix + " should keep two non-target source records");
+            check_cell_range_equals(inspected_sheet.used_range(), 1, 2, 1, 3,
+                prefix + " should shrink bounds to B1:C1");
+            check_absent(inspected_sheet, "A1", prefix);
+            check(inspected_sheet.contains_cell("B1") &&
+                    inspected_sheet.contains_cell("C1"),
+                prefix + " should report surviving source cells");
+            check(!inspected_sheet.contains_cell("D1"),
+                prefix + " should keep missing D1 absent");
+            check_b1_text(inspected_sheet.get_cell("B1"),
+                prefix + " should preserve non-target B1 text");
+            check_c1_styled_number(inspected_sheet.get_cell("C1"),
+                prefix + " should preserve non-target C1 style");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                inspected_sheet.row_cells(1);
+            check(row_one.size() == 2 &&
+                    row_one[0].reference.column == 2 &&
+                    row_one[1].reference.column == 3,
+                prefix + " should expose B1:C1 row snapshots");
+            check(inspected_sheet.column_cells(1).empty(),
+                prefix + " should expose no erased A1 column snapshot");
+        };
+    const auto inspect_range_erased =
+        [&](fastxlsx::WorksheetEditor& inspected_sheet, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(inspected_sheet.cell_count() == 1,
+                prefix + " should keep one non-target source record");
+            check_cell_range_equals(inspected_sheet.used_range(), 1, 3, 1, 3,
+                prefix + " should shrink bounds to C1");
+            check_absent(inspected_sheet, "A1", prefix);
+            check_absent(inspected_sheet, "B1", prefix);
+            check(inspected_sheet.contains_cell("C1"),
+                prefix + " should report surviving C1");
+            check(!inspected_sheet.contains_cell("D1"),
+                prefix + " should keep missing D1 absent");
+            check(inspected_sheet.sparse_cells(
+                    fastxlsx::CellRange {1, 1, 1, 2}).empty(),
+                prefix + " should expose no erased range snapshots");
+            check_c1_styled_number(inspected_sheet.get_cell("C1"),
+                prefix + " should preserve non-target C1 style");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                inspected_sheet.row_cells(1);
+            check(row_one.size() == 1 &&
+                    row_one[0].reference.column == 3,
+                prefix + " should expose C1 as the only row snapshot");
+            check(inspected_sheet.column_cells(1).empty() &&
+                    inspected_sheet.column_cells(2).empty(),
+                prefix + " should expose no erased column snapshots");
+        };
+
+    const auto run_case =
+        [&](std::string_view scenario,
+            const std::filesystem::path& output,
+            const std::filesystem::path& noop_output,
+            const std::filesystem::path& second_noop_output,
+            std::size_t expected_cell_count,
+            const std::function<void(fastxlsx::WorksheetEditor&)>& mutate,
+            const std::function<void(fastxlsx::WorksheetEditor&, std::string_view)>& inspect,
+            const std::function<void(const std::string&)>& inspect_xml) {
+            fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+            fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+            mutate(sheet);
+            inspect(sheet, std::string(scenario) + " live state");
+            check(sheet.has_pending_changes(),
+                std::string(scenario) + " should dirty the materialized worksheet");
+            check(editor.pending_materialized_cell_count() == expected_cell_count,
+                std::string(scenario) + " should expose aggregate represented count");
+            check_public_state_single_named_dirty_materialized_summary(
+                editor, sheet, "Styled", 0, std::string(scenario) + " dirty summary");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " should keep diagnostics clear");
+
+            editor.save_as(output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " save should clean the materialized worksheet");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " save should clear dirty diagnostics");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " save should keep diagnostics clear");
+            inspect(sheet, std::string(scenario) + " saved handle");
+
+            const auto output_entries = fastxlsx::test::read_zip_entries(output);
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " save should leave the source package unchanged");
+            check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+                std::string(scenario) + " save should preserve source styles.xml bytes");
+            const std::string worksheet_xml =
+                output_entries.at("xl/worksheets/sheet1.xml");
+            check_not_contains(worksheet_xml, R"(s="0")",
+                std::string(scenario) + " should not write default style ids");
+            inspect_xml(worksheet_xml);
+            check_reopened_clean_sheet_output(
+                output, "Styled", scenario,
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet,
+                        std::string(scenario) + " reopened output");
+                });
+
+            const std::size_t pending_count_after_save = editor.pending_change_count();
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " no-op save should keep the materialized sheet clean");
+            check(editor.pending_change_count() == pending_count_after_save,
+                std::string(scenario) + " no-op save should not record another handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " no-op save should keep dirty diagnostics clear");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " no-op save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " no-op save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " no-op save should keep diagnostics clear");
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_noop, std::string(scenario) + " no-op save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_noop, std::string(scenario) + " no-op save");
+            const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+            check(noop_entries == output_entries,
+                std::string(scenario) + " no-op output should match materialized output");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " no-op save should leave the source package unchanged");
+            inspect(sheet, std::string(scenario) + " no-op saved handle");
+            check_reopened_clean_sheet_output(
+                noop_output, "Styled", std::string(scenario) + " no-op save",
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet,
+                        std::string(scenario) + " no-op reopened output");
+                });
+
+            const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+                workbook_editor_public_catalog_snapshot(editor);
+            const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+                workbook_editor_public_save_state_snapshot(editor);
+            editor.save_as(second_noop_output);
+            check(!sheet.has_pending_changes(),
+                std::string(scenario) + " second no-op save should keep the materialized sheet clean");
+            check(editor.pending_change_count() == pending_count_after_save,
+                std::string(scenario) + " second no-op save should not record another handoff");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                std::string(scenario) + " second no-op save should keep dirty diagnostics clear");
+            check(editor.pending_worksheet_edits().empty(),
+                std::string(scenario) + " second no-op save should not leave dirty summaries");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, std::string(scenario) + " second no-op save should not queue diagnostics");
+            check(!editor.last_edit_error().has_value(),
+                std::string(scenario) + " second no-op save should keep diagnostics clear");
+            check_workbook_editor_public_save_state_preserved(
+                editor, save_state_before_second_noop,
+                std::string(scenario) + " second no-op save");
+            check_workbook_editor_public_catalog_preserved(
+                editor, catalog_before_second_noop,
+                std::string(scenario) + " second no-op save");
+            const auto second_noop_entries =
+                fastxlsx::test::read_zip_entries(second_noop_output);
+            check(second_noop_entries == noop_entries,
+                std::string(scenario) + " second no-op output should match first no-op output");
+            check(fastxlsx::test::read_zip_entries(output) == output_entries,
+                std::string(scenario) + " second no-op save should leave the materialized output unchanged");
+            check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+                std::string(scenario) + " second no-op save should leave the first no-op output unchanged");
+            check(fastxlsx::test::read_zip_entries(source) == source_entries,
+                std::string(scenario) + " second no-op save should leave the source package unchanged");
+            inspect(sheet, std::string(scenario) + " second no-op saved handle");
+            check_reopened_clean_sheet_output(
+                second_noop_output, "Styled", std::string(scenario) + " second no-op save",
+                [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                    inspect(reopened_sheet,
+                        std::string(scenario) + " second no-op reopened output");
+                });
+        };
+
+    run_case(
+        "erase_cell contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cell-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cell-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cell-contains-style-second-noop-output.xlsx"),
+        2,
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.erase_cell("A1");
+        },
+        inspect_single_erased,
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, R"(<dimension ref="B1:C1"/>)",
+                "erase_cell contains_cell should shrink the projected dimension");
+            check_contains(worksheet_xml, "contains-erase-range-b1",
+                "erase_cell contains_cell should preserve non-target B1 text");
+            check_contains(worksheet_xml,
+                R"(<c r="C1" s=")" + std::to_string(survivor_style.value()),
+                "erase_cell contains_cell should preserve non-target C1 style");
+            check_not_contains(worksheet_xml, R"(r="A1")",
+                "erase_cell contains_cell should omit erased styled A1");
+            check_not_contains(worksheet_xml,
+                R"(s=")" + std::to_string(erased_style.value()) + R"(")",
+                "erase_cell contains_cell should not leak erased source style id");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "erase_cell contains_cell should omit erased A1 numeric payload");
+        });
+
+    run_case(
+        "erase_cells contains_cell source styles",
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-contains-style-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-contains-style-noop-output.xlsx"),
+        artifact("fastxlsx-workbook-editor-public-worksheet-erase-cells-contains-style-second-noop-output.xlsx"),
+        1,
+        [](fastxlsx::WorksheetEditor& sheet) {
+            sheet.erase_cells(fastxlsx::CellRange {1, 1, 1, 2});
+        },
+        inspect_range_erased,
+        [&](const std::string& worksheet_xml) {
+            check_contains(worksheet_xml, R"(<dimension ref="C1"/>)",
+                "erase_cells contains_cell should shrink the projected dimension");
+            check_contains(worksheet_xml,
+                R"(<c r="C1" s=")" + std::to_string(survivor_style.value()),
+                "erase_cells contains_cell should preserve non-target C1 style");
+            check_not_contains(worksheet_xml, R"(r="A1")",
+                "erase_cells contains_cell should omit erased styled A1");
+            check_not_contains(worksheet_xml, R"(r="B1")",
+                "erase_cells contains_cell should omit erased B1");
+            check_not_contains(worksheet_xml, "contains-erase-range-b1",
+                "erase_cells contains_cell should omit erased B1 payload");
+            check_not_contains(worksheet_xml,
+                R"(s=")" + std::to_string(erased_style.value()) + R"(")",
+                "erase_cells contains_cell should not leak erased source style id");
+            check_not_contains(worksheet_xml, R"(<v>1</v>)",
+                "erase_cells contains_cell should omit erased A1 numeric payload");
+        });
+}
 } // namespace
 
 int main()
@@ -1926,6 +3307,10 @@ int main()
     try {
         test_public_worksheet_editor_snapshots_preserve_source_style_handles();
         test_public_worksheet_editor_rejected_non_default_style_ids_preserve_public_views();
+        test_public_worksheet_editor_clear_cell_values_range_and_batch_preserve_source_styles();
+        test_public_worksheet_editor_clear_row_column_contains_cell_preserves_source_styles();
+        test_public_worksheet_editor_erase_cell_range_contains_cell_removes_source_styles();
+        test_public_worksheet_editor_erase_row_column_contains_cell_removes_source_styles();
         std::cout << "WorkbookEditor public-state style tests passed\n";
         return 0;
     } catch (const std::exception& error) {

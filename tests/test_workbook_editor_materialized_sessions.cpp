@@ -3403,8 +3403,8 @@ void test_public_worksheet_editor_insert_rows_columns_translate_moved_formula()
 
     const fastxlsx::CellValue shifted_formula = sheet.get_cell("D3");
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_formula.text_value() == "B2+C2",
-        "public insert formula shift should translate moved formula references");
+            shifted_formula.text_value() == "A1+C1",
+        "public insert formula shift should structurally rewrite moved formula references");
     check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
             sheet.get_cell("C1").number_value() == 1.0 &&
             sheet.get_cell("A3").text_value() == "placeholder-a2" &&
@@ -3428,15 +3428,15 @@ void test_public_worksheet_editor_insert_rows_columns_translate_moved_formula()
             row_three[2].reference.row == 3 &&
             row_three[2].reference.column == 4 &&
             row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
-            row_three[2].value.text_value() == "B2+C2",
-        "public insert formula shift should expose translated formula in row snapshots");
+            row_three[2].value.text_value() == "A1+C1",
+        "public insert formula shift should expose structurally rewritten formula in row snapshots");
     const std::vector<fastxlsx::WorksheetCellSnapshot> column_four = sheet.column_cells(4);
     check(column_four.size() == 1 &&
             column_four[0].reference.row == 3 &&
             column_four[0].reference.column == 4 &&
             column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            column_four[0].value.text_value() == "B2+C2",
-        "public insert formula shift should expose translated formula in column snapshots");
+            column_four[0].value.text_value() == "A1+C1",
+        "public insert formula shift should expose structurally rewritten formula in column snapshots");
 
     editor.save_as(output);
     const std::map<std::string, std::string> output_entries =
@@ -3449,8 +3449,8 @@ void test_public_worksheet_editor_insert_rows_columns_translate_moved_formula()
     check_contains(worksheet_xml, R"(<c r="C1"><v>1</v></c>)",
         "public insert formula shift save should persist shifted source number");
     check_contains(worksheet_xml,
-        R"(<c r="D3"><f>B2+C2</f></c>)",
-        "public insert formula shift save should persist translated moved formula");
+        R"(<c r="D3"><f>A1+C1</f></c>)",
+        "public insert formula shift save should persist structurally rewritten moved formula");
     check_contains(worksheet_xml, "placeholder-a2",
         "public insert formula shift save should persist shifted source text");
     check_not_contains(worksheet_xml, R"(r="B1")",
@@ -3510,10 +3510,10 @@ void test_public_worksheet_editor_insert_moved_formula_preserves_style_id()
 
     const fastxlsx::CellValue shifted_formula = sheet.get_cell("D3");
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_formula.text_value() == "B2+C2" &&
+            shifted_formula.text_value() == "A1+C1" &&
             shifted_formula.has_style() &&
             shifted_formula.style_id().value() == formula_style.value(),
-        "public styled moved formula insert shift should translate formula and keep style id");
+        "public styled moved formula insert shift should structurally rewrite formula and keep style id");
     check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
             sheet.get_cell("C1").number_value() == 1.0 &&
             sheet.get_cell("A3").text_value() == "placeholder-a2" &&
@@ -3535,7 +3535,7 @@ void test_public_worksheet_editor_insert_moved_formula_preserves_style_id()
             row_three[2].reference.row == 3 &&
             row_three[2].reference.column == 4 &&
             row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
-            row_three[2].value.text_value() == "B2+C2" &&
+            row_three[2].value.text_value() == "A1+C1" &&
             row_three[2].value.has_style() &&
             row_three[2].value.style_id().value() == formula_style.value(),
         "public styled moved formula insert shift should expose style id in row snapshot");
@@ -3544,7 +3544,7 @@ void test_public_worksheet_editor_insert_moved_formula_preserves_style_id()
             column_four[0].reference.row == 3 &&
             column_four[0].reference.column == 4 &&
             column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            column_four[0].value.text_value() == "B2+C2" &&
+            column_four[0].value.text_value() == "A1+C1" &&
             column_four[0].value.has_style() &&
             column_four[0].value.style_id().value() == formula_style.value(),
         "public styled moved formula insert shift should expose style id in column snapshot");
@@ -3557,7 +3557,7 @@ void test_public_worksheet_editor_insert_moved_formula_preserves_style_id()
     const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
     const std::string styled_formula_xml =
         std::string(R"(<c r="D3" s=")") + std::to_string(formula_style.value())
-        + R"("><f>B2+C2</f></c>)";
+        + R"("><f>A1+C1</f></c>)";
     check_contains(worksheet_xml, R"(<dimension ref="A1:D3"/>)",
         "public styled moved formula insert shift save should persist projected bounds");
     check_contains(worksheet_xml, styled_formula_xml,
@@ -3582,7 +3582,7 @@ void test_public_worksheet_editor_insert_moved_formula_preserves_style_id()
     fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D3");
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_formula.text_value() == "B2+C2" &&
+            reopened_formula.text_value() == "A1+C1" &&
             reopened_formula.has_style() &&
             reopened_formula.style_id().value() == formula_style.value(),
         "public styled moved formula insert shift reopened output should keep formula style id");

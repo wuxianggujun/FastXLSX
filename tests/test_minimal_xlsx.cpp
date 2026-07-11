@@ -981,8 +981,8 @@ void test_internal_materialized_worksheet_session_shifts_sparse_records()
             "materialized insert_rows should preserve sparse record count");
         check_formula_record(session.try_cell(1, 1), "A3+B1",
             "materialized insert_rows should rewrite stationary formula references");
-        check_formula_record(session.try_cell(3, 2), "A3+B2",
-            "materialized insert_rows should translate moved formula references");
+        check_formula_record(session.try_cell(3, 2), "A3+B1",
+            "materialized insert_rows should structurally rewrite moved formula references");
         check(session.try_cell(2, 2) == nullptr,
             "materialized insert_rows should remove old moved formula coordinate");
         const fastxlsx::detail::CellRecord* tail = session.try_cell(4, 1);
@@ -994,8 +994,8 @@ void test_internal_materialized_worksheet_session_shifts_sparse_records()
             "materialized insert_rows projection should expose shifted bounds");
         check(xml.find(R"(<c r="A1" s="9"><f>A3+B1</f></c>)") != std::string::npos,
             "materialized insert_rows projection should write stationary rewritten formula");
-        check(xml.find(R"(<c r="B3" s="9"><f>A3+B2</f></c>)") != std::string::npos,
-            "materialized insert_rows projection should write moved translated formula");
+        check(xml.find(R"(<c r="B3" s="9"><f>A3+B1</f></c>)") != std::string::npos,
+            "materialized insert_rows projection should write moved structurally rewritten formula");
         check(xml.find(R"(<c r="A4" t="inlineStr"><is><t>tail-a3</t></is></c>)")
                 != std::string::npos,
             "materialized insert_rows projection should write shifted text");
@@ -1066,8 +1066,8 @@ void test_internal_materialized_worksheet_session_shifts_sparse_records()
             "materialized delete_columns should preserve surviving sparse record count");
         check_formula_record(session.try_cell(1, 1), "#REF!+B1",
             "materialized delete_columns should rewrite stationary formula references");
-        check_formula_record(session.try_cell(1, 2), "A1+B1",
-            "materialized delete_columns should translate moved formula references");
+        check_formula_record(session.try_cell(1, 2), "#REF!+B1",
+            "materialized delete_columns should structurally rewrite moved formula references");
         check(session.try_cell(1, 3) == nullptr,
             "materialized delete_columns should remove old moved formula coordinate");
         const fastxlsx::detail::CellRecord* tail = session.try_cell(2, 3);
@@ -1078,8 +1078,8 @@ void test_internal_materialized_worksheet_session_shifts_sparse_records()
             "materialized delete_columns projection should expose shifted bounds");
         check(xml.find(R"(<c r="A1" s="9"><f>#REF!+B1</f></c>)") != std::string::npos,
             "materialized delete_columns projection should write stationary rewritten formula");
-        check(xml.find(R"(<c r="B1" s="9"><f>A1+B1</f></c>)") != std::string::npos,
-            "materialized delete_columns projection should write moved translated formula");
+        check(xml.find(R"(<c r="B1" s="9"><f>#REF!+B1</f></c>)") != std::string::npos,
+            "materialized delete_columns projection should write moved structurally rewritten formula");
     }
 }
 

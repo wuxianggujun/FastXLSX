@@ -1181,8 +1181,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         "post-reacquire row shift should remove the old formula coordinate");
     const fastxlsx::CellValue shifted_formula = matching.get_cell("C3");
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_formula.text_value() == "A2+B3",
-        "post-reacquire row shift should translate the moved formula text");
+            shifted_formula.text_value() == "A1+B3",
+        "post-reacquire row shift should structurally rewrite the moved formula text");
     check_retry_cell_range_equals(matching.used_range(), 1, 1, 3, 3,
         "post-reacquire row shift should refresh the in-memory sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_three =
@@ -1195,7 +1195,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
             shifted_row_three[1].reference.row == 3 &&
             shifted_row_three[1].reference.column == 3 &&
             shifted_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_row_three[1].value.text_value() == "A2+B3",
+            shifted_row_three[1].value.text_value() == "A1+B3",
         "post-reacquire row shift row_cells should expose shifted source and formula cells");
     const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_column_three =
         matching.column_cells(3);
@@ -1203,7 +1203,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
             shifted_column_three[0].reference.row == 3 &&
             shifted_column_three[0].reference.column == 3 &&
             shifted_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_column_three[0].value.text_value() == "A2+B3",
+            shifted_column_three[0].value.text_value() == "A1+B3",
         "post-reacquire row shift column_cells should expose the shifted formula cell");
     {
         const std::vector<std::string> names =
@@ -1248,7 +1248,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         R"(<c r="C2"><f>A1+B2</f></c>)",
         "first output should contain the saved formula before the row shift");
     check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
-        R"(<c r="C3"><f>A2+B3</f></c>)",
+        R"(<c r="C3"><f>A1+B3</f></c>)",
         "first output should not contain the later shifted formula");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -1260,8 +1260,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         "rename-back-shift-first",
         "second output should preserve the saved text after the row shift");
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-        R"(<c r="C3"><f>A2+B3</f></c>)",
-        "second output should persist the shifted translated formula");
+        R"(<c r="C3"><f>A1+B3</f></c>)",
+        "second output should persist the shifted structurally rewritten formula");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="C2"><f>A1+B2</f></c>)",
         "second output should not keep the old formula coordinate");
@@ -1280,8 +1280,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         "reopened row-shift output should not read back the old formula coordinate");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("C3");
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_formula.text_value() == "A2+B3",
-        "reopened row-shift output should read back translated formula");
+            reopened_formula.text_value() == "A1+B3",
+        "reopened row-shift output should read back structurally rewritten formula");
     check_retry_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
         "reopened row-shift output should read back shifted sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
@@ -1294,7 +1294,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
             reopened_row_three[1].reference.row == 3 &&
             reopened_row_three[1].reference.column == 3 &&
             reopened_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_row_three[1].value.text_value() == "A2+B3",
+            reopened_row_three[1].value.text_value() == "A1+B3",
         "reopened row-shift row_cells should expose shifted sparse cells");
     const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
         reopened_sheet.column_cells(3);
@@ -1302,7 +1302,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
             reopened_column_three[0].reference.row == 3 &&
             reopened_column_three[0].reference.column == 3 &&
             reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_column_three[0].value.text_value() == "A2+B3",
+            reopened_column_three[0].value.text_value() == "A1+B3",
         "reopened row-shift column_cells should expose shifted formula");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
@@ -1338,8 +1338,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_shift_preserves_rea
         "row-shift no-op reopened output should not read back the old formula coordinate");
     const fastxlsx::CellValue noop_formula = noop_sheet.get_cell("C3");
     check(noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            noop_formula.text_value() == "A2+B3",
-        "row-shift no-op reopened output should read back translated formula");
+            noop_formula.text_value() == "A1+B3",
+        "row-shift no-op reopened output should read back structurally rewritten formula");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 3, 3,
         "row-shift no-op reopened output should read back shifted sparse used range");
 }
@@ -1404,8 +1404,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         "post-reacquire column shift should remove the old formula coordinate");
     const fastxlsx::CellValue shifted_formula = matching.get_cell("D2");
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_formula.text_value() == "B1+C2",
-        "post-reacquire column shift should translate the moved formula text");
+            shifted_formula.text_value() == "A1+C2",
+        "post-reacquire column shift should structurally rewrite the moved formula text");
     check_retry_cell_range_equals(matching.used_range(), 1, 1, 2, 4,
         "post-reacquire column shift should refresh the in-memory sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_one =
@@ -1426,7 +1426,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
             shifted_column_four[0].reference.row == 2 &&
             shifted_column_four[0].reference.column == 4 &&
             shifted_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_column_four[0].value.text_value() == "B1+C2",
+            shifted_column_four[0].value.text_value() == "A1+C2",
         "post-reacquire column shift column_cells should expose the shifted formula cell");
     {
         const std::vector<std::string> names =
@@ -1474,7 +1474,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         R"(<c r="C2"><f>A1+B2</f></c>)",
         "first output should contain the saved formula before the column shift");
     check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"),
-        R"(<c r="D2"><f>B1+C2</f></c>)",
+        R"(<c r="D2"><f>A1+C2</f></c>)",
         "first output should not contain the later column-shifted formula");
 
     const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
@@ -1489,8 +1489,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         R"(<c r="C1"><v>1</v></c>)",
         "second output should persist the shifted source-backed number");
     check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
-        R"(<c r="D2"><f>B1+C2</f></c>)",
-        "second output should persist the column-shifted translated formula");
+        R"(<c r="D2"><f>A1+C2</f></c>)",
+        "second output should persist the column-shifted structural formula");
     check_not_contains(second_entries.at("xl/worksheets/sheet1.xml"),
         R"(<c r="B1"><v>1</v></c>)",
         "second output should not keep the old number coordinate");
@@ -1517,8 +1517,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         "reopened column-shift output should read back shifted source-backed number");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D2");
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_formula.text_value() == "B1+C2",
-        "reopened column-shift output should read back translated formula");
+            reopened_formula.text_value() == "A1+C2",
+        "reopened column-shift output should read back structurally rewritten formula");
     check_retry_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
         "reopened column-shift output should read back shifted sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_one =
@@ -1540,7 +1540,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
             reopened_column_four[0].reference.row == 2 &&
             reopened_column_four[0].reference.column == 4 &&
             reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_column_four[0].value.text_value() == "B1+C2",
+            reopened_column_four[0].value.text_value() == "A1+C2",
         "reopened column-shift column_cells should expose shifted formula");
 
     const auto source_entries = fastxlsx::test::read_zip_entries(source);
@@ -1583,8 +1583,8 @@ void test_public_worksheet_editor_rename_back_failed_save_as_column_shift_preser
         "column-shift no-op reopened output should not read back old formula coordinate");
     const fastxlsx::CellValue noop_formula = noop_sheet.get_cell("D2");
     check(noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            noop_formula.text_value() == "B1+C2",
-        "column-shift no-op reopened output should read back translated formula");
+            noop_formula.text_value() == "A1+C2",
+        "column-shift no-op reopened output should read back structurally rewritten formula");
     check_retry_cell_range_equals(noop_sheet.used_range(), 1, 1, 2, 4,
         "column-shift no-op reopened output should read back shifted sparse used range");
 }
@@ -1635,10 +1635,10 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
         "post-reacquire styled row shift should dirty all shared handles");
     const fastxlsx::CellValue shifted_formula = matching.get_cell("D4");
     check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_formula.text_value() == "A3+B3" &&
+            shifted_formula.text_value() == "A1+B1" &&
             shifted_formula.has_style() &&
             shifted_formula.style_id().value() == styled_formula_style.value(),
-        "post-reacquire row shift should translate formula text and preserve style id");
+        "post-reacquire row shift should structurally rewrite formula text and preserve style id");
     check_retry_cell_range_equals(matching.used_range(), 1, 1, 5, 4,
         "post-reacquire styled row shift should refresh the in-memory sparse used range");
     const std::vector<fastxlsx::WorksheetCellSnapshot> shifted_row_four =
@@ -1647,7 +1647,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             shifted_row_four[3].reference.row == 4 &&
             shifted_row_four[3].reference.column == 4 &&
             shifted_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_row_four[3].value.text_value() == "A3+B3" &&
+            shifted_row_four[3].value.text_value() == "A1+B1" &&
             shifted_row_four[3].value.has_style() &&
             shifted_row_four[3].value.style_id().value() == styled_formula_style.value(),
         "post-reacquire styled row shift row_cells should expose formula style id");
@@ -1657,7 +1657,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             shifted_column_four[0].reference.row == 4 &&
             shifted_column_four[0].reference.column == 4 &&
             shifted_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            shifted_column_four[0].value.text_value() == "A3+B3" &&
+            shifted_column_four[0].value.text_value() == "A1+B1" &&
             shifted_column_four[0].value.has_style() &&
             shifted_column_four[0].value.style_id().value() == styled_formula_style.value(),
         "post-reacquire styled row shift column_cells should expose formula style id");
@@ -1682,7 +1682,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
     const std::string shifted_formula_xml =
         std::string(R"(<c r="D4" s=")")
         + std::to_string(styled_formula_style.value())
-        + R"("><f>A3+B3</f></c>)";
+        + R"("><f>A1+B1</f></c>)";
 
     const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
     check_contains(first_entries.at("xl/workbook.xml"), R"(name="Data")",
@@ -1712,7 +1712,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
         reopened_editor, reopened_sheet, "reopened styled shift output");
     const fastxlsx::CellValue reopened_formula = reopened_sheet.get_cell("D4");
     check(reopened_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_formula.text_value() == "A3+B3" &&
+            reopened_formula.text_value() == "A1+B1" &&
             reopened_formula.has_style() &&
             reopened_formula.style_id().value() == styled_formula_style.value(),
         "reopened styled shift output should read back shifted formula style");
@@ -1724,7 +1724,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             reopened_row_four[3].reference.row == 4 &&
             reopened_row_four[3].reference.column == 4 &&
             reopened_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_row_four[3].value.text_value() == "A3+B3" &&
+            reopened_row_four[3].value.text_value() == "A1+B1" &&
             reopened_row_four[3].value.has_style() &&
             reopened_row_four[3].value.style_id().value() == styled_formula_style.value(),
         "reopened styled shift row_cells should expose shifted formula style");
@@ -1734,7 +1734,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             reopened_column_four[0].reference.row == 4 &&
             reopened_column_four[0].reference.column == 4 &&
             reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            reopened_column_four[0].value.text_value() == "A3+B3" &&
+            reopened_column_four[0].value.text_value() == "A1+B1" &&
             reopened_column_four[0].value.has_style() &&
             reopened_column_four[0].value.style_id().value() == styled_formula_style.value(),
         "reopened styled shift column_cells should expose shifted formula style");
@@ -1768,7 +1768,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
         noop_editor, noop_sheet, "styled row-shift no-op reopened output");
     const fastxlsx::CellValue noop_formula = noop_sheet.get_cell("D4");
     check(noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
-            noop_formula.text_value() == "A3+B3" &&
+            noop_formula.text_value() == "A1+B1" &&
             noop_formula.has_style() &&
             noop_formula.style_id().value() == styled_formula_style.value(),
         "styled row-shift no-op reopened output should read back shifted formula style");
@@ -1780,7 +1780,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             noop_row_four[3].reference.row == 4 &&
             noop_row_four[3].reference.column == 4 &&
             noop_row_four[3].value.kind() == fastxlsx::CellValueKind::Formula &&
-            noop_row_four[3].value.text_value() == "A3+B3" &&
+            noop_row_four[3].value.text_value() == "A1+B1" &&
             noop_row_four[3].value.has_style() &&
             noop_row_four[3].value.style_id().value() == styled_formula_style.value(),
         "styled row-shift no-op row_cells should expose shifted formula style");
@@ -1790,7 +1790,7 @@ void test_public_worksheet_editor_rename_back_failed_save_as_styled_shift_preser
             noop_column_four[0].reference.row == 4 &&
             noop_column_four[0].reference.column == 4 &&
             noop_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
-            noop_column_four[0].value.text_value() == "A3+B3" &&
+            noop_column_four[0].value.text_value() == "A1+B1" &&
             noop_column_four[0].value.has_style() &&
             noop_column_four[0].value.style_id().value() == styled_formula_style.value(),
         "styled row-shift no-op column_cells should expose shifted formula style");

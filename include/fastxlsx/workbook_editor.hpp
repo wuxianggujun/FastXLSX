@@ -838,11 +838,11 @@ public:
     /// handles move with their sparse records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension, and translates relative references in moved formula cells,
-    /// while stationary formula cells in the materialized store use the narrow
-    /// structural rewriter for references at or after the insertion point. The
-    /// structural rewriter preserves `$` markers as output anchors but still
-    /// moves affected row references. It does not update tables, autoFilter,
+    /// dimension. Every surviving formula cell, whether its own coordinate
+    /// moved or stayed fixed, uses the narrow structural rewriter: row
+    /// references before the insertion point stay fixed and references at or
+    /// after it move down. `$` markers are preserved but do not suppress a
+    /// structural row adjustment. It does not update tables, autoFilter,
     /// mergeCells, data validations, conditional formatting, hyperlinks,
     /// drawings/charts/VBA, defined names, relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
@@ -866,11 +866,12 @@ public:
     /// source StyleId handles move with shifted records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension only. It translates relative references in moved formula
-    /// cells, while stationary formula cells in the materialized store use the
-    /// narrow structural rewriter for references affected by the deleted rows.
-    /// The structural rewriter preserves `$` markers on surviving references
-    /// and emits `#REF!` for deleted references, but it does not recalculate or
+    /// dimension only. Every surviving formula cell uses the narrow structural
+    /// rewriter regardless of whether its own coordinate moved: references
+    /// before the deleted rows stay fixed, later references move up, and
+    /// references into deleted rows become `#REF!`. `$` markers are preserved
+    /// on surviving references but do not suppress structural adjustment. The
+    /// operation does not recalculate or
     /// repair range metadata, tables, drawings/charts/VBA, relationships,
     /// sharedStrings/styles, or calcChain.
     /// This is not a complete Excel row deletion operation and not a large-file
@@ -895,11 +896,11 @@ public:
     /// their sparse records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension, and translates relative references in moved formula cells,
-    /// while stationary formula cells in the materialized store use the narrow
-    /// structural rewriter for references at or after the insertion point. The
-    /// structural rewriter preserves `$` markers as output anchors but still
-    /// moves affected column references. It does not update tables, autoFilter,
+    /// dimension. Every surviving formula cell, whether its own coordinate
+    /// moved or stayed fixed, uses the narrow structural rewriter: column
+    /// references before the insertion point stay fixed and references at or
+    /// after it move right. `$` markers are preserved but do not suppress a
+    /// structural column adjustment. It does not update tables, autoFilter,
     /// mergeCells, data validations, conditional formatting, hyperlinks,
     /// drawings/charts/VBA, defined names, relationships,
     /// sharedStrings/styles metadata, or calcChain beyond the existing
@@ -923,12 +924,13 @@ public:
     /// materialized source StyleId handles move with shifted records.
     ///
     /// Dirty save_as() projects the shifted sheetData and refreshed sparse
-    /// dimension only. It translates relative references in moved formula
-    /// cells, while stationary formula cells in the materialized store use the
-    /// narrow structural rewriter for references affected by the deleted
-    /// columns. The structural rewriter preserves `$` markers on surviving
-    /// references and emits `#REF!` for deleted references, but it does not
-    /// recalculate or repair range metadata, tables, drawings/charts/VBA,
+    /// dimension only. Every surviving formula cell uses the narrow structural
+    /// rewriter regardless of whether its own coordinate moved: references
+    /// before the deleted columns stay fixed, later references move left, and
+    /// references into deleted columns become `#REF!`. `$` markers are
+    /// preserved on surviving references but do not suppress structural
+    /// adjustment. The operation does not recalculate or repair range metadata,
+    /// tables, drawings/charts/VBA,
     /// relationships, sharedStrings/styles, or calcChain.
     /// This is not a complete Excel column deletion operation and not a
     /// large-file low-memory random-editing path.

@@ -1157,6 +1157,7 @@ add_fastxlsx_workbook_editor_standalone_test(public_patch_cells test_workbook_ed
 add_fastxlsx_workbook_editor_standalone_test(public_snapshot test_workbook_editor_public_snapshot.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_cell_transfer test_workbook_editor_public_cell_transfer.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_style_edits test_workbook_editor_public_style_edits.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_structural_formulas test_workbook_editor_public_structural_formulas.cpp 60)
 
 add_dependencies(
     fastxlsx_workbook_editor_tests
@@ -1164,6 +1165,7 @@ add_dependencies(
     fastxlsx_workbook_editor_public_snapshot_tests
     fastxlsx_workbook_editor_public_cell_transfer_tests
     fastxlsx_workbook_editor_public_style_edits_tests
+    fastxlsx_workbook_editor_public_structural_formulas_tests
 )
 
 add_fastxlsx_workbook_editor_target(

@@ -1065,18 +1065,7 @@ private:
         FormulaStructuralEdit structural_edit, std::string_view operation)
     {
         CellRecord shifted_record = record;
-        if (record.kind == CellValueKind::Formula
-            && (source_position.row != position.row
-                || source_position.column != position.column)) {
-            shifted_record.text_value = translate_formula_references(
-                record.text_value,
-                FormulaTranslationDelta {
-                    static_cast<std::int64_t>(position.row)
-                        - static_cast<std::int64_t>(source_position.row),
-                    static_cast<std::int64_t>(position.column)
-                        - static_cast<std::int64_t>(source_position.column),
-                });
-        } else if (record.kind == CellValueKind::Formula) {
+        if (record.kind == CellValueKind::Formula) {
             shifted_record.text_value = rewrite_formula_references_for_structural_edit(
                 record.text_value, structural_edit);
         }

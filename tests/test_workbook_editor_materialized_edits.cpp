@@ -731,10 +731,10 @@ void test_materialized_session_insert_rows_translates_formula_records()
     const fastxlsx::detail::CellRecord* moved_formula = data.try_cell(3, 3);
     check(moved_formula != nullptr &&
             moved_formula->kind == fastxlsx::CellValueKind::Formula &&
-            moved_formula->text_value == "A2+B3" &&
+            moved_formula->text_value == "A1+B3" &&
             moved_formula->style_id.has_value() &&
             moved_formula->style_id->value() == moved_formula_style.value(),
-        "insert_rows should translate moved formula text and preserve style");
+        "insert_rows should structurally rewrite moved formula text and preserve style");
 
     const fastxlsx::detail::CellRecord* shifted_tail = data.try_cell(5, 4);
     check(shifted_tail != nullptr &&
@@ -855,10 +855,10 @@ void test_materialized_session_delete_columns_rewrites_formula_records()
     const fastxlsx::detail::CellRecord* moved_formula = data.try_cell(2, 2);
     check(moved_formula != nullptr &&
             moved_formula->kind == fastxlsx::CellValueKind::Formula &&
-            moved_formula->text_value == "#REF!+B1" &&
+            moved_formula->text_value == "A1+B1" &&
             moved_formula->style_id.has_value() &&
             moved_formula->style_id->value() == moved_formula_style.value(),
-        "delete_columns should translate moved formula text and preserve style");
+        "delete_columns should structurally rewrite moved formula text and preserve style");
 
     const fastxlsx::detail::CellRecord* shifted_tail = data.try_cell(3, 3);
     check(shifted_tail != nullptr &&
@@ -914,10 +914,10 @@ void test_materialized_session_insert_columns_translates_formula_records()
     const fastxlsx::detail::CellRecord* moved_formula = data.try_cell(2, 5);
     check(moved_formula != nullptr &&
             moved_formula->kind == fastxlsx::CellValueKind::Formula &&
-            moved_formula->text_value == "C1+E2" &&
+            moved_formula->text_value == "A1+E2" &&
             moved_formula->style_id.has_value() &&
             moved_formula->style_id->value() == moved_formula_style.value(),
-        "insert_columns should translate moved formula text and preserve style");
+        "insert_columns should structurally rewrite moved formula text and preserve style");
 
     const fastxlsx::detail::CellRecord* shifted_tail = data.try_cell(3, 7);
     check(shifted_tail != nullptr &&

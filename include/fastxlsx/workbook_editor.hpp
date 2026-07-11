@@ -1053,6 +1053,38 @@ public:
     void copy_cell_style(std::string_view source_cell_reference,
         std::string_view destination_cell_reference);
 
+    /// Copies represented source styles to a same-sized target footprint.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. `source` is
+    /// a 1-based inclusive range and `destination` names the target top-left
+    /// cell. Only represented source records participate; source gaps leave the
+    /// corresponding target records unchanged. Every participating target must
+    /// already be represented. An unstyled source record clears the mapped
+    /// target style while preserving its CellValue. Overlapping copies use a
+    /// stable pre-edit source-style snapshot.
+    ///
+    /// Source/destination coordinates, target footprint, all participating
+    /// target records, and CellStore guardrails are preflighted before one batch
+    /// is published. Missing targets or rejected guardrails leave cells and
+    /// dirty/save state unchanged apart from WorkbookEditor::last_edit_error().
+    /// Copying to the source top-left, copying an empty sparse source range, or
+    /// copying only equal styles is a successful clean no-op.
+    ///
+    /// Dirty save_as() changes only mapped target `s` attributes and preserves
+    /// styles.xml bytes. This does not copy values or formulas, create/merge
+    /// styles, expose a style registry, format source gaps, copy row/column or
+    /// worksheet metadata, or migrate styles across workbooks.
+    void copy_cell_styles(CellRange source, WorksheetCellReference destination);
+
+    /// Copies represented source styles using strict uppercase A1 references.
+    ///
+    /// `source_range_reference` accepts one cell (`A1`) or one rectangular
+    /// range (`A1:C3`); `destination_cell_reference` names the target top-left
+    /// cell. Sparse mapping, represented-target requirements, atomic preflight,
+    /// diagnostics, save behavior, and non-goals match the CellRange overload.
+    void copy_cell_styles(std::string_view source_range_reference,
+        std::string_view destination_cell_reference);
+
     /// Clears one represented cell's existing style without changing its value.
     ///
     /// API mode: In-memory / existing-workbook small-file mutation. Row and
@@ -1070,6 +1102,28 @@ public:
     /// Parsing, missing/unstyled no-op behavior, value preservation, save
     /// projection, diagnostics, and non-goals match the coordinate overload.
     void clear_cell_style(std::string_view cell_reference);
+
+    /// Clears styles from represented cells inside a sparse rectangular range.
+    ///
+    /// API mode: In-memory / existing-workbook small-file mutation. The range is
+    /// 1-based, inclusive, and validated against Excel worksheet limits. Only
+    /// represented styled records are updated; values and sparse cell count are
+    /// preserved. Missing and already unstyled cells are successful no-ops and
+    /// are not synthesized. A range with no represented styled records does not
+    /// dirty the session.
+    ///
+    /// Dirty save_as() removes only affected cell `s` attributes and preserves
+    /// styles.xml bytes. This does not delete style table entries, clear values,
+    /// edit conditional/theme formatting or worksheet metadata, or provide
+    /// dense/large-file range formatting.
+    void clear_cell_styles(CellRange range);
+
+    /// Clears represented styles inside a strict uppercase A1 range.
+    ///
+    /// The reference accepts one cell (`A1`) or one rectangular range
+    /// (`A1:C3`). Parsing, sparse no-op behavior, value preservation,
+    /// diagnostics, save behavior, and non-goals match the CellRange overload.
+    void clear_cell_styles(std::string_view range_reference);
 
     /// Replaces one sparse-store cell value while preserving its current style.
     ///

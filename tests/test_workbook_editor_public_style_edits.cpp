@@ -138,6 +138,63 @@ void test_public_style_edits_save_retry_and_reopen()
         "reopened style-only output should preserve explicit style clearing");
 }
 
+void test_public_style_range_edits_overlap_save_and_reopen()
+{
+    const StyleEditSource source =
+        write_style_edit_source("fastxlsx-workbook-editor-style-ranges-source.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source.path);
+    const std::filesystem::path output =
+        fastxlsx::test::artifact_path("fastxlsx-workbook-editor-style-ranges-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    const std::size_t source_cell_count = sheet.cell_count();
+
+    sheet.copy_cell_styles("A1:B1", "B1");
+    const fastxlsx::CellValue copied_unstyled_formula = sheet.get_cell("B1");
+    check(copied_unstyled_formula.kind() == fastxlsx::CellValueKind::Formula
+            && copied_unstyled_formula.text_value() == "A1*2"
+            && !copied_unstyled_formula.has_style(),
+        "overlapping copy_cell_styles should preserve the target formula and copy the original A1 style");
+    const fastxlsx::CellValue copied_decimal_text = sheet.get_cell("C1");
+    check(copied_decimal_text.kind() == fastxlsx::CellValueKind::Text
+            && copied_decimal_text.text_value() == "styled-text",
+        "copy_cell_styles should preserve the mapped target text value");
+    check_style(copied_decimal_text, source.decimal_style,
+        "overlapping copy_cell_styles should read B1 style from the stable source snapshot");
+
+    sheet.clear_cell_styles(fastxlsx::CellRange {2, 2, 2, 3});
+    const fastxlsx::CellValue cleared_range_number = sheet.get_cell("B2");
+    check(cleared_range_number.kind() == fastxlsx::CellValueKind::Number
+            && cleared_range_number.number_value() == 0.5
+            && !cleared_range_number.has_style(),
+        "clear_cell_styles should preserve values and ignore missing cells in the range");
+    check(!sheet.contains_cell("C2") && sheet.cell_count() == source_cell_count,
+        "range style edits should not synthesize sparse records");
+    check(sheet.has_pending_changes() && editor.has_unsaved_changes(),
+        "effective range style edits should dirty the materialized session");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "successful range style save should clear dirty and unsaved state");
+    check(fastxlsx::test::read_zip_entries(source.path) == source_entries,
+        "range style save_as should leave the source package unchanged");
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "range style save should preserve source styles.xml bytes");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened.worksheet("Data");
+    check(reopened_sheet.get_cell("B1").text_value() == "A1*2"
+            && !reopened_sheet.get_cell("B1").has_style(),
+        "reopened range style output should preserve the mapped unstyled formula");
+    check_style(reopened_sheet.get_cell("C1"), source.decimal_style,
+        "reopened range style output should preserve the overlapping copied style");
+    check(reopened_sheet.get_cell("B2").number_value() == 0.5
+            && !reopened_sheet.get_cell("B2").has_style(),
+        "reopened range style output should preserve range style clearing");
+}
+
 void test_public_style_edit_failures_and_noops_preserve_clean_state()
 {
     const StyleEditSource source =
@@ -157,6 +214,27 @@ void test_public_style_edit_failures_and_noops_preserve_clean_state()
     check(editor.last_edit_error().has_value(),
         "copy_cell_style failure should update last_edit_error");
 
+    check(throws_fastxlsx_error(
+              [&] { sheet.copy_cell_styles("B1:C1", "B2"); }),
+        "copy_cell_styles should reject a missing mapped destination record");
+    check_style(sheet.get_cell("B2"), source.percent_style,
+        "copy_cell_styles missing-target failure should not publish earlier mapped styles");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "copy_cell_styles missing-target failure should preserve clean state");
+
+    sheet.copy_cell_styles("A1:C1", "A1");
+    sheet.copy_cell_styles("D4:E5", "A1");
+    sheet.clear_cell_styles("D4:E5");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && !editor.last_edit_error().has_value(),
+        "same-footprint, empty-source, and missing-only range style edits should be clean no-ops");
+
+    check(throws_fastxlsx_error(
+              [&] { sheet.copy_cell_styles("A1:B1", "XFD1048576"); }),
+        "copy_cell_styles should reject a target footprint outside Excel limits");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes(),
+        "copy_cell_styles footprint failure should preserve clean state");
+
     sheet.copy_cell_style("B1", "B1");
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
             && !editor.last_edit_error().has_value(),
@@ -173,6 +251,12 @@ void test_public_style_edit_failures_and_noops_preserve_clean_state()
     check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
             && editor.last_edit_error().has_value(),
         "clear_cell_style parse failure should preserve clean state and record diagnostics");
+
+    check(throws_fastxlsx_error([&] { sheet.clear_cell_styles("A1:a2"); }),
+        "clear_cell_styles should reject invalid lowercase range references");
+    check(!sheet.has_pending_changes() && !editor.has_unsaved_changes()
+            && editor.last_edit_error().has_value(),
+        "clear_cell_styles parse failure should preserve clean state and record diagnostics");
 }
 
 } // namespace
@@ -181,6 +265,7 @@ int main()
 {
     try {
         test_public_style_edits_save_retry_and_reopen();
+        test_public_style_range_edits_overlap_save_and_reopen();
         test_public_style_edit_failures_and_noops_preserve_clean_state();
         std::cout << "WorkbookEditor public style edit tests passed\n";
         return 0;

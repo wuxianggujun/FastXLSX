@@ -30,7 +30,7 @@
 - `Cell` / `CellValue` 可以作为 owning 边界值和 small-file 存储，不作为 million-row 热路径长期模型。
 - Patch edit 必须明确 copy/rewrite/remove/audit/fail 行为，以及 sharedStrings、styles、formulas、relationships、content types 和 calc metadata 策略。
 - In-memory API 必须提供 cell count、内存估算和 guardrail，并定义失败前状态不污染。
-- Existing-workbook style-only API 在 style registry/migration contract 建立前，只能复用同一 materialized workbook 中已校验的 source StyleId 或清除现有句柄；不得接受任意 caller non-default StyleId，并必须声明 styles.xml 是 preserve 而不是 edit。
+- Existing-workbook style-only API 在 style registry/migration contract 建立前，只能复用同一 materialized workbook 中已校验的 source StyleId 或清除现有句柄；range mutation 必须定义 sparse mapping、missing-target、overlap snapshot 与 batch preflight 语义。不得接受任意 caller non-default StyleId，并必须声明 styles.xml 是 preserve 而不是 edit。
 - Public structured diagnostics 只暴露稳定业务/语义分类与调用方可理解的上下文；XML token、parser state、part path、relationship id 和 internal type 不得成为 public contract。Typed exception 应保留 `FastXlsxError` 基类兼容性，并明确哪些相邻失败仍是通用错误。
 - 数值写入必须拒绝非 finite 值，不能序列化 `nan`、`inf` 或 `-inf`。
 - 第三方库只承担 ZIP、XML、图片等通用能力；XLSX 语义留在 FastXLSX。

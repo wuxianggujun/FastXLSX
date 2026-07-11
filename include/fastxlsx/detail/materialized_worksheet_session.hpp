@@ -377,6 +377,91 @@ public:
         dirty_ = true;
     }
 
+    void copy_cell_styles(const CellRange& source, CellPosition destination)
+    {
+        if (source.first_row == 0 || source.first_column == 0
+            || source.first_row > source.last_row
+            || source.first_column > source.last_column
+            || source.last_row > max_excel_rows
+            || source.last_column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_styles() requires a valid source range");
+        }
+        if (destination.row == 0 || destination.row > max_excel_rows
+            || destination.column == 0 || destination.column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_styles() requires a valid destination cell");
+        }
+
+        const std::uint32_t row_span = source.last_row - source.first_row;
+        const std::uint32_t column_span = source.last_column - source.first_column;
+        if (destination.row > max_excel_rows - row_span
+            || destination.column > max_excel_columns - column_span) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::copy_cell_styles() destination range exceeds Excel limits");
+        }
+        if (destination.row == source.first_row
+            && destination.column == source.first_column) {
+            return;
+        }
+
+        struct SourceStyleSnapshot {
+            CellPosition position;
+            std::optional<StyleId> style_id;
+        };
+        std::vector<SourceStyleSnapshot> source_styles;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.row < source.first_row || position.row > source.last_row
+                || position.column < source.first_column
+                || position.column > source.last_column) {
+                continue;
+            }
+            source_styles.push_back(SourceStyleSnapshot {position, record.style_id});
+        }
+        if (source_styles.empty()) {
+            return;
+        }
+
+        struct PlannedStyleUpdate {
+            CellPosition position;
+            CellValue value;
+        };
+        std::vector<PlannedStyleUpdate> planned_updates;
+        planned_updates.reserve(source_styles.size());
+        for (const SourceStyleSnapshot& source_style : source_styles) {
+            const CellPosition destination_position {
+                destination.row + (source_style.position.row - source.first_row),
+                destination.column + (source_style.position.column - source.first_column),
+            };
+            const CellRecord* destination_record =
+                store_.try_cell(destination_position.row, destination_position.column);
+            if (destination_record == nullptr) {
+                throw FastXlsxError(
+                    "MaterializedWorksheetSession::copy_cell_styles() destination cell is not represented");
+            }
+            if (same_style(source_style.style_id, destination_record->style_id)) {
+                continue;
+            }
+
+            CellValue destination_value = destination_record->to_value().without_style();
+            if (source_style.style_id.has_value()) {
+                destination_value = destination_value.with_style(*source_style.style_id);
+            }
+            planned_updates.push_back(
+                PlannedStyleUpdate {destination_position, std::move(destination_value)});
+        }
+        if (planned_updates.empty()) {
+            return;
+        }
+
+        std::vector<CellStoreUpdate> updates;
+        updates.reserve(planned_updates.size());
+        for (const PlannedStyleUpdate& update : planned_updates) {
+            updates.push_back(CellStoreUpdate {update.position, &update.value});
+        }
+        set_cells(updates);
+    }
+
     void clear_cell_style(CellPosition position)
     {
         const CellRecord* record = store_.try_cell(position.row, position.column);
@@ -386,6 +471,44 @@ public:
 
         store_.set_cell(position.row, position.column, record->to_value().without_style());
         dirty_ = true;
+    }
+
+    void clear_cell_styles(const CellRange& range)
+    {
+        if (range.first_row == 0 || range.first_column == 0
+            || range.first_row > range.last_row
+            || range.first_column > range.last_column
+            || range.last_row > max_excel_rows
+            || range.last_column > max_excel_columns) {
+            throw FastXlsxError(
+                "MaterializedWorksheetSession::clear_cell_styles() requires a valid range");
+        }
+
+        struct PlannedStyleUpdate {
+            CellPosition position;
+            CellValue value;
+        };
+        std::vector<PlannedStyleUpdate> planned_updates;
+        for (const auto& [position, record] : store_.records()) {
+            if (position.row < range.first_row || position.row > range.last_row
+                || position.column < range.first_column
+                || position.column > range.last_column
+                || !record.style_id.has_value()) {
+                continue;
+            }
+            planned_updates.push_back(
+                PlannedStyleUpdate {position, record.to_value().without_style()});
+        }
+        if (planned_updates.empty()) {
+            return;
+        }
+
+        std::vector<CellStoreUpdate> updates;
+        updates.reserve(planned_updates.size());
+        for (const PlannedStyleUpdate& update : planned_updates) {
+            updates.push_back(CellStoreUpdate {update.position, &update.value});
+        }
+        set_cells(updates);
     }
 
     [[nodiscard]] const CellRecord* try_cell(

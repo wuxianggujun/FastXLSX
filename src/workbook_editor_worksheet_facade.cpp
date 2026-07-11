@@ -656,6 +656,49 @@ void WorksheetEditor::copy_cell_style(std::string_view source_cell_reference,
         source.row, source.column, destination.row, destination.column);
 }
 
+void WorksheetEditor::copy_cell_styles(
+    CellRange source, WorksheetCellReference destination)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_range(source);
+        detail::validate_worksheet_editor_cell_coordinate(
+            destination.row, destination.column);
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->copy_cell_styles(source,
+            detail::CellPosition {destination.row, destination.column});
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::copy_cell_styles(std::string_view source_range_reference,
+    std::string_view destination_cell_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange source {};
+    detail::WorksheetEditorCellCoordinate destination {};
+    try {
+        source = detail::parse_worksheet_editor_a1_cell_range(source_range_reference);
+        destination =
+            detail::parse_worksheet_editor_a1_cell_reference(destination_cell_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+
+    copy_cell_styles(source,
+        WorksheetCellReference {destination.row, destination.column});
+}
+
 void WorksheetEditor::clear_cell_style(std::uint32_t row, std::uint32_t column)
 {
     WorkbookEditor::Impl& state = *owner().impl_;
@@ -687,6 +730,40 @@ void WorksheetEditor::clear_cell_style(std::string_view cell_reference)
         state.record_last_edit_error(error);
         throw;
     }
+}
+
+void WorksheetEditor::clear_cell_styles(CellRange range)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    try {
+        detail::validate_worksheet_editor_cell_range(range);
+
+        detail::MaterializedWorksheetSession* session =
+            state.materialized_sessions.try_session(planned_name_);
+        if (session == nullptr) {
+            throw FastXlsxError("WorksheetEditor materialized worksheet session is missing");
+        }
+
+        session->clear_cell_styles(range);
+        state.clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+}
+
+void WorksheetEditor::clear_cell_styles(std::string_view range_reference)
+{
+    WorkbookEditor::Impl& state = *owner().impl_;
+    CellRange range {};
+    try {
+        range = detail::parse_worksheet_editor_a1_cell_range(range_reference);
+    } catch (const FastXlsxError& error) {
+        state.record_last_edit_error(error);
+        throw;
+    }
+
+    clear_cell_styles(range);
 }
 
 void WorksheetEditor::set_cell_value(

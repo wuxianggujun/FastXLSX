@@ -4815,10 +4815,9 @@ public:
         return path_;
     }
 
-    std::filesystem::path release() noexcept
+    void release() noexcept
     {
         released_ = true;
-        return path_;
     }
 
 private:
@@ -6612,6 +6611,15 @@ void PackageEditor::replace_worksheet_part_from_chunk_source(PartName worksheet_
     const WorksheetInputChunkCallback& read_next_chunk, const ReferencePolicy& policy,
     std::string reason)
 {
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        std::move(worksheet_part), read_next_chunk, policy, std::move(reason), {});
+}
+
+void PackageEditor::replace_worksheet_part_from_chunk_source_with_commit_notes(
+    PartName worksheet_part, const WorksheetInputChunkCallback& read_next_chunk,
+    const ReferencePolicy& policy, std::string reason,
+    std::vector<std::string> commit_notes)
+{
     validate_worksheet_replacement_preconditions(manifest_, reader_, worksheet_part, policy);
     const PartName target_worksheet_part = worksheet_part;
 
@@ -6629,27 +6637,33 @@ void PackageEditor::replace_worksheet_part_from_chunk_source(PartName worksheet_
         reason =
             "target worksheet part staged stream rewrite from caller chunk source validated and audited while staging";
     }
-    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-        std::move(staged_worksheet_chunks), policy,
-        std::move(replacement_audit.payload_audit.notes),
-        std::move(replacement_audit.payload_audit.audits),
-        std::move(replacement_audit.relationship_reference_audit.notes),
-        std::move(replacement_audit.relationship_reference_audit.audits),
-        std::move(reason));
-    temporary_files_.push_back(staged_worksheet_file.path());
-    staged_worksheet_file.release();
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "worksheet replacement consumed caller-provided worksheet XML from a "
         "pull-based chunk source after target/workbook/calc policy preflight "
         "into a PackageEditor-owned file-backed staged chunk while validating "
         "worksheet root/events and collecting payload/relationship-id audit, "
         "then committed those prevalidated chunks for calc metadata handling "
         "and follow-up planned-input transforms");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "worksheet chunk-source replacement validates worksheet root/events, "
         "collects payload dependency audit plus relationship-id audit, and "
         "writes the staged worksheet chunk in one caller chunk-source pass "
         "without reopening that staged chunk for validation or audit");
+
+    temporary_files_.push_back(staged_worksheet_file.path());
+    try {
+        replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+            std::move(staged_worksheet_chunks), policy,
+            std::move(replacement_audit.payload_audit.notes),
+            std::move(replacement_audit.payload_audit.audits),
+            std::move(replacement_audit.relationship_reference_audit.notes),
+            std::move(replacement_audit.relationship_reference_audit.audits),
+            std::move(reason), true, true, std::move(commit_notes));
+    } catch (...) {
+        temporary_files_.pop_back();
+        throw;
+    }
+    staged_worksheet_file.release();
 }
 
 void PackageEditor::replace_worksheet_part_chunks(PartName worksheet_part,
@@ -6897,15 +6911,16 @@ void PackageEditor::replace_worksheet_part_from_chunk_source_by_name(
     const ReferencePolicy& policy,
     std::string reason)
 {
-    replace_worksheet_part_from_chunk_source(
-        resolve_worksheet_part_by_name_for_patch(
-            reader_, manifest_, replacements_, sheet_name),
-        read_next_chunk, policy, std::move(reason));
-    edit_plan_.add_note(
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
         "by-name worksheet chunk-source replacement resolves the worksheet part "
         "through the planned/source workbook catalog and consumes the caller "
         "chunk source without routing through any materialized worksheet string "
         "entry point");
+    replace_worksheet_part_from_chunk_source_with_commit_notes(
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, sheet_name),
+        read_next_chunk, policy, std::move(reason), std::move(commit_notes));
 }
 
 void PackageEditor::replace_worksheet_part_chunks_by_name(std::string_view sheet_name,
@@ -6933,14 +6948,16 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks_by_name(
             "target worksheet part prevalidated staged stream rewrite without staged audit reread";
     }
 
-    replace_worksheet_part_prevalidated_chunks(
-        resolve_worksheet_part_by_name_for_patch(
-            reader_, manifest_, replacements_, sheet_name),
-        std::move(chunks), policy, {}, {}, {}, {}, std::move(reason), false, false);
-    edit_plan_.add_note(
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
         "by-name worksheet staged chunk prevalidated replacement resolves the worksheet part "
         "through the planned/source workbook catalog and commits already-audited staged "
         "chunks without reopening the staged worksheet for a second audit scan");
+    replace_worksheet_part_prevalidated_chunks(
+        resolve_worksheet_part_by_name_for_patch(
+            reader_, manifest_, replacements_, sheet_name),
+        std::move(chunks), policy, {}, {}, {}, {}, std::move(reason), false, false,
+        std::move(commit_notes));
 }
 
 void PackageEditor::replace_worksheet_sheet_data_from_chunk_source(

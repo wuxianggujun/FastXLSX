@@ -809,6 +809,188 @@ void test_package_editor_replaces_worksheet_from_chunk_source()
         "rebuild policy chunk-source failure should not request recalculation");
 }
 
+void test_package_editor_chunk_source_commit_failure_cleans_temp_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-chunk-source-commit-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-chunk-source-commit-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-chunk-source-commit-retry-output.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string prior_opaque = "prior chunk-source opaque replacement";
+    const std::string prior_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+    const std::string replacement_worksheet =
+        R"(<worksheet><sheetData><row r="12"><c r="F12"><f>A1+11</f></c></row></sheetData></worksheet>)";
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part(workbook_part, prior_workbook,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "prior workbook replacement before chunk-source commit failure");
+        editor.replace_part_chunks(opaque_part,
+            {fastxlsx::detail::PackageEntryChunk::memory(prior_opaque)},
+            "prior opaque replacement before chunk-source commit failure");
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_part_count =
+            editor.edit_plan().removed_parts().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+
+        bool failed = false;
+        {
+            ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+                fail_package_editor_worksheet_part_replacement_after_staging);
+            try {
+                editor.replace_worksheet_part_from_chunk_source_by_name("Sheet1",
+                    make_test_chunk_source({replacement_worksheet}));
+            } catch (const std::exception& error) {
+                failed = true;
+                if (std::string_view(error.what()).find(
+                        "injected worksheet part replacement commit failure")
+                    == std::string_view::npos) {
+                    throw TestFailure(
+                        "chunk-source staged failure should preserve injected context: "
+                        + std::string(error.what()));
+                }
+            }
+        }
+
+        check(failed,
+            "PackageEditor should surface injected chunk-source commit failure");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "chunk-source commit failure should preserve edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "chunk-source commit failure should preserve notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "chunk-source commit failure should preserve package-entry audits");
+        check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+            "chunk-source commit failure should preserve removed-part audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "chunk-source commit failure should preserve removed-entry audits");
+        check(!editor.edit_plan().full_calculation_on_load(),
+            "chunk-source commit failure should not request recalculation");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"by-name worksheet chunk-source replacement"}),
+            "chunk-source commit failure should not publish by-name note");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"pull-based chunk source", "file-backed staged chunk"}),
+            "chunk-source commit failure should not publish ownership note");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "chunk-source commit failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, workbook_part,
+            fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+            "chunk-source commit failure should preserve prior workbook replacement");
+        check_manifest_write_mode(editor, opaque_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "chunk-source commit failure should preserve prior opaque replacement");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "chunk-source commit failure should roll back temporary-file ownership");
+
+        editor.save_as(failed_output);
+        const fastxlsx::detail::PackageReader failed_reader =
+            fastxlsx::detail::PackageReader::open(failed_output);
+        check_entry_bytes(failed_reader, worksheet_part.zip_path(), source.worksheet);
+        check_entry_bytes(failed_reader, workbook_part.zip_path(), prior_workbook);
+        check_entry_bytes(failed_reader, opaque_part.zip_path(), prior_opaque);
+
+        editor.replace_worksheet_part_from_chunk_source_by_name("Sheet1",
+            make_test_chunk_source({replacement_worksheet}));
+        check(editor.edit_plan().full_calculation_on_load(),
+            "chunk-source retry should request recalculation");
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"by-name worksheet chunk-source replacement",
+                      "planned/source workbook catalog"}),
+            "chunk-source retry should publish by-name note with worksheet state");
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"pull-based chunk source", "file-backed staged chunk"}),
+            "chunk-source retry should publish temporary-file ownership note");
+
+        editor.save_as(retry_output);
+        const fastxlsx::detail::PackageReader retry_reader =
+            fastxlsx::detail::PackageReader::open(retry_output);
+        check_entry_bytes(retry_reader, worksheet_part.zip_path(), replacement_worksheet);
+        check_contains(retry_reader.read_entry(workbook_part.zip_path()),
+            "fullCalcOnLoad=\"1\"",
+            "chunk-source retry should write workbook calc metadata");
+        check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
+    }
+
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "PackageEditor destruction should clean retried chunk-source temporary files");
+}
+
+void test_package_editor_prevalidated_by_name_note_commits_atomically()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-prevalidated-by-name-commit-failure-source.xlsx");
+    const std::filesystem::path output = output_path(
+        "fastxlsx-package-editor-prevalidated-by-name-commit-retry-output.xlsx");
+    const fastxlsx::detail::PartName workbook_part("/xl/workbook.xml");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string planned_workbook =
+        R"(<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>)";
+    const std::string replacement_worksheet =
+        R"(<worksheet><sheetData><row r="13"><c r="G13"><v>13</v></c></row></sheetData></worksheet>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part(workbook_part, planned_workbook,
+        fastxlsx::detail::PartWriteMode::LocalDomRewrite,
+        "planned workbook before prevalidated by-name commit failure");
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+            fail_package_editor_worksheet_part_replacement_after_staging);
+        try {
+            editor.replace_worksheet_part_prevalidated_chunks_by_name("Sheet1",
+                {fastxlsx::detail::PackageEntryChunk::memory(replacement_worksheet)});
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "injected worksheet part replacement commit failure",
+                "prevalidated by-name staged failure should preserve injected context");
+        }
+    }
+
+    check(failed,
+        "PackageEditor should surface injected prevalidated by-name commit failure");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "prevalidated by-name commit failure should preserve notes");
+    check(!has_note_containing(editor.edit_plan().notes(),
+              {"by-name worksheet staged chunk prevalidated replacement"}),
+        "prevalidated by-name commit failure should not publish wrapper note");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "prevalidated by-name commit failure should keep worksheet copy-original");
+
+    editor.replace_worksheet_part_prevalidated_chunks_by_name("Sheet1",
+        {fastxlsx::detail::PackageEntryChunk::memory(replacement_worksheet)});
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"by-name worksheet staged chunk prevalidated replacement",
+                  "without reopening the staged worksheet"}),
+        "prevalidated by-name retry should publish wrapper note atomically");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    check_entry_bytes(output_reader, worksheet_part.zip_path(), replacement_worksheet);
+}
+
 void test_package_editor_replaces_worksheet_by_name_from_chunk_source()
 {
     const SourcePackage source =
@@ -899,6 +1081,8 @@ int main(int argc, char* argv[])
             test_package_editor_replaces_worksheet_by_name_with_staged_chunks();
             test_package_editor_replaces_worksheet_by_planned_name_with_staged_chunks();
             test_package_editor_replaces_worksheet_from_chunk_source();
+            test_package_editor_chunk_source_commit_failure_cleans_temp_and_retries();
+            test_package_editor_prevalidated_by_name_note_commits_atomically();
             test_package_editor_replaces_worksheet_by_name_from_chunk_source();
         }
     } catch (const std::exception& error) {

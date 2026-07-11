@@ -532,6 +532,12 @@ private:
         const WorksheetCellReplacementPlan& replacement_plan,
         const ReferencePolicy& policy,
         std::string input_label);
+    void replace_worksheet_part_from_chunk_source_with_commit_notes(
+        PartName worksheet_part,
+        const WorksheetInputChunkCallback& read_next_chunk,
+        const ReferencePolicy& policy,
+        std::string reason,
+        std::vector<std::string> commit_notes);
     void replace_worksheet_part_chunks_with_commit_notes(PartName worksheet_part,
         std::vector<PackageEntryChunk> chunks, const ReferencePolicy& policy,
         std::string reason, std::vector<std::string> commit_notes);

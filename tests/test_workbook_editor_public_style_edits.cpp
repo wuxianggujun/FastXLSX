@@ -8,6 +8,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -573,6 +574,117 @@ void test_public_cross_sheet_style_move_failures_noops_and_dirty_ownership()
     }
 }
 
+void test_public_cross_sheet_style_move_survives_owner_moves()
+{
+    const StyleEditSource source = write_cross_sheet_style_source(
+        "fastxlsx-workbook-editor-cross-sheet-style-owner-moves.xlsx");
+    const std::filesystem::path move_constructed_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-cross-sheet-style-move-constructed.xlsx");
+    const std::filesystem::path move_assigned_output = fastxlsx::test::artifact_path(
+        "fastxlsx-workbook-editor-cross-sheet-style-move-assigned.xlsx");
+
+    {
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor stale_source = editor.worksheet("Source");
+        fastxlsx::WorksheetEditor stale_destination = editor.worksheet("Destination");
+        stale_destination.move_cell_styles_from(stale_source, "B1", "B1");
+
+        fastxlsx::WorkbookEditor moved = std::move(editor);
+        check(throws_fastxlsx_error([&] { (void)stale_source.has_pending_changes(); }),
+            "move construction should invalidate the borrowed style-move source handle");
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_destination.has_pending_changes(); }),
+            "move construction should invalidate the borrowed style-move destination handle");
+        check(!editor.has_pending_changes() && !editor.has_unsaved_changes(),
+            "move-constructed-from editor should expose no pending or unsaved state");
+
+        fastxlsx::WorksheetEditor moved_source = moved.worksheet("Source");
+        fastxlsx::WorksheetEditor moved_destination = moved.worksheet("Destination");
+        check(moved_source.has_pending_changes()
+                && moved_destination.has_pending_changes()
+                && moved.has_unsaved_changes(),
+            "move construction should preserve both dirty style-move sessions");
+        check(!moved_source.get_cell("B1").has_style(),
+            "move construction should preserve the moved source style clear");
+        check_style(moved_destination.get_cell("B1"), source.decimal_style,
+            "move construction should preserve the moved destination style");
+
+        moved.save_as(move_constructed_output);
+        check(!moved_source.has_pending_changes()
+                && !moved_destination.has_pending_changes()
+                && !moved.has_unsaved_changes(),
+            "move-constructed editor save should clear both dirty sessions");
+
+        fastxlsx::WorkbookEditor reopened =
+            fastxlsx::WorkbookEditor::open(move_constructed_output);
+        check(!reopened.worksheet("Source").get_cell("B1").has_style(),
+            "reopened move-constructed output should preserve the source style clear");
+        check_style(reopened.worksheet("Destination").get_cell("B1"),
+            source.decimal_style,
+            "reopened move-constructed output should preserve the destination style");
+    }
+
+    {
+        fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor stale_target_source = target.worksheet("Source");
+        fastxlsx::WorksheetEditor stale_target_destination =
+            target.worksheet("Destination");
+        stale_target_destination.clear_cell_style("A1");
+
+        fastxlsx::WorkbookEditor assigned_source_editor =
+            fastxlsx::WorkbookEditor::open(source.path);
+        fastxlsx::WorksheetEditor stale_assigned_source =
+            assigned_source_editor.worksheet("Source");
+        fastxlsx::WorksheetEditor stale_assigned_destination =
+            assigned_source_editor.worksheet("Destination");
+        stale_assigned_destination.move_cell_styles_from(
+            stale_assigned_source, "B1", "B1");
+
+        target = std::move(assigned_source_editor);
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_target_source.has_pending_changes(); }),
+            "move assignment should invalidate the overwritten target source handle");
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_target_destination.has_pending_changes(); }),
+            "move assignment should invalidate the overwritten target destination handle");
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_assigned_source.has_pending_changes(); }),
+            "move assignment should invalidate the assigned source worksheet handle");
+        check(throws_fastxlsx_error(
+                  [&] { (void)stale_assigned_destination.has_pending_changes(); }),
+            "move assignment should invalidate the assigned destination worksheet handle");
+        check(!assigned_source_editor.has_pending_changes()
+                && !assigned_source_editor.has_unsaved_changes(),
+            "move-assigned-from editor should expose no pending or unsaved state");
+
+        fastxlsx::WorksheetEditor assigned_source = target.worksheet("Source");
+        fastxlsx::WorksheetEditor assigned_destination =
+            target.worksheet("Destination");
+        check(assigned_source.has_pending_changes()
+                && assigned_destination.has_pending_changes()
+                && target.has_unsaved_changes(),
+            "move assignment should preserve the assigned dirty style-move sessions");
+        check(!assigned_source.get_cell("B1").has_style(),
+            "move assignment should preserve the assigned source style clear");
+        check_style(assigned_destination.get_cell("B1"), source.decimal_style,
+            "move assignment should preserve the assigned destination style");
+        check_style(assigned_destination.get_cell("A1"), source.percent_style,
+            "move assignment should discard the overwritten target style clear");
+
+        target.save_as(move_assigned_output);
+        fastxlsx::WorkbookEditor reopened =
+            fastxlsx::WorkbookEditor::open(move_assigned_output);
+        check(!reopened.worksheet("Source").get_cell("B1").has_style(),
+            "reopened move-assigned output should preserve the source style clear");
+        check_style(reopened.worksheet("Destination").get_cell("B1"),
+            source.decimal_style,
+            "reopened move-assigned output should preserve the destination style");
+        check_style(reopened.worksheet("Destination").get_cell("A1"),
+            source.percent_style,
+            "reopened move-assigned output should exclude overwritten target edits");
+    }
+}
+
 void test_public_style_edit_failures_and_noops_preserve_clean_state()
 {
     const StyleEditSource source =
@@ -688,6 +800,7 @@ int main()
         test_public_cross_sheet_style_move_save_retry_and_reopen();
         test_public_cross_sheet_style_copy_failures_and_live_source();
         test_public_cross_sheet_style_move_failures_noops_and_dirty_ownership();
+        test_public_cross_sheet_style_move_survives_owner_moves();
         test_public_style_edit_failures_and_noops_preserve_clean_state();
         std::cout << "WorkbookEditor public style edit tests passed\n";
         return 0;

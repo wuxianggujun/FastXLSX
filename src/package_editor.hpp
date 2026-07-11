@@ -50,6 +50,17 @@ inline constexpr std::size_t package_editor_metadata_xml_materialization_byte_li
 // package parts use staged chunks so object payloads and worksheet dependencies
 // do not re-enter materialized replacement state.
 
+struct IndexedSourceEntryDirectRangeStats {
+    std::uint64_t scanned_source_cell_count = 0;
+    std::uint64_t matched_replacement_count = 0;
+    std::uint64_t staged_output_bytes = 0;
+    std::uint64_t source_range_chunk_ms = 0;
+    std::uint64_t target_plan_ms = 0;
+    std::uint64_t payload_audit_ms = 0;
+    std::uint64_t relationship_audit_ms = 0;
+    std::uint64_t descriptor_ms = 0;
+};
+
 struct PackagePartReplacement {
     PartName part_name;
     // Bounded workbook/core/app or generated small XML. Other source parts use chunks.
@@ -556,7 +567,8 @@ private:
         std::string replacement_reason, bool enforce_payload_policy = true,
         bool validate_staged_chunk_crc32 = true,
         std::vector<std::string> commit_notes = {},
-        PartWriteMode target_write_mode = PartWriteMode::StreamRewrite);
+        PartWriteMode target_write_mode = PartWriteMode::StreamRewrite,
+        std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt);
 
     PackageReader reader_;
     PackageManifest manifest_;

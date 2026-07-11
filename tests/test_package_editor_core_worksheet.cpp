@@ -1125,6 +1125,220 @@ void test_package_editor_sheet_data_commit_failure_preserves_state_and_retries()
         "PackageEditor destruction should clean retried sheetData temporary files");
 }
 
+void test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-cell-transform-commit-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-cell-transform-commit-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-cell-transform-commit-retry-output.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string prior_opaque = "prior cell-transform opaque replacement";
+    const std::string replacement_cell = R"(<c r="A1"><v>99</v></c>)";
+    const std::array replacements {
+        worksheet_cell_replacement("A1", replacement_cell),
+    };
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        editor.replace_part_chunks(opaque_part,
+            {fastxlsx::detail::PackageEntryChunk::memory(prior_opaque)},
+            "prior opaque replacement before cell-transform commit failure");
+
+        const std::size_t initial_plan_size = editor.edit_plan().size();
+        const std::size_t initial_note_count = editor.edit_plan().notes().size();
+        const std::size_t initial_package_entry_count =
+            editor.edit_plan().package_entries().size();
+        const std::size_t initial_removed_part_count =
+            editor.edit_plan().removed_parts().size();
+        const std::size_t initial_removed_package_entry_count =
+            editor.edit_plan().removed_package_entries().size();
+
+        bool failed = false;
+        {
+            ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+                fail_package_editor_worksheet_part_replacement_after_staging);
+            try {
+                editor.replace_worksheet_cells(worksheet_part, replacements);
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(),
+                    "injected worksheet part replacement commit failure",
+                    "cell-transform staged failure should preserve injected context");
+            }
+        }
+
+        check(failed,
+            "PackageEditor should surface injected cell-transform commit failure");
+        check(editor.edit_plan().size() == initial_plan_size,
+            "cell-transform commit failure should preserve edit-plan parts");
+        check(editor.edit_plan().notes().size() == initial_note_count,
+            "cell-transform commit failure should preserve notes");
+        check(editor.edit_plan().package_entries().size() == initial_package_entry_count,
+            "cell-transform commit failure should preserve package-entry audits");
+        check(editor.edit_plan().removed_parts().size() == initial_removed_part_count,
+            "cell-transform commit failure should preserve removed-part audits");
+        check(editor.edit_plan().removed_package_entries().size()
+                == initial_removed_package_entry_count,
+            "cell-transform commit failure should preserve removed-entry audits");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"streams dimension-refreshed output",
+                      "PackageEditor-owned temporary file-backed"}),
+            "cell-transform commit failure should not publish temp ownership note");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"worksheet cell replacement refreshed worksheet dimension"}),
+            "cell-transform commit failure should not publish transformer note");
+        check_manifest_write_mode(editor, worksheet_part,
+            fastxlsx::detail::PartWriteMode::CopyOriginal,
+            "cell-transform commit failure should keep worksheet copy-original");
+        check_manifest_write_mode(editor, opaque_part,
+            fastxlsx::detail::PartWriteMode::StreamRewrite,
+            "cell-transform commit failure should preserve prior opaque replacement");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "cell-transform commit failure should roll back temporary-file ownership");
+
+        editor.save_as(failed_output);
+        const fastxlsx::detail::PackageReader failed_reader =
+            fastxlsx::detail::PackageReader::open(failed_output);
+        check_entry_bytes(failed_reader, worksheet_part.zip_path(), source.worksheet);
+        check_entry_bytes(failed_reader, opaque_part.zip_path(), prior_opaque);
+
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"streams dimension-refreshed output",
+                      "PackageEditor-owned temporary file-backed"}),
+            "cell-transform retry should publish temp ownership note atomically");
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"worksheet cell replacement refreshed worksheet dimension"}),
+            "cell-transform retry should publish transformer note atomically");
+        const fastxlsx::detail::PackageEditorOutputPlan retry_plan =
+            editor.planned_output();
+        check_output_entry_staged_replacement_chunks(retry_plan.entries,
+            worksheet_part.zip_path(), true,
+            "cell-transform retry should retain file-backed staged chunks");
+        const auto* worksheet_output_plan =
+            find_output_entry_plan(retry_plan.entries, worksheet_part.zip_path());
+        check(worksheet_output_plan != nullptr
+                && !worksheet_output_plan->indexed_source_entry_direct_range,
+            "cell-transform regression should exercise transformer fallback");
+
+        editor.save_as(retry_output);
+        const fastxlsx::detail::PackageReader retry_reader =
+            fastxlsx::detail::PackageReader::open(retry_output);
+        check_contains(retry_reader.read_entry(worksheet_part.zip_path()), replacement_cell,
+            "cell-transform retry should write replacement cell");
+        check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
+    }
+
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "PackageEditor destruction should clean retried cell-transform temporary files");
+}
+
+void test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-indexed-cell-commit-failure-source.xlsx");
+    const std::filesystem::path failed_output = output_path(
+        "fastxlsx-package-editor-indexed-cell-commit-failure-output.xlsx");
+    const std::filesystem::path retry_output = output_path(
+        "fastxlsx-package-editor-indexed-cell-commit-retry-output.xlsx");
+    const fastxlsx::detail::PartName opaque_part("/custom/opaque.bin");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string indexed_source_worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData></worksheet>)";
+    const std::string expected_worksheet =
+        R"(<worksheet><dimension ref="A1"/><sheetData><row r="1"><c r="A1"><v>77</v></c></row></sheetData></worksheet>)";
+    const std::string replacement_cell = R"(<c r="A1"><v>77</v></c>)";
+    const std::string prior_opaque = "prior indexed-cell opaque replacement";
+    rewrite_package_entry_as_stored(
+        source.path, worksheet_part.zip_path(), indexed_source_worksheet);
+
+    fastxlsx::detail::ReferencePolicy policy;
+    policy.request_full_calculation_on_sheet_rewrite = false;
+    policy.calc_chain_action = fastxlsx::detail::CalcChainAction::Preserve;
+    const std::array replacements {
+        worksheet_cell_replacement("A1", replacement_cell),
+    };
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    editor.replace_part_chunks(opaque_part,
+        {fastxlsx::detail::PackageEntryChunk::memory(prior_opaque)},
+        "prior opaque replacement before indexed cell commit failure");
+    const std::size_t initial_plan_size = editor.edit_plan().size();
+    const std::size_t initial_note_count = editor.edit_plan().notes().size();
+
+    bool failed = false;
+    {
+        ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+            fail_package_editor_worksheet_part_replacement_after_staging);
+        try {
+            editor.replace_worksheet_cells(worksheet_part, replacements, policy);
+        } catch (const std::exception& error) {
+            failed = true;
+            check_contains(error.what(),
+                "injected worksheet part replacement commit failure",
+                "indexed cell staged failure should preserve injected context");
+        }
+    }
+
+    check(failed,
+        "PackageEditor should surface injected indexed cell commit failure");
+    check(editor.edit_plan().size() == initial_plan_size,
+        "indexed cell commit failure should preserve edit-plan parts");
+    check(editor.edit_plan().notes().size() == initial_note_count,
+        "indexed cell commit failure should preserve notes");
+    check(!has_note_containing(editor.edit_plan().notes(),
+              {"indexed source-entry direct-range", "matched 1 replacement targets"}),
+        "indexed cell commit failure should not publish fast-path note");
+    check_manifest_write_mode(editor, worksheet_part,
+        fastxlsx::detail::PartWriteMode::CopyOriginal,
+        "indexed cell commit failure should keep worksheet copy-original");
+    const fastxlsx::detail::PackageEditorOutputPlan failed_plan =
+        editor.planned_output();
+    const auto* failed_worksheet_plan =
+        find_output_entry_plan(failed_plan.entries, worksheet_part.zip_path());
+    check(failed_worksheet_plan != nullptr
+            && !failed_worksheet_plan->indexed_source_entry_direct_range,
+        "indexed cell commit failure should not publish telemetry");
+
+    editor.save_as(failed_output);
+    const fastxlsx::detail::PackageReader failed_reader =
+        fastxlsx::detail::PackageReader::open(failed_output);
+    check_entry_bytes(failed_reader, worksheet_part.zip_path(), indexed_source_worksheet);
+    check_entry_bytes(failed_reader, opaque_part.zip_path(), prior_opaque);
+
+    editor.replace_worksheet_cells(worksheet_part, replacements, policy);
+    check(has_note_containing(editor.edit_plan().notes(),
+              {"indexed source-entry direct-range", "matched 1 replacement targets"}),
+        "indexed cell retry should publish fast-path note atomically");
+    const fastxlsx::detail::PackageEditorOutputPlan retry_plan =
+        editor.planned_output();
+    const auto* retry_worksheet_plan =
+        find_output_entry_plan(retry_plan.entries, worksheet_part.zip_path());
+    check(retry_worksheet_plan != nullptr
+            && retry_worksheet_plan->indexed_source_entry_direct_range,
+        "indexed cell retry should publish telemetry atomically");
+    check(retry_worksheet_plan->indexed_source_entry_scanned_source_cell_count == 1,
+        "indexed cell retry should publish scanned-cell telemetry");
+    check(retry_worksheet_plan->indexed_source_entry_matched_replacement_count == 1,
+        "indexed cell retry should publish matched-target telemetry");
+    check(retry_worksheet_plan->indexed_source_entry_staged_output_bytes
+            == static_cast<std::uint64_t>(expected_worksheet.size()),
+        "indexed cell retry should publish output-byte telemetry");
+
+    editor.save_as(retry_output);
+    const fastxlsx::detail::PackageReader retry_reader =
+        fastxlsx::detail::PackageReader::open(retry_output);
+    check_entry_bytes(retry_reader, worksheet_part.zip_path(), expected_worksheet);
+    check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
+}
+
 void test_package_editor_replaces_worksheet_by_name_from_chunk_source()
 {
     const SourcePackage source =
@@ -1218,6 +1432,8 @@ int main(int argc, char* argv[])
             test_package_editor_chunk_source_commit_failure_cleans_temp_and_retries();
             test_package_editor_prevalidated_by_name_note_commits_atomically();
             test_package_editor_sheet_data_commit_failure_preserves_state_and_retries();
+            test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries();
+            test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_retries();
             test_package_editor_replaces_worksheet_by_name_from_chunk_source();
         }
     } catch (const std::exception& error) {

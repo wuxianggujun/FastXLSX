@@ -6719,8 +6719,10 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<WorksheetRelationshipReferenceAudit> relationship_reference_audits,
     std::string replacement_reason, bool enforce_payload_policy,
     bool validate_staged_chunk_crc32, std::vector<std::string> commit_notes,
-    PartWriteMode target_write_mode)
+    PartWriteMode target_write_mode,
+    std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats)
 {
+    const auto staged_commit_started = std::chrono::steady_clock::now();
     if (chunks.empty()) {
         throw FastXlsxError("staged worksheet replacement requires at least one chunk");
     }
@@ -6895,6 +6897,33 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     }
     for (std::string& note : commit_notes) {
         updated_edit_plan.add_note(std::move(note));
+    }
+    if (indexed_stats.has_value()) {
+        PackagePartReplacement* replacement =
+            find_replacement(updated_replacements, target_worksheet_part);
+        if (replacement == nullptr) {
+            throw FastXlsxError(
+                "indexed worksheet replacement staging lost the target replacement");
+        }
+        replacement->indexed_source_entry_direct_range = true;
+        replacement->indexed_source_entry_scanned_source_cell_count =
+            indexed_stats->scanned_source_cell_count;
+        replacement->indexed_source_entry_matched_replacement_count =
+            indexed_stats->matched_replacement_count;
+        replacement->indexed_source_entry_staged_output_bytes =
+            indexed_stats->staged_output_bytes;
+        replacement->indexed_source_entry_source_range_chunk_ms =
+            indexed_stats->source_range_chunk_ms;
+        replacement->indexed_source_entry_target_plan_ms =
+            indexed_stats->target_plan_ms;
+        replacement->indexed_source_entry_payload_audit_ms =
+            indexed_stats->payload_audit_ms;
+        replacement->indexed_source_entry_relationship_audit_ms =
+            indexed_stats->relationship_audit_ms;
+        replacement->indexed_source_entry_descriptor_ms =
+            indexed_stats->descriptor_ms;
+        replacement->indexed_source_entry_commit_ms =
+            steady_clock_elapsed_milliseconds(staged_commit_started);
     }
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
@@ -7194,35 +7223,8 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
         descriptor_result.summary.matched_replacement_count;
     const std::uint64_t scanned_source_cell_count =
         targeted_plan.scanned_source_cell_count;
-    const PartName worksheet_part_for_stats = worksheet_part;
-    phase_started = std::chrono::steady_clock::now();
-    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-        std::move(descriptor_result.chunks), policy,
-        std::move(payload_audit.notes), std::move(payload_audit.audits),
-        std::move(relationship_reference_audit.notes),
-        std::move(relationship_reference_audit.audits),
-        "target worksheet part indexed direct-range stream rewrite from worksheet cell replacement",
-        false, false);
-    const std::uint64_t commit_ms =
-        steady_clock_elapsed_milliseconds(phase_started);
-    if (PackagePartReplacement* replacement =
-            find_replacement(replacements_, worksheet_part_for_stats)) {
-        replacement->indexed_source_entry_direct_range = true;
-        replacement->indexed_source_entry_scanned_source_cell_count =
-            scanned_source_cell_count;
-        replacement->indexed_source_entry_matched_replacement_count =
-            static_cast<std::uint64_t>(matched_replacements);
-        replacement->indexed_source_entry_staged_output_bytes = output_bytes;
-        replacement->indexed_source_entry_source_range_chunk_ms =
-            source_range_chunk_ms;
-        replacement->indexed_source_entry_target_plan_ms = target_plan_ms;
-        replacement->indexed_source_entry_payload_audit_ms = payload_audit_ms;
-        replacement->indexed_source_entry_relationship_audit_ms =
-            relationship_audit_ms;
-        replacement->indexed_source_entry_descriptor_ms = descriptor_ms;
-        replacement->indexed_source_entry_commit_ms = commit_ms;
-    }
-    edit_plan_.add_note(
+    std::vector<std::string> commit_notes;
+    commit_notes.emplace_back(
         "worksheet cell replacement used indexed " + input_label
         + " direct-range staged chunks for a current worksheet input with no "
         "worksheet relationships; "
@@ -7232,7 +7234,7 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
         + " replacement targets, and staged "
         + std::to_string(output_bytes) + " worksheet bytes");
     if (input_label == "source-entry") {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement indexed source-entry fast path preserves "
             "untouched worksheet XML as source package file ranges and inserts only "
             "replacement cell payload chunks; planned staged chunk inputs, compressed "
@@ -7240,7 +7242,7 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
             "upsert cases, reference-policy Fail mode, and worksheets with "
             "relationships continue to use the transformer fallback");
     } else {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement indexed " + input_label
             + " fast path preserves planned worksheet staged chunks without "
             "materializing the rewritten worksheet as staged chunk ranges and "
@@ -7249,6 +7251,25 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
             "cases, reference-policy Fail mode, and worksheets with relationships "
             "continue to use the transformer fallback");
     }
+
+    IndexedSourceEntryDirectRangeStats indexed_stats;
+    indexed_stats.scanned_source_cell_count = scanned_source_cell_count;
+    indexed_stats.matched_replacement_count =
+        static_cast<std::uint64_t>(matched_replacements);
+    indexed_stats.staged_output_bytes = output_bytes;
+    indexed_stats.source_range_chunk_ms = source_range_chunk_ms;
+    indexed_stats.target_plan_ms = target_plan_ms;
+    indexed_stats.payload_audit_ms = payload_audit_ms;
+    indexed_stats.relationship_audit_ms = relationship_audit_ms;
+    indexed_stats.descriptor_ms = descriptor_ms;
+    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+        std::move(descriptor_result.chunks), policy,
+        std::move(payload_audit.notes), std::move(payload_audit.audits),
+        std::move(relationship_reference_audit.notes),
+        std::move(relationship_reference_audit.audits),
+        "target worksheet part indexed direct-range stream rewrite from worksheet cell replacement",
+        false, false, std::move(commit_notes), PartWriteMode::StreamRewrite,
+        indexed_stats);
     return true;
 }
 
@@ -7353,84 +7374,93 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
     reject_payload_dependencies_by_policy(
         stream_analysis.payload_audit, policy, "worksheet replacement");
 
-    std::vector<PackageEntryChunk> output_chunks;
-    output_chunks.push_back(PackageEntryChunk::file(temp_file.path()));
-    replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
-        std::move(output_chunks), policy, std::move(stream_analysis.payload_audit.notes),
-        std::move(stream_analysis.payload_audit.audits),
-        std::move(relationship_reference_audit.notes),
-        std::move(relationship_reference_audit.audits), std::move(replacement_reason));
-    temporary_files_.push_back(temp_file.path());
-    temp_file.release();
+    std::vector<std::string> commit_notes;
     if (source_entry_chunk_source) {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             operation_label + " streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; source package "
             "worksheet entries are scanned through the PackageReader ZIP-entry chunk source "
             "without materializing the source worksheet XML");
     } else if (planned_chunk_source) {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             operation_label + " streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
             "worksheet staged chunks are scanned through chunk-source readers without "
             "materializing the planned staged worksheet XML");
     } else {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             operation_label + " streams dimension-refreshed output to a "
             "PackageEditor-owned temporary file-backed package-entry chunk");
     }
     if (source_entry_chunk_source) {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement output pass feeds source package worksheet XML "
             "through the PackageReader ZIP-entry chunk source and transformer chunk-source "
             "adapter");
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement dependency and dimension analysis feeds source "
             "package worksheet XML through the PackageReader ZIP-entry chunk source and "
             "transformer chunk-source adapter");
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement output pass collects relationship-id audit while "
             "feeding source package worksheet XML through the PackageReader ZIP-entry "
             "chunk source and transformer chunk-source adapter");
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement root validation feeds source package worksheet XML "
             "through the PackageReader ZIP-entry chunk source and event-reader chunk-source "
             "validator");
     } else if (planned_chunk_source) {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement output pass feeds current planned worksheet staged "
             "chunks through the transformer chunk-source adapter");
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement dependency and dimension analysis feeds current "
             "planned worksheet staged chunks through the transformer chunk-source adapter");
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement output pass collects relationship-id audit while "
             "feeding current planned worksheet staged chunks through the transformer "
             "chunk-source adapter");
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell replacement root validation feeds current planned worksheet "
             "staged chunks through the event-reader chunk-source validator");
     }
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "
         "definedNames, and formulas is not recalculated or repaired");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "worksheet cell replacement builds one prevalidated non-owning replacement "
         "lookup plan and reuses it across the dependency/dimension analysis pass "
         "and the dimension-refreshed output pass, without reparsing replacement "
         "cell payloads or rebuilding selector lookup");
-    edit_plan_.add_note(
+    commit_notes.emplace_back(
         "worksheet cell replacement stores caller single-cell XML behind explicit "
         "replacement payload chunks rather than raw string fields; payload preflight "
         "still materializes within the bounded single-cell XML limit, not streamed "
         "cell payload sources");
     if (replace_or_insert) {
-        edit_plan_.add_note(
+        commit_notes.emplace_back(
             "worksheet cell upsert replaces existing cells, inserts missing cells into "
             "source-order rows, and synthesizes missing rows as minimal row records; "
             "it does not shift rows or repair range-bearing worksheet metadata");
     }
+
+    std::vector<PackageEntryChunk> output_chunks;
+    output_chunks.push_back(PackageEntryChunk::file(temp_file.path()));
+    temporary_files_.push_back(temp_file.path());
+    try {
+        replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
+            std::move(output_chunks), policy,
+            std::move(stream_analysis.payload_audit.notes),
+            std::move(stream_analysis.payload_audit.audits),
+            std::move(relationship_reference_audit.notes),
+            std::move(relationship_reference_audit.audits),
+            std::move(replacement_reason), true, true, std::move(commit_notes));
+    } catch (...) {
+        temporary_files_.pop_back();
+        throw;
+    }
+    temp_file.release();
 }
 
 void PackageEditor::replace_worksheet_cells(PartName worksheet_part,

@@ -78,6 +78,7 @@
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 对 stream-rewrite chunks、part restore、edit plan、part/entry replacements、omitted entries 和 manifest 使用事务式 staging；它是 package writer 的 internal handoff，不是 public arbitrary-part streaming API。
 - Internal worksheet chunk replacement 对 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries 和 manifest 使用统一 staging，并在提交前完成 routing notes 与 dependency audits；完整 worksheet chunk-source wrapper 会在发布 replacement 前预注册临时文件所有权，提交失败时回滚注册并删除 staged file。提交前失败保留既有计划、输出语义和 retry 能力。它仍是 internal worksheet rewrite foundation，不是 public arbitrary worksheet XML API。
 - Internal bounded sheetData replacement 会把最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败删除临时输出并保留调用前 package state。它仍不是 large-file transformer、任意 cell random editing 或 linked metadata repair。
+- Internal worksheet cell replacement 的 transformer fallback 会在 replacement 发布前预注册 file-backed output，并把 transform notes 纳入同一 transaction；indexed direct-range fast path 会把 telemetry 与 notes 写入 staged replacement/edit plan 副本。两条路径的提交前失败都保留调用前状态与 retry 能力，但这不改变其 bounded payload、relationship policy 和非语义修复边界。
 
 文档只能在明确的 internal/architecture 语境提及它们。
 

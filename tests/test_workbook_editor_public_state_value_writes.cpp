@@ -5986,6 +5986,334 @@ void test_public_worksheet_editor_set_column_values_noop_invalid_and_budget()
     }
 }
 
+void test_public_worksheet_editor_set_cell_values_preserves_styles_and_order()
+{
+    const std::filesystem::path source = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-style-source.xlsx");
+    const std::filesystem::path output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-style-output.xlsx");
+    const std::filesystem::path noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-style-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-set-cell-values-style-second-noop-output.xlsx");
+
+    fastxlsx::StyleId non_default_style;
+    {
+        fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(source);
+        non_default_style = writer.add_style(fastxlsx::CellStyle {"0.00"});
+        fastxlsx::WorksheetWriter styled_sheet = writer.add_worksheet("Styled");
+        styled_sheet.append_row({
+            fastxlsx::CellView::number(1.0).with_style(non_default_style),
+            fastxlsx::CellView::text("styled-tail"),
+        });
+        fastxlsx::WorksheetWriter untouched_sheet = writer.add_worksheet("Untouched");
+        untouched_sheet.append_row({fastxlsx::CellView::text("keep-me")});
+        writer.close();
+    }
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Styled");
+
+    sheet.set_cell_values({
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::text("styled-batch-first")},
+        {fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::CellValue::number(2.5)},
+        {fastxlsx::WorksheetCellReference {1, 3},
+            fastxlsx::CellValue::text("batch-first")},
+        {fastxlsx::WorksheetCellReference {1, 3},
+            fastxlsx::CellValue::formula("A1")},
+        {fastxlsx::WorksheetCellReference {2, 4},
+            fastxlsx::CellValue::boolean(true)},
+    });
+
+    check(sheet.cell_count() == 4,
+        "set_cell_values should preserve sparse count while inserting missing cells");
+    check_cell_range_equals(sheet.used_range(), 1, 1, 2, 4,
+        "set_cell_values should expand sparse bounds for inserted cells");
+    const fastxlsx::CellValue styled_a1 = sheet.get_cell("A1");
+    check(styled_a1.kind() == fastxlsx::CellValueKind::Number &&
+            styled_a1.number_value() == 2.5 &&
+            styled_a1.has_style() &&
+            styled_a1.style_id().value() == non_default_style.value(),
+        "set_cell_values should preserve source style ids on duplicate overwritten targets");
+    check(sheet.get_cell("B1").text_value() == "styled-tail",
+        "set_cell_values should leave non-target source cells untouched");
+    const fastxlsx::CellValue duplicate_c1 = sheet.get_cell("C1");
+    check(duplicate_c1.kind() == fastxlsx::CellValueKind::Formula &&
+            duplicate_c1.text_value() == "A1" &&
+            !duplicate_c1.has_style(),
+        "set_cell_values should apply duplicate coordinates in input order");
+    const fastxlsx::CellValue inserted_d2 = sheet.get_cell("D2");
+    check(inserted_d2.kind() == fastxlsx::CellValueKind::Boolean &&
+            inserted_d2.boolean_value() &&
+            !inserted_d2.has_style(),
+        "set_cell_values should insert missing cells without source style ids");
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Styled", 0, "set_cell_values styled dirty summary");
+    check(!editor.last_edit_error().has_value(),
+        "successful set_cell_values should keep diagnostics clear");
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled set_cell_values save should leave the source package unchanged");
+    check(output_entries.at("xl/styles.xml") == source_entries.at("xl/styles.xml"),
+        "styled set_cell_values save should preserve source styles.xml bytes");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:D2"/>)",
+        "set_cell_values should refresh the dirty worksheet dimension");
+    const std::string styled_number =
+        R"(<c r="A1" s=")" + std::to_string(non_default_style.value())
+        + R"("><v>2.5</v></c>)";
+    check_contains(worksheet_xml, styled_number,
+        "set_cell_values should persist value-only edits with the source style id");
+    check_not_contains(worksheet_xml, "styled-batch-first",
+        "set_cell_values should omit earlier duplicate styled-target payloads");
+    check_contains(worksheet_xml, "styled-tail",
+        "set_cell_values should persist untouched source cells");
+    check_contains(worksheet_xml, R"(<c r="C1"><f>A1</f></c>)",
+        "set_cell_values should persist the later duplicate-coordinate formula");
+    check_contains(worksheet_xml, R"(<c r="D2" t="b"><v>1</v></c>)",
+        "set_cell_values should persist inserted boolean cells");
+    check_not_contains(worksheet_xml, "batch-first",
+        "set_cell_values should omit earlier duplicate-coordinate payloads");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "set_cell_values should preserve untouched worksheets");
+    const auto inspect_styled_set_cell_values_output =
+        [non_default_style](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "styled set_cell_values reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "styled set_cell_values reopened output should keep sparse bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 2.5 &&
+                    reopened_a1.has_style() &&
+                    reopened_a1.style_id().value() == non_default_style.value(),
+                "styled set_cell_values reopened output should preserve source style id");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "styled-tail",
+                "styled set_cell_values reopened output should keep untouched source cells");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "A1" &&
+                    !reopened_c1.has_style(),
+                "styled set_cell_values reopened output should keep later duplicate formula");
+            const fastxlsx::CellValue reopened_d2 = reopened_sheet.get_cell("D2");
+            check(reopened_d2.kind() == fastxlsx::CellValueKind::Boolean &&
+                    reopened_d2.boolean_value() &&
+                    !reopened_d2.has_style(),
+                "styled set_cell_values reopened output should keep inserted boolean");
+        };
+    const auto check_styled_set_cell_values_saved_snapshot =
+        [&](std::size_t expected_pending_count, std::string_view scenario) {
+            const std::string prefix(scenario);
+
+            check(sheet.cell_count() == 4,
+                prefix + " should keep the represented sparse count");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells =
+                sheet.sparse_cells();
+            check(cells.size() == 4,
+                prefix + " should expose the four represented records");
+            if (cells.size() == 4) {
+                check(cells[0].reference.row == 1 &&
+                        cells[0].reference.column == 1 &&
+                        cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                        cells[0].value.number_value() == 2.5 &&
+                        cells[0].value.has_style() &&
+                        cells[0].value.style_id().value() == non_default_style.value(),
+                    prefix + " should keep styled A1 first");
+                check(cells[1].reference.row == 1 &&
+                        cells[1].reference.column == 2 &&
+                        cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[1].value.text_value() == "styled-tail" &&
+                        !cells[1].value.has_style(),
+                    prefix + " should keep unstyled source B1 second");
+                check(cells[2].reference.row == 1 &&
+                        cells[2].reference.column == 3 &&
+                        cells[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        cells[2].value.text_value() == "A1" &&
+                        !cells[2].value.has_style(),
+                    prefix + " should keep later-wins C1 formula third");
+                check(cells[3].reference.row == 2 &&
+                        cells[3].reference.column == 4 &&
+                        cells[3].value.kind() == fastxlsx::CellValueKind::Boolean &&
+                        cells[3].value.boolean_value() &&
+                        !cells[3].value.has_style(),
+                    prefix + " should keep inserted D2 boolean last");
+            }
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one =
+                sheet.row_cells(1);
+            check(row_one.size() == 3 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    row_one[0].value.number_value() == 2.5 &&
+                    row_one[0].value.has_style() &&
+                    row_one[0].value.style_id().value() == non_default_style.value() &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2 &&
+                    row_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[1].value.text_value() == "styled-tail" &&
+                    !row_one[1].value.has_style() &&
+                    row_one[2].reference.row == 1 &&
+                    row_one[2].reference.column == 3 &&
+                    row_one[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    row_one[2].value.text_value() == "A1" &&
+                    !row_one[2].value.has_style(),
+                prefix + " should keep row-one styled number, source text, and formula");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_two =
+                sheet.row_cells(2);
+            check(row_two.size() == 1 &&
+                    row_two[0].reference.row == 2 &&
+                    row_two[0].reference.column == 4 &&
+                    row_two[0].value.kind() == fastxlsx::CellValueKind::Boolean &&
+                    row_two[0].value.boolean_value() &&
+                    !row_two[0].value.has_style(),
+                prefix + " should keep row-two inserted boolean");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                sheet.column_cells(1);
+            check(column_one.size() == 1 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    column_one[0].value.number_value() == 2.5 &&
+                    column_one[0].value.has_style() &&
+                    column_one[0].value.style_id().value() == non_default_style.value(),
+                prefix + " should keep column-one styled A1");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_two =
+                sheet.column_cells(2);
+            check(column_two.size() == 1 &&
+                    column_two[0].reference.row == 1 &&
+                    column_two[0].reference.column == 2 &&
+                    column_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_two[0].value.text_value() == "styled-tail" &&
+                    !column_two[0].value.has_style(),
+                prefix + " should keep column-two source B1");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_three =
+                sheet.column_cells(3);
+            check(column_three.size() == 1 &&
+                    column_three[0].reference.row == 1 &&
+                    column_three[0].reference.column == 3 &&
+                    column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    column_three[0].value.text_value() == "A1" &&
+                    !column_three[0].value.has_style(),
+                prefix + " should keep column-three formula C1");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_four =
+                sheet.column_cells(4);
+            check(column_four.size() == 1 &&
+                    column_four[0].reference.row == 2 &&
+                    column_four[0].reference.column == 4 &&
+                    column_four[0].value.kind() == fastxlsx::CellValueKind::Boolean &&
+                    column_four[0].value.boolean_value() &&
+                    !column_four[0].value.has_style(),
+                prefix + " should keep column-four boolean D2");
+
+            check_cell_range_equals(sheet.used_range(), 1, 1, 2, 4,
+                prefix + " should keep saved sparse bounds");
+            check(!sheet.has_pending_changes(),
+                prefix + " should keep the handle clean");
+            check(editor.pending_change_count() == expected_pending_count,
+                prefix + " should not add another materialized handoff");
+            check(editor.pending_materialized_worksheet_names().empty(),
+                prefix + " should keep dirty materialized names empty");
+            check(editor.pending_materialized_cell_count() == 0,
+                prefix + " should keep dirty materialized cells empty");
+            check(editor.estimated_pending_materialized_memory_usage() == 0,
+                prefix + " should keep dirty materialized memory empty");
+            check(editor.pending_worksheet_edits().empty(),
+                prefix + " should keep dirty summaries empty");
+            check_workbook_editor_no_replacement_diagnostics(
+                editor, prefix + " should keep replacement diagnostics empty");
+            check(!editor.last_edit_error().has_value(),
+                prefix + " should keep diagnostics clear");
+        };
+    check_reopened_clean_sheet_output(output, "Styled", "styled set_cell_values",
+        inspect_styled_set_cell_values_output);
+    const std::size_t pending_count_after_save = editor.pending_change_count();
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "styled set_cell_values no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == 1,
+        "styled set_cell_values no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled set_cell_values no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "styled set_cell_values no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "styled set_cell_values no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled set_cell_values no-op save should keep diagnostics clear");
+    check_styled_set_cell_values_saved_snapshot(
+        pending_count_after_save, "styled set_cell_values saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop, "styled set_cell_values no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop, "styled set_cell_values no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "styled set_cell_values no-op output should match the materialized output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled set_cell_values no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        noop_output, "Styled", "styled set_cell_values no-op save",
+        inspect_styled_set_cell_values_output);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(second_noop_output);
+    check(!sheet.has_pending_changes(),
+        "styled set_cell_values second no-op save should keep the materialized sheet clean");
+    check(editor.pending_change_count() == pending_count_after_save,
+        "styled set_cell_values second no-op save should not record another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "styled set_cell_values second no-op save should keep dirty diagnostics clear");
+    check(editor.pending_worksheet_edits().empty(),
+        "styled set_cell_values second no-op save should not leave dirty summaries");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "styled set_cell_values second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "styled set_cell_values second no-op save should keep diagnostics clear");
+    check_styled_set_cell_values_saved_snapshot(
+        pending_count_after_save, "styled set_cell_values second no-op saved handle");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "styled set_cell_values second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "styled set_cell_values second no-op save");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "styled set_cell_values second no-op output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "styled set_cell_values second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "styled set_cell_values second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Styled", "styled set_cell_values second no-op save",
+        inspect_styled_set_cell_values_output);
+}
+
 } // namespace
 
 int main()
@@ -5997,6 +6325,7 @@ int main()
         test_public_worksheet_editor_set_column_values_accepts_default_style_id_as_style_preserving_prefix();
         test_public_worksheet_editor_set_column_values_style_rejection_preserves_dirty_session();
         test_public_worksheet_editor_set_column_values_noop_invalid_and_budget();
+        test_public_worksheet_editor_set_cell_values_preserves_styles_and_order();
         std::cout << "WorkbookEditor public-state value write tests passed\n";
         return 0;
     } catch (const std::exception& error) {

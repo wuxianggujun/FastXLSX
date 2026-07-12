@@ -12,6 +12,7 @@ import argparse
 import json
 import math
 import platform
+import statistics
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -96,6 +97,46 @@ def case_run_name(case: MatrixCase, compression_level: int | None) -> str:
     if compression_level is None:
         return case.name
     return f"{case.name}-compression-{compression_level_label(compression_level)}"
+
+
+def indexed_run_name(base_name: str, run_kind: str, run_index: int, run_count: int) -> str:
+    require(run_index >= 1, "run index must be positive")
+    require(run_count >= 1, "run count must be positive")
+    width = max(2, len(str(run_count)))
+    return f"{base_name}-{run_kind}-{run_index:0{width}d}"
+
+
+def metric_summary(values: list[int | float]) -> dict[str, int | float]:
+    require(bool(values), "metric summary requires at least one value")
+    return {
+        "min": min(values),
+        "median": statistics.median(values),
+        "max": max(values),
+    }
+
+
+def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, Any]]:
+    require(bool(reports), "measured run summary requires at least one report")
+    elapsed_values = [int(report["result"]["elapsed_ms"]) for report in reports]
+    elapsed_median = statistics.median(elapsed_values)
+    representative_index = min(
+        range(len(reports)),
+        key=lambda index: (abs(elapsed_values[index] - elapsed_median), index),
+    )
+    statistics_report = {
+        "elapsed_ms": metric_summary(elapsed_values),
+        "peak_memory_mb": metric_summary(
+            [float(report["result"]["peak_memory_mb"]) for report in reports]
+        ),
+        "output_bytes": metric_summary(
+            [int(report["result"]["output_bytes"]) for report in reports]
+        ),
+        "temporary_worksheet_part_footprint_bytes": metric_summary([
+            int(report["result"]["temporary_worksheet_part_footprint_bytes"])
+            for report in reports
+        ]),
+    }
+    return representative_index, statistics_report
 
 
 def expected_string_ratio(case: MatrixCase, mixed_string_ratio: float) -> float:
@@ -258,7 +299,7 @@ def verify_workbook_with_openpyxl(path: Path, case: MatrixCase, rows: int, cols:
 
 def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int, sheets: int,
     mixed_string_ratio: float, compression_levels: list[int | None],
-    reports: list[dict[str, Any]]) -> dict[str, Any]:
+    warmup_runs: int, measured_runs: int, reports: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "benchmark_matrix_schema_version": "1",
         "benchmark_executable": str(bench_exe),
@@ -269,18 +310,22 @@ def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int,
         "cells_per_case": rows * cols * sheets,
         "mixed_string_ratio": mixed_string_ratio,
         "compression_levels": compression_levels,
+        "warmup_runs_per_case": warmup_runs,
+        "measured_runs_per_case": measured_runs,
+        "representative_result_policy": "measured run nearest elapsed_ms median; earliest run breaks ties",
         "cases": reports,
         "comparison_scope": (
-            "Manual opt-in benchmark matrix. Results compare generated schema-v4 JSON "
-            "fields and optional openpyxl workbook readability; Office validation is a "
+            "Manual opt-in repeated benchmark matrix. Each case retains every measured "
+            "schema-v4 JSON result and reports min/median/max statistics. Optional openpyxl "
+            "validation checks the representative workbook only; Office validation is a "
             "separate local step and benchmark office_open fields remain not_run."
         ),
     }
 
 
-def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, cols: int, sheets: int,
-    mixed_string_ratio: float, verify_openpyxl: bool, compression_level: int | None) -> dict[str, Any]:
-    run_name = case_run_name(case, compression_level)
+def run_single_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, cols: int,
+    sheets: int, mixed_string_ratio: float, compression_level: int | None,
+    run_name: str) -> dict[str, Any]:
     output_path = output_dir / f"fastxlsx-bench-{run_name}.xlsx"
     result_path = output_dir / f"fastxlsx-bench-{run_name}.json"
     command = [
@@ -315,10 +360,6 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
     result_json = verify_result_json(
         result_path, case, rows, cols, sheets, mixed_string_ratio, output_path,
         compression_level)
-    openpyxl_report = verify_workbook_with_openpyxl(
-        output_path, case, rows, cols, sheets, mixed_string_ratio) if verify_openpyxl else {
-            "status": "not_requested"
-        }
     return {
         "name": run_name,
         "scenario": case.scenario,
@@ -337,7 +378,57 @@ def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, col
                 case, rows, cols, sheets, mixed_string_ratio),
         },
         "result": result_json,
+        "openpyxl": {"status": "not_requested"},
+    }
+
+
+def run_case(bench_exe: Path, output_dir: Path, case: MatrixCase, rows: int, cols: int,
+    sheets: int, mixed_string_ratio: float, verify_openpyxl: bool,
+    compression_level: int | None, warmup_runs: int, measured_runs: int) -> dict[str, Any]:
+    base_name = case_run_name(case, compression_level)
+    warmup_dir = output_dir / "warmup"
+    warmup_dir.mkdir(parents=True, exist_ok=True)
+    for run_index in range(1, warmup_runs + 1):
+        run_single_case(
+            bench_exe, warmup_dir, case, rows, cols, sheets, mixed_string_ratio,
+            compression_level,
+            indexed_run_name(base_name, "warmup", run_index, warmup_runs),
+        )
+
+    measured_reports = [
+        run_single_case(
+            bench_exe, output_dir, case, rows, cols, sheets, mixed_string_ratio,
+            compression_level,
+            indexed_run_name(base_name, "run", run_index, measured_runs),
+        )
+        for run_index in range(1, measured_runs + 1)
+    ]
+    representative_index, statistics_report = measured_run_summary(measured_reports)
+    representative = measured_reports[representative_index]
+    representative_output = Path(representative["output"])
+    openpyxl_report = verify_workbook_with_openpyxl(
+        representative_output, case, rows, cols, sheets, mixed_string_ratio
+    ) if verify_openpyxl else {"status": "not_requested"}
+
+    return {
+        "name": base_name,
+        "scenario": case.scenario,
+        "string_strategy": case.string_strategy,
+        "string_pattern": case.string_pattern,
+        "compression_level": compression_level,
+        "warmup_runs": warmup_runs,
+        "measured_runs": measured_runs,
+        "representative_run": representative_index + 1,
+        "statistics": statistics_report,
+        "command": representative["command"],
+        "stdout": representative["stdout"],
+        "stderr": representative["stderr"],
+        "output": representative["output"],
+        "result_json": representative["result_json"],
+        "expected": representative["expected"],
+        "result": representative["result"],
         "openpyxl": openpyxl_report,
+        "runs": measured_reports,
     }
 
 
@@ -405,7 +496,25 @@ def run_self_test() -> None:
     require(expected_cell_value(parse_case("mixed:inline:mixed"), 1.0, 4, 1) == "repeat",
         "mixed repeated expected cell mismatch")
 
-    report = build_matrix_report(Path("bench"), Path("out"), 2, 3, 2, 0.25, [-1, 3], [{
+    measured_reports = [
+        {"result": {
+            "elapsed_ms": elapsed_ms,
+            "peak_memory_mb": peak_memory_mb,
+            "output_bytes": 100,
+            "temporary_worksheet_part_footprint_bytes": 200,
+        }}
+        for elapsed_ms, peak_memory_mb in [(30, 7.0), (10, 5.0), (20, 6.0)]
+    ]
+    representative_index, statistics_report = measured_run_summary(measured_reports)
+    require(representative_index == 2, "median representative run mismatch")
+    require(statistics_report["elapsed_ms"] == {"min": 10, "median": 20, "max": 30},
+        "elapsed statistics mismatch")
+    require(statistics_report["peak_memory_mb"] == {"min": 5.0, "median": 6.0, "max": 7.0},
+        "memory statistics mismatch")
+    require(indexed_run_name("numeric-inline", "run", 2, 3) == "numeric-inline-run-02",
+        "indexed run name mismatch")
+
+    report = build_matrix_report(Path("bench"), Path("out"), 2, 3, 2, 0.25, [-1, 3], 1, 3, [{
         "name": repeated.name,
         "expected": {
             "sheet1_first_cell": "repeat",
@@ -416,6 +525,8 @@ def run_self_test() -> None:
     require(report["benchmark_matrix_schema_version"] == "1", "matrix schema mismatch")
     require(report["cells_per_case"] == 12, "matrix cell count mismatch")
     require(report["compression_levels"] == [-1, 3], "matrix compression levels mismatch")
+    require(report["warmup_runs_per_case"] == 1, "matrix warmup count mismatch")
+    require(report["measured_runs_per_case"] == 3, "matrix measured count mismatch")
     require(report["cases"][0]["name"] == "strings-repeated-shared", "matrix case mismatch")
 
 
@@ -435,6 +546,10 @@ def main() -> int:
     parser.add_argument("--compression-level", action="append", dest="compression_levels",
         type=parse_compression_level,
         help="ZIP compression level to pass to the benchmark. May be passed multiple times.")
+    parser.add_argument("--warmup-runs", type=int, default=1,
+        help="Untimed process runs per case before measured runs. Default: 1.")
+    parser.add_argument("--measured-runs", "--repeat", type=int, default=3,
+        help="Measured process runs retained per case. Default: 3.")
     parser.add_argument("--case", action="append", dest="cases",
         help="Case in scenario:string_strategy:string_pattern format. May be passed multiple times.")
     parser.add_argument("--verify-openpyxl", action="store_true",
@@ -451,6 +566,8 @@ def main() -> int:
     require(bench_exe.exists(), f"benchmark executable does not exist: {bench_exe}")
     require(args.rows > 0 and args.cols > 0 and args.sheets > 0, "rows, cols, and sheets must be positive")
     require(0.0 <= args.mixed_string_ratio <= 1.0, "mixed string ratio must be between 0 and 1")
+    require(args.warmup_runs >= 0, "warmup runs must not be negative")
+    require(args.measured_runs > 0, "measured runs must be positive")
     output_dir.mkdir(parents=True, exist_ok=True)
 
     raw_cases = args.cases if args.cases else DEFAULT_CASES
@@ -463,15 +580,16 @@ def main() -> int:
 
     reports = [
         run_case(bench_exe, output_dir, case, args.rows, args.cols, args.sheets,
-            args.mixed_string_ratio, args.verify_openpyxl, compression_level)
+            args.mixed_string_ratio, args.verify_openpyxl, compression_level,
+            args.warmup_runs, args.measured_runs)
         for compression_level in compression_levels
         for case in cases
     ]
     report = build_matrix_report(
         bench_exe, output_dir, args.rows, args.cols, args.sheets, args.mixed_string_ratio,
-        compression_levels, reports)
+        compression_levels, args.warmup_runs, args.measured_runs, reports)
     report_path = output_dir / "benchmark-matrix-report.json"
-    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+    report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     return 0
 

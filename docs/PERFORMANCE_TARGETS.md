@@ -27,6 +27,8 @@ Release note 或性能文档只能引用 `benchmarks/evidence/<bundle>/manifest.
 py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 ```
 
+重复矩阵使用 `tools/run_benchmark_matrix.py`。默认每个 case 先 warm-up 1 次，再保留 3 次 measured schema-v4 JSON；矩阵报告使用 `elapsed_ms` median 对应的真实 run 作为兼容 consumer 的代表结果，并同时保留每次 raw result 与 min/median/max。Openpyxl 验证在 benchmark 进程计时结束后执行，不得混入 `elapsed_ms`。
+
 当前没有 bundle 时，不得从本地 build 目录或 Markdown 摘抄形成 release claim。
 
 当前 tracked bundle：

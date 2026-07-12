@@ -15,6 +15,7 @@
 ### Changed
 
 - `run_benchmark_matrix.py` 默认对每个场景执行 1 次 warm-up 和 3 次 measured run，保留全部 schema-v4 原始结果，并输出 min/median/max 与 median 代表 run；openpyxl 只验证代表 workbook，避免验证耗时污染 benchmark 内部计时。
+- `fastxlsx_bench_workbook_editor` 新增 no-op copy、document-properties、DEFLATE source 与 source reuse 场景，并通过 benchmark-only diagnostics 输出 copy-original/rewrite entry 分类；新增 `run_patch_benchmark_matrix.py` 重复矩阵，隔离 fixture generation，统计 ZIP copied/rewritten logical/compressed bytes 并验证代表 workbook。
 - `fastxlsx_bench_package_editor_cell_replacement` 显式启用 internal test-hook 编译边界，使其可通过受控 accessor 读取 public facade 选择的 package plan；普通 library consumer 不获得该 internal surface。
 - In-memory materialization 默认拒绝已知有损投影；只有显式 `AllowLossyProjection` 才允许拍平。
 - Production/default profile 启用 minizip-ng stored+DEFLATE backend；新增 stored-only 与 no-images profiles。

@@ -1,3 +1,6 @@
+#include "../src/workbook_editor_package_diagnostics.hpp"
+
+#include <fastxlsx/document_properties.hpp>
 #include <fastxlsx/streaming_writer.hpp>
 #include <fastxlsx/workbook_editor.hpp>
 
@@ -13,6 +16,8 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
+#include <utility>
 #include <vector>
 
 #ifdef _WIN32
@@ -21,13 +26,16 @@
 #endif
 #include <windows.h>
 #include <psapi.h>
+#ifdef DocumentProperties
+#undef DocumentProperties
+#endif
 #endif
 
 namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "2";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "3";
 
 std::filesystem::path default_output_dir()
 {
@@ -43,6 +51,8 @@ struct Options {
     std::uint32_t cols = 10;
     std::uint32_t edits = 1000;
     std::string scenario = "batch-set";
+    int source_compression_level = fastxlsx::min_zip_compression_level;
+    bool reuse_source = false;
     std::filesystem::path source = default_output_dir() / "fastxlsx-editor-source.xlsx";
     std::filesystem::path output = default_output_dir() / "fastxlsx-editor-edited.xlsx";
     std::filesystem::path result = default_output_dir() / "fastxlsx-editor-bench.json";
@@ -71,6 +81,13 @@ struct RunStats {
     std::size_t materialized_cells_after = 0;
     std::size_t estimated_memory_before = 0;
     std::size_t estimated_memory_after = 0;
+    std::size_t output_plan_entry_count = 0;
+    std::size_t copied_entry_count = 0;
+    std::size_t rewritten_entry_count = 0;
+    std::size_t omitted_entry_count = 0;
+    std::vector<std::string> copied_entry_names;
+    std::vector<std::string> rewritten_entry_names;
+    std::vector<std::string> omitted_entry_names;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -97,6 +114,33 @@ std::uint32_t parse_u32(std::string_view value, std::string_view name)
         fail(std::string(name) + " must be greater than zero");
     }
     return static_cast<std::uint32_t>(parsed);
+}
+
+std::uint32_t parse_nonnegative_u32(std::string_view value, std::string_view name)
+{
+    std::uint64_t parsed = 0;
+    if (value.empty()) {
+        fail(std::string(name) + " cannot be empty");
+    }
+    for (const char ch : value) {
+        if (ch < '0' || ch > '9') {
+            fail(std::string(name) + " must be a non-negative integer");
+        }
+        parsed = parsed * 10U + static_cast<std::uint64_t>(ch - '0');
+        if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+            fail(std::string(name) + " is too large");
+        }
+    }
+    return static_cast<std::uint32_t>(parsed);
+}
+
+int parse_compression_level(std::string_view value)
+{
+    const std::uint32_t parsed = parse_nonnegative_u32(value, "--source-compression-level");
+    if (parsed > static_cast<std::uint32_t>(fastxlsx::max_zip_compression_level)) {
+        fail("--source-compression-level must be between 0 and 9");
+    }
+    return static_cast<int>(parsed);
 }
 
 std::uint64_t checked_cell_count(const Options& options)
@@ -127,7 +171,8 @@ bool is_patch_upsert_scenario(std::string_view scenario)
 
 bool is_patch_scenario(std::string_view scenario)
 {
-    return is_patch_replace_scenario(scenario) || is_patch_upsert_scenario(scenario);
+    return scenario == "noop-copy" || scenario == "document-properties"
+        || is_patch_replace_scenario(scenario) || is_patch_upsert_scenario(scenario);
 }
 
 std::string_view editor_mode_for_scenario(std::string_view scenario)
@@ -138,6 +183,12 @@ std::string_view editor_mode_for_scenario(std::string_view scenario)
     if (is_patch_upsert_scenario(scenario)) {
         return "existing-workbook-patch-targeted-cell-upsert";
     }
+    if (scenario == "document-properties") {
+        return "existing-workbook-patch-document-properties";
+    }
+    if (scenario == "noop-copy") {
+        return "existing-workbook-patch-copy-original";
+    }
     return "existing-workbook-in-memory-sparse";
 }
 
@@ -145,7 +196,7 @@ void validate_options(const Options& options)
 {
     if (!is_in_memory_scenario(options.scenario) && !is_patch_scenario(options.scenario)) {
         fail("--scenario must be point-set, batch-set, a1-range-clear, "
-             "a1-range-erase, patch-replace, or patch-upsert");
+             "a1-range-erase, noop-copy, document-properties, patch-replace, or patch-upsert");
     }
     if (options.rows > kExcelRowLimit) {
         fail("--rows exceeds Excel's row limit");
@@ -154,6 +205,12 @@ void validate_options(const Options& options)
         fail("--cols exceeds Excel's column limit");
     }
     const std::uint64_t cells = checked_cell_count(options);
+    if (options.scenario == "noop-copy" && options.edits != 0) {
+        fail("noop-copy requires --edits 0");
+    }
+    if (options.scenario != "noop-copy" && options.edits == 0) {
+        fail("non-noop scenarios require --edits greater than zero");
+    }
     if (!is_patch_upsert_scenario(options.scenario) && options.edits > cells) {
         fail("--edits cannot exceed rows * cols; this benchmark uses unique target coordinates");
     }
@@ -191,7 +248,7 @@ Options parse_args(int argc, char** argv)
         } else if (arg == "--cols") {
             options.cols = parse_u32(next_value(), "--cols");
         } else if (arg == "--edits") {
-            options.edits = parse_u32(next_value(), "--edits");
+            options.edits = parse_nonnegative_u32(next_value(), "--edits");
         } else if (arg == "--scenario") {
             options.scenario = std::string(next_value());
         } else if (arg == "--source") {
@@ -200,17 +257,22 @@ Options parse_args(int argc, char** argv)
             options.output = std::filesystem::path(std::string(next_value()));
         } else if (arg == "--result") {
             options.result = std::filesystem::path(std::string(next_value()));
+        } else if (arg == "--source-compression-level") {
+            options.source_compression_level = parse_compression_level(next_value());
+        } else if (arg == "--reuse-source") {
+            options.reuse_source = true;
         } else if (arg == "--help" || arg == "-h") {
             std::cout
                 << "Usage: fastxlsx_bench_workbook_editor "
                 << "--scenario point-set|batch-set|a1-range-clear|a1-range-erase|"
-                   "patch-replace|patch-upsert "
+                   "noop-copy|document-properties|patch-replace|patch-upsert "
                 << "--rows N --cols N --edits N "
-                << "--source source.xlsx --output edited.xlsx --result result.json\n"
-                << "The tool generates a stored source workbook, opens it through "
+                << "--source source.xlsx --output edited.xlsx --result result.json "
+                << "[--source-compression-level 0..9] [--reuse-source]\n"
+                << "The tool generates or reuses a source workbook, opens it through "
                 << "WorkbookEditor, then either materializes the Data sheet for "
-                << "in-memory scenarios or uses targeted Patch replace/upsert for "
-                << "patch-* scenarios, and saves a new workbook.\n";
+                << "in-memory scenarios or uses copy-original, document-properties, "
+                << "or targeted Patch replace/upsert, and saves a new workbook.\n";
             std::exit(0);
         } else {
             fail(std::string("unknown argument: ") + std::string(arg));
@@ -247,6 +309,19 @@ std::uint64_t peak_memory_bytes()
     return 0;
 }
 
+std::uint64_t existing_file_size(const std::filesystem::path& path, std::string_view purpose)
+{
+    std::error_code error;
+    const std::uintmax_t size = std::filesystem::file_size(path, error);
+    if (error) {
+        fail("failed to measure " + std::string(purpose) + ": " + path.string());
+    }
+    if (size > static_cast<std::uintmax_t>(std::numeric_limits<std::uint64_t>::max())) {
+        fail(std::string(purpose) + " is too large: " + path.string());
+    }
+    return static_cast<std::uint64_t>(size);
+}
+
 std::string json_escape(std::string_view value)
 {
     std::string escaped;
@@ -273,6 +348,21 @@ std::string json_escape(std::string_view value)
         }
     }
     return escaped;
+}
+
+void write_json_string_array(std::ostream& out,
+    std::string_view name,
+    const std::vector<std::string>& values,
+    bool trailing_comma)
+{
+    out << "  \"" << name << "\": [";
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (index != 0) {
+            out << ", ";
+        }
+        out << "\"" << json_escape(values[index]) << "\"";
+    }
+    out << "]" << (trailing_comma ? "," : "") << "\n";
 }
 
 double make_source_number(std::uint32_t row, std::uint32_t col)
@@ -331,7 +421,7 @@ void write_source_workbook(const Options& options)
 {
     ensure_parent_directory(options.source);
     fastxlsx::WorkbookWriterOptions writer_options;
-    writer_options.zip_compression_level = fastxlsx::min_zip_compression_level;
+    writer_options.zip_compression_level = options.source_compression_level;
 
     auto workbook = fastxlsx::WorkbookWriter::create(options.source, writer_options);
     auto sheet = workbook.add_worksheet("Data");
@@ -432,6 +522,42 @@ void run_patch_upsert(fastxlsx::WorkbookEditor& editor,
     inserted = inserted_count;
 }
 
+void run_document_properties(fastxlsx::WorkbookEditor& editor)
+{
+    fastxlsx::DocumentProperties properties;
+    properties.creator = "FastXLSX Benchmark";
+    properties.last_modified_by = "FastXLSX Benchmark";
+    properties.title = "FastXLSX Patch Benchmark";
+    properties.subject = "Document properties rewrite";
+    properties.application = "FastXLSX Benchmark";
+    properties.app_version = "1.0";
+    editor.set_document_properties(std::move(properties));
+}
+
+void observe_output_plan(const fastxlsx::WorkbookEditor& editor, RunStats& stats)
+{
+    const fastxlsx::detail::PackageEditorOutputPlan plan =
+        fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
+    stats.output_plan_entry_count = plan.entries.size();
+    for (const fastxlsx::detail::PackageEditorOutputEntryPlan& entry : plan.entries) {
+        if (entry.omitted) {
+            stats.omitted_entry_names.push_back(entry.entry_name);
+            continue;
+        }
+        if (entry.copied_from_source) {
+            stats.copied_entry_names.push_back(entry.entry_name);
+        } else {
+            stats.rewritten_entry_names.push_back(entry.entry_name);
+        }
+    }
+    std::sort(stats.copied_entry_names.begin(), stats.copied_entry_names.end());
+    std::sort(stats.rewritten_entry_names.begin(), stats.rewritten_entry_names.end());
+    std::sort(stats.omitted_entry_names.begin(), stats.omitted_entry_names.end());
+    stats.copied_entry_count = stats.copied_entry_names.size();
+    stats.rewritten_entry_count = stats.rewritten_entry_names.size();
+    stats.omitted_entry_count = stats.omitted_entry_names.size();
+}
+
 void write_result_json(const Options& options, const RunStats& stats)
 {
     ensure_parent_directory(options.result);
@@ -466,7 +592,17 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"peak_memory_mb\": " << (stats.peak_memory_bytes / (1024.0 * 1024.0)) << ",\n";
     out << "  \"source_bytes\": " << stats.source_bytes << ",\n";
     out << "  \"output_bytes\": " << stats.output_bytes << ",\n";
-    out << "  \"source_package_mode\": \"stored-generated-source\",\n";
+    out << "  \"source_fixture_mode\": \""
+        << (options.reuse_source ? "reused-existing-source" : "generated-source")
+        << "\",\n";
+    out << "  \"source_compression_level\": " << options.source_compression_level << ",\n";
+    out << "  \"output_plan_entry_count\": " << stats.output_plan_entry_count << ",\n";
+    out << "  \"copied_entry_count\": " << stats.copied_entry_count << ",\n";
+    out << "  \"rewritten_entry_count\": " << stats.rewritten_entry_count << ",\n";
+    out << "  \"omitted_entry_count\": " << stats.omitted_entry_count << ",\n";
+    write_json_string_array(out, "copied_entry_names", stats.copied_entry_names, true);
+    write_json_string_array(out, "rewritten_entry_names", stats.rewritten_entry_names, true);
+    write_json_string_array(out, "omitted_entry_names", stats.omitted_entry_names, true);
     out << "  \"editor_mode\": \""
         << editor_mode_for_scenario(options.scenario) << "\",\n";
     out << "  \"office_open\": \"not_run\",\n";
@@ -482,9 +618,13 @@ RunStats run_benchmark(const Options& options)
     const auto total_started = std::chrono::steady_clock::now();
 
     auto phase_started = std::chrono::steady_clock::now();
-    write_source_workbook(options);
-    stats.timings.source_write_ms = milliseconds_since(phase_started);
-    stats.source_bytes = static_cast<std::uint64_t>(std::filesystem::file_size(options.source));
+    if (options.reuse_source) {
+        stats.source_bytes = existing_file_size(options.source, "source package");
+    } else {
+        write_source_workbook(options);
+        stats.timings.source_write_ms = milliseconds_since(phase_started);
+        stats.source_bytes = existing_file_size(options.source, "source package");
+    }
 
     phase_started = std::chrono::steady_clock::now();
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(options.source);
@@ -496,9 +636,11 @@ RunStats run_benchmark(const Options& options)
         phase_started = std::chrono::steady_clock::now();
         if (is_patch_replace_scenario(options.scenario)) {
             run_patch_replace(editor, options, stats.touched_coordinates);
-        } else {
+        } else if (is_patch_upsert_scenario(options.scenario)) {
             run_patch_upsert(
                 editor, options, stats.touched_coordinates, stats.inserted_coordinates);
+        } else if (options.scenario == "document-properties") {
+            run_document_properties(editor);
         }
     } else {
         fastxlsx::WorksheetEditorOptions editor_options;
@@ -524,6 +666,7 @@ RunStats run_benchmark(const Options& options)
         stats.estimated_memory_after = sheet.estimated_memory_usage();
     }
     stats.timings.mutation_ms = milliseconds_since(phase_started);
+    observe_output_plan(editor, stats);
 
     ensure_parent_directory(options.output);
     phase_started = std::chrono::steady_clock::now();

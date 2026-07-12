@@ -12,6 +12,7 @@
 
 ### Changed
 
+- `fastxlsx_bench_package_editor_cell_replacement` 显式启用 internal test-hook 编译边界，使其可通过受控 accessor 读取 public facade 选择的 package plan；普通 library consumer 不获得该 internal surface。
 - In-memory materialization 默认拒绝已知有损投影；只有显式 `AllowLossyProjection` 才允许拍平。
 - Production/default profile 启用 minizip-ng stored+DEFLATE backend；新增 stored-only 与 no-images profiles。
 - vcpkg features 拆分为 `runtime-minizip`、`images`、`planned-xml`；移除无效 DOM option。

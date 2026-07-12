@@ -2,7 +2,7 @@
 """Summarize opt-in FastXLSX benchmark JSON results.
 
 The script is intentionally read-only for benchmark case JSON files. It accepts
-individual schema-v4 benchmark results, benchmark-matrix-report.json files, or a
+individual schema-v4/v5 benchmark results, benchmark-matrix-report.json files, or a
 directory containing those files, then emits a compact Markdown and/or JSON
 summary for local QA notes.
 """
@@ -20,7 +20,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-BENCHMARK_SCHEMA_VERSION = "4"
+BENCHMARK_SCHEMA_VERSION = "5"
+SUPPORTED_BENCHMARK_SCHEMA_VERSIONS = {"4", "5"}
 MATRIX_REPORT_SCHEMA_VERSION = "1"
 SUMMARY_SCHEMA_VERSION = "1"
 BYTES_PER_MIB = 1024.0 * 1024.0
@@ -121,8 +122,9 @@ def case_name_from_result(path: Path, data: dict[str, Any]) -> str:
 
 def parse_benchmark_case(path: Path, data: dict[str, Any], name: str | None = None,
     output: str | None = None, openpyxl_status: str | None = None) -> BenchmarkCase:
-    require(data.get("benchmark_schema_version") == BENCHMARK_SCHEMA_VERSION,
-        f"{path} is not benchmark schema version {BENCHMARK_SCHEMA_VERSION}")
+    schema_version = data.get("benchmark_schema_version")
+    require(schema_version in SUPPORTED_BENCHMARK_SCHEMA_VERSIONS,
+        f"{path} is not a supported benchmark schema version")
 
     rows = int(number(data.get("rows"), "rows"))
     cols = int(number(data.get("cols"), "cols"))
@@ -135,7 +137,7 @@ def parse_benchmark_case(path: Path, data: dict[str, Any], name: str | None = No
     return BenchmarkCase(
         name=name or case_name_from_result(path, data),
         source=str(path),
-        benchmark_schema_version=BENCHMARK_SCHEMA_VERSION,
+        benchmark_schema_version=str(schema_version),
         scenario=text(data.get("scenario"), "scenario"),
         rows=rows,
         cols=cols,
@@ -172,7 +174,7 @@ def is_matrix_report(data: dict[str, Any]) -> bool:
 
 
 def is_benchmark_result(data: dict[str, Any]) -> bool:
-    return data.get("benchmark_schema_version") == BENCHMARK_SCHEMA_VERSION
+    return data.get("benchmark_schema_version") in SUPPORTED_BENCHMARK_SCHEMA_VERSIONS
 
 
 def is_summary_report(data: dict[str, Any]) -> bool:
@@ -211,7 +213,7 @@ def collect_from_file(path: Path, allow_skip: bool) -> tuple[list[BenchmarkCase]
         return [], []
     if allow_skip:
         return [], [f"Skipped non-benchmark JSON: {path}"]
-    raise AssertionError(f"{path} is neither a schema-v4 benchmark result nor a matrix report")
+    raise AssertionError(f"{path} is neither a schema-v4/v5 benchmark result nor a matrix report")
 
 
 def iter_input_files(path: Path) -> Iterable[Path]:

@@ -1247,6 +1247,34 @@ void test_streaming_writer_invalid_metadata_and_rows()
         "append_row should reject rows beyond Excel's row limit");
 }
 
+void test_streaming_writer_releases_closed_temporary_resources()
+{
+    const auto output_path =
+        fastxlsx::test::artifact_dir() / "fastxlsx-streaming-resource-release.xlsx";
+    auto workbook = fastxlsx::WorkbookWriter::create(output_path);
+    auto sheet = workbook.add_worksheet("Resources");
+    sheet.append_row({
+        fastxlsx::CellView::number(42.0),
+        fastxlsx::CellView::text("buffered"),
+    });
+
+    check(fastxlsx::detail::testing_worksheet_pending_body_buffer_bytes(sheet) > 0,
+        "streaming row should remain in the bounded body batch before close");
+    check(!fastxlsx::detail::testing_worksheet_temporary_resources_released(sheet),
+        "streaming temporary resources should remain available before close");
+
+    workbook.close();
+
+    check(fastxlsx::detail::testing_worksheet_temporary_resources_released(sheet),
+        "successful close should release worksheet temporary files and buffers");
+    check(fastxlsx::detail::testing_worksheet_pending_body_buffer_bytes(sheet) == 0,
+        "successful close should release the pending worksheet body batch");
+    const auto entries = fastxlsx::test::read_zip_entries(output_path);
+    check_contains(entries.at("xl/worksheets/sheet1.xml"),
+        "<c r=\"A1\"><v>42</v></c>",
+        "resource cleanup should occur only after worksheet packaging succeeds");
+}
+
 } // namespace
 
 int main()
@@ -1266,6 +1294,7 @@ int main()
         test_streaming_writer_invalid_ranges();
         test_streaming_writer_sheet_name_uniqueness();
         test_streaming_writer_invalid_metadata_and_rows();
+        test_streaming_writer_releases_closed_temporary_resources();
     } catch (const std::exception& error) {
         std::cerr << "Test failed: " << error.what() << '\n';
         return 1;

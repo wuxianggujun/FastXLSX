@@ -1703,22 +1703,15 @@ void test_package_editor_worksheet_cell_replacement_uses_planned_worksheet_input
             "without reopening that staged chunk"}),
         "planned-input cell replacement should report fused caller chunk-source staging/audit handoff");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "without materializing"}),
+              {"one source-order scan of current planned worksheet chunks",
+                  "without materializing staged worksheet XML"}),
         "planned-input cell replacement should report non-materialized staged input");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
-        "planned-input cell replacement should expose staged chunk transformer input");
-    check(has_note_containing(output_plan.notes,
-              {"dependency and dimension analysis", "transformer chunk-source adapter"}),
-        "planned-input cell replacement should expose chunked dependency/dimension analysis");
-    check(has_note_containing(output_plan.notes,
-              {"relationship-id audit", "transformer chunk-source adapter"}),
-        "planned-input cell replacement should expose chunked relationship-id audit");
-    check(has_note_containing(output_plan.notes,
-              {"root validation", "event-reader chunk-source validator"}),
-        "planned-input cell replacement should expose chunked root validation");
+              {"one source-order scan of current planned worksheet chunks",
+                  "collect audits", "validate the root", "exact emitted-cell dimension"}),
+        "planned-input cell replacement should expose fused transform and audits");
     check(!has_note_containing(output_plan.notes,
-              {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
+              {"one source-order PackageReader ZIP-entry scan"}),
         "planned-input cell replacement should not claim source-entry extraction");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
@@ -1912,14 +1905,13 @@ void test_package_editor_worksheet_cell_replacement_uses_sheet_data_staged_outpu
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "without materializing"}),
+              {"one source-order scan of current planned worksheet chunks",
+                  "without materializing staged worksheet XML"}),
         "sheetData follow-up cell replacement should consume planned staged chunks without materializing");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
-        "sheetData follow-up cell replacement should expose staged chunk transformer input");
-    check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "event-reader chunk-source validator"}),
-        "sheetData follow-up cell replacement should expose staged chunk root validation");
+              {"one source-order scan of current planned worksheet chunks",
+                  "collect audits", "validate the root"}),
+        "sheetData follow-up cell replacement should expose fused staged transform");
     check_output_entry_plan(output_plan.entries, worksheet_part.zip_path(),
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "sheetData follow-up cell replacement should stream-rewrite worksheet chunks");
@@ -2003,14 +1995,13 @@ void test_package_editor_streams_planned_staged_chunks_for_worksheet_cell_replac
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "without materializing"}),
+              {"one source-order scan of current planned worksheet chunks",
+                  "without materializing staged worksheet XML"}),
         "planned staged chunks cell replacement should expose non-materialized staged input");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
-        "planned staged chunks cell replacement should expose chunk-source transformer input");
-    check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "event-reader chunk-source validator"}),
-        "planned staged chunks cell replacement should expose chunk-source root validation");
+              {"one source-order scan of current planned worksheet chunks",
+                  "collect audits", "validate the root"}),
+        "planned staged chunks cell replacement should expose fused transform and audits");
     check(!has_note_containing(output_plan.notes,
               {"planned worksheet staged chunks", "whole worksheet string"}),
         "planned staged chunks cell replacement should not expose old whole-string wording");

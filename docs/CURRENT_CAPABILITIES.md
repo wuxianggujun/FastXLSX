@@ -12,6 +12,7 @@
 - Date/time helper 只生成 numeric cell 所需的 1900 date-system serial；调用方仍需显式注册并附加 number-format style，不支持 1904 date system，也不推断时区。
 - 不支持历史行随机修改；不得引入 worksheet DOM 或 dense matrix。
 - `StringStrategy::InlineString` 是默认低内存策略；`SharedString` 会保留 workbook 级唯一字符串表，仅适合调用方已知文本高度重复的 workload。当前不提供需要回看、重写或无界缓存的自动策略。
+- Worksheet body 使用 256 KiB 有界 batching 写入 file-backed entry；成功 `WorkbookWriter::close()` 后立即删除 worksheet/image 临时文件并释放 row/body buffer、sharedStrings 与 style registry，写包失败则保留状态以支持 retry。
 
 ### Small new workbook
 
@@ -32,7 +33,7 @@
 - `request_full_calculation()` 对 workbook XML、calcChain、relationships、content types、manifest 和 edit plan 使用事务式 staging；提交前失败保留调用前计划与输出语义，后续可安全重试。
 - `rename_sheet()` 在发布前完成 PackageEditor state、public catalog、pending payload、materialized formula rewrite 和 targeted-cell diagnostics 的 staging；提交前失败不泄漏部分 rename，保留既有 patch 并可安全重试。
 - `set_document_properties()` 事务式重写 `docProps/core.xml`、`docProps/app.xml` 及缺失的 root relationships/content types；重复调用 last-write-wins，失败保留既有 Patch plan、pending/unsaved 水位与 retry 能力。Custom properties 和未知 entries 保留，但不提供 custom-properties 对象模型。
-- 对 DEFLATE source、无 worksheet relationships、目标已存在且具有 top-level dimension 的 strict `replace_cells()`，会将 worksheet 单次 inflate 到 PackageEditor-owned 临时文件，再以 target-only scan + file ranges staging；临时文件所有权、telemetry 和 package state 同事务提交，提交前失败由 RAII 清理，内存保持与 worksheet 大小解耦。Missing-cell upsert、relationship-bearing worksheet 和 linked-part fail policy 继续使用 transformer fallback。
+- 对 DEFLATE source、无 worksheet relationships、目标已存在且具有 top-level dimension 的 strict `replace_cells()`，会将 worksheet 单次 inflate 到 PackageEditor-owned 临时文件，再以 target-only scan + file ranges staging。Missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景使用单次 source-order transform，在同一扫描中完成 replacement/insertion、精确 dimension、relationship audit 和 telemetry，再以 file ranges + 小型 memory chunk staging。两条路径都不物化 worksheet DOM/dense matrix；临时文件所有权与 package state 同事务提交，重复 rewrite 提交后立即回收不再引用的旧临时文件，提交前失败由 RAII 清理新资源并保留旧状态。
 
 ### In-memory：小型 worksheet
 
@@ -82,7 +83,7 @@
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 对 stream-rewrite chunks、part restore、edit plan、part/entry replacements、omitted entries 和 manifest 使用事务式 staging；它是 package writer 的 internal handoff，不是 public arbitrary-part streaming API。
 - Internal worksheet chunk replacement 对 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries、manifest 和 file-backed 临时文件所有权使用统一 staging，并在提交前完成 routing notes 与 dependency audits；完整 worksheet chunk-source wrapper 只在 `noexcept` commit 时发布临时文件所有权，提交前失败由 RAII 删除未发布 staged file。失败保留既有计划、输出语义和 retry 能力。它仍是 internal worksheet rewrite foundation，不是 public arbitrary worksheet XML API。
 - Internal bounded sheetData replacement 会把最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败删除临时输出并保留调用前 package state。它仍不是 large-file transformer、任意 cell random editing 或 linked metadata repair。
-- Internal worksheet cell replacement 的 transformer fallback 会把 file-backed output ownership 与 transform notes 纳入同一 staged transaction；indexed direct-range fast path 支持 stored source package ranges，以及 DEFLATE source 的单次 inflate + owned temporary-file ranges，并把 telemetry、临时文件所有权与 notes 写入 staged replacement/edit plan 副本。两条路径的提交前失败都保留调用前状态与 retry 能力，但这不改变其 bounded payload、relationship policy 和非语义修复边界。
+- Internal worksheet cell replacement 的 single-pass fallback 会把 file-backed output ownership、精确 dimension、relationship audit、scan/match/insert telemetry 与 transform notes 纳入同一 staged transaction；indexed direct-range fast path 支持 stored source package ranges，以及 DEFLATE source 的单次 inflate + owned temporary-file ranges。两条路径的提交前失败都保留调用前状态与 retry 能力；事务提交会删除已被新 replacement 取代且不再引用的旧临时文件，但这不改变 bounded payload、relationship policy 和非语义修复边界。
 
 文档只能在明确的 internal/architecture 语境提及它们。
 

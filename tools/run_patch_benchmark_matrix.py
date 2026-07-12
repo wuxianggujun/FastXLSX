@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "4"
+BENCHMARK_SCHEMA_VERSION = "5"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -35,6 +35,7 @@ METRICS = [
     "copied_output_compressed_bytes",
     "rewritten_uncompressed_bytes",
     "rewritten_compressed_bytes",
+    "single_pass_transform_ms",
 ]
 
 
@@ -242,6 +243,17 @@ def verify_result(
         result.get("inserted_coordinates") == expected_inserted(case),
         f"{case.name} inserted count mismatch",
     )
+    if case.scenario == "patch-upsert":
+        require(result.get("single_pass_worksheet_transform") is True,
+            "patch-upsert should use the single-pass worksheet transform")
+        require(
+            int(result.get("single_pass_inserted_cell_count")) == expected_inserted(case),
+            "patch-upsert single-pass inserted count mismatch",
+        )
+        require(int(result.get("single_pass_scanned_source_cell_count")) == rows * cols,
+            "patch-upsert single-pass source scan count mismatch")
+        require(int(result.get("single_pass_staged_output_bytes")) > 0,
+            "patch-upsert single-pass staged output bytes should be positive")
     require(
         result.get("source_fixture_mode")
         == ("reused-existing-source" if expect_reused_source else "generated-source"),
@@ -508,6 +520,7 @@ def run_self_test() -> None:
                 "save_ms": elapsed - elapsed // 10 - 1,
                 "peak_memory_mb": 10.0 + index,
                 "output_bytes": 100 + index,
+                "single_pass_transform_ms": 1,
             },
             "byte_accounting": {
                 "copied_uncompressed_bytes": 1000,

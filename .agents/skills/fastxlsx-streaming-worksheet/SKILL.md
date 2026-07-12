@@ -16,7 +16,7 @@ description: "开发或审查 FastXLSX 流式 worksheet 路径。用于 row/cell
 
 ## 热路径
 
-Row-order input -> cell validation/encoding -> incremental worksheet XML -> file-backed/chunked package entry。禁止完整 worksheet DOM、dense matrix 和跨 row 无界 state。
+Row-order input -> cell validation/encoding -> 256 KiB bounded body batching -> file-backed/chunked package entry。禁止完整 worksheet DOM、dense matrix 和跨 row 无界 state；成功 close 必须释放临时文件与构建期缓存，失败保留 retry 状态。
 
 ## 关键能力
 
@@ -28,4 +28,4 @@ Existing-file large worksheet rewrite 属于 C5，不应通过 `WorksheetEditor`
 
 ## 验证
 
-Focused streaming tests、ZIP/XML、Office/openpyxl，性能相关时使用 schema-v4 benchmark 并明确 footprint 口径。
+Focused streaming tests、ZIP/XML、Office/openpyxl，性能相关时使用 schema-v5 benchmark，检查 generation/package-close、body buffer peak/flush count、process peak working set 和 close 后 active temporary file count。

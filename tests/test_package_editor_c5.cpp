@@ -1741,9 +1741,8 @@ void test_package_editor_replaces_worksheet_cells_with_chunked_payload()
         editor.replace_worksheet_cells_by_name("Sheet1", replacements);
         const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
         check(has_note_containing(output_plan.notes,
-                  {"replacement payload chunks",
-                      "bounded single-cell XML limit",
-                      "not streamed cell payload sources"}),
+                  {"one prevalidated non-owning replacement lookup plan",
+                      "bounded replacement cell payloads"}),
             "chunked cell replacement output plan should expose bounded payload chunk boundary");
 
         editor.save_as(output);
@@ -1798,8 +1797,8 @@ void test_package_editor_contextualizes_current_worksheet_source_read_failure_wi
     } catch (const std::exception& error) {
         failed = true;
         check_contains(error.what(),
-            "current worksheet input for worksheet cell replacement analysis",
-            "source worksheet read failure should identify the analysis input boundary");
+            "single-pass transform current worksheet input for worksheet cell replacement output",
+            "source worksheet read failure should identify the transform input boundary");
         check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
             "source worksheet read failure should identify the current input source entry");
         check_contains(error.what(), "worksheet part '/xl/worksheets/sheet1.xml'",
@@ -1895,8 +1894,8 @@ void test_package_editor_contextualizes_current_worksheet_source_read_failure_wi
             "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
             "planned-name cell source read failure should show the resolved worksheet part");
         check_contains(error.what(),
-            "current worksheet input for worksheet cell replacement analysis",
-            "planned-name cell source read failure should keep the analysis input boundary");
+            "single-pass transform current worksheet input for worksheet cell replacement output",
+            "planned-name cell source read failure should keep the transform input boundary");
         check_contains(error.what(), "source worksheet entry 'xl/worksheets/sheet1.xml'",
             "planned-name cell source read failure should identify the source worksheet entry");
         check_contains(error.what(), "ZIP entry 'xl/worksheets/sheet1.xml'",
@@ -2105,8 +2104,8 @@ void test_package_editor_rejects_malformed_current_worksheet_events_without_stat
         } catch (const std::exception& error) {
             failed = true;
             check_contains(error.what(),
-                "current worksheet input for worksheet cell replacement analysis",
-                "malformed source worksheet should identify the analysis input boundary");
+                "single-pass transform current worksheet input for worksheet cell replacement output",
+                "malformed source worksheet should identify the transform input boundary");
             check_contains(error.what(), test_case.expected_error,
                 "malformed source worksheet should preserve event-reader diagnostics");
         }

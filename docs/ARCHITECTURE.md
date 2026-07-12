@@ -48,10 +48,13 @@ In-memory  -> 小文件稀疏随机编辑，再 handoff 给 Patch
 用户 row/cell input
   -> Cell/row validation
   -> hot-path XML encoding
+  -> bounded worksheet body batching
   -> worksheet temporary/file-backed entry
   -> workbook/package metadata
   -> ZIP package close
 ```
+
+Worksheet body batching 以 256 KiB 为当前上限，减少逐 row 文件写调用而不累积完整 worksheet。同步 `close()` 成功后立即关闭并删除 worksheet/image 临时文件，清空 row/body buffer、sharedStrings 与 styles；写包失败保留构建状态以便 retry。
 
 大型 worksheet 不进入完整 DOM，也不构建 dense cell matrix。
 
@@ -67,7 +70,7 @@ source XLSX
   -> save_as(new path)
 ```
 
-`EditPlan` 是 internal traceability，不是 public package mutation surface。Targeted strict replace 的临时文件只保存解压后的 worksheet bytes，不构建 worksheet DOM 或 dense cell map；文件所有权随 staged transaction 发布，失败前由 RAII 清理。Minizip writer 对同路径 ranges 复用输入句柄，避免每个 replacement range 重开文件。
+`EditPlan` 是 internal traceability，不是 public package mutation surface。Targeted strict replace 的临时文件只保存解压后的 worksheet bytes，再以 direct file ranges replay；fallback 在单次 source-order scan 中完成 cell transform、dimension 与 relationship audit，并以 file ranges + bounded memory dimension chunk staging。两者都不构建 worksheet DOM 或 dense cell map。文件所有权随 staged transaction 发布，失败前由 RAII 清理；后续 rewrite 提交时立即删除不再被 replacement 引用的旧临时文件。Minizip writer 对同路径 ranges 复用输入句柄，file-chunk scratch buffer 也跨 entry 懒分配复用。
 
 ### In-memory
 

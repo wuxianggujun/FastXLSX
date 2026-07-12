@@ -1659,14 +1659,13 @@ void test_package_editor_streams_large_source_worksheet_cell_replacement_beyond_
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(has_note_containing(output_plan.notes,
-              {"without materializing", "source worksheet XML"}),
+              {"one source-order PackageReader ZIP-entry scan",
+                  "without materializing source XML"}),
         "large source cell replacement should expose non-materialized source input");
     check(has_note_containing(output_plan.notes,
-              {"transformer chunk-source adapter", "source package worksheet XML"}),
-        "large source cell replacement should expose chunk-source transformer input");
-    check(has_note_containing(output_plan.notes,
-              {"root validation", "event-reader chunk-source validator"}),
-        "large source cell replacement should expose chunk-source root validation");
+              {"one source-order PackageReader ZIP-entry scan",
+                  "collect dependency/relationship audits", "validate the root"}),
+        "large source cell replacement should expose fused transform and audits");
     check(!has_note_containing(output_plan.notes,
               {"source package worksheet XML", "whole worksheet string"}),
         "large source cell replacement should not expose old whole-string wording");
@@ -1776,14 +1775,13 @@ void test_package_editor_streams_large_planned_worksheet_cell_replacement_beyond
             "without reopening that staged chunk"}),
         "large planned cell replacement should report fused caller chunk-source staging/audit handoff");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "without materializing"}),
+              {"one source-order scan of current planned worksheet chunks",
+                  "without materializing staged worksheet XML"}),
         "large planned cell replacement should expose non-materialized staged input");
     check(has_note_containing(output_plan.notes,
-              {"planned worksheet staged chunks", "transformer chunk-source adapter"}),
-        "large planned cell replacement should expose staged chunk transformer input");
-    check(has_note_containing(output_plan.notes,
-              {"root validation", "event-reader chunk-source validator"}),
-        "large planned cell replacement should expose chunk-source root validation");
+              {"one source-order scan of current planned worksheet chunks",
+                  "collect audits", "validate the root"}),
+        "large planned cell replacement should expose fused staged transform and audits");
     check_output_entry_plan(output_plan.entries, "xl/worksheets/sheet1.xml",
         fastxlsx::detail::PartWriteMode::StreamRewrite, true, false, false, false,
         "large planned cell replacement output plan should stream-rewrite worksheet chunks");

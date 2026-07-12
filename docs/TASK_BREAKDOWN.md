@@ -41,8 +41,9 @@
 
 - Streaming 重复策略矩阵已形成同机比较基线；继续补不同数据规模/机器证据前，不把 1,000,000-cell Windows/MSVC 结果泛化。
 - 继续评估 no-op/metadata copy-original 的 raw compressed-entry passthrough；当前仍是 logical payload/CRC preservation + output recompression，不得写成 raw ZIP copy。
-- Targeted strict replace 已采用 DEFLATE one-inflate + target-only direct-range staging；下一步优先拆解 missing-cell upsert 的 analysis/output 双扫描，评估 one-pass source-order insertion，同时保持 dimension、metadata audit、retry 与 bounded memory 语义。
-- 后续 raw-copy 或 transformer 优化必须复跑相同矩阵并验证 CRC/logical preservation、unknown parts、输出压缩方法、openpyxl 与失败 retry；不以单次局部计时替代 bundle。
+- Targeted strict replace 已采用 DEFLATE one-inflate + target-only direct-range staging；missing-cell upsert、relationship-bearing worksheet 与其他 fallback 已改为 single-pass source-order transform，并保持精确 dimension、relationship audit、retry 与 bounded memory 语义。
+- 当前 active 工作是用 schema-v5 stage/memory/resource telemetry 复跑 Streaming/Patch 大型矩阵，与同机 OpenXLSX reference workload 对比，定位仍占主导的 encoding、compression、package-copy 或 allocation 成本；只有验证后才更新 release claim。
+- 后续 raw-copy 或热路径优化必须复跑相同矩阵并验证 CRC/logical preservation、unknown parts、输出压缩方法、openpyxl、失败 retry 与临时资源回收；不以单次局部计时替代 bundle。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。
 

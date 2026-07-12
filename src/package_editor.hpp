@@ -61,6 +61,14 @@ struct IndexedSourceEntryDirectRangeStats {
     std::uint64_t descriptor_ms = 0;
 };
 
+struct SinglePassWorksheetTransformStats {
+    std::uint64_t scanned_source_cell_count = 0;
+    std::uint64_t matched_replacement_count = 0;
+    std::uint64_t inserted_cell_count = 0;
+    std::uint64_t staged_output_bytes = 0;
+    std::uint64_t transform_ms = 0;
+};
+
 struct PackagePartReplacement {
     PartName part_name;
     // Bounded workbook/core/app or generated small XML. Other source parts use chunks.
@@ -78,6 +86,13 @@ struct PackagePartReplacement {
     std::uint64_t indexed_source_entry_relationship_audit_ms = 0;
     std::uint64_t indexed_source_entry_descriptor_ms = 0;
     std::uint64_t indexed_source_entry_commit_ms = 0;
+    bool single_pass_worksheet_transform = false;
+    std::uint64_t single_pass_scanned_source_cell_count = 0;
+    std::uint64_t single_pass_matched_replacement_count = 0;
+    std::uint64_t single_pass_inserted_cell_count = 0;
+    std::uint64_t single_pass_staged_output_bytes = 0;
+    std::uint64_t single_pass_transform_ms = 0;
+    std::uint64_t single_pass_commit_ms = 0;
 };
 
 struct PackageEntryReplacement {
@@ -117,6 +132,13 @@ struct PackageEditorOutputEntryPlan {
     std::uint64_t indexed_source_entry_relationship_audit_ms = 0;
     std::uint64_t indexed_source_entry_descriptor_ms = 0;
     std::uint64_t indexed_source_entry_commit_ms = 0;
+    bool single_pass_worksheet_transform = false;
+    std::uint64_t single_pass_scanned_source_cell_count = 0;
+    std::uint64_t single_pass_matched_replacement_count = 0;
+    std::uint64_t single_pass_inserted_cell_count = 0;
+    std::uint64_t single_pass_staged_output_bytes = 0;
+    std::uint64_t single_pass_transform_ms = 0;
+    std::uint64_t single_pass_commit_ms = 0;
     std::string file_backed_source_copy_reason;
     std::string materialized_replacement_reason;
     PackageEntryAuditKind audit_kind = PackageEntryAuditKind::Generic;
@@ -333,6 +355,13 @@ public:
     [[nodiscard]] const PackageReader& reader() const noexcept;
     [[nodiscard]] const PackageManifest& manifest() const noexcept;
     [[nodiscard]] const EditPlan& edit_plan() const noexcept;
+#ifdef FASTXLSX_ENABLE_TEST_HOOKS
+    [[nodiscard]] std::span<const std::filesystem::path>
+    testing_owned_temporary_files() const noexcept
+    {
+        return temporary_files_;
+    }
+#endif
     // Internal diagnostic view over the current workbook metadata. This
     // materializes the planned workbook XML when a small workbook rewrite is
     // queued, otherwise it reads the source workbook XML. It is intentionally
@@ -571,7 +600,8 @@ private:
         std::vector<std::string> commit_notes = {},
         std::optional<std::filesystem::path> owned_temporary_file = std::nullopt,
         PartWriteMode target_write_mode = PartWriteMode::StreamRewrite,
-        std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt);
+        std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats = std::nullopt,
+        std::optional<SinglePassWorksheetTransformStats> single_pass_stats = std::nullopt);
 
     PackageReader reader_;
     PackageManifest manifest_;

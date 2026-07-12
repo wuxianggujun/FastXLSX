@@ -66,8 +66,6 @@ constexpr std::string_view package_relationships_entry_name = "_rels/.rels";
 constexpr std::string_view relationship_part_extension = ".rels";
 constexpr std::string_view relationship_part_segment = "/_rels/";
 constexpr std::string_view root_relationships_prefix = "_rels/";
-constexpr std::string_view worksheet_cell_replacement_analysis_input_context =
-    "current worksheet input for worksheet cell replacement analysis";
 constexpr std::string_view worksheet_cell_replacement_output_input_context =
     "current worksheet input for worksheet cell replacement output";
 constexpr std::string_view worksheet_sheet_data_replacement_output_input_context =
@@ -2906,6 +2904,13 @@ void clear_indexed_source_entry_direct_range_stats(PackagePartReplacement& repla
     replacement.indexed_source_entry_relationship_audit_ms = 0;
     replacement.indexed_source_entry_descriptor_ms = 0;
     replacement.indexed_source_entry_commit_ms = 0;
+    replacement.single_pass_worksheet_transform = false;
+    replacement.single_pass_scanned_source_cell_count = 0;
+    replacement.single_pass_matched_replacement_count = 0;
+    replacement.single_pass_inserted_cell_count = 0;
+    replacement.single_pass_staged_output_bytes = 0;
+    replacement.single_pass_transform_ms = 0;
+    replacement.single_pass_commit_ms = 0;
 }
 
 void upsert_part_replacement(std::vector<PackagePartReplacement>& replacements,
@@ -3886,6 +3891,7 @@ WorksheetEventReaderOptions package_editor_cell_replacement_reader_options()
 struct WorksheetCellReplacementStreamAnalysis {
     WorksheetTransformSummary summary;
     WorksheetDimensionScan dimension_scan;
+    std::uint64_t scanned_source_cell_count = 0;
     std::size_t worksheet_start_end = std::string_view::npos;
     std::string worksheet_prefix;
     std::size_t dimension_begin = std::string_view::npos;
@@ -3926,6 +3932,9 @@ void consume_worksheet_cell_replacement_analysis_action(
 {
     if (action.kind == WorksheetTransformActionKind::ReplaceCell
         || action.kind == WorksheetTransformActionKind::InsertCell) {
+        if (action.kind == WorksheetTransformActionKind::ReplaceCell) {
+            ++analysis.scanned_source_cell_count;
+        }
         if (!action.cell_reference.empty()) {
             include_dimension_cell(analysis.dimension_scan,
                 parse_cell_reference_coordinate(action.cell_reference));
@@ -3965,6 +3974,7 @@ void consume_worksheet_cell_replacement_analysis_action(
         return;
     }
     if (action.event_kind == WorksheetEventKind::CellStart) {
+        ++analysis.scanned_source_cell_count;
         if (!action.cell_reference.empty()) {
             include_dimension_cell(analysis.dimension_scan,
                 parse_cell_reference_coordinate(action.cell_reference));
@@ -4391,6 +4401,142 @@ WorksheetRelationshipReferenceAuditResult write_worksheet_cell_replacement_strea
         worksheet_part, relationship_scanner.references(), worksheet_relationships);
 }
 
+struct SinglePassWorksheetTransformResult {
+    WorksheetCellReplacementStreamAnalysis analysis;
+    WorksheetRelationshipReferenceAuditResult relationship_reference_audit;
+    std::uint64_t temporary_output_bytes = 0;
+    std::uint64_t dimension_insertion_offset = 0;
+    std::string dimension_xml;
+};
+
+void write_counted_worksheet_chunk(std::ofstream& output,
+    WorksheetRelationshipReferenceScanner& relationship_scanner,
+    bool& relationship_scan_failed,
+    std::uint64_t& output_bytes,
+    std::string_view chunk)
+{
+    if (chunk.size() > std::numeric_limits<std::uint64_t>::max() - output_bytes) {
+        throw FastXlsxError("single-pass worksheet transform output size overflow");
+    }
+    write_file_chunk_and_scan_relationships(
+        output, &relationship_scanner, relationship_scan_failed, chunk);
+    output_bytes += static_cast<std::uint64_t>(chunk.size());
+}
+
+SinglePassWorksheetTransformResult write_worksheet_cell_transform_single_pass(
+    const std::filesystem::path& path,
+    const PartName& worksheet_part,
+    const RelationshipSet* worksheet_relationships,
+    const WorksheetInputChunkCallback& read_next_chunk,
+    const WorksheetCellReplacementPlan& replacement_plan,
+    WorksheetCellReplacementMode mode)
+{
+    std::ofstream output(path, std::ios::binary);
+    if (!output) {
+        throw FastXlsxError("failed to create temporary single-pass worksheet transform XML");
+    }
+
+    SinglePassWorksheetTransformResult result;
+    WorksheetRelationshipReferenceScanner relationship_scanner;
+    bool relationship_scan_failed = false;
+    bool skipping_dimension = false;
+    std::optional<std::uint64_t> worksheet_root_end;
+    std::optional<std::uint64_t> source_dimension_offset;
+
+    result.analysis.summary = scan_cell_replacement_actions_from_chunk_source(
+        read_next_chunk, replacement_plan, [&](const WorksheetTransformAction& action) {
+            consume_worksheet_cell_replacement_analysis_action(
+                result.analysis, worksheet_part, action);
+
+            if (skipping_dimension) {
+                if (action.event_kind == WorksheetEventKind::Metadata
+                    && action.element_name == "dimension"
+                    && is_closing_raw_tag(action.raw_xml)) {
+                    skipping_dimension = false;
+                }
+                return;
+            }
+
+            if (action.event_kind == WorksheetEventKind::Metadata
+                && action.element_name == "dimension") {
+                if (!is_closing_raw_tag(action.raw_xml)) {
+                    if (!source_dimension_offset.has_value()) {
+                        source_dimension_offset = result.temporary_output_bytes;
+                    }
+                    skipping_dimension = !action.self_closing;
+                }
+                return;
+            }
+
+            if (action.kind == WorksheetTransformActionKind::ReplaceCell
+                || action.kind == WorksheetTransformActionKind::InsertCell) {
+                action.replacement_payload.for_each_chunk([&](std::string_view chunk) {
+                    write_counted_worksheet_chunk(output, relationship_scanner,
+                        relationship_scan_failed, result.temporary_output_bytes, chunk);
+                });
+                return;
+            }
+
+            write_counted_worksheet_chunk(output, relationship_scanner,
+                relationship_scan_failed, result.temporary_output_bytes, action.raw_xml);
+            if (action.event_kind == WorksheetEventKind::WorksheetStart
+                && !worksheet_root_end.has_value()) {
+                worksheet_root_end = result.temporary_output_bytes;
+            }
+        },
+        package_editor_cell_replacement_reader_options(), mode);
+
+    finalize_worksheet_cell_replacement_stream_analysis(result.analysis, worksheet_part);
+    finish_xml_relationship_references(relationship_scanner, relationship_scan_failed);
+    output.close();
+    if (!output) {
+        throw FastXlsxError("failed to finalize temporary single-pass worksheet transform XML");
+    }
+    if (!worksheet_root_end.has_value()) {
+        throw FastXlsxError("single-pass worksheet transform requires a worksheet root");
+    }
+
+    result.dimension_insertion_offset =
+        source_dimension_offset.value_or(*worksheet_root_end);
+    const std::string_view dimension_prefix =
+        source_dimension_offset.has_value()
+        ? std::string_view(result.analysis.dimension_prefix)
+        : std::string_view(result.analysis.worksheet_prefix);
+    result.dimension_xml = dimension_tag(
+        dimension_prefix, worksheet_dimension_reference(result.analysis.dimension_scan));
+    result.relationship_reference_audit = relationship_scan_failed
+        ? worksheet_relationship_reference_parse_failure_audit()
+        : worksheet_relationship_reference_audit_from_references(
+            worksheet_part, relationship_scanner.references(), worksheet_relationships);
+    return result;
+}
+
+std::vector<PackageEntryChunk> make_dimension_inserted_worksheet_chunks(
+    const std::filesystem::path& path,
+    std::uint64_t temporary_output_bytes,
+    std::uint64_t dimension_insertion_offset,
+    std::string dimension_xml)
+{
+    if (dimension_insertion_offset > temporary_output_bytes) {
+        throw FastXlsxError(
+            "single-pass worksheet dimension insertion offset exceeds temporary output");
+    }
+
+    std::vector<PackageEntryChunk> chunks;
+    chunks.reserve(3);
+    if (dimension_insertion_offset > 0) {
+        chunks.push_back(PackageEntryChunk::file_range(
+            path, 0, dimension_insertion_offset));
+    }
+    chunks.push_back(PackageEntryChunk::memory(std::move(dimension_xml)));
+    const std::uint64_t tail_bytes = temporary_output_bytes - dimension_insertion_offset;
+    if (tail_bytes > 0) {
+        chunks.push_back(PackageEntryChunk::file_range(
+            path, dimension_insertion_offset, tail_bytes));
+    }
+    return chunks;
+}
+
 bool contains_planned_output_entry(
     const std::vector<PackageEditorOutputEntryPlan>& entries, std::string_view entry_name)
 {
@@ -4725,6 +4871,20 @@ PackageEditorOutputEntryPlan make_output_entry_plan(const PackageReader& reader,
             replacement->indexed_source_entry_descriptor_ms;
         plan.indexed_source_entry_commit_ms =
             replacement->indexed_source_entry_commit_ms;
+        plan.single_pass_worksheet_transform =
+            replacement->single_pass_worksheet_transform;
+        plan.single_pass_scanned_source_cell_count =
+            replacement->single_pass_scanned_source_cell_count;
+        plan.single_pass_matched_replacement_count =
+            replacement->single_pass_matched_replacement_count;
+        plan.single_pass_inserted_cell_count =
+            replacement->single_pass_inserted_cell_count;
+        plan.single_pass_staged_output_bytes =
+            replacement->single_pass_staged_output_bytes;
+        plan.single_pass_transform_ms =
+            replacement->single_pass_transform_ms;
+        plan.single_pass_commit_ms =
+            replacement->single_pass_commit_ms;
         if (plan.staged_replacement_chunks) {
             apply_staged_replacement_chunk_stats(plan, replacement->chunks);
         }
@@ -4791,6 +4951,44 @@ void remove_temporary_files(std::vector<std::filesystem::path>& paths) noexcept
         std::filesystem::remove(path, ignored);
     }
     paths.clear();
+}
+
+bool package_replacements_reference_path(
+    const std::vector<PackagePartReplacement>& replacements,
+    const std::filesystem::path& path) noexcept
+{
+    for (const PackagePartReplacement& replacement : replacements) {
+        for (const PackageEntryChunk& chunk : replacement.chunks) {
+            if (chunk.kind == PackageEntryChunk::Kind::File && chunk.path == path) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void retain_referenced_temporary_files(
+    std::vector<std::filesystem::path>& paths,
+    const std::vector<PackagePartReplacement>& replacements)
+{
+    std::erase_if(paths, [&](const std::filesystem::path& path) {
+        return !package_replacements_reference_path(replacements, path);
+    });
+}
+
+void remove_superseded_temporary_files(
+    std::vector<std::filesystem::path>& previous_paths,
+    const std::vector<std::filesystem::path>& current_paths) noexcept
+{
+    for (const std::filesystem::path& path : previous_paths) {
+        if (std::find(current_paths.begin(), current_paths.end(), path)
+            != current_paths.end()) {
+            continue;
+        }
+        std::error_code ignored;
+        std::filesystem::remove(path, ignored);
+    }
+    previous_paths.clear();
 }
 
 class ScopedPackageEditorTempFile {
@@ -4988,6 +5186,7 @@ void commit_package_editor_staged_state_with_temporary_files(
 
     using std::swap;
     swap(temporary_files, updated_temporary_files);
+    remove_superseded_temporary_files(updated_temporary_files, temporary_files);
 }
 
 PackageEntry materialize_active_package_entry_replacement(const PackageReader& reader,
@@ -6741,7 +6940,8 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     bool validate_staged_chunk_crc32, std::vector<std::string> commit_notes,
     std::optional<std::filesystem::path> owned_temporary_file,
     PartWriteMode target_write_mode,
-    std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats)
+    std::optional<IndexedSourceEntryDirectRangeStats> indexed_stats,
+    std::optional<SinglePassWorksheetTransformStats> single_pass_stats)
 {
     const auto staged_commit_started = std::chrono::steady_clock::now();
     if (chunks.empty()) {
@@ -6770,10 +6970,9 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     std::vector<PackagePartReplacement> updated_replacements = replacements_;
     std::vector<PackageEntryReplacement> updated_entry_replacements = entry_replacements_;
     std::vector<std::string> updated_omitted_entries = omitted_entries_;
-    std::optional<std::vector<std::filesystem::path>> updated_temporary_files;
+    std::vector<std::filesystem::path> updated_temporary_files = temporary_files_;
     if (owned_temporary_file.has_value()) {
-        updated_temporary_files.emplace(temporary_files_);
-        updated_temporary_files->push_back(std::move(*owned_temporary_file));
+        updated_temporary_files.push_back(std::move(*owned_temporary_file));
     }
     if (updated_manifest.find_part(target_worksheet_part) == nullptr) {
         const PackagePart* source_part =
@@ -6825,6 +7024,7 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
     }
     upsert_part_replacement_chunks(updated_replacements, target_worksheet_part,
         std::move(chunks), target_write_mode, replacement_reason);
+    retain_referenced_temporary_files(updated_temporary_files, updated_replacements);
     updated_manifest.set_part_write_mode(target_worksheet_part, target_write_mode);
     updated_edit_plan.set_part(target_worksheet_part, target_write_mode,
         replacement_reason);
@@ -6951,22 +7151,36 @@ void PackageEditor::replace_worksheet_part_prevalidated_chunks(PartName workshee
         replacement->indexed_source_entry_commit_ms =
             steady_clock_elapsed_milliseconds(staged_commit_started);
     }
+    if (single_pass_stats.has_value()) {
+        PackagePartReplacement* replacement =
+            find_replacement(updated_replacements, target_worksheet_part);
+        if (replacement == nullptr) {
+            throw FastXlsxError(
+                "single-pass worksheet transform staging lost the target replacement");
+        }
+        replacement->single_pass_worksheet_transform = true;
+        replacement->single_pass_scanned_source_cell_count =
+            single_pass_stats->scanned_source_cell_count;
+        replacement->single_pass_matched_replacement_count =
+            single_pass_stats->matched_replacement_count;
+        replacement->single_pass_inserted_cell_count =
+            single_pass_stats->inserted_cell_count;
+        replacement->single_pass_staged_output_bytes =
+            single_pass_stats->staged_output_bytes;
+        replacement->single_pass_transform_ms = single_pass_stats->transform_ms;
+        replacement->single_pass_commit_ms =
+            steady_clock_elapsed_milliseconds(staged_commit_started);
+    }
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
     run_package_editor_worksheet_part_replacement_staged_hook();
 #endif
 
-    if (updated_temporary_files.has_value()) {
-        commit_package_editor_staged_state_with_temporary_files(manifest_, edit_plan_,
-            replacements_, entry_replacements_, omitted_entries_, temporary_files_,
-            updated_manifest, updated_edit_plan, updated_replacements,
-            updated_entry_replacements, updated_omitted_entries,
-            *updated_temporary_files);
-    } else {
-        commit_package_editor_staged_state(manifest_, edit_plan_, replacements_,
-            entry_replacements_, omitted_entries_, updated_manifest, updated_edit_plan,
-            updated_replacements, updated_entry_replacements, updated_omitted_entries);
-    }
+    commit_package_editor_staged_state_with_temporary_files(manifest_, edit_plan_,
+        replacements_, entry_replacements_, omitted_entries_, temporary_files_,
+        updated_manifest, updated_edit_plan, updated_replacements,
+        updated_entry_replacements, updated_omitted_entries,
+        updated_temporary_files);
 }
 
 void PackageEditor::replace_worksheet_part_from_chunk_source_by_name(
@@ -7391,117 +7605,91 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
         }
     }
 
-    CurrentWorksheetInputChunkReader analysis_reader(reader_, target_worksheet_part, input_source,
-        std::string(worksheet_cell_replacement_analysis_input_context));
-    const WorksheetInputChunkCallback analysis_source =
-        [&](std::string& chunk) { return analysis_reader(chunk); };
-    WorksheetCellReplacementStreamAnalysis stream_analysis;
-    try {
-        stream_analysis = analyze_worksheet_cell_replacement_stream_from_chunk_source(
-            target_worksheet_part, analysis_source, replacement_plan, mode);
-    } catch (const std::exception& error) {
-        throw FastXlsxError(
-            current_worksheet_input_failure_message("analyze",
-                worksheet_cell_replacement_analysis_input_context, error.what()));
-    }
-    if (!replace_or_insert && !stream_analysis.summary.missing_cell_references.empty()) {
-        throw FastXlsxError(
-            missing_cell_replacement_error(stream_analysis.summary.missing_cell_references));
-    }
-    if (replace_or_insert && !stream_analysis.summary.missing_cell_references.empty()) {
-        throw FastXlsxError(
-            "worksheet cell upsert failed to emit requested cells: "
-            + cell_reference_list(stream_analysis.summary.missing_cell_references));
-    }
-
-    std::string replacement_reason =
-        "target worksheet part file-backed stream rewrite from " + operation_label;
-
     ScopedPackageEditorTempFile temp_file;
-    CurrentWorksheetInputChunkReader output_reader(reader_, target_worksheet_part, input_source,
+    CurrentWorksheetInputChunkReader transform_reader(reader_, target_worksheet_part, input_source,
         std::string(worksheet_cell_replacement_output_input_context));
-    const WorksheetInputChunkCallback output_source =
-        [&](std::string& chunk) { return output_reader(chunk); };
-    WorksheetRelationshipReferenceAuditResult relationship_reference_audit;
+    const WorksheetInputChunkCallback transform_source =
+        [&](std::string& chunk) { return transform_reader(chunk); };
+    const auto transform_started = std::chrono::steady_clock::now();
+    SinglePassWorksheetTransformResult transform_result;
     try {
-        relationship_reference_audit =
-            write_worksheet_cell_replacement_stream_from_chunk_source(
-                temp_file.path(), target_worksheet_part,
-                reader_.relationships_for(target_worksheet_part),
-                output_source, replacement_plan, stream_analysis, mode);
+        transform_result = write_worksheet_cell_transform_single_pass(
+            temp_file.path(), target_worksheet_part,
+            reader_.relationships_for(target_worksheet_part),
+            transform_source, replacement_plan, mode);
     } catch (const std::exception& error) {
         throw FastXlsxError(
-            current_worksheet_input_failure_message("write",
+            current_worksheet_input_failure_message("single-pass transform",
                 worksheet_cell_replacement_output_input_context, error.what()));
     }
-    reject_relationship_reference_audit_by_policy(relationship_reference_audit, policy);
+    const std::uint64_t transform_ms =
+        steady_clock_elapsed_milliseconds(transform_started);
+
+    if (!replace_or_insert
+        && !transform_result.analysis.summary.missing_cell_references.empty()) {
+        throw FastXlsxError(missing_cell_replacement_error(
+            transform_result.analysis.summary.missing_cell_references));
+    }
+    if (replace_or_insert
+        && !transform_result.analysis.summary.missing_cell_references.empty()) {
+        throw FastXlsxError(
+            "worksheet cell upsert failed to emit requested cells: "
+            + cell_reference_list(
+                transform_result.analysis.summary.missing_cell_references));
+    }
+
+    reject_relationship_reference_audit_by_policy(
+        transform_result.relationship_reference_audit, policy);
     reject_payload_dependencies_by_policy(
-        stream_analysis.payload_audit, policy, "worksheet replacement");
+        transform_result.analysis.payload_audit, policy, "worksheet replacement");
+
+    const std::uint64_t dimension_xml_bytes =
+        static_cast<std::uint64_t>(transform_result.dimension_xml.size());
+    if (dimension_xml_bytes
+        > std::numeric_limits<std::uint64_t>::max()
+            - transform_result.temporary_output_bytes) {
+        throw FastXlsxError("single-pass worksheet staged output size overflow");
+    }
+    const std::uint64_t staged_output_bytes =
+        transform_result.temporary_output_bytes + dimension_xml_bytes;
+    std::vector<PackageEntryChunk> output_chunks =
+        make_dimension_inserted_worksheet_chunks(temp_file.path(),
+            transform_result.temporary_output_bytes,
+            transform_result.dimension_insertion_offset,
+            std::move(transform_result.dimension_xml));
+
+    std::string replacement_reason =
+        "target worksheet part single-pass file-backed stream rewrite from "
+        + operation_label;
 
     std::vector<std::string> commit_notes;
     if (source_entry_chunk_source) {
         commit_notes.emplace_back(
-            operation_label + " streams dimension-refreshed output to a "
-            "PackageEditor-owned temporary file-backed package-entry chunk; source package "
-            "worksheet entries are scanned through the PackageReader ZIP-entry chunk source "
-            "without materializing the source worksheet XML");
+            operation_label + " uses one source-order PackageReader ZIP-entry scan to "
+            "transform cells, collect dependency/relationship audits, validate the root, "
+            "and compute the exact emitted-cell dimension without materializing source XML");
     } else if (planned_chunk_source) {
         commit_notes.emplace_back(
-            operation_label + " streams dimension-refreshed output to a "
-            "PackageEditor-owned temporary file-backed package-entry chunk; current planned "
-            "worksheet staged chunks are scanned through chunk-source readers without "
-            "materializing the planned staged worksheet XML");
+            operation_label + " uses one source-order scan of current planned worksheet "
+            "chunks to transform cells, collect audits, validate the root, and compute the "
+            "exact emitted-cell dimension without materializing staged worksheet XML");
     } else {
         commit_notes.emplace_back(
-            operation_label + " streams dimension-refreshed output to a "
-            "PackageEditor-owned temporary file-backed package-entry chunk");
+            operation_label + " uses one source-order worksheet transform and audit scan");
     }
-    if (source_entry_chunk_source) {
-        commit_notes.emplace_back(
-            "worksheet cell replacement output pass feeds source package worksheet XML "
-            "through the PackageReader ZIP-entry chunk source and transformer chunk-source "
-            "adapter");
-        commit_notes.emplace_back(
-            "worksheet cell replacement dependency and dimension analysis feeds source "
-            "package worksheet XML through the PackageReader ZIP-entry chunk source and "
-            "transformer chunk-source adapter");
-        commit_notes.emplace_back(
-            "worksheet cell replacement output pass collects relationship-id audit while "
-            "feeding source package worksheet XML through the PackageReader ZIP-entry "
-            "chunk source and transformer chunk-source adapter");
-        commit_notes.emplace_back(
-            "worksheet cell replacement root validation feeds source package worksheet XML "
-            "through the PackageReader ZIP-entry chunk source and event-reader chunk-source "
-            "validator");
-    } else if (planned_chunk_source) {
-        commit_notes.emplace_back(
-            "worksheet cell replacement output pass feeds current planned worksheet staged "
-            "chunks through the transformer chunk-source adapter");
-        commit_notes.emplace_back(
-            "worksheet cell replacement dependency and dimension analysis feeds current "
-            "planned worksheet staged chunks through the transformer chunk-source adapter");
-        commit_notes.emplace_back(
-            "worksheet cell replacement output pass collects relationship-id audit while "
-            "feeding current planned worksheet staged chunks through the transformer "
-            "chunk-source adapter");
-        commit_notes.emplace_back(
-            "worksheet cell replacement root validation feeds current planned worksheet "
-            "staged chunks through the event-reader chunk-source validator");
-    }
+    commit_notes.emplace_back(
+        "worksheet cell replacement writes transformed XML without the source dimension "
+        "to one PackageEditor-owned temporary file, then stages sequential file ranges "
+        "around one bounded in-memory exact dimension tag; memory remains bounded by "
+        "event/chunk buffers rather than worksheet size");
     commit_notes.emplace_back(
         "worksheet cell replacement refreshed worksheet dimension from emitted cell "
         "references; range-bearing metadata such as autoFilter, tables, drawings, "
         "definedNames, and formulas is not recalculated or repaired");
     commit_notes.emplace_back(
-        "worksheet cell replacement builds one prevalidated non-owning replacement "
-        "lookup plan and reuses it across the dependency/dimension analysis pass "
-        "and the dimension-refreshed output pass, without reparsing replacement "
-        "cell payloads or rebuilding selector lookup");
-    commit_notes.emplace_back(
-        "worksheet cell replacement stores caller single-cell XML behind explicit "
-        "replacement payload chunks rather than raw string fields; payload preflight "
-        "still materializes within the bounded single-cell XML limit, not streamed "
-        "cell payload sources");
+        "worksheet cell replacement builds one prevalidated non-owning replacement lookup "
+        "plan and consumes it in one transform pass without rebuilding selector lookup or "
+        "reparsing bounded replacement cell payloads");
     if (replace_or_insert) {
         commit_notes.emplace_back(
             "worksheet cell upsert replaces existing cells, inserts missing cells into "
@@ -7509,16 +7697,26 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
             "it does not shift rows or repair range-bearing worksheet metadata");
     }
 
-    std::vector<PackageEntryChunk> output_chunks;
-    output_chunks.push_back(PackageEntryChunk::file(temp_file.path()));
+    SinglePassWorksheetTransformStats single_pass_stats;
+    single_pass_stats.scanned_source_cell_count =
+        transform_result.analysis.scanned_source_cell_count;
+    single_pass_stats.matched_replacement_count =
+        static_cast<std::uint64_t>(
+            transform_result.analysis.summary.matched_replacement_count);
+    single_pass_stats.inserted_cell_count =
+        static_cast<std::uint64_t>(
+            transform_result.analysis.summary.inserted_cell_count);
+    single_pass_stats.staged_output_bytes = staged_output_bytes;
+    single_pass_stats.transform_ms = transform_ms;
     replace_worksheet_part_prevalidated_chunks(std::move(worksheet_part),
         std::move(output_chunks), policy,
-        std::move(stream_analysis.payload_audit.notes),
-        std::move(stream_analysis.payload_audit.audits),
-        std::move(relationship_reference_audit.notes),
-        std::move(relationship_reference_audit.audits),
+        std::move(transform_result.analysis.payload_audit.notes),
+        std::move(transform_result.analysis.payload_audit.audits),
+        std::move(transform_result.relationship_reference_audit.notes),
+        std::move(transform_result.relationship_reference_audit.audits),
         std::move(replacement_reason), true, true, std::move(commit_notes),
-        temp_file.path());
+        temp_file.path(), PartWriteMode::StreamRewrite, std::nullopt,
+        single_pass_stats);
     temp_file.release();
 }
 

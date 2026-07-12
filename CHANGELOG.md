@@ -2,7 +2,12 @@
 
 ## Unreleased
 
-- 暂无。
+### Changed
+
+- Streaming worksheet 热路径改为 256 KiB 有界 body batching，减少逐行文件写调用；成功 `close()` 后立即释放 worksheet 临时文件、row/body buffer、sharedStrings 与 styles 等不再使用的资源，失败时仍保留可重试状态。
+- Patch missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景改为单次 source-order scan；同一扫描完成 replacement/insertion、dimension、relationship audit 与 telemetry，再以 file ranges + 小型 memory chunk staging 输出。
+- 重复 Patch rewrite 在新事务提交后立即删除已被替代且不再引用的 owned temporary file，提交前失败仍由 RAII 清理新资源并保留旧状态。
+- Benchmark JSON 升级为 schema v5，分列 Streaming generation/package-close/body-buffer/resource-lifecycle 指标，以及 Patch single-pass scan、match/insert、staged bytes 与 transform/commit 指标。
 
 ## [0.1.0] - 2026-07-13
 

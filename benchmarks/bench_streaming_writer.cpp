@@ -28,7 +28,7 @@ namespace {
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
 constexpr std::uint32_t kBenchmarkSheetLimit = 1024;
-constexpr std::string_view kBenchmarkSchemaVersion = "4";
+constexpr std::string_view kBenchmarkSchemaVersion = "5";
 constexpr std::string_view kPackageEntrySourceMode = "worksheet-file-backed-chunked";
 constexpr std::string_view kTemporaryWorksheetPartFootprint = "worksheet-body-file-bytes";
 
@@ -39,6 +39,9 @@ namespace fastxlsx::detail {
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
 void reset_benchmark_metrics() noexcept;
 std::uint64_t benchmark_temporary_worksheet_part_footprint_bytes() noexcept;
+std::uint64_t benchmark_worksheet_body_buffer_peak_bytes() noexcept;
+std::uint64_t benchmark_worksheet_body_flush_count() noexcept;
+std::uint64_t benchmark_active_worksheet_temporary_file_count() noexcept;
 #endif
 
 } // namespace fastxlsx::detail
@@ -375,8 +378,12 @@ void ensure_parent_directory(const std::filesystem::path& path)
     }
 }
 
-void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::uint64_t peak_bytes,
+void write_result_json(const Options& options, std::uint64_t generation_ms,
+    std::uint64_t package_close_ms, std::uint64_t elapsed_ms, std::uint64_t peak_bytes,
     std::uint64_t output_bytes, std::uint64_t temporary_worksheet_part_footprint_bytes,
+    std::uint64_t worksheet_body_buffer_peak_bytes,
+    std::uint64_t worksheet_body_flush_count,
+    std::uint64_t active_worksheet_temporary_files_after_close,
     const StringDistributionStats& string_distribution)
 {
     ensure_parent_directory(options.result);
@@ -428,7 +435,20 @@ void write_result_json(const Options& options, std::uint64_t elapsed_ms, std::ui
     out << "  \"temporary_worksheet_part_footprint\": \"" << kTemporaryWorksheetPartFootprint << "\",\n";
     out << "  \"temporary_worksheet_part_footprint_bytes\": "
         << temporary_worksheet_part_footprint_bytes << ",\n";
+    out << "  \"worksheet_body_buffer_limit_bytes\": " << (256U * 1024U) << ",\n";
+    out << "  \"worksheet_body_buffer_peak_bytes\": "
+        << worksheet_body_buffer_peak_bytes << ",\n";
+    out << "  \"worksheet_body_flush_count\": "
+        << worksheet_body_flush_count << ",\n";
+    out << "  \"active_worksheet_temporary_files_after_close\": "
+        << active_worksheet_temporary_files_after_close << ",\n";
+    out << "  \"generation_ms\": " << generation_ms << ",\n";
+    out << "  \"package_close_ms\": " << package_close_ms << ",\n";
     out << "  \"elapsed_ms\": " << elapsed_ms << ",\n";
+    out << "  \"million_cells_per_second\": "
+        << (elapsed_ms == 0 ? 0.0
+                            : static_cast<double>(cells) / static_cast<double>(elapsed_ms) / 1000.0)
+        << ",\n";
     out << "  \"peak_memory_mb\": " << (peak_bytes / (1024.0 * 1024.0)) << ",\n";
     out << "  \"output_bytes\": " << output_bytes << ",\n";
     out << "  \"office_open\": \"not_run\"\n";
@@ -477,8 +497,15 @@ void run_benchmark(const Options& options)
         }
     }
 
+    const auto generation_finished = std::chrono::steady_clock::now();
     workbook.close();
     const auto finished = std::chrono::steady_clock::now();
+    const auto generation_ms = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            generation_finished - started).count());
+    const auto package_close_ms = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            finished - generation_finished).count());
     const auto elapsed_ms = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(finished - started).count());
     const auto peak_bytes = peak_memory_bytes();
@@ -486,11 +513,22 @@ void run_benchmark(const Options& options)
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
     const std::uint64_t temporary_worksheet_part_footprint_bytes =
         fastxlsx::detail::benchmark_temporary_worksheet_part_footprint_bytes();
+    const std::uint64_t worksheet_body_buffer_peak_bytes =
+        fastxlsx::detail::benchmark_worksheet_body_buffer_peak_bytes();
+    const std::uint64_t worksheet_body_flush_count =
+        fastxlsx::detail::benchmark_worksheet_body_flush_count();
+    const std::uint64_t active_worksheet_temporary_files_after_close =
+        fastxlsx::detail::benchmark_active_worksheet_temporary_file_count();
 #else
     const std::uint64_t temporary_worksheet_part_footprint_bytes = 0;
+    const std::uint64_t worksheet_body_buffer_peak_bytes = 0;
+    const std::uint64_t worksheet_body_flush_count = 0;
+    const std::uint64_t active_worksheet_temporary_files_after_close = 0;
 #endif
     write_result_json(
-        options, elapsed_ms, peak_bytes, output_bytes, temporary_worksheet_part_footprint_bytes,
+        options, generation_ms, package_close_ms, elapsed_ms, peak_bytes, output_bytes,
+        temporary_worksheet_part_footprint_bytes, worksheet_body_buffer_peak_bytes,
+        worksheet_body_flush_count, active_worksheet_temporary_files_after_close,
         string_distribution);
 }
 

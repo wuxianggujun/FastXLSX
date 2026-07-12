@@ -604,7 +604,10 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
     const fastxlsx::detail::PackageEditorOutputPlan output_plan =
         fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
     check(!has_note_containing(output_plan.notes, {"indexed source-entry direct-range"}),
-        "replace_cells Insert policy with missing targets should use transformer fallback");
+        "replace_cells Insert policy with missing targets should not claim strict direct-range");
+    check(has_note_containing(output_plan.notes,
+              {"one source-order PackageReader ZIP-entry scan"}),
+        "replace_cells Insert policy should expose the single-pass source transform");
     const auto* data_sheet_plan =
         find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
     check(data_sheet_plan != nullptr,
@@ -612,6 +615,20 @@ void test_replace_cells_insert_policy_patches_existing_and_inserts_missing_cells
     if (data_sheet_plan != nullptr) {
         check(!data_sheet_plan->indexed_source_entry_direct_range,
             "replace_cells Insert policy with missing targets should not expose direct-range telemetry");
+        check(data_sheet_plan->single_pass_worksheet_transform,
+            "replace_cells Insert policy should expose single-pass telemetry");
+        check(data_sheet_plan->single_pass_scanned_source_cell_count == 9,
+            "replace_cells Insert policy single-pass source count mismatch");
+        check(data_sheet_plan->single_pass_matched_replacement_count == 1,
+            "replace_cells Insert policy single-pass matched count mismatch");
+        check(data_sheet_plan->single_pass_inserted_cell_count == 2,
+            "replace_cells Insert policy single-pass inserted count mismatch");
+        check(data_sheet_plan->single_pass_staged_output_bytes > 0,
+            "replace_cells Insert policy should expose staged output bytes");
+        check(data_sheet_plan->staged_replacement_file_range_chunk_count == 2,
+            "replace_cells Insert policy should stage sequential temporary-file ranges");
+        check(data_sheet_plan->staged_replacement_memory_chunk_count == 1,
+            "replace_cells Insert policy should stage one bounded dimension chunk");
     }
 
     editor.save_as(output);

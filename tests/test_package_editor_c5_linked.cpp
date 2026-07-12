@@ -1718,32 +1718,23 @@ void test_package_editor_worksheet_cell_replacement_preserves_linked_object_part
             "cell replacement linked output plan should expose recalculation request");
         check(output_plan.calc_chain_action == fastxlsx::detail::CalcChainAction::Remove,
             "cell replacement linked output plan should expose calcChain removal");
-        check(has_note_containing(output_plan.notes, {"temporary file-backed package-entry chunk"}),
+        check(has_note_containing(output_plan.notes,
+                  {"one PackageEditor-owned temporary file", "bounded in-memory exact dimension tag"}),
             "cell replacement linked output plan should expose file-backed chunk note");
         check(has_note_containing(output_plan.notes,
-                  {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
-            "cell replacement linked output plan should expose direct source-entry chunk source");
-        check(has_note_containing(output_plan.notes,
-                  {"source package worksheet XML", "transformer chunk-source adapter"}),
-            "cell replacement linked output plan should expose source chunk transformer input");
-        check(has_note_containing(output_plan.notes,
-                  {"dependency and dimension analysis", "transformer chunk-source adapter"}),
-            "cell replacement linked output plan should expose chunked dependency/dimension analysis");
-        check(has_note_containing(output_plan.notes,
-                  {"relationship-id audit", "transformer chunk-source adapter"}),
-            "cell replacement linked output plan should expose chunked relationship-id audit");
-        check(has_note_containing(output_plan.notes,
-                  {"root validation", "event-reader chunk-source validator"}),
-            "cell replacement linked output plan should expose chunk-source root validation");
+                  {"one source-order PackageReader ZIP-entry scan",
+                      "collect dependency/relationship audits",
+                      "validate the root",
+                      "without materializing source XML"}),
+            "cell replacement linked output plan should expose fused source transform and audits");
         check(has_note_containing(output_plan.notes, {"refreshed worksheet dimension"}),
             "cell replacement linked output plan should expose dimension refresh note");
         check(has_note_containing(output_plan.notes,
                   {"one prevalidated non-owning replacement lookup plan",
-                      "dependency/dimension analysis pass",
-                      "dimension-refreshed output pass",
-                      "without reparsing replacement cell payloads",
-                      "rebuilding selector lookup"}),
-            "cell replacement linked output plan should expose replacement lookup plan reuse");
+                      "one transform pass",
+                      "without rebuilding selector lookup",
+                      "reparsing bounded replacement cell payloads"}),
+            "cell replacement linked output plan should expose single-pass lookup reuse");
         check(has_note_containing(output_plan.notes,
                   {"worksheet relationships are preserved", "policy review"}),
             "cell replacement linked output plan should expose relationship preservation note");

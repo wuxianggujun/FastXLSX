@@ -541,14 +541,14 @@ void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cach
     require_expected_chunk_crc32(chunk, chunk_crc.value());
 }
 
-void write_minizip_entry_chunks(void* writer, const PackageEntry& entry)
+void write_minizip_entry_chunks(
+    void* writer, const PackageEntry& entry, std::vector<char>& file_buffer)
 {
     if (entry.chunks.empty()) {
         write_minizip_memory_chunk(writer, entry.data);
         return;
     }
 
-    std::vector<char> file_buffer(io_buffer_size);
     MinizipFileChunkReadCache file_cache;
     for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
         const PackageEntryChunk& chunk = entry.chunks[chunk_index];
@@ -558,6 +558,9 @@ void write_minizip_entry_chunks(void* writer, const PackageEntry& entry)
                 write_minizip_memory_chunk(writer, chunk.data);
                 break;
             case PackageEntryChunk::Kind::File:
+                if (file_buffer.empty()) {
+                    file_buffer.resize(io_buffer_size);
+                }
                 write_minizip_file_chunk(writer, file_cache, chunk, file_buffer);
                 break;
             default:
@@ -601,6 +604,7 @@ void write_minizip_package(
 
     try {
         FileChunkStatCache stat_cache;
+        std::vector<char> file_buffer;
         for (const PackageEntry& entry : entries) {
             if (entry.name.empty()) {
                 throw FastXlsxError("ZIP entry name cannot be empty");
@@ -617,7 +621,7 @@ void write_minizip_package(
             check_minizip_result(mz_zip_writer_entry_open(writer.get(), &file_info),
                 "open ZIP entry");
 
-            write_minizip_entry_chunks(writer.get(), entry);
+            write_minizip_entry_chunks(writer.get(), entry, file_buffer);
 
             check_minizip_result(mz_zip_writer_entry_close(writer.get()), "close ZIP entry");
         }

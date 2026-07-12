@@ -2,7 +2,7 @@
 """Run an opt-in FastXLSX streaming writer benchmark matrix.
 
 This helper is intentionally outside CTest and CI. It wraps the existing
-fastxlsx_bench_streaming_writer executable, collects its schema-v4 JSON results,
+fastxlsx_bench_streaming_writer executable, collects its schema-v5 JSON results,
 and optionally verifies generated workbooks with openpyxl as local QA only.
 """
 
@@ -30,7 +30,7 @@ DEFAULT_CASES = [
     "strings:shared:unique",
 ]
 
-BENCHMARK_SCHEMA_VERSION = "4"
+BENCHMARK_SCHEMA_VERSION = "5"
 DEFAULT_ZIP_COMPRESSION_LEVEL = -1
 MIN_ZIP_COMPRESSION_LEVEL = 0
 MAX_ZIP_COMPRESSION_LEVEL = 9
@@ -125,6 +125,12 @@ def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, 
     )
     statistics_report = {
         "elapsed_ms": metric_summary(elapsed_values),
+        "generation_ms": metric_summary(
+            [int(report["result"]["generation_ms"]) for report in reports]
+        ),
+        "package_close_ms": metric_summary(
+            [int(report["result"]["package_close_ms"]) for report in reports]
+        ),
         "peak_memory_mb": metric_summary(
             [float(report["result"]["peak_memory_mb"]) for report in reports]
         ),
@@ -133,6 +139,14 @@ def measured_run_summary(reports: list[dict[str, Any]]) -> tuple[int, dict[str, 
         ),
         "temporary_worksheet_part_footprint_bytes": metric_summary([
             int(report["result"]["temporary_worksheet_part_footprint_bytes"])
+            for report in reports
+        ]),
+        "worksheet_body_buffer_peak_bytes": metric_summary([
+            int(report["result"]["worksheet_body_buffer_peak_bytes"])
+            for report in reports
+        ]),
+        "worksheet_body_flush_count": metric_summary([
+            int(report["result"]["worksheet_body_flush_count"])
             for report in reports
         ]),
     }
@@ -257,6 +271,16 @@ def verify_result_json(path: Path, case: MatrixCase, rows: int, cols: int, sheet
     require(int(data.get("temporary_worksheet_part_footprint_bytes")) > 0,
         f"{case.name} temporary footprint bytes should be positive")
     require(int(data.get("elapsed_ms")) >= 0, f"{case.name} elapsed_ms mismatch")
+    require(int(data.get("generation_ms")) >= 0, f"{case.name} generation_ms mismatch")
+    require(int(data.get("package_close_ms")) >= 0, f"{case.name} package_close_ms mismatch")
+    require(int(data.get("worksheet_body_buffer_limit_bytes")) == 256 * 1024,
+        f"{case.name} body buffer limit mismatch")
+    require(0 < int(data.get("worksheet_body_buffer_peak_bytes")) <= 256 * 1024,
+        f"{case.name} body buffer peak mismatch")
+    require(int(data.get("worksheet_body_flush_count")) > 0,
+        f"{case.name} body flush count mismatch")
+    require(int(data.get("active_worksheet_temporary_files_after_close")) == 0,
+        f"{case.name} close should release worksheet temporary files")
     require(int(data.get("output_bytes")) == output_path.stat().st_size,
         f"{case.name} output size mismatch")
     require(data.get("office_open") == "not_run", f"{case.name} office_open should remain not_run")
@@ -316,7 +340,7 @@ def build_matrix_report(bench_exe: Path, output_dir: Path, rows: int, cols: int,
         "cases": reports,
         "comparison_scope": (
             "Manual opt-in repeated benchmark matrix. Each case retains every measured "
-            "schema-v4 JSON result and reports min/median/max statistics. Optional openpyxl "
+            "schema-v5 JSON result and reports min/median/max statistics. Optional openpyxl "
             "validation checks the representative workbook only; Office validation is a "
             "separate local step and benchmark office_open fields remain not_run."
         ),
@@ -499,9 +523,13 @@ def run_self_test() -> None:
     measured_reports = [
         {"result": {
             "elapsed_ms": elapsed_ms,
+            "generation_ms": elapsed_ms // 2,
+            "package_close_ms": elapsed_ms - elapsed_ms // 2,
             "peak_memory_mb": peak_memory_mb,
             "output_bytes": 100,
             "temporary_worksheet_part_footprint_bytes": 200,
+            "worksheet_body_buffer_peak_bytes": 128,
+            "worksheet_body_flush_count": 2,
         }}
         for elapsed_ms, peak_memory_mb in [(30, 7.0), (10, 5.0), (20, 6.0)]
     ]

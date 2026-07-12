@@ -30,6 +30,7 @@ namespace {
 constexpr std::uint32_t max_excel_rows = 1048576;
 constexpr std::uint32_t max_excel_columns = 16384;
 constexpr std::int64_t max_openxml_coordinate = 27273042316900LL;
+constexpr std::size_t worksheet_body_flush_threshold = 256U * 1024U;
 static_assert(
     default_zip_compression_level == detail::package_writer_default_compression_level);
 static_assert(min_zip_compression_level == detail::package_writer_min_compression_level);
@@ -709,11 +710,16 @@ struct SharedStringEqual {
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
 namespace {
 std::atomic<std::uint64_t> temporary_worksheet_part_footprint_bytes {0};
+std::atomic<std::uint64_t> worksheet_body_buffer_peak_bytes {0};
+std::atomic<std::uint64_t> worksheet_body_flush_count {0};
+std::atomic<std::uint64_t> active_worksheet_temporary_file_count {0};
 }
 
 void reset_benchmark_metrics() noexcept
 {
     temporary_worksheet_part_footprint_bytes.store(0, std::memory_order_relaxed);
+    worksheet_body_buffer_peak_bytes.store(0, std::memory_order_relaxed);
+    worksheet_body_flush_count.store(0, std::memory_order_relaxed);
 }
 
 std::uint64_t benchmark_temporary_worksheet_part_footprint_bytes() noexcept
@@ -724,6 +730,30 @@ std::uint64_t benchmark_temporary_worksheet_part_footprint_bytes() noexcept
 void add_benchmark_temporary_worksheet_part_bytes(std::uint64_t bytes) noexcept
 {
     temporary_worksheet_part_footprint_bytes.fetch_add(bytes, std::memory_order_relaxed);
+}
+
+std::uint64_t benchmark_worksheet_body_buffer_peak_bytes() noexcept
+{
+    return worksheet_body_buffer_peak_bytes.load(std::memory_order_relaxed);
+}
+
+std::uint64_t benchmark_worksheet_body_flush_count() noexcept
+{
+    return worksheet_body_flush_count.load(std::memory_order_relaxed);
+}
+
+std::uint64_t benchmark_active_worksheet_temporary_file_count() noexcept
+{
+    return active_worksheet_temporary_file_count.load(std::memory_order_relaxed);
+}
+
+void observe_benchmark_worksheet_body_buffer_bytes(std::uint64_t bytes) noexcept
+{
+    std::uint64_t observed = worksheet_body_buffer_peak_bytes.load(std::memory_order_relaxed);
+    while (observed < bytes
+        && !worksheet_body_buffer_peak_bytes.compare_exchange_weak(
+            observed, bytes, std::memory_order_relaxed)) {
+    }
 }
 #endif
 
@@ -744,18 +774,14 @@ struct WorksheetWriterState {
         if (!body) {
             throw FastXlsxError("failed to create temporary worksheet XML");
         }
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+        active_worksheet_temporary_file_count.fetch_add(1, std::memory_order_relaxed);
+#endif
     }
 
     ~WorksheetWriterState()
     {
-        if (body.is_open()) {
-            body.close();
-        }
-        std::error_code ignored;
-        std::filesystem::remove(body_path, ignored);
-        for (const WorksheetImage& image : images) {
-            std::filesystem::remove(image.media_path, ignored);
-        }
+        release_temporary_resources();
     }
 
     WorksheetWriterState(const WorksheetWriterState&) = delete;
@@ -782,6 +808,73 @@ struct WorksheetWriterState {
     std::vector<WorksheetImage> images;
     bool has_formula = false;
     std::string row_buffer;
+    std::string body_buffer;
+    bool temporary_resources_released = false;
+
+    void flush_body_buffer()
+    {
+        if (body_buffer.empty()) {
+            return;
+        }
+        body.write(body_buffer.data(), static_cast<std::streamsize>(body_buffer.size()));
+        if (!body) {
+            throw FastXlsxError("failed to write worksheet row XML batch");
+        }
+        body_buffer.clear();
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+        worksheet_body_flush_count.fetch_add(1, std::memory_order_relaxed);
+#endif
+    }
+
+    void append_body_xml(std::string_view xml)
+    {
+        if (xml.size() >= worksheet_body_flush_threshold) {
+            flush_body_buffer();
+            body.write(xml.data(), static_cast<std::streamsize>(xml.size()));
+            if (!body) {
+                throw FastXlsxError("failed to write oversized worksheet row XML");
+            }
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+            worksheet_body_flush_count.fetch_add(1, std::memory_order_relaxed);
+#endif
+            return;
+        }
+        if (body_buffer.size() + xml.size() > worksheet_body_flush_threshold) {
+            flush_body_buffer();
+        }
+        body_buffer.append(xml);
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+        observe_benchmark_worksheet_body_buffer_bytes(
+            static_cast<std::uint64_t>(body_buffer.size()));
+#endif
+    }
+
+    void release_temporary_resources() noexcept
+    {
+        if (temporary_resources_released) {
+            return;
+        }
+        if (body.is_open()) {
+            body.close();
+        }
+        std::error_code ignored;
+        if (!body_path.empty()) {
+            std::filesystem::remove(body_path, ignored);
+            body_path.clear();
+        }
+        for (WorksheetImage& image : images) {
+            if (!image.media_path.empty()) {
+                std::filesystem::remove(image.media_path, ignored);
+                image.media_path.clear();
+            }
+        }
+        std::string().swap(row_buffer);
+        std::string().swap(body_buffer);
+        temporary_resources_released = true;
+#ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
+        active_worksheet_temporary_file_count.fetch_sub(1, std::memory_order_relaxed);
+#endif
+    }
 };
 
 struct WorkbookWriterState {
@@ -803,6 +896,21 @@ void testing_set_worksheet_row_count(WorksheetWriter& worksheet, std::uint32_t r
         throw FastXlsxError("cannot modify worksheet after workbook close");
     }
     worksheet.state_->row_count = row_count;
+}
+
+bool testing_worksheet_temporary_resources_released(
+    const WorksheetWriter& worksheet) noexcept
+{
+    return worksheet.state_ != nullptr
+        && worksheet.state_->temporary_resources_released
+        && worksheet.state_->body_path.empty()
+        && worksheet.state_->body_buffer.empty();
+}
+
+std::size_t testing_worksheet_pending_body_buffer_bytes(
+    const WorksheetWriter& worksheet) noexcept
+{
+    return worksheet.state_ == nullptr ? 0 : worksheet.state_->body_buffer.size();
 }
 #endif
 
@@ -1869,6 +1977,7 @@ std::string build_worksheet_suffix(const detail::WorksheetWriterState& worksheet
 
 detail::PackageEntry build_worksheet_entry(std::string entry_name, detail::WorksheetWriterState& worksheet)
 {
+    worksheet.flush_body_buffer();
     if (worksheet.body.is_open()) {
         worksheet.body.close();
     }
@@ -2508,10 +2617,7 @@ void WorksheetWriter::append_row(std::span<const CellView> cells, RowOptions opt
     }
     row_xml += "</row>";
 
-    state_->body.write(row_xml.data(), static_cast<std::streamsize>(row_xml.size()));
-    if (!state_->body) {
-        throw FastXlsxError("failed to write worksheet row XML");
-    }
+    state_->append_body_xml(row_xml);
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
     detail::add_benchmark_temporary_worksheet_part_bytes(
         static_cast<std::uint64_t>(row_xml.size()));
@@ -2573,10 +2679,7 @@ void WorksheetWriter::append_sparse_row(std::span<const SparseCellView> cells, R
     }
     row_xml += "</row>";
 
-    state_->body.write(row_xml.data(), static_cast<std::streamsize>(row_xml.size()));
-    if (!state_->body) {
-        throw FastXlsxError("failed to write worksheet row XML");
-    }
+    state_->append_body_xml(row_xml);
 #ifdef FASTXLSX_ENABLE_BENCHMARK_METRICS
     detail::add_benchmark_temporary_worksheet_part_bytes(
         static_cast<std::uint64_t>(row_xml.size()));
@@ -3065,6 +3168,14 @@ void WorkbookWriter::close()
     package_options.compression_level = state_->options.zip_compression_level;
     detail::write_package(state_->output_path, entries, package_options);
     state_->closed = true;
+    for (auto& worksheet : state_->worksheets) {
+        worksheet->release_temporary_resources();
+    }
+    decltype(state_->shared_strings.values)().swap(state_->shared_strings.values);
+    decltype(state_->shared_strings.index_by_value)().swap(
+        state_->shared_strings.index_by_value);
+    state_->shared_strings.count = 0;
+    decltype(state_->styles)().swap(state_->styles);
 }
 
 } // namespace fastxlsx

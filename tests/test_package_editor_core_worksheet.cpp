@@ -1187,8 +1187,7 @@ void test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries()
                 == initial_removed_package_entry_count,
             "cell-transform commit failure should preserve removed-entry audits");
         check(!has_note_containing(editor.edit_plan().notes(),
-                  {"streams dimension-refreshed output",
-                      "PackageEditor-owned temporary file-backed"}),
+                  {"one source-order", "transform cells"}),
             "cell-transform commit failure should not publish temp ownership note");
         check(!has_note_containing(editor.edit_plan().notes(),
                   {"worksheet cell replacement refreshed worksheet dimension"}),
@@ -1210,8 +1209,7 @@ void test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries()
 
         editor.replace_worksheet_cells(worksheet_part, replacements);
         check(has_note_containing(editor.edit_plan().notes(),
-                  {"streams dimension-refreshed output",
-                      "PackageEditor-owned temporary file-backed"}),
+                  {"one source-order", "transform cells"}),
             "cell-transform retry should publish temp ownership note atomically");
         check(has_note_containing(editor.edit_plan().notes(),
                   {"worksheet cell replacement refreshed worksheet dimension"}),
@@ -1224,8 +1222,9 @@ void test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries()
         const auto* worksheet_output_plan =
             find_output_entry_plan(retry_plan.entries, worksheet_part.zip_path());
         check(worksheet_output_plan != nullptr
-                && !worksheet_output_plan->indexed_source_entry_direct_range,
-            "cell-transform regression should exercise transformer fallback");
+                && !worksheet_output_plan->indexed_source_entry_direct_range
+                && worksheet_output_plan->single_pass_worksheet_transform,
+            "cell-transform regression should exercise single-pass transformer telemetry");
 
         editor.save_as(retry_output);
         const fastxlsx::detail::PackageReader retry_reader =
@@ -1337,6 +1336,57 @@ void test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_ret
         fastxlsx::detail::PackageReader::open(retry_output);
     check_entry_bytes(retry_reader, worksheet_part.zip_path(), expected_worksheet);
     check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
+}
+
+void test_package_editor_repeated_single_pass_transform_reclaims_superseded_temp_file()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-single-pass-temp-reclaim-source.xlsx");
+    const std::filesystem::path output = output_path(
+        "fastxlsx-package-editor-single-pass-temp-reclaim-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string first_cell = R"(<c r="B2"><v>22</v></c>)";
+    const std::string second_cell = R"(<c r="C3"><v>33</v></c>)";
+
+    fastxlsx::detail::PackageEditor editor =
+        fastxlsx::detail::PackageEditor::open(source.path);
+    const std::array first_replacements {
+        worksheet_cell_replacement("B2", first_cell),
+    };
+    editor.replace_or_insert_worksheet_cells(
+        worksheet_part, first_replacements);
+    const auto first_owned = editor.testing_owned_temporary_files();
+    check(first_owned.size() == 1,
+        "first single-pass transform should own one temporary worksheet file");
+    const std::filesystem::path first_path = first_owned.front();
+    check(std::filesystem::exists(first_path),
+        "first single-pass temporary worksheet file should exist while referenced");
+
+    const std::array second_replacements {
+        worksheet_cell_replacement("C3", second_cell),
+    };
+    editor.replace_or_insert_worksheet_cells(
+        worksheet_part, second_replacements);
+    const auto second_owned = editor.testing_owned_temporary_files();
+    check(second_owned.size() == 1,
+        "follow-up single-pass transform should retain only its current temporary file");
+    check(second_owned.front() != first_path,
+        "follow-up single-pass transform should publish a new temporary file");
+    check(!std::filesystem::exists(first_path),
+        "follow-up commit should immediately remove the superseded temporary file");
+    check(std::filesystem::exists(second_owned.front()),
+        "follow-up temporary file should remain while the staged replacement references it");
+
+    editor.save_as(output);
+    const fastxlsx::detail::PackageReader output_reader =
+        fastxlsx::detail::PackageReader::open(output);
+    const std::string worksheet = output_reader.read_entry(worksheet_part.zip_path());
+    check_contains(worksheet, first_cell,
+        "follow-up single-pass transform should preserve the prior staged insertion");
+    check_contains(worksheet, second_cell,
+        "follow-up single-pass transform should save the latest insertion");
+    check_contains(worksheet, R"(<dimension ref="A1:C3"/>)",
+        "follow-up single-pass transform should stage one exact dimension");
 }
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
@@ -1521,6 +1571,7 @@ int main(int argc, char* argv[])
             test_package_editor_sheet_data_commit_failure_preserves_state_and_retries();
             test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries();
             test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_retries();
+            test_package_editor_repeated_single_pass_transform_reclaims_superseded_temp_file();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
             test_package_editor_deflated_indexed_cell_commit_failure_cleans_temp_and_retries();
 #endif

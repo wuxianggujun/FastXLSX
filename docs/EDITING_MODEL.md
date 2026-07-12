@@ -22,7 +22,8 @@ source package -> part index/relationships -> staged edits -> part-level rewrite
 - Public facade 是 `WorkbookEditor`。
 - Unchanged/unknown part 默认 copy-original。
 - Changed part 选择 stream rewrite、small-part rewrite 或 remove。
-- Relationship-free DEFLATE worksheet 的 strict existing-cell replace 可走 one-inflate target-only direct-range：解压后的 worksheet 放在 owned temporary file，未触碰 XML 以 file ranges replay，replacement payload 使用小型 memory chunks。该路径不物化 DOM，也不适用于 missing-cell upsert 或 relationship-bearing worksheet。
+- Relationship-free DEFLATE worksheet 的 strict existing-cell replace 可走 one-inflate target-only direct-range：解压后的 worksheet 放在 owned temporary file，未触碰 XML 以 file ranges replay，replacement payload 使用小型 memory chunks。
+- Missing-cell upsert、relationship-bearing worksheet 与其他 direct-range 不适用场景走 single-pass source-order transform：一次扫描完成 replacement/insertion、精确 dimension、relationship audit 和 telemetry，输出由 transformed temporary file ranges 与 bounded dimension memory chunk 组成。该路径同样不物化 DOM/dense matrix，但仍重写完整 worksheet part。
 - 每个功能必须明确 preserve/audit/fail/edit，以及 relationships/content types/calc metadata 联动。
 - `save_as()` 成功后 staged plan 可继续用于另一个输出或后续编辑；因此 `has_pending_changes()` 不等于“未保存”。
 - `has_unsaved_changes()` 是保存水位：只表示最近一次成功保存之后的新变化。
@@ -62,7 +63,7 @@ source worksheet events -> strict/lossy projection -> sparse CellStore -> edits 
 ## 状态与失败
 
 - Edit/materialization 先 preflight，成功后才注册或修改状态。
-- `request_full_calculation()`、`rename_sheet()`、internal document-properties rewrite、internal part removal、materialized small-part replacement 与 file-backed worksheet rewrite 的跨 plan/replacements/omitted entries/manifest/public diagnostics/临时文件所有权变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation，未发布临时文件由 RAII 清理，既有 patch 必须保持可保存、可重试。
+- `request_full_calculation()`、`rename_sheet()`、internal document-properties rewrite、internal part removal、materialized small-part replacement 与 file-backed worksheet rewrite 的跨 plan/replacements/omitted entries/manifest/public diagnostics/临时文件所有权变更先在副本完成，再以 noexcept swap 提交；staging 失败不能留下部分 mutation，未发布临时文件由 RAII 清理，既有 patch 必须保持可保存、可重试。提交后的 ownership 集合只保留当前 replacement 引用的路径，被后续 rewrite 取代的旧临时文件立即删除。
 - Malformed source、非法值和 session option mismatch 保持通用 contract/load failure；不得伪装成 strict projection loss。
 - Failed edit/save 不清除 staged state 或 dirty session diagnostics，也不改变 pending/unsaved count、`last_edit_error()` 或 save watermark。
 - Successful `save_as()` 清除 unsaved watermark，但保留可复用 staged state。

@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "4";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "5";
 
 std::filesystem::path default_output_dir()
 {
@@ -89,6 +89,13 @@ struct RunStats {
     std::vector<std::string> copied_entry_names;
     std::vector<std::string> rewritten_entry_names;
     std::vector<std::string> omitted_entry_names;
+    bool single_pass_worksheet_transform = false;
+    std::uint64_t single_pass_scanned_source_cell_count = 0;
+    std::uint64_t single_pass_matched_replacement_count = 0;
+    std::uint64_t single_pass_inserted_cell_count = 0;
+    std::uint64_t single_pass_staged_output_bytes = 0;
+    std::uint64_t single_pass_transform_ms = 0;
+    std::uint64_t single_pass_commit_ms = 0;
 };
 
 [[noreturn]] void fail(std::string_view message)
@@ -556,6 +563,19 @@ void observe_output_plan(const fastxlsx::WorkbookEditor& editor, RunStats& stats
         fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
     stats.output_plan_entry_count = plan.entries.size();
     for (const fastxlsx::detail::PackageEditorOutputEntryPlan& entry : plan.entries) {
+        if (entry.single_pass_worksheet_transform) {
+            stats.single_pass_worksheet_transform = true;
+            stats.single_pass_scanned_source_cell_count =
+                entry.single_pass_scanned_source_cell_count;
+            stats.single_pass_matched_replacement_count =
+                entry.single_pass_matched_replacement_count;
+            stats.single_pass_inserted_cell_count =
+                entry.single_pass_inserted_cell_count;
+            stats.single_pass_staged_output_bytes =
+                entry.single_pass_staged_output_bytes;
+            stats.single_pass_transform_ms = entry.single_pass_transform_ms;
+            stats.single_pass_commit_ms = entry.single_pass_commit_ms;
+        }
         if (entry.omitted) {
             stats.omitted_entry_names.push_back(entry.entry_name);
             continue;
@@ -617,6 +637,20 @@ void write_result_json(const Options& options, const RunStats& stats)
     out << "  \"copied_entry_count\": " << stats.copied_entry_count << ",\n";
     out << "  \"rewritten_entry_count\": " << stats.rewritten_entry_count << ",\n";
     out << "  \"omitted_entry_count\": " << stats.omitted_entry_count << ",\n";
+    out << "  \"single_pass_worksheet_transform\": "
+        << (stats.single_pass_worksheet_transform ? "true" : "false") << ",\n";
+    out << "  \"single_pass_scanned_source_cell_count\": "
+        << stats.single_pass_scanned_source_cell_count << ",\n";
+    out << "  \"single_pass_matched_replacement_count\": "
+        << stats.single_pass_matched_replacement_count << ",\n";
+    out << "  \"single_pass_inserted_cell_count\": "
+        << stats.single_pass_inserted_cell_count << ",\n";
+    out << "  \"single_pass_staged_output_bytes\": "
+        << stats.single_pass_staged_output_bytes << ",\n";
+    out << "  \"single_pass_transform_ms\": "
+        << stats.single_pass_transform_ms << ",\n";
+    out << "  \"single_pass_commit_ms\": "
+        << stats.single_pass_commit_ms << ",\n";
     write_json_string_array(out, "copied_entry_names", stats.copied_entry_names, true);
     write_json_string_array(out, "rewritten_entry_names", stats.rewritten_entry_names, true);
     write_json_string_array(out, "omitted_entry_names", stats.omitted_entry_names, true);

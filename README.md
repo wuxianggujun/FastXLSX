@@ -46,7 +46,7 @@ int main()
 }
 ```
 
-Streaming 按 worksheet/row 顺序写入，不提供历史行随机修改。大规模有序导出优先使用该路径。
+Streaming 按 worksheet/row 顺序写入，不提供历史行随机修改。大规模有序导出优先使用该路径；worksheet XML 使用 256 KiB 有界 body batching 降低小写入调用，成功 `close()` 后立即释放临时文件与构建期缓存。
 
 字符串策略会直接影响吞吐、内存和文件大小：默认 `InlineString` 不维护 workbook 级唯一字符串表，适合字符串基数未知或接近全唯一的大型导出；只有调用方已知文本高度重复时，才应评估 `SharedString`。Streaming 不提供 `Auto` 策略，因为在单遍写入中准确判断未来字符串基数需要无界缓存、回看或重写，会破坏当前低内存边界。
 
@@ -134,11 +134,11 @@ auto sheet = editor.worksheet("Data", options);
 
 ## 性能现状
 
-- **创建**：production Streaming 已使用 file-backed worksheet body、chunked package entry 和 minizip-ng DEFLATE。当前 tracked Windows/MSVC 重复矩阵中，每个场景写入 1,000,000 cells，numeric 与重复/混合字符串场景的 median 为 1.488–2.562 秒；该范围只适用于证据中的机器、数据集和 level 6 compression，不是跨机器承诺。
+- **创建**：production Streaming 使用 256 KiB 有界 body batching、file-backed worksheet body、chunked package entry 和 minizip-ng DEFLATE；成功关闭后释放 worksheet 临时文件和构建期缓存。当前 tracked Windows/MSVC 重复矩阵中，每个场景写入 1,000,000 cells，numeric 与重复/混合字符串场景的 median 为 1.488–2.562 秒；该历史范围只适用于证据中的机器、数据集和 level 6 compression，新的 batching 实现必须复跑矩阵后才能更新数值。
 - **字符串选型**：同一矩阵的 20% 高重复 mixed workload 中，`SharedString` median 为 1.488 秒，`InlineString` 为 2.385 秒；但 1,000,000 个字符串全部唯一时，`SharedString` 的 process peak working set median 为 122.195 MB，而 `InlineString` 为 6.02344 MB，并且前者更慢、更大。因此默认保持 `InlineString`。
 - **已有文件编辑**：Patch 按 part-level rewrite 工作，未修改 part 默认 copy-original；public save 可显式选择 stored 或 production DEFLATE。最新 tracked Windows/MSVC、1,000,000 numeric cells、level 6 矩阵中，1,000-cell targeted replace 的 total/mutation median 为 1.529/0.489 秒，process peak working set median 为 7.80859 MB；同机旧路径为 5.325/4.027 秒。Targeted upsert 的 total median 为 4.353 秒、peak 为 8.01562 MB。该结果只适用于证据中的机器与 workload。
-- **有界高吞吐 Patch**：对 DEFLATE source、无 worksheet relationships、目标已存在且具有 top-level dimension 的 strict targeted replace，当前路径只 inflate 一次到事务式临时文件，再做 target-only scan 和 file-range staging；内存由 chunk buffers 与 replacement payload 控制，不随 34.9 MB worksheet XML 整体物化。输出仍重写完整 worksheet part。
-- **Patch 缺口**：Copy-original 当前保证 logical payload/CRC 保留，但 output writer 仍会重新封装并可能重新压缩 entry；raw compressed-entry passthrough 尚未实现。Missing-cell upsert、relationship-bearing worksheet 和严格 linked-part fail policy 仍走 transformer fallback，不证明任意 XLSX 的高性能随机编辑。
+- **有界高吞吐 Patch**：对 DEFLATE source、无 worksheet relationships、目标已存在且具有 top-level dimension 的 strict targeted replace，路径只 inflate 一次到事务式临时文件，再做 target-only scan 和 file-range staging。Missing-cell upsert、relationship-bearing worksheet 与其他 fallback 场景使用单次 source-order scan，同步完成 cell transform、精确 dimension 与 relationship audit；两条路径都不构建 worksheet DOM/dense matrix，内存由 chunk buffers、replacement payload 和临时文件控制。
+- **Patch 缺口**：Copy-original 当前保证 logical payload/CRC 保留，但 output writer 仍会重新封装并可能重新压缩 entry；raw compressed-entry passthrough 尚未实现。单扫描 fallback 仍会重写完整 worksheet part，也不证明任意 XLSX 的高性能随机编辑；其新性能数值必须通过同协议矩阵后才能进入 release claim。
 - **随机编辑/处理**：`WorksheetEditor` 有意限定为 small-file sparse editing。大型 worksheet 的顺序 Patch 可以使用上述 file-backed bounded path；任意 random editing 仍需要独立设计，不能通过放宽 In-memory guardrail 冒充高性能。
 
 精确环境、三次 measured run、min/median/max 和验证结果见 [性能目标与证据](docs/PERFORMANCE_TARGETS.md)。

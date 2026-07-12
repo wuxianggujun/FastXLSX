@@ -1851,11 +1851,12 @@ void test_package_editor_replaces_worksheet_cells_from_deflated_source_chunk_sou
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan = editor.planned_output();
     check(has_note_containing(output_plan.notes,
-              {"PackageReader ZIP-entry chunk source", "source worksheet XML"}),
-        "DEFLATE source cell replacement should expose PackageReader chunk source note");
+              {"one source-order PackageReader ZIP-entry scan",
+                  "without materializing source XML"}),
+        "DEFLATE source cell replacement should expose single-pass source scan note");
     check(has_note_containing(output_plan.notes,
-              {"relationship-id audit", "transformer chunk-source adapter"}),
-        "DEFLATE source cell replacement should expose chunked relationship audit");
+              {"collect dependency/relationship audits", "validate the root"}),
+        "DEFLATE source cell replacement should expose fused relationship audit");
 
     editor.save_as(output);
 

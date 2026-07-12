@@ -28,6 +28,10 @@ struct WorksheetWriterState;
 
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
 void testing_set_worksheet_row_count(WorksheetWriter& worksheet, std::uint32_t row_count);
+[[nodiscard]] bool testing_worksheet_temporary_resources_released(
+    const WorksheetWriter& worksheet) noexcept;
+[[nodiscard]] std::size_t testing_worksheet_pending_body_buffer_bytes(
+    const WorksheetWriter& worksheet) noexcept;
 #endif
 } // namespace detail
 
@@ -1262,6 +1266,10 @@ private:
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
     friend void detail::testing_set_worksheet_row_count(
         WorksheetWriter& worksheet, std::uint32_t row_count);
+    friend bool detail::testing_worksheet_temporary_resources_released(
+        const WorksheetWriter& worksheet) noexcept;
+    friend std::size_t detail::testing_worksheet_pending_body_buffer_bytes(
+        const WorksheetWriter& worksheet) noexcept;
 #endif
     explicit WorksheetWriter(detail::WorksheetWriterState* state) noexcept;
 

@@ -1681,7 +1681,7 @@ void test_package_editor_rejects_changed_planned_staged_chunk_sizes_without_stat
         } catch (const std::exception& error) {
             replacement_failed = true;
             check_contains(error.what(),
-                "failed to read current worksheet input for worksheet cell replacement analysis",
+                "failed to single-pass transform current worksheet input for worksheet cell replacement output",
                 "planned staged chunk size mutation should report the input read boundary");
             check_contains(error.what(),
                 "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
@@ -2003,7 +2003,7 @@ void test_package_editor_rejects_changed_planned_staged_chunk_crc_without_state_
     } catch (const std::exception& error) {
         replacement_failed = true;
         check_contains(error.what(),
-            "failed to read current worksheet input for worksheet cell replacement analysis",
+            "failed to single-pass transform current worksheet input for worksheet cell replacement output",
             "planned staged chunk CRC mutation should report the input read boundary");
         check_contains(error.what(),
             "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
@@ -2119,7 +2119,7 @@ void test_package_editor_rejects_missing_planned_staged_chunk_file_at_read_bound
     } catch (const std::exception& error) {
         replacement_failed = true;
         check_contains(error.what(),
-            "failed to read current worksheet input for worksheet cell replacement analysis",
+            "failed to single-pass transform current worksheet input for worksheet cell replacement output",
             "missing planned staged chunk should fail at the current worksheet read boundary");
         check_contains(error.what(),
             "planned worksheet staged chunks for 'xl/worksheets/sheet1.xml'",
@@ -2271,7 +2271,7 @@ void test_package_editor_contextualizes_by_name_planned_staged_chunk_read_failur
                 "resolved to worksheet part '/xl/worksheets/sheet1.xml'",
                 "by-name planned chunk size failure should show the resolved worksheet part");
             check_contains(error.what(),
-                "failed to read current worksheet input for worksheet cell replacement analysis",
+                "failed to single-pass transform current worksheet input for worksheet cell replacement output",
                 "by-name planned chunk size failure should keep the analysis input boundary");
             check_contains(error.what(),
                 planned_chunk_source_description,

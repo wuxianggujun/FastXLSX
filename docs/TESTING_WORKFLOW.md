@@ -20,7 +20,7 @@ ctest --preset windows-nmake-release
 ## 关键矩阵
 
 - Patch：failure-before-state-change、retry、reopen、unknown part preservation、relationships/content types/calc metadata side effects；calc metadata 需注入提交前失败，验证既有 plan/manifest/replacements 不变且 retry 成功。
-- Save transaction/watermark：验证 stage → package write → state commit；post-stage/write failure 保留 dirty session、pending/unsaved count 和 `last_edit_error()`，retry 写入最新值；successful save 清零 unsaved，retained staged state 仍可 pending，move 转移 watermark。
+- Save transaction/watermark：验证 stage → package write → state commit；post-stage/write failure 保留 dirty session、pending/unsaved count 和 `last_edit_error()`，retry 写入最新值；successful save 清零 unsaved，retained staged state 仍可 pending，move 转移 watermark；invalid/unavailable compression 必须在 dirty-session staging 前失败，production DEFLATE 与 stored-only retry 分 profile 验证。
 - In-memory：guardrail、strict rejection category/context、`worksheet()`/`try_worksheet()` typed propagation、explicit lossy opt-in、generic policy mismatch、malformed-source precedence、no-state-pollution、`last_edit_error()` preservation、dirty flush/recovery。
 - Streaming：row order、无 DOM/dense matrix、strings/styles/media/metadata package side effects。
 - No-images：编译 `image_disabled.cpp`，consumer 宏为 0，runtime smoke 确认 public call 抛错。
@@ -38,7 +38,7 @@ py -3 tools/run_patch_benchmark_matrix.py --self-test
 
 重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 2 个 production Streaming bundle：首个支持精确单机单次 claim，策略矩阵支持 manifest 限定的同机 workload 比较；二者都不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
 
-Patch 矩阵使用 `run_patch_benchmark_matrix.py` 在独立准备进程生成一次 source fixture，warm-up/measured 进程通过 `--reuse-source` 只测 open → mutation → save，避免 source `WorkbookWriter` 污染 editor process peak working set。Copied/rewritten bytes 来自 ZIP central-directory 的 logical `file_size` / compressed `compress_size`；copy-original entry 还必须保持 source/output CRC 与 logical size 一致。
+Patch 矩阵使用 `run_patch_benchmark_matrix.py` 在独立准备进程生成一次 source fixture，warm-up/measured 进程通过 `--reuse-source` 只测 open → mutation → save，避免 source `WorkbookWriter` 污染 editor process peak working set。`--source-compression-level` 与 `--output-compression-level` 分开记录。Copied/rewritten bytes 来自 ZIP central-directory 的 logical `file_size` / compressed `compress_size`；copy-original entry 必须保持 source/output CRC 与 logical size 一致，copied source/output compressed bytes 分列，不能误写成 raw compressed-byte copy。
 
 ## 文档与静态检查
 

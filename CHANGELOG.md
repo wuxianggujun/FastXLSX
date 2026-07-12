@@ -5,6 +5,7 @@
 ### Added
 
 - 新增 `WorkbookEditor::set_document_properties()`，为 existing workbook 提供事务式 core/app docProps rewrite、缺失 relationship/content-type 补齐、last-write-wins 与失败 retry，并保留 custom/unknown package entries。
+- 新增 `WorkbookEditorSaveOptions` 与 `WorkbookEditor::save_as(path, options)`，允许 existing-workbook output 显式选择 stored、active backend default 或 minizip-ng DEFLATE level；无 options overload 保留 stored 兼容行为，无效/不可用配置在 dirty-session staging 前失败。
 - 新增 `WorksheetMaterializationError`、`WorksheetMaterializationDiagnostic` 和稳定 loss category，使 strict In-memory rejection 可按 worksheet/cell/sharedStrings context 审计，同时保持 `FastXlsxError` catch compatibility。
 - 新增 `WorkbookEditor::has_unsaved_changes()` / `unsaved_change_count()` 保存水位，保留 `has_pending_changes()` 的 staged-state 兼容语义。
 - 新增 Basic CMake install/export package、`FastXLSX::fastxlsx` consumer target 和 `find_package()` smoke。
@@ -15,7 +16,7 @@
 ### Changed
 
 - `run_benchmark_matrix.py` 默认对每个场景执行 1 次 warm-up 和 3 次 measured run，保留全部 schema-v4 原始结果，并输出 min/median/max 与 median 代表 run；openpyxl 只验证代表 workbook，避免验证耗时污染 benchmark 内部计时。
-- `fastxlsx_bench_workbook_editor` 新增 no-op copy、document-properties、DEFLATE source 与 source reuse 场景，并通过 benchmark-only diagnostics 输出 copy-original/rewrite entry 分类；新增 `run_patch_benchmark_matrix.py` 重复矩阵，隔离 fixture generation，统计 ZIP copied/rewritten logical/compressed bytes 并验证代表 workbook。
+- `fastxlsx_bench_workbook_editor` 新增 no-op copy、document-properties、独立 source/output compression level 与 source reuse 场景，并通过 benchmark-only diagnostics 输出 copy-original/rewrite entry 分类；`run_patch_benchmark_matrix.py` 重复矩阵隔离 fixture generation，分列 copied source/output compressed bytes，统计 rewritten logical/compressed bytes 并验证代表 workbook。
 - `fastxlsx_bench_package_editor_cell_replacement` 显式启用 internal test-hook 编译边界，使其可通过受控 accessor 读取 public facade 选择的 package plan；普通 library consumer 不获得该 internal surface。
 - In-memory materialization 默认拒绝已知有损投影；只有显式 `AllowLossyProjection` 才允许拍平。
 - Production/default profile 启用 minizip-ng stored+DEFLATE backend；新增 stored-only 与 no-images profiles。

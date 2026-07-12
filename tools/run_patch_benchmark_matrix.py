@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 
-BENCHMARK_SCHEMA_VERSION = "3"
+BENCHMARK_SCHEMA_VERSION = "4"
 DEFAULT_CASES = [
     "noop-copy:0",
     "document-properties:1",
@@ -31,7 +31,8 @@ METRICS = [
     "peak_memory_mb",
     "output_bytes",
     "copied_uncompressed_bytes",
-    "copied_compressed_bytes",
+    "copied_source_compressed_bytes",
+    "copied_output_compressed_bytes",
     "rewritten_uncompressed_bytes",
     "rewritten_compressed_bytes",
 ]
@@ -141,7 +142,8 @@ def account_plan_bytes(
         output_info = {entry.filename: entry for entry in output.infolist()}
 
         copied_uncompressed = 0
-        copied_compressed = 0
+        copied_source_compressed = 0
+        copied_output_compressed = 0
         for name in copied_names:
             require(name in source_info, f"copied source entry missing: {name}")
             require(name in output_info, f"copied output entry missing: {name}")
@@ -151,7 +153,8 @@ def account_plan_bytes(
                 f"copy-original entry changed: {name}",
             )
             copied_uncompressed += source_info[name].file_size
-            copied_compressed += source_info[name].compress_size
+            copied_source_compressed += source_info[name].compress_size
+            copied_output_compressed += output_info[name].compress_size
 
         rewritten_uncompressed = 0
         rewritten_compressed = 0
@@ -165,13 +168,14 @@ def account_plan_bytes(
 
     return {
         "copied_uncompressed_bytes": copied_uncompressed,
-        "copied_compressed_bytes": copied_compressed,
+        "copied_source_compressed_bytes": copied_source_compressed,
+        "copied_output_compressed_bytes": copied_output_compressed,
         "rewritten_uncompressed_bytes": rewritten_uncompressed,
         "rewritten_compressed_bytes": rewritten_compressed,
     }
 
 
-def inspect_source_archive(path: Path, compression_level: int) -> dict[str, Any]:
+def inspect_archive(path: Path, compression_level: int, purpose: str) -> dict[str, Any]:
     method_names = {
         zipfile.ZIP_STORED: "stored",
         zipfile.ZIP_DEFLATED: "deflate",
@@ -182,7 +186,7 @@ def inspect_source_archive(path: Path, compression_level: int) -> dict[str, Any]
     expected_method = zipfile.ZIP_STORED if compression_level == 0 else zipfile.ZIP_DEFLATED
     require(
         worksheet.compress_type == expected_method,
-        "source worksheet ZIP compression method does not match requested level",
+        f"{purpose} worksheet ZIP compression method does not match requested level",
     )
     method_counts: dict[str, int] = {}
     for entry in entries:
@@ -219,10 +223,11 @@ def verify_result(
     rows: int,
     cols: int,
     source_compression_level: int,
+    output_compression_level: int,
     source_path: Path,
     output_path: Path,
     expect_reused_source: bool,
-) -> tuple[dict[str, Any], dict[str, int]]:
+) -> tuple[dict[str, Any], dict[str, int], dict[str, Any]]:
     result = load_json(path)
     require(
         result.get("workbook_editor_benchmark_schema_version") == BENCHMARK_SCHEMA_VERSION,
@@ -245,6 +250,10 @@ def verify_result(
     require(
         result.get("source_compression_level") == source_compression_level,
         f"{case.name} source compression mismatch",
+    )
+    require(
+        result.get("output_compression_level") == output_compression_level,
+        f"{case.name} output compression mismatch",
     )
     require(result.get("source_bytes") == source_path.stat().st_size, "source size mismatch")
     require(result.get("output_bytes") == output_path.stat().st_size, "output size mismatch")
@@ -278,7 +287,8 @@ def verify_result(
         )
 
     accounting = account_plan_bytes(source_path, output_path, result)
-    return result, accounting
+    output_archive = inspect_archive(output_path, output_compression_level, "output")
+    return result, accounting, output_archive
 
 
 def run_process(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -299,6 +309,7 @@ def run_single_case(
     rows: int,
     cols: int,
     source_compression_level: int,
+    output_compression_level: int,
     run_name: str,
     reuse_source: bool,
 ) -> dict[str, Any]:
@@ -316,6 +327,8 @@ def run_single_case(
         str(case.edits),
         "--source-compression-level",
         str(source_compression_level),
+        "--output-compression-level",
+        str(output_compression_level),
         "--source",
         str(source_path),
         "--output",
@@ -326,12 +339,13 @@ def run_single_case(
     if reuse_source:
         command.append("--reuse-source")
     completed = run_process(command)
-    result, accounting = verify_result(
+    result, accounting, output_archive = verify_result(
         result_path,
         case,
         rows,
         cols,
         source_compression_level,
+        output_compression_level,
         source_path,
         output_path,
         reuse_source,
@@ -346,6 +360,7 @@ def run_single_case(
         "result_json": str(result_path),
         "result": result,
         "byte_accounting": accounting,
+        "output_archive": output_archive,
     }
 
 
@@ -403,6 +418,7 @@ def run_case(
     rows: int,
     cols: int,
     source_compression_level: int,
+    output_compression_level: int,
     warmup_runs: int,
     measured_runs: int,
     verify_openpyxl: bool,
@@ -416,6 +432,7 @@ def run_case(
             rows,
             cols,
             source_compression_level,
+            output_compression_level,
             indexed_run_name(case.name, "warmup", run_index, warmup_runs),
             True,
         )
@@ -429,6 +446,7 @@ def run_case(
             rows,
             cols,
             source_compression_level,
+            output_compression_level,
             indexed_run_name(case.name, "run", run_index, measured_runs),
             True,
         )
@@ -451,6 +469,7 @@ def run_case(
         "statistics": statistics_report,
         "result": representative["result"],
         "byte_accounting": representative["byte_accounting"],
+        "output_archive": representative["output_archive"],
         "openpyxl": openpyxl_report,
         "runs": measured,
     }
@@ -492,7 +511,8 @@ def run_self_test() -> None:
             },
             "byte_accounting": {
                 "copied_uncompressed_bytes": 1000,
-                "copied_compressed_bytes": 500,
+                "copied_source_compressed_bytes": 500,
+                "copied_output_compressed_bytes": 450,
                 "rewritten_uncompressed_bytes": 100 + index,
                 "rewritten_compressed_bytes": 50 + index,
             },
@@ -530,7 +550,7 @@ def run_self_test() -> None:
         )
         require(accounting["copied_uncompressed_bytes"] == 9, "copied byte accounting mismatch")
         require(accounting["rewritten_uncompressed_bytes"] == 5, "rewrite byte accounting mismatch")
-        source_report = inspect_source_archive(source, 6)
+        source_report = inspect_archive(source, 6, "source")
         require(source_report["worksheet_compression_method"] == "deflate",
             "source compression inspection mismatch")
 
@@ -544,6 +564,7 @@ def main() -> int:
     parser.add_argument("--rows", type=int, default=100000)
     parser.add_argument("--cols", type=int, default=10)
     parser.add_argument("--source-compression-level", type=int, default=6)
+    parser.add_argument("--output-compression-level", type=int, default=6)
     parser.add_argument("--case", action="append", dest="cases")
     parser.add_argument("--warmup-runs", type=int, default=1)
     parser.add_argument("--measured-runs", "--repeat", type=int, default=3)
@@ -557,7 +578,10 @@ def main() -> int:
 
     require(args.rows > 0, "--rows must be positive")
     require(args.cols > 0, "--cols must be positive")
-    require(0 <= args.source_compression_level <= 9, "compression level must be 0..9")
+    require(0 <= args.source_compression_level <= 9,
+        "source compression level must be 0..9")
+    require(-1 <= args.output_compression_level <= 9,
+        "output compression level must be -1..9")
     require(args.warmup_runs >= 0, "--warmup-runs must be non-negative")
     require(args.measured_runs > 0, "--measured-runs must be positive")
 
@@ -577,10 +601,11 @@ def main() -> int:
         args.rows,
         args.cols,
         args.source_compression_level,
+        args.output_compression_level,
         "source-preparation",
         False,
     )
-    source_archive = inspect_source_archive(source_path, args.source_compression_level)
+    source_archive = inspect_archive(source_path, args.source_compression_level, "source")
 
     case_reports = []
     for case in cases:
@@ -592,6 +617,7 @@ def main() -> int:
             args.rows,
             args.cols,
             args.source_compression_level,
+            args.output_compression_level,
             args.warmup_runs,
             args.measured_runs,
             args.verify_openpyxl,
@@ -606,13 +632,14 @@ def main() -> int:
         )
 
     matrix_report = {
-        "patch_benchmark_matrix_schema_version": "1",
+        "patch_benchmark_matrix_schema_version": "2",
         "benchmark_executable": str(bench_exe),
         "output_dir": str(output_dir),
         "rows": args.rows,
         "cols": args.cols,
         "source_cells": args.rows * args.cols,
         "source_compression_level": args.source_compression_level,
+        "output_compression_level": args.output_compression_level,
         "source": str(source_path),
         "source_bytes": source_path.stat().st_size,
         "source_archive": source_archive,
@@ -622,8 +649,9 @@ def main() -> int:
         "representative_result_policy":
             "measured run nearest total_editor_ms median; earliest run breaks ties",
         "byte_accounting":
-            "ZIP central-directory logical file_size and compressed compress_size; "
-            "copy-original entries additionally require equal source/output CRC and file_size",
+            "ZIP central-directory logical file_size and compressed compress_size; copied "
+            "entries report source and output compressed bytes separately and additionally "
+            "require equal source/output CRC and logical file_size",
         "cases": case_reports,
         "comparison_scope":
             "Manual opt-in public WorkbookEditor Patch matrix. Source generation is a separate "

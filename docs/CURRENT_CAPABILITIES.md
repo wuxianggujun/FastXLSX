@@ -21,10 +21,11 @@
 
 ### Patch：已有 workbook
 
-- `WorkbookEditor::open()` / `save_as()`。
+- `WorkbookEditor::open()` / `save_as()`；`WorkbookEditorSaveOptions::zip_compression_level` 可为 `-1`、`0` 或 `1..9`。
 - 支持 sheet catalog 查询、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request、core/app document properties rewrite 和已有 PNG/JPEG media bytes replacement。
 - 未修改和未知 package part 默认 copy-original；修改 part 才 rewrite/remove。
-- `save_as()` 不覆盖 source，也不承诺 atomic in-place save。
+- `save_as()` 不覆盖 source，也不承诺 atomic in-place save。无 options overload 为兼容保留 stored output；显式 save options 的 `0` 为 stored、`-1` 为 active backend default、`1..9` 为 minizip-ng DEFLATE。无效/不可用配置在 dirty session staging 前失败并保留 retry 状态。
+- Copy-original 保留的是 logical entry payload/CRC；compressed output 可重新压缩未修改 entry，不保证 source/output ZIP-local compressed bytes 相同。
 - `has_pending_changes()` 表示 retained staged state；成功保存后仍可为 true。
 - `has_unsaved_changes()` / `unsaved_change_count()` 表示相对最近一次成功 `save_as()` 的 watermark；成功保存清零，失败 edit/save 不改变。
 - Dirty In-memory session 在 package write 前 stage 到 Patch plan，但只在输出成功后提交 handoff 并清除 dirty；写出失败保留 session diagnostics/counts，retry 会用当前值覆盖失败尝试留下的 stale internal projection。
@@ -64,7 +65,7 @@
 ### ZIP backend
 
 - Production/default profile 启用 `runtime-minizip` 和 `FASTXLSX_ENABLE_MINIZIP_NG=ON`，支持 stored + DEFLATE package 读写。
-- `windows-nmake-release-stored` 是显式 bootstrap profile，只支持 stored entries。
+- `windows-nmake-release-stored` 是显式 bootstrap profile，只支持 stored entries；public Patch save 的正数 DEFLATE level 会在状态 staging 前拒绝。
 
 ## Internal Foundation
 

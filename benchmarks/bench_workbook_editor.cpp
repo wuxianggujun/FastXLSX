@@ -35,7 +35,7 @@ namespace {
 
 constexpr std::uint32_t kExcelRowLimit = 1048576;
 constexpr std::uint32_t kExcelColumnLimit = 16384;
-constexpr std::string_view kEditorBenchmarkSchemaVersion = "3";
+constexpr std::string_view kEditorBenchmarkSchemaVersion = "4";
 
 std::filesystem::path default_output_dir()
 {
@@ -52,6 +52,7 @@ struct Options {
     std::uint32_t edits = 1000;
     std::string scenario = "batch-set";
     int source_compression_level = fastxlsx::min_zip_compression_level;
+    int output_compression_level = 0;
     bool reuse_source = false;
     std::filesystem::path source = default_output_dir() / "fastxlsx-editor-source.xlsx";
     std::filesystem::path output = default_output_dir() / "fastxlsx-editor-edited.xlsx";
@@ -134,11 +135,23 @@ std::uint32_t parse_nonnegative_u32(std::string_view value, std::string_view nam
     return static_cast<std::uint32_t>(parsed);
 }
 
-int parse_compression_level(std::string_view value)
+int parse_source_compression_level(std::string_view value)
 {
     const std::uint32_t parsed = parse_nonnegative_u32(value, "--source-compression-level");
     if (parsed > static_cast<std::uint32_t>(fastxlsx::max_zip_compression_level)) {
         fail("--source-compression-level must be between 0 and 9");
+    }
+    return static_cast<int>(parsed);
+}
+
+int parse_output_compression_level(std::string_view value)
+{
+    if (value == "-1") {
+        return -1;
+    }
+    const std::uint32_t parsed = parse_nonnegative_u32(value, "--output-compression-level");
+    if (parsed > 9U) {
+        fail("--output-compression-level must be -1 or between 0 and 9");
     }
     return static_cast<int>(parsed);
 }
@@ -258,7 +271,9 @@ Options parse_args(int argc, char** argv)
         } else if (arg == "--result") {
             options.result = std::filesystem::path(std::string(next_value()));
         } else if (arg == "--source-compression-level") {
-            options.source_compression_level = parse_compression_level(next_value());
+            options.source_compression_level = parse_source_compression_level(next_value());
+        } else if (arg == "--output-compression-level") {
+            options.output_compression_level = parse_output_compression_level(next_value());
         } else if (arg == "--reuse-source") {
             options.reuse_source = true;
         } else if (arg == "--help" || arg == "-h") {
@@ -268,7 +283,8 @@ Options parse_args(int argc, char** argv)
                    "noop-copy|document-properties|patch-replace|patch-upsert "
                 << "--rows N --cols N --edits N "
                 << "--source source.xlsx --output edited.xlsx --result result.json "
-                << "[--source-compression-level 0..9] [--reuse-source]\n"
+                << "[--source-compression-level 0..9] "
+                   "[--output-compression-level -1..9] [--reuse-source]\n"
                 << "The tool generates or reuses a source workbook, opens it through "
                 << "WorkbookEditor, then either materializes the Data sheet for "
                 << "in-memory scenarios or uses copy-original, document-properties, "
@@ -596,6 +612,7 @@ void write_result_json(const Options& options, const RunStats& stats)
         << (options.reuse_source ? "reused-existing-source" : "generated-source")
         << "\",\n";
     out << "  \"source_compression_level\": " << options.source_compression_level << ",\n";
+    out << "  \"output_compression_level\": " << options.output_compression_level << ",\n";
     out << "  \"output_plan_entry_count\": " << stats.output_plan_entry_count << ",\n";
     out << "  \"copied_entry_count\": " << stats.copied_entry_count << ",\n";
     out << "  \"rewritten_entry_count\": " << stats.rewritten_entry_count << ",\n";
@@ -670,7 +687,9 @@ RunStats run_benchmark(const Options& options)
 
     ensure_parent_directory(options.output);
     phase_started = std::chrono::steady_clock::now();
-    editor.save_as(options.output);
+    fastxlsx::WorkbookEditorSaveOptions save_options;
+    save_options.zip_compression_level = options.output_compression_level;
+    editor.save_as(options.output, save_options);
     stats.timings.save_ms = milliseconds_since(phase_started);
     stats.output_bytes = static_cast<std::uint64_t>(std::filesystem::file_size(options.output));
     stats.timings.total_ms = milliseconds_since(total_started);

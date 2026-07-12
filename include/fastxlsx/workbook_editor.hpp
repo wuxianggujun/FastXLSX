@@ -84,6 +84,28 @@ struct WorkbookEditorOptions {
     std::optional<std::size_t> replacement_memory_budget_bytes;
 };
 
+/// Output-package options for WorkbookEditor::save_as().
+///
+/// API mode: Patch. These options affect only the newly written ZIP package;
+/// they do not change source-package reading, Patch planning, worksheet
+/// materialization, or preservation decisions.
+struct WorkbookEditorSaveOptions {
+    /// ZIP compression level for existing-workbook output.
+    ///
+    /// Level `0` preserves the historical WorkbookEditor stored/no-compression
+    /// output behavior. Level `-1` selects the active package backend default,
+    /// and levels `1..9` request zlib-compatible DEFLATE when the minizip-ng
+    /// backend is enabled. Callers that prefer throughput over smaller output
+    /// can explicitly pass level 1. Dependency-free stored bootstrap builds
+    /// reject positive DEFLATE levels before any dirty WorksheetEditor session
+    /// is staged for saving.
+    ///
+    /// Copy-original preservation compares logical entry payloads. A compressed
+    /// output save may recompress preserved source entries, so their ZIP-local
+    /// compressed bytes are not guaranteed to remain identical.
+    int zip_compression_level = 0;
+};
+
 /// Controls whether source worksheet cells may be projected into the narrower
 /// WorksheetEditor cell model when source-only semantics would be discarded.
 enum class WorksheetMaterializationPolicy {
@@ -3052,6 +3074,22 @@ public:
     /// @throws FastXlsxError if the output path is rejected or the package cannot
     /// be written.
     void save_as(const std::filesystem::path& path);
+
+    /// Writes the edited workbook to a new package path with explicit ZIP options.
+    ///
+    /// The path, preservation, state-handoff, retry, and non-in-place guarantees
+    /// are identical to save_as(path). Compression affects package output size
+    /// and save-time CPU/IO only; it does not add semantic editing support.
+    /// Invalid or unavailable compression settings are rejected before dirty
+    /// WorksheetEditor sessions are staged, preserving pending/unsaved state for
+    /// retry. The no-options save_as(path) overload retains stored output for
+    /// compatibility.
+    ///
+    /// @param path Output `.xlsx` path; must differ from the source package.
+    /// @param options Output ZIP compression options copied for this save.
+    /// @throws FastXlsxError if options are invalid, DEFLATE is unavailable, the
+    /// output path is rejected, or the package cannot be written.
+    void save_as(const std::filesystem::path& path, WorkbookEditorSaveOptions options);
 
 private:
     friend class WorksheetEditor;

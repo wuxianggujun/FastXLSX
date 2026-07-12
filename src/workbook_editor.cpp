@@ -6,6 +6,7 @@
 #include "workbook_editor_testing_hooks.hpp"
 #include "workbook_editor_image_edit.hpp"
 #include "cell_store_materialization_loss.hpp"
+#include "package_writer.hpp"
 #include "workbook_editor_state.hpp"
 
 #include <fastxlsx/detail/cell_store.hpp>
@@ -38,6 +39,34 @@ struct WorkbookEditorTargetedCellPatchInput {
     std::vector<WorkbookEditorTargetedCellPatchMaterializedCell> materialized_cells;
     std::vector<std::pair<std::string, std::size_t>> public_diagnostics;
 };
+
+detail::PackageWriterOptions package_writer_options_for_workbook_editor_save(
+    WorkbookEditorSaveOptions options)
+{
+    if (options.zip_compression_level < detail::package_writer_default_compression_level
+        || options.zip_compression_level > detail::package_writer_max_compression_level) {
+        throw FastXlsxError("ZIP compression level must be -1 or between 0 and 9");
+    }
+
+#ifndef FASTXLSX_HAS_MINIZIP_NG
+    if (options.zip_compression_level > detail::package_writer_min_compression_level) {
+        throw FastXlsxError(
+            "ZIP compression levels 1..9 require the minizip-ng backend");
+    }
+#endif
+
+    detail::PackageWriterOptions package_options;
+    package_options.compression_level = options.zip_compression_level;
+    if (options.zip_compression_level == detail::package_writer_min_compression_level) {
+        package_options.backend = detail::PackageWriterBackend::StoredZipBootstrap;
+    } else if (options.zip_compression_level
+        == detail::package_writer_default_compression_level) {
+        package_options.backend = detail::PackageWriterBackend::Auto;
+    } else {
+        package_options.backend = detail::PackageWriterBackend::MinizipNg;
+    }
+    return package_options;
+}
 
 void validate_workbook_editor_targeted_cell_patch_target(
     const detail::WorkbookEditorSheetCatalogPlan& sheet_catalog,
@@ -742,17 +771,27 @@ void WorkbookEditor::set_document_properties(DocumentProperties properties)
 
 void WorkbookEditor::save_as(const std::filesystem::path& path)
 {
+    WorkbookEditorSaveOptions options;
+    options.zip_compression_level = detail::package_writer_min_compression_level;
+    save_as(path, options);
+}
+
+void WorkbookEditor::save_as(
+    const std::filesystem::path& path, WorkbookEditorSaveOptions options)
+{
     if (impl_ == nullptr) {
         throw FastXlsxError("WorkbookEditor is not open");
     }
 
+    const detail::PackageWriterOptions package_options =
+        package_writer_options_for_workbook_editor_save(options);
     detail::validate_workbook_editor_save_as_path(impl_->editor.reader().path(), path);
     const detail::WorkbookEditorMaterializedStageResult materialized_stage =
         impl_->stage_dirty_materialized_sessions_to_patch_plan();
 #ifdef FASTXLSX_ENABLE_TEST_HOOKS
     detail::run_testing_workbook_editor_save_as_staged_hook();
 #endif
-    impl_->editor.save_as(path);
+    impl_->editor.save_as(path, package_options);
     impl_->commit_materialized_stage(materialized_stage);
     impl_->mark_saved();
 }

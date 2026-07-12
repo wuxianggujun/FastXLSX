@@ -16,7 +16,7 @@ FastXLSX 是 C++20 / MSVC 2026 优先的 XLSX 创建与编辑库，公开 Stream
 ## 当前关键契约
 
 - Production/default profile 启用 minizip-ng，支持 stored + DEFLATE package；`windows-nmake-release-stored` 才是 stored-only bootstrap。
-- `save_as()` 写新路径，不是 atomic in-place save。
+- `save_as()` 写新路径，不是 atomic in-place save；无 options overload 保留 stored 输出，`WorkbookEditorSaveOptions` 才显式选择 active backend/DEFLATE。Copy-original 保留 logical payload/CRC，不等于 raw compressed-byte passthrough。
 - `has_pending_changes()` 表示 retained staged state；`has_unsaved_changes()` 表示最近成功保存后的 watermark delta。
 - Dirty In-memory session 使用 stage → package write → state commit；写出失败必须保留 dirty diagnostics、pending/unsaved count 和 retry 能力。
 - `WorksheetEditorOptions` 默认 `RejectKnownLosses`；rich/phonetic/extension、formula metadata、cached result 等已知损失抛 `WorksheetMaterializationError`，提供稳定 category 与 worksheet/cell/sharedStrings context。只有显式 `AllowLossyProjection` 才能拍平，且 policy 是 session identity 的一部分。

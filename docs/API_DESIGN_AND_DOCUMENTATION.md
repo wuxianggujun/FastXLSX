@@ -77,7 +77,7 @@ Public API 注释至少说明：
 - “支持对象”必须区分创建、读取、保留、审计、替换和语义编辑。
 - “编辑图片”必须区分 new-workbook insertion 与 existing media bytes replacement。
 - “支持公式”必须区分文本、审计、重写、重算请求和求值。
-- “保存”必须区分 `save()`、`close()` 和 non-atomic `save_as()`；`WorkbookEditor::save_as()` 不是 commit/close，成功后仍可能保留 staged Patch state。
+- “保存”必须区分 `save()`、`close()` 和 non-atomic `save_as()`；`WorkbookEditor::save_as()` 不是 commit/close，成功后仍可能保留 staged Patch state。ZIP compression 选项必须说明 backend 可用性、stored/DEFLATE、输出大小/CPU 后果，以及 logical preservation 不等于 compressed bytes 原样复制。
 
 ## 验证清单
 

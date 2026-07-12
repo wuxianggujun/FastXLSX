@@ -11,6 +11,7 @@
 - 支持当前 public headers 中的数字、文本、布尔、公式、显式 blank cell 和稀疏行写入，以及 string strategy、style registry、Excel 1900 date/time serial helper、number-format preset、worksheet metadata、table、conditional formatting 和 PNG/JPEG insertion 窄切片。
 - Date/time helper 只生成 numeric cell 所需的 1900 date-system serial；调用方仍需显式注册并附加 number-format style，不支持 1904 date system，也不推断时区。
 - 不支持历史行随机修改；不得引入 worksheet DOM 或 dense matrix。
+- `StringStrategy::InlineString` 是默认低内存策略；`SharedString` 会保留 workbook 级唯一字符串表，仅适合调用方已知文本高度重复的 workload。当前不提供需要回看、重写或无界缓存的自动策略。
 
 ### Small new workbook
 
@@ -88,7 +89,7 @@
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。
-- tracked benchmark evidence 机制已建立；当前有 1 个 production Streaming 单机/单场景/单次测量 bundle，可引用其精确 dataset、环境和观测值，但不足以形成跨机器、跨策略或泛化 release 性能结论。
+- tracked benchmark evidence 机制已建立；当前有 2 个 production Streaming bundle，其中重复策略矩阵覆盖 7 个 1,000,000-cell 场景、每场景 1 次 warm-up + 3 次 measured run。它支持 manifest 限定的同机 inline/shared 比较，但仍不足以形成跨机器、跨数据规模或泛化 release 性能结论；Patch 尚无同等级 tracked 性能证据。
 
 ## Explicit Non-goals
 
@@ -97,7 +98,7 @@
 - Large-file low-memory random editing。
 - 完整 tables/drawings/charts/comments/VBA/pivot/external links/custom XML 语义编辑。
 - 因 preservation 测试而宣称上述对象可编辑。
-- 因 benchmark instrumentation 或单个本地结果而宣称泛化“高性能/低内存”。
+- 因 benchmark instrumentation、单机矩阵或局部架构优势而宣称泛化“高性能/低内存”。
 
 ## 事实验证
 

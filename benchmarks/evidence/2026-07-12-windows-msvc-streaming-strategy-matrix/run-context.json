@@ -1,0 +1,18 @@
+{
+  "run_context_schema_version": "1",
+  "measured_utc": "2026-07-12T12:07:56Z",
+  "git_revision": "111812f101d70da705860ccfee7afc7dd3020989",
+  "working_tree": "clean",
+  "benchmark_build_preset": "windows-nmake-release-benchmark",
+  "command": "py -3 tools/run_benchmark_matrix.py --bench-exe build/windows-nmake-release-benchmark/benchmarks/fastxlsx_bench_streaming_writer.exe --output-dir build/qa/benchmark-matrix-2026-07-12-repeat-v1 --rows 100000 --cols 10 --sheets 1 --mixed-string-ratio 0.2 --compression-level 6 --warmup-runs 1 --measured-runs 3 --verify-openpyxl",
+  "protocol": "Seven production minizip-ng DEFLATE level 6 cases; one warm-up followed by three measured runs per case. The actual run nearest the elapsed_ms median is representative, with the earliest run breaking ties. openpyxl checks only the representative workbook after benchmark process timing.",
+  "peak_memory_metric": "Windows PROCESS_MEMORY_COUNTERS.PeakWorkingSetSize for each benchmark process",
+  "temporary_worksheet_part_footprint_metric": "worksheet body file bytes; not process RSS or total package assembly memory",
+  "source_report": {
+    "tracked": false,
+    "sha256": "9fbe7b13eb1860976608f5f208a17bba6cacb56584ae35af7fa9adc276f014b9",
+    "sanitization": "The tracked matrix report removes local absolute paths, commands, stdout and stderr while retaining all measured performance metrics, statistics, workload distribution and representative verification."
+  },
+  "office_open": "not_run",
+  "scope": "Single Windows/MSVC machine and one dataset size. Supports bounded comparisons among the recorded strategies and workloads only; not a cross-machine or generalized performance claim."
+}

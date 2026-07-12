@@ -35,7 +35,7 @@ py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 py -3 tools/run_benchmark_matrix.py --self-test
 ```
 
-重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 1 个 production Streaming bundle；它只支持 manifest 内的精确单机单次 claim。`office_open="not_run"` 不得写成 Office 已验证。
+重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 2 个 production Streaming bundle：首个支持精确单机单次 claim，策略矩阵支持 manifest 限定的同机 workload 比较；二者都不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
 
 ## 文档与静态检查
 

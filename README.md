@@ -46,6 +46,8 @@ int main()
 
 Streaming 按 worksheet/row 顺序写入，不提供历史行随机修改。大规模有序导出优先使用该路径。
 
+字符串策略会直接影响吞吐、内存和文件大小：默认 `InlineString` 不维护 workbook 级唯一字符串表，适合字符串基数未知或接近全唯一的大型导出；只有调用方已知文本高度重复时，才应评估 `SharedString`。Streaming 不提供 `Auto` 策略，因为在单遍写入中准确判断未来字符串基数需要无界缓存、回看或重写，会破坏当前低内存边界。
+
 ### Small new workbook
 
 ```cpp
@@ -122,6 +124,15 @@ auto sheet = editor.worksheet("Data", options);
 - `set_document_properties()` 只重写 core/app docProps；不创建或编辑 custom properties。
 - Preservation 证据不等于 tables、charts、comments、VBA、pivot 或 custom XML 的语义编辑。
 - In-memory 是 small-file 稀疏编辑，不是 large-file low-memory random editing。
+
+## 性能现状
+
+- **创建**：production Streaming 已使用 file-backed worksheet body、chunked package entry 和 minizip-ng DEFLATE。当前 tracked Windows/MSVC 重复矩阵中，每个场景写入 1,000,000 cells，numeric 与重复/混合字符串场景的 median 为 1.488–2.562 秒；该范围只适用于证据中的机器、数据集和 level 6 compression，不是跨机器承诺。
+- **字符串选型**：同一矩阵的 20% 高重复 mixed workload 中，`SharedString` median 为 1.488 秒，`InlineString` 为 2.385 秒；但 1,000,000 个字符串全部唯一时，`SharedString` 的 process peak working set median 为 122.195 MB，而 `InlineString` 为 6.02344 MB，并且前者更慢、更大。因此默认保持 `InlineString`。
+- **已有文件编辑**：Patch 按 part-level rewrite 工作，未修改 part 默认 copy-original；这避免了语义级整包重建，但当前尚无与 Streaming 矩阵同等级的 tracked Patch 吞吐证据。
+- **随机编辑/处理**：`WorksheetEditor` 有意限定为 small-file sparse editing。大型 worksheet 的低内存顺序变换需要独立 file-backed/chunked rewrite API，不能通过放宽 In-memory guardrail 冒充高性能。
+
+精确环境、三次 measured run、min/median/max 和验证结果见 [性能目标与证据](docs/PERFORMANCE_TARGETS.md)。
 
 ## 构建与测试
 

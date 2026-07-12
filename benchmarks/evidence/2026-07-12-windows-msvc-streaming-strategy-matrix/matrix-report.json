@@ -1,0 +1,481 @@
+{
+  "benchmark_matrix_schema_version": "1",
+  "git_revision": "111812f101d70da705860ccfee7afc7dd3020989",
+  "source_report_sha256": "9fbe7b13eb1860976608f5f208a17bba6cacb56584ae35af7fa9adc276f014b9",
+  "rows": 100000,
+  "cols": 10,
+  "sheets": 1,
+  "cells_per_case": 1000000,
+  "mixed_string_ratio": 0.2,
+  "compression_levels": [
+    6
+  ],
+  "warmup_runs_per_case": 1,
+  "measured_runs_per_case": 3,
+  "representative_result_policy": "measured run nearest elapsed_ms median; earliest run breaks ties",
+  "comparison_scope": "Manual opt-in repeated benchmark matrix. Each case retains every measured schema-v4 JSON result and reports min/median/max statistics. Optional openpyxl validation checks the representative workbook only; Office validation is a separate local step and benchmark office_open fields remain not_run.",
+  "cases": [
+    {
+      "name": "numeric-inline-compression-level-6",
+      "scenario": "numeric",
+      "string_strategy": "inline",
+      "string_pattern": "mixed",
+      "compression_level": 6,
+      "string_cells": 0,
+      "unique_string_values": 0,
+      "duplicate_string_cells": 0,
+      "string_dedup_ratio": 0,
+      "representative_run": 3,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 1560,
+          "median": 1590,
+          "max": 1742
+        },
+        "peak_memory_mb": {
+          "min": 6.0,
+          "median": 6.01562,
+          "max": 6.03906
+        },
+        "output_bytes": {
+          "min": 3129660,
+          "median": 3129660,
+          "max": 3129660
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 34897865,
+          "median": 34897865,
+          "max": 34897865
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 1742,
+          "peak_memory_mb": 6.03906,
+          "output_bytes": 3129660,
+          "temporary_worksheet_part_footprint_bytes": 34897865
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 1560,
+          "peak_memory_mb": 6.01562,
+          "output_bytes": 3129660,
+          "temporary_worksheet_part_footprint_bytes": 34897865
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 1590,
+          "peak_memory_mb": 6,
+          "output_bytes": 3129660,
+          "temporary_worksheet_part_footprint_bytes": 34897865
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": 1001001,
+        "sheet1_last_cell": 101000010
+      },
+      "office_open": "not_run"
+    },
+    {
+      "name": "mixed-mixed-inline-compression-level-6",
+      "scenario": "mixed",
+      "string_strategy": "inline",
+      "string_pattern": "mixed",
+      "compression_level": 6,
+      "string_cells": 200000,
+      "unique_string_values": 1,
+      "duplicate_string_cells": 199999,
+      "string_dedup_ratio": 0.999995,
+      "representative_run": 3,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 1612,
+          "median": 2385,
+          "max": 2441
+        },
+        "peak_memory_mb": {
+          "min": 6.0,
+          "median": 6.00781,
+          "max": 6.03125
+        },
+        "output_bytes": {
+          "min": 3413774,
+          "median": 3413774,
+          "max": 3413774
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 39113861,
+          "median": 39113861,
+          "max": 39113861
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 1612,
+          "peak_memory_mb": 6.00781,
+          "output_bytes": 3413774,
+          "temporary_worksheet_part_footprint_bytes": 39113861
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 2441,
+          "peak_memory_mb": 6.03125,
+          "output_bytes": 3413774,
+          "temporary_worksheet_part_footprint_bytes": 39113861
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 2385,
+          "peak_memory_mb": 6,
+          "output_bytes": 3413774,
+          "temporary_worksheet_part_footprint_bytes": 39113861
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": 1001001,
+        "sheet1_last_cell": "repeat"
+      },
+      "office_open": "not_run"
+    },
+    {
+      "name": "mixed-mixed-shared-compression-level-6",
+      "scenario": "mixed",
+      "string_strategy": "shared",
+      "string_pattern": "mixed",
+      "compression_level": 6,
+      "string_cells": 200000,
+      "unique_string_values": 1,
+      "duplicate_string_cells": 199999,
+      "string_dedup_ratio": 0.999995,
+      "representative_run": 3,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 1231,
+          "median": 1488,
+          "max": 1490
+        },
+        "peak_memory_mb": {
+          "min": 6.01953,
+          "median": 6.03125,
+          "max": 6.04688
+        },
+        "output_bytes": {
+          "min": 3342045,
+          "median": 3342045,
+          "max": 3342045
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 34713861,
+          "median": 34713861,
+          "max": 34713861
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 1490,
+          "peak_memory_mb": 6.03125,
+          "output_bytes": 3342045,
+          "temporary_worksheet_part_footprint_bytes": 34713861
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 1231,
+          "peak_memory_mb": 6.04688,
+          "output_bytes": 3342045,
+          "temporary_worksheet_part_footprint_bytes": 34713861
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 1488,
+          "peak_memory_mb": 6.01953,
+          "output_bytes": 3342045,
+          "temporary_worksheet_part_footprint_bytes": 34713861
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": 1001001,
+        "sheet1_last_cell": "repeat"
+      },
+      "office_open": "not_run"
+    },
+    {
+      "name": "strings-repeated-inline-compression-level-6",
+      "scenario": "strings",
+      "string_strategy": "inline",
+      "string_pattern": "repeated",
+      "compression_level": 6,
+      "string_cells": 1000000,
+      "unique_string_values": 1,
+      "duplicate_string_cells": 999999,
+      "string_dedup_ratio": 0.999999,
+      "representative_run": 3,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 2455,
+          "median": 2562,
+          "max": 2672
+        },
+        "peak_memory_mb": {
+          "min": 5.99609,
+          "median": 6.02734,
+          "max": 6.02734
+        },
+        "output_bytes": {
+          "min": 2334613,
+          "median": 2334613,
+          "max": 2334613
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 55977845,
+          "median": 55977845,
+          "max": 55977845
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 2672,
+          "peak_memory_mb": 6.02734,
+          "output_bytes": 2334613,
+          "temporary_worksheet_part_footprint_bytes": 55977845
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 2455,
+          "peak_memory_mb": 5.99609,
+          "output_bytes": 2334613,
+          "temporary_worksheet_part_footprint_bytes": 55977845
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 2562,
+          "peak_memory_mb": 6.02734,
+          "output_bytes": 2334613,
+          "temporary_worksheet_part_footprint_bytes": 55977845
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": "repeat",
+        "sheet1_last_cell": "repeat"
+      },
+      "office_open": "not_run"
+    },
+    {
+      "name": "strings-repeated-shared-compression-level-6",
+      "scenario": "strings",
+      "string_strategy": "shared",
+      "string_pattern": "repeated",
+      "compression_level": 6,
+      "string_cells": 1000000,
+      "unique_string_values": 1,
+      "duplicate_string_cells": 999999,
+      "string_dedup_ratio": 0.999999,
+      "representative_run": 1,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 2165,
+          "median": 2356,
+          "max": 4283
+        },
+        "peak_memory_mb": {
+          "min": 5.43359,
+          "median": 5.99609,
+          "max": 6.01953
+        },
+        "output_bytes": {
+          "min": 2084338,
+          "median": 2084338,
+          "max": 2084338
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 33977845,
+          "median": 33977845,
+          "max": 33977845
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 2356,
+          "peak_memory_mb": 6.01953,
+          "output_bytes": 2084338,
+          "temporary_worksheet_part_footprint_bytes": 33977845
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 4283,
+          "peak_memory_mb": 5.43359,
+          "output_bytes": 2084338,
+          "temporary_worksheet_part_footprint_bytes": 33977845
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 2165,
+          "peak_memory_mb": 5.99609,
+          "output_bytes": 2084338,
+          "temporary_worksheet_part_footprint_bytes": 33977845
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": "repeat",
+        "sheet1_last_cell": "repeat"
+      },
+      "office_open": "not_run"
+    },
+    {
+      "name": "strings-unique-inline-compression-level-6",
+      "scenario": "strings",
+      "string_strategy": "inline",
+      "string_pattern": "unique",
+      "compression_level": 6,
+      "string_cells": 1000000,
+      "unique_string_values": 1000000,
+      "duplicate_string_cells": 0,
+      "string_dedup_ratio": 0,
+      "representative_run": 3,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 1807,
+          "median": 2328,
+          "max": 2387
+        },
+        "peak_memory_mb": {
+          "min": 6.01172,
+          "median": 6.02344,
+          "max": 6.04297
+        },
+        "output_bytes": {
+          "min": 3593977,
+          "median": 3593977,
+          "max": 3593977
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 61966795,
+          "median": 61966795,
+          "max": 61966795
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 1807,
+          "peak_memory_mb": 6.04297,
+          "output_bytes": 3593977,
+          "temporary_worksheet_part_footprint_bytes": 61966795
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 2387,
+          "peak_memory_mb": 6.01172,
+          "output_bytes": 3593977,
+          "temporary_worksheet_part_footprint_bytes": 61966795
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 2328,
+          "peak_memory_mb": 6.02344,
+          "output_bytes": 3593977,
+          "temporary_worksheet_part_footprint_bytes": 61966795
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": "s1-r1-c1",
+        "sheet1_last_cell": "s1-r100000-c10"
+      },
+      "office_open": "not_run"
+    },
+    {
+      "name": "strings-unique-shared-compression-level-6",
+      "scenario": "strings",
+      "string_strategy": "shared",
+      "string_pattern": "unique",
+      "compression_level": 6,
+      "string_cells": 1000000,
+      "unique_string_values": 1000000,
+      "duplicate_string_cells": 0,
+      "string_dedup_ratio": 0,
+      "representative_run": 3,
+      "statistics": {
+        "elapsed_ms": {
+          "min": 3636,
+          "median": 3798,
+          "max": 4582
+        },
+        "peak_memory_mb": {
+          "min": 122.188,
+          "median": 122.195,
+          "max": 122.195
+        },
+        "output_bytes": {
+          "min": 5810478,
+          "median": 5810478,
+          "max": 5810478
+        },
+        "temporary_worksheet_part_footprint_bytes": {
+          "min": 38866735,
+          "median": 38866735,
+          "max": 38866735
+        }
+      },
+      "measured_runs": [
+        {
+          "run": 1,
+          "elapsed_ms": 3636,
+          "peak_memory_mb": 122.195,
+          "output_bytes": 5810478,
+          "temporary_worksheet_part_footprint_bytes": 38866735
+        },
+        {
+          "run": 2,
+          "elapsed_ms": 4582,
+          "peak_memory_mb": 122.195,
+          "output_bytes": 5810478,
+          "temporary_worksheet_part_footprint_bytes": 38866735
+        },
+        {
+          "run": 3,
+          "elapsed_ms": 3798,
+          "peak_memory_mb": 122.188,
+          "output_bytes": 5810478,
+          "temporary_worksheet_part_footprint_bytes": 38866735
+        }
+      ],
+      "openpyxl": {
+        "status": "opened",
+        "sheet_count": 1,
+        "sheet1_max_row": 100000,
+        "sheet1_max_column": 10,
+        "sheet1_first_cell": "s1-r1-c1",
+        "sheet1_last_cell": "s1-r100000-c10"
+      },
+      "office_open": "not_run"
+    }
+  ]
+}

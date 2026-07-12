@@ -1,0 +1,54 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-12-windows-msvc-streaming-strategy-matrix",
+  "created_utc": "2026-07-12T12:20:00Z",
+  "git_revision": "111812f101d70da705860ccfee7afc7dd3020989",
+  "benchmark_kind": "streaming-writer",
+  "environment": {
+    "os": "Microsoft Windows 11 专业版 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "matrix-report.json",
+      "sha256": "2783f15fce869b93666b896f47afbf14184d62403b32138627f80f55bd41d22a",
+      "role": "matrix-report"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "73f9bfb8e09ce740d7ba853b5b9c4b11e7195c376d9a1703425fa669f9ea458d",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "仅在本 manifest 环境与 run-context 协议下，7 个 production Streaming 场景各对 1,000,000 cells 执行 1 次 warm-up 和 3 次 measured run，并记录 elapsed、process peak working set、output bytes 与 worksheet body file bytes 的 min/median/max；不得泛化到其他机器或数据规模。",
+      "artifact_paths": [
+        "matrix-report.json",
+        "run-context.json"
+      ]
+    },
+    {
+      "statement": "在 20% 字符串且 200,000 个字符串单元格只含 1 个唯一值的 mixed 场景中，sharedStrings 的 elapsed median 为 1488 ms，inline strings 为 2385 ms；本机该精确 workload 下前者低 37.61%，不代表任意字符串分布。",
+      "artifact_paths": [
+        "matrix-report.json"
+      ]
+    },
+    {
+      "statement": "在 1,000,000 个字符串全部唯一的场景中，sharedStrings 相比 inline strings 的 elapsed median 为 3798 ms 对 2328 ms、peak working set median 为 122.195 MB 对 6.02344 MB、output 为 5810478 bytes 对 3593977 bytes；因此该精确高基数 workload 不适合 SharedString。",
+      "artifact_paths": [
+        "matrix-report.json"
+      ]
+    },
+    {
+      "statement": "7 个代表 workbook 均由 openpyxl 打开并验证 sheet 维度与首末单元格；Microsoft Office 未运行，所有 benchmark office_open 字段保持 not_run。",
+      "artifact_paths": [
+        "matrix-report.json",
+        "run-context.json"
+      ]
+    }
+  ]
+}

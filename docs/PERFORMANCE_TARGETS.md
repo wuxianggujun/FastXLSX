@@ -34,7 +34,21 @@ py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 当前 tracked bundle：
 
 - [`2026-07-12-windows-msvc-streaming-mixed-inline`](../benchmarks/evidence/2026-07-12-windows-msvc-streaming-mixed-inline/manifest.json)：production Streaming、1,000,000 cells、20% mixed repeated strings、inline strings、minizip-ng DEFLATE level 6；仅允许引用 manifest 中的单机单次观测和 ZIP/XML/openpyxl 验证，Office 为 `not_run`。
-- 该 bundle 不是跨机器比较、重复性统计、inline/shared 策略比较或泛化“高性能/低内存”证据。
+- [`2026-07-12-windows-msvc-streaming-strategy-matrix`](../benchmarks/evidence/2026-07-12-windows-msvc-streaming-strategy-matrix/manifest.json)：同一 Windows/MSVC production 环境下的 7-case Streaming 策略矩阵；每个 case 为 1 次 warm-up + 3 次 measured run，保留 min/median/max、全部 measured 指标和代表 workbook 的 openpyxl 验证，Office 为 `not_run`。
+- 两个 bundle 都不是跨机器、跨数据规模或泛化“高性能/低内存”证据；第二个 bundle 只支持 manifest 中记录的同机同数据集策略比较。
+
+## Streaming 字符串策略
+
+- `InlineString` 是默认值。它不保存 workbook 级唯一字符串表，字符串基数未知、接近全唯一或调用方要求稳定低内存时应优先使用。
+- `SharedString` 只在调用方已知字符串高度重复、并接受内存随唯一值数量增长时评估。20% mixed repeated workload 的本机 median 为 1488 ms，相比 inline 的 2385 ms 低 37.61%。
+- 对 1,000,000 个全部唯一字符串，本机 shared/inline 的 elapsed median 为 3798/2328 ms，process peak working set median 为 122.195/6.02344 MB，output 为 5810478/3593977 bytes；该 workload 应使用 inline。
+- 不增加自动策略：单遍 Streaming writer 在看到未来输入前无法可靠判断最终字符串基数；自动切换需要缓存历史数据、重写已输出 cell encoding 或接受不可预测的内存增长。调用方应依据业务数据分布选择，并用矩阵工具验证自己的 workload。
+
+## 当前结论与缺口
+
+- 在上述单机、1,000,000-cell、DEFLATE level 6 范围内，Streaming 创建路径已具备稳定的 file-backed worksheet footprint；除 unique sharedStrings 外，各 case 的 process peak working set median 约为 6 MB。
+- Patch 的 copy-original / part-level rewrite 是性能设计，不是性能结果。下一份 evidence 应覆盖 no-op copy、targeted cell patch、small metadata rewrite 和 large worksheet replacement，并记录 source/output size、rewritten bytes、elapsed 与 process peak working set。
+- Large-file low-memory random editing 不是当前目标；后续 large worksheet 能力应采用 source-order file-backed/chunked transformation，并单独建立正确性和内存证据。
 
 ## 禁止措辞
 

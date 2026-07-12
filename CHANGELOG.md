@@ -10,6 +10,7 @@
 - 新增 Basic CMake install/export package、`FastXLSX::fastxlsx` consumer target 和 `find_package()` smoke。
 - 新增 tracked benchmark evidence schema、目录规范和标准库 validator；未提交真实结果时保持 0 bundle，不伪造 claim。
 - 新增首份 production Streaming tracked evidence bundle，记录精确 dataset、Windows/MSVC 环境、单次测量协议、artifact hashes 与 ZIP/XML/openpyxl 验证；Office 保持 `not_run`，不形成跨机器或泛化性能结论。
+- 新增 production Streaming 重复策略矩阵 evidence bundle，覆盖 7 个 numeric/mixed/strings 与 inline/shared 场景，每场景 1 次 warm-up + 3 次 measured run，并记录字符串基数、min/median/max、process peak working set 和 openpyxl 代表 workbook 验证。
 
 ### Changed
 
@@ -48,7 +49,7 @@
 ### Not Yet Claimed
 
 - Stable public API / ABI。
-- 泛化“高性能/低内存”结论；当前仅有一份单机、单场景、单次测量的 tracked Streaming evidence bundle。
+- 泛化“高性能/低内存”结论；当前两份 tracked Streaming evidence 仍只覆盖一台 Windows/MSVC 机器，Patch 尚无同等级 tracked 性能矩阵。
 - Native chart/VBA generation 或完整 tables/drawings/comments/pivot/custom XML semantic editing。
 - Atomic in-place save、公式求值、cached value 生成或完整 `calcChain.xml` rebuild。
 

@@ -33,12 +33,14 @@
 
 ## C5 Large Worksheet Rewrite
 
-- 单独设计 file-backed/chunked rewrite、行索引和 source-order transformation。
+- 先建立 source-order transform contract、支持/拒绝的 worksheet metadata 清单和 failure-before-state-change 语义，再公开 file-backed/chunked rewrite；不要先承诺任意随机编辑。
+- 用实际大型 worksheet fixture 验证 rewritten bytes、temporary footprint、process peak working set、retry 和 unknown-part preservation。
 - 不通过完整 worksheet DOM、dense cell map 或扩大 In-memory guardrail 实现。
 
 ## C6 Performance / Release Evidence
 
-- 以首份 production Streaming tracked bundle 为基线，补同环境重复测量和 inline/shared、numeric/mixed/strings 策略矩阵；形成统计与比较证据前只引用单次观测，不做泛化 release claim。
+- Streaming 重复策略矩阵已形成同机比较基线；继续补不同数据规模/机器证据前，不把 1,000,000-cell Windows/MSVC 结果泛化。
+- 下一优先级是 Patch evidence：no-op copy、targeted cell patch、small metadata rewrite、large worksheet replacement，并区分 copied/rewritten bytes 与 source/output package size。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。
 

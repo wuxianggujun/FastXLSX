@@ -2,6 +2,8 @@
 
 FastXLSX 是一个 C++20 XLSX 创建与编辑库，优先支持 MSVC 2026。项目共享 OpenXML/OPC 底座，但公开三条边界清晰的路径：
 
+当前版本为 **v0.1.0 Preview**。Public API/ABI 尚未承诺稳定，`0.x` 升级后应重新编译 consumer；首版支持边界以 [当前能力](docs/CURRENT_CAPABILITIES.md) 和 [Changelog](CHANGELOG.md) 为准。
+
 - **Streaming**：`WorkbookWriter` / `WorksheetWriter`，面向按行创建大型新 workbook。
 - **Patch**：`WorkbookEditor`，面向已有 workbook 的 part-level rewrite；未修改和未知 part 默认保留。
 - **In-memory**：`WorksheetEditor`，面向小型 worksheet 的受限稀疏随机编辑。
@@ -122,6 +124,7 @@ auto sheet = editor.worksheet("Data", options);
 ## 能力边界
 
 - `save_as()` 写到新路径，不是 atomic in-place save；压缩输出可能重新压缩逻辑未修改的 entries，不承诺 ZIP-local compressed bytes 原样复制。
+- 当前 reader/writer 不支持 Zip64 或 multi-disk ZIP；单 entry 超过 ZIP32 size、entry count 超过 ZIP32 上限或 source 使用 Zip64 时会拒绝，不承诺接近/超过 4 GiB 的 XLSX。
 - `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、`RelationshipGraph` 是 internal。
 - 公式支持文本、审计、窄重写和请求重算；不求值、不生成 cached value、不完整重建 `calcChain.xml`。
 - `replace_image()` 只替换已有 PNG/JPEG media bytes；不编辑 drawing/anchor/relationship。

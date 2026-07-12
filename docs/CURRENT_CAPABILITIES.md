@@ -98,6 +98,7 @@
 
 - 公式求值、cached value 生成、完整 `calcChain.xml` rebuild。
 - Atomic in-place save。
+- Zip64、multi-disk ZIP，以及接近/超过 ZIP32 package 边界的读写。
 - Large-file low-memory random editing。
 - 完整 tables/drawings/charts/comments/VBA/pivot/external links/custom XML 语义编辑。
 - 因 preservation 测试而宣称上述对象可编辑。

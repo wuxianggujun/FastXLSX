@@ -2,61 +2,43 @@
 
 ## Unreleased
 
+- 暂无。
+
+## [0.1.0] - 2026-07-13
+
+首个公开 Preview 版本。Public API/ABI 尚未承诺稳定；升级后应重新编译 consumer。
+
 ### Added
 
-- 新增 `WorkbookEditor::set_document_properties()`，为 existing workbook 提供事务式 core/app docProps rewrite、缺失 relationship/content-type 补齐、last-write-wins 与失败 retry，并保留 custom/unknown package entries。
-- 新增 `WorkbookEditorSaveOptions` 与 `WorkbookEditor::save_as(path, options)`，允许 existing-workbook output 显式选择 stored、active backend default 或 minizip-ng DEFLATE level；无 options overload 保留 stored 兼容行为，无效/不可用配置在 dirty-session staging 前失败。
-- 新增 `WorksheetMaterializationError`、`WorksheetMaterializationDiagnostic` 和稳定 loss category，使 strict In-memory rejection 可按 worksheet/cell/sharedStrings context 审计，同时保持 `FastXlsxError` catch compatibility。
-- 新增 `WorkbookEditor::has_unsaved_changes()` / `unsaved_change_count()` 保存水位，保留 `has_pending_changes()` 的 staged-state 兼容语义。
-- 新增 Basic CMake install/export package、`FastXLSX::fastxlsx` consumer target 和 `find_package()` smoke。
-- 新增 tracked benchmark evidence schema、目录规范和标准库 validator；未提交真实结果时保持 0 bundle，不伪造 claim。
-- 新增首份 production Streaming tracked evidence bundle，记录精确 dataset、Windows/MSVC 环境、单次测量协议、artifact hashes 与 ZIP/XML/openpyxl 验证；Office 保持 `not_run`，不形成跨机器或泛化性能结论。
-- 新增 production Streaming 重复策略矩阵 evidence bundle，覆盖 7 个 numeric/mixed/strings 与 inline/shared 场景，每场景 1 次 warm-up + 3 次 measured run，并记录字符串基数、min/median/max、process peak working set 和 openpyxl 代表 workbook 验证。
-- 新增 production `WorkbookEditor` Patch evidence bundle，覆盖 1,000,000-cell DEFLATE source 的 no-op、core/app metadata 与 1,000-cell targeted replace/upsert；分列 copied source/output compressed bytes 与 rewritten bytes，并记录 repeated timing、process peak working set 和 openpyxl 代表 workbook 验证。
+- 提供三条明确的 public 路径：`WorkbookWriter` Streaming 大型有序创建、`WorkbookEditor` existing-workbook Patch，以及 `WorksheetEditor` 小型稀疏 In-memory 编辑。
+- Streaming 支持数字、布尔、字符串、公式文本、日期时间、styles、document properties、data validations、hyperlinks、窄 tables、conditional formatting 和图片插入等当前公开切片。
+- Patch 支持 worksheet catalog、targeted cell replace/upsert、sheet rename、document properties、full-calculation request、sheetData replacement、已有 media bytes replacement，以及 unknown package parts 默认 preservation。
+- In-memory 支持稀疏单元格读写、行列结构变换、cell transfer、受限 styles 与显式 guardrails；默认以 typed diagnostic 拒绝已知有损 materialization，只有显式 `AllowLossyProjection` 才允许拍平。
+- 提供 `WorkbookEditorSaveOptions`、pending/unsaved 双状态水位、失败后 retry，以及 dirty In-memory session 的 stage → package write → state commit 保存契约。
+- 提供 Basic CMake install/export package、`FastXLSX::fastxlsx` consumer target、vcpkg manifest、stored-only 与 no-images profiles。
 
 ### Changed
 
-- DEFLATE worksheet 的 strict targeted `replace_cells()` 在无 worksheet relationships 且目标全部存在时改用 one-inflate + target-only direct-range staging；PackageEditor-owned 临时文件与 patch state 事务提交，失败自动清理并可 retry。Minizip writer 同时复用同路径 file-range 输入句柄，避免大型 sparse patch 保存时反复打开同一文件。
-- 新增优化后的 production Patch tracked evidence bundle；限定的 1,000,000-cell、1,000-target replace workload 中，total/mutation median 从 5325/4027 ms 降至 1529/489 ms，process peak working set median 保持约 7.8 MB。该结论不泛化到 missing-cell upsert、relationship-bearing worksheet、其他机器或任意 XLSX。
-- `run_benchmark_matrix.py` 默认对每个场景执行 1 次 warm-up 和 3 次 measured run，保留全部 schema-v4 原始结果，并输出 min/median/max 与 median 代表 run；openpyxl 只验证代表 workbook，避免验证耗时污染 benchmark 内部计时。
-- `fastxlsx_bench_workbook_editor` 新增 no-op copy、document-properties、独立 source/output compression level 与 source reuse 场景，并通过 benchmark-only diagnostics 输出 copy-original/rewrite entry 分类；`run_patch_benchmark_matrix.py` 重复矩阵隔离 fixture generation，分列 copied source/output compressed bytes，统计 rewritten logical/compressed bytes 并验证代表 workbook。
-- `fastxlsx_bench_package_editor_cell_replacement` 显式启用 internal test-hook 编译边界，使其可通过受控 accessor 读取 public facade 选择的 package plan；普通 library consumer 不获得该 internal surface。
-- In-memory materialization 默认拒绝已知有损投影；只有显式 `AllowLossyProjection` 才允许拍平。
-- Production/default profile 启用 minizip-ng stored+DEFLATE backend；新增 stored-only 与 no-images profiles。
-- vcpkg features 拆分为 `runtime-minizip`、`images`、`planned-xml`；移除无效 DOM option。
-- 图片能力可关闭；关闭态保留 public symbols、传播 `FASTXLSX_HAS_IMAGES=0` 并提供 runtime smoke。
-- 将 legacy public-state 长运行 shard 的 CTest timeout 从普通 60 秒单独校准为 120 秒；不放宽其他测试上限。
-- `WorkbookEditor::save_as()` 的 dirty In-memory handoff 改为 stage → package write → state commit；写出失败不再提前清除 session dirty diagnostics，并可用最新值安全重试。
-- `PackageEditor::request_full_calculation()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再泄漏部分 calcChain/content-type/relationship mutation，并支持保留既有计划后重试。
-- `WorkbookEditor::rename_sheet()` 与 internal PackageEditor sheet catalog rename 改为跨 package/public state 的事务式 staging；提交前失败不再泄漏部分 catalog、formula session 或 pending diagnostics mutation，并支持保留既有 patch 后重试。
-- Internal `PackageEditor::set_document_properties()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging，并作为 public `WorkbookEditor::set_document_properties()` 的 package mutation foundation；internal plan 与 package 类型仍不公开。
-- Internal `PackageEditor::remove_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再发布部分 removal 状态，既有 replacement 可保存并可安全重试。
-- Internal materialized `PackageEditor::replace_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 replacement，后续 retry 可恢复 source part。
-- Internal non-worksheet `PackageEditor::replace_part_chunks()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 chunk replacement，后续 retry 可恢复 source part。
-- Internal worksheet chunk replacement 改为跨 worksheet/workbook rewrite、calc metadata、relationship/content-type side effects、edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；generic/direct/by-name routing notes 与 audits 在同一次 commit 发布，提交前失败保留既有 replacement、输出语义和 retry 能力。
-- Internal complete-worksheet chunk-source wrapper 将 PackageEditor 临时文件所有权与 worksheet/package state 一起在副本中 staging，再以 `noexcept` swap 发布；提交前失败由 RAII 删除未发布 staged file，direct/by-name/prevalidated wrapper notes 不会单独泄漏。
-- Internal bounded sheetData replacement 将最终 `LocalDomRewrite` mode、file-backed staged output ownership、preservation/dependency audits 与 direct/by-name notes 纳入同一 worksheet transaction；提交前失败不再泄漏 StreamRewrite 中间态、notes 或指向已删除临时文件的 chunks，并可在同一 editor 上 retry。
-- Internal worksheet cell transformer fallback 将 file-backed output ownership 与 transform diagnostics 随 worksheet state 一次发布；indexed direct-range fast path 将 structured telemetry 与 notes 写入 staged replacement/edit-plan 副本。两条路径的提交前失败不再泄漏 temp chunks、telemetry 或 notes，并支持保留既有 patch 后 retry。
-- 继续拆分 legacy public-state 超大 translation unit：source StyleId rejection/public-view 与 source-style clear/erase 场景迁入 style-focused target，materialized dirty state、save/reopen、multi-sheet aggregate 与 move lifecycle 场景迁入 materialized-session target；移除两个对应 legacy shard，专用 120 秒 shard 从 7 个降为 5 个，standalone tests 保持普通 60 秒上限。
-- 将 `public-state-reacquire-guards` 的 13 个测试迁入 materialized-session 与 coordinate-guards 独立目标，删除重复的 legacy shard 调度入口；专用 120 秒 shard 从 5 个降为 4 个，迁入目标继续使用普通 60 秒上限。
-- 将 `public-state-reacquire` 的 32 个测试按 renamed、saved 与 retry/failure 责任拆为三个独立 60 秒目标，共享 test-only support helper；删除 legacy shard 调度入口，专用 120 秒 shard 从 4 个降为 3 个。
-- 将 `public-state-edits` 的 17 个 clear/erase 与 memory-budget 回归迁入独立 60 秒目标，并将 reacquire helper 通用化为 public-state test support；删除 legacy shard 调度入口，专用 120 秒 shard 从 3 个降为 2 个。
-- 将 `public-state-formula-audits` 的 52 个 renamed/full-calculation、saved-reacquire 与 shift-after-rename 回归迁入独立 60 秒目标，并提取 formula-audits test-only support；删除 legacy shard 调度入口，专用 120 秒 shard 从 2 个降为 1 个。
-- 将最后的 `public-state-shifts` 57 个结构编辑与 formula-reference 回归按 insertion、formula audit、deletion 职责拆为三个独立 60 秒目标，删除 shard 参数解析、旧聚合 target 与 `/bigobj /Od` 特例；public-state 专用 120 秒 legacy shard 清零。
-- 将超出普通 60 秒门禁的 `public` 与 `public-guards` umbrella CTest 入口按 lifecycle/metadata、reacquire/retry、core guards 和 two-handle retry 拆为四个调度 shard；测试实现与断言不变，未放宽 timeout。
+- Production/default profile 使用 minizip-ng stored + DEFLATE backend；images 可独立关闭并向 consumer 传播 `FASTXLSX_HAS_IMAGES=0`。
+- Calc metadata、sheet rename、document properties、part removal/replacement、worksheet rewrite 与 dirty In-memory save 使用提交前 staging；失败不发布部分状态并保留 retry 能力。
+- DEFLATE strict existing-cell Patch 在满足窄前提时使用 one-inflate、target-only scan、owned temporary file 与 file-range staging；minizip writer 复用同路径输入句柄，避免 sparse ranges 反复打开文件。
+- 重构 Markdown 治理，以 `docs/CURRENT_CAPABILITIES.md` 为当前能力唯一事实源，以 `docs/TASK_BREAKDOWN.md` 为唯一 active queue。
 
-### Documentation
+### Performance Evidence
 
-- 重构 Markdown 治理，以 `docs/CURRENT_CAPABILITIES.md` 作为唯一当前能力事实源，以 `docs/TASK_BREAKDOWN.md` 作为唯一 active queue。
-- 删除失效路线图、产品化计划和测试流水；历史内容由 Git history 保存。
-- 统一 README、架构、编辑模型、API 门禁、测试、性能、依赖、开发环境、`AGENTS.md` 和项目 skills 的 public/internal/planned/non-goal 边界。
+- Tracked evidence 当前包含 2 个 production Streaming bundle 与 2 个 Patch bundle；均通过标准库 validator，并只支持各自 manifest 限定的单机 workload 结论。
+- Windows/MSVC、1,000,000-cell、DEFLATE level 6 Streaming 重复矩阵中，numeric 与重复/混合字符串场景 median 为 1.488–2.562 秒；除 unique sharedStrings 外，process peak working set median 约为 6 MB。
+- 相同机器与数据集上的 1,000-cell targeted replace total/mutation median 为 1.529/0.489 秒，process peak working set median 为 7.80859 MB；该结论不覆盖 missing-cell upsert、relationship-bearing worksheet、其他机器或任意 XLSX。
 
-### Not Yet Claimed
+### Known Limitations
 
-- Stable public API / ABI。
-- 泛化“高性能/低内存”结论；当前两份 Streaming 与两份 Patch tracked evidence 仍只覆盖一台 Windows/MSVC 机器和各自限定 workload。
-- Native chart/VBA generation 或完整 tables/drawings/comments/pivot/custom XML semantic editing。
-- Atomic in-place save、公式求值、cached value 生成或完整 `calcChain.xml` rebuild。
+- Public API/ABI 尚不稳定；`0.x` 版本可能调整接口。
+- 不支持 Zip64、多磁盘 ZIP、atomic in-place save 或接近/超过 ZIP32 边界的 package release claim。
+- 不求值公式、不生成 cached values，也不完整重建 `calcChain.xml`。
+- Tables、drawings、comments、VBA、pivot、external links 与 custom XML 等 existing-workbook 对象默认 preserve/audit/fail，不等于完整语义编辑。
+- `WorksheetEditor` 是 small-file sparse random editing，不是 large-file random editing；大 worksheet 使用 Streaming 创建或有界 Patch 路径。
+- Copy-original 保证 logical payload/CRC preservation，不等于 raw compressed-byte passthrough。
+- 性能数据只覆盖 tracked manifests 中的一台 Windows/MSVC 机器、指定数据集和 compression 配置，不形成跨机器泛化承诺。
 
 ## Versioning Workflow
 
@@ -64,7 +46,3 @@
 - Release tag 使用 `vMAJOR.MINOR.PATCH`。
 - 发布前记录用户可见变化、兼容性、验证证据和已知非目标。
 - 在 public header 注释、install/export、CI 和 QA 证据成熟前，不宣称 API 稳定。
-
-## [0.1.0] - Not Released
-
-- CMake 和 vcpkg manifest 使用的初始项目版本。

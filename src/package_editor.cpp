@@ -73,6 +73,7 @@ constexpr std::string_view worksheet_cell_replacement_output_input_context =
 constexpr std::string_view worksheet_sheet_data_replacement_output_input_context =
     "current worksheet input for worksheet sheetData replacement output";
 constexpr std::uint16_t stored_compression_method = 0;
+constexpr std::uint16_t deflate_compression_method = 8;
 constexpr std::size_t package_entry_file_chunk_size = 1024U * 1024U;
 constexpr std::size_t package_entry_reader_chunk_size = 1024U * 1024U;
 
@@ -7178,7 +7179,9 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
     std::vector<PackageEntryChunk> source_chunks,
     const WorksheetCellReplacementPlan& replacement_plan,
     const ReferencePolicy& policy,
-    std::string input_label)
+    std::string input_label,
+    std::optional<std::filesystem::path> owned_temporary_file,
+    std::uint64_t source_preparation_ms)
 {
     if (policy.unsupported_linked_part_action == ReferencePolicyAction::Fail) {
         return false;
@@ -7194,10 +7197,6 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
     }
 
     auto phase_started = std::chrono::steady_clock::now();
-    const std::uint64_t source_range_chunk_ms =
-        steady_clock_elapsed_milliseconds(phase_started);
-
-    phase_started = std::chrono::steady_clock::now();
     std::vector<std::string_view> target_references;
     target_references.reserve(replacement_plan.replacement_payloads_by_reference.size());
     for (const auto& replacement : replacement_plan.replacement_payloads_by_reference) {
@@ -7265,17 +7264,24 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
         commit_notes.emplace_back(
             "worksheet cell replacement indexed source-entry fast path preserves "
             "untouched worksheet XML as source package file ranges and inserts only "
-            "replacement cell payload chunks; planned staged chunk inputs, compressed "
-            "source entries, materialized planned worksheet inputs, missing-target "
-            "upsert cases, reference-policy Fail mode, and worksheets with "
-            "relationships continue to use the transformer fallback");
+            "replacement cell payload chunks; planned staged chunk inputs, "
+            "materialized planned worksheet inputs, missing-target upsert cases, "
+            "reference-policy Fail mode, and worksheets with relationships continue "
+            "to use the transformer fallback");
+    } else if (input_label == "decompressed-source-entry") {
+        commit_notes.emplace_back(
+            "worksheet cell replacement indexed decompressed-source-entry fast path "
+            "inflates the compressed worksheet once into a PackageEditor-owned "
+            "temporary file, preserves untouched worksheet XML as ranges of that "
+            "file, and inserts only replacement cell payload chunks; memory remains "
+            "bounded by chunk buffers rather than worksheet size");
     } else {
         commit_notes.emplace_back(
             "worksheet cell replacement indexed " + input_label
             + " fast path preserves planned worksheet staged chunks without "
             "materializing the rewritten worksheet as staged chunk ranges and "
-            "inserts only replacement cell payload chunks; compressed source "
-            "entries, materialized planned worksheet inputs, missing-target upsert "
+            "inserts only replacement cell payload chunks; materialized planned "
+            "worksheet inputs, missing-target upsert "
             "cases, reference-policy Fail mode, and worksheets with relationships "
             "continue to use the transformer fallback");
     }
@@ -7285,7 +7291,7 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
     indexed_stats.matched_replacement_count =
         static_cast<std::uint64_t>(matched_replacements);
     indexed_stats.staged_output_bytes = output_bytes;
-    indexed_stats.source_range_chunk_ms = source_range_chunk_ms;
+    indexed_stats.source_range_chunk_ms = source_preparation_ms;
     indexed_stats.target_plan_ms = target_plan_ms;
     indexed_stats.payload_audit_ms = payload_audit_ms;
     indexed_stats.relationship_audit_ms = relationship_audit_ms;
@@ -7296,7 +7302,7 @@ bool PackageEditor::try_replace_worksheet_cells_with_indexed_chunks(
         std::move(relationship_reference_audit.notes),
         std::move(relationship_reference_audit.audits),
         "target worksheet part indexed direct-range stream rewrite from worksheet cell replacement",
-        false, false, std::move(commit_notes), std::nullopt,
+        false, false, std::move(commit_notes), std::move(owned_temporary_file),
         PartWriteMode::StreamRewrite, indexed_stats);
     return true;
 }
@@ -7351,6 +7357,36 @@ void PackageEditor::replace_worksheet_cells_impl(PartName worksheet_part,
                     worksheet_part, std::move(source_chunks), replacement_plan, policy,
                     "source-entry")) {
                 return;
+            }
+        } else if (!replace_or_insert && source_entry != nullptr
+            && source_entry->compression_method == deflate_compression_method
+            && policy.unsupported_linked_part_action != ReferencePolicyAction::Fail) {
+            const RelationshipSet* worksheet_relationships =
+                reader_.relationships_for(target_worksheet_part);
+            if (worksheet_relationships == nullptr || worksheet_relationships->empty()) {
+                const auto source_preparation_started =
+                    std::chrono::steady_clock::now();
+                ScopedPackageEditorTempFile decompressed_source_file;
+                reader_.extract_entry_to_file(
+                    target_worksheet_part.zip_path(), decompressed_source_file.path());
+                const std::uint64_t source_preparation_ms =
+                    steady_clock_elapsed_milliseconds(source_preparation_started);
+
+                PackageEntryChunk source_chunk =
+                    PackageEntryChunk::file(decompressed_source_file.path());
+                source_chunk.has_expected_size = true;
+                source_chunk.expected_size = source_entry->uncompressed_size;
+                source_chunk.has_expected_crc32 = true;
+                source_chunk.expected_crc32 = source_entry->crc32;
+                std::vector<PackageEntryChunk> source_chunks;
+                source_chunks.push_back(std::move(source_chunk));
+                if (try_replace_worksheet_cells_with_indexed_chunks(
+                        worksheet_part, std::move(source_chunks), replacement_plan, policy,
+                        "decompressed-source-entry", decompressed_source_file.path(),
+                        source_preparation_ms)) {
+                    decompressed_source_file.release();
+                    return;
+                }
             }
         }
     }

@@ -214,6 +214,31 @@ void rewrite_package_entry_as_stored(
     fastxlsx::detail::write_package(path, rewritten_entries, options);
 }
 
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+void rewrite_package_entry_as_deflated(
+    const std::filesystem::path& path, std::string_view entry_name, std::string replacement)
+{
+    std::map<std::string, std::string> source_entries =
+        fastxlsx::test::read_zip_entries(path);
+    auto entry = source_entries.find(std::string(entry_name));
+    if (entry == source_entries.end()) {
+        throw TestFailure("test package entry to rewrite was not found");
+    }
+    entry->second = std::move(replacement);
+
+    std::vector<fastxlsx::detail::PackageEntry> rewritten_entries;
+    rewritten_entries.reserve(source_entries.size());
+    for (auto& [name, body] : source_entries) {
+        rewritten_entries.emplace_back(name, std::move(body));
+    }
+
+    fastxlsx::detail::PackageWriterOptions options;
+    options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+    options.compression_level = 6;
+    fastxlsx::detail::write_package(path, rewritten_entries, options);
+}
+#endif
+
 template <typename Notes>
 bool has_note_containing(const Notes& notes, std::initializer_list<std::string_view> needles)
 {

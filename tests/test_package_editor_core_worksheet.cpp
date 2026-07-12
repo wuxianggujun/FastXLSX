@@ -1339,6 +1339,93 @@ void test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_ret
     check_entry_bytes(retry_reader, opaque_part.zip_path(), prior_opaque);
 }
 
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+void test_package_editor_deflated_indexed_cell_commit_failure_cleans_temp_and_retries()
+{
+    const SourcePackage source = write_source_package(
+        "fastxlsx-package-editor-deflated-indexed-cell-source.xlsx");
+    const std::filesystem::path output = output_path(
+        "fastxlsx-package-editor-deflated-indexed-cell-output.xlsx");
+    const fastxlsx::detail::PartName worksheet_part("/xl/worksheets/sheet1.xml");
+    const std::string source_worksheet =
+        R"(<worksheet><dimension ref="A1:B2"/><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><v>2</v></c></row><row r="2"><c r="A2"><v>3</v></c><c r="B2"><v>4</v></c></row></sheetData></worksheet>)";
+    const std::string replacement_cell = R"(<c r="B2"><v>99</v></c>)";
+    rewrite_package_entry_as_deflated(
+        source.path, worksheet_part.zip_path(), source_worksheet);
+
+    const fastxlsx::detail::PackageReader source_reader =
+        fastxlsx::detail::PackageReader::open(source.path);
+    const fastxlsx::detail::PackageReaderEntry* source_entry =
+        source_reader.find_entry(worksheet_part.zip_path());
+    check(source_entry != nullptr && source_entry->compression_method == 8,
+        "deflated indexed-cell test requires a DEFLATE worksheet source entry");
+
+    const std::vector<std::filesystem::path> temp_files_before =
+        package_editor_temp_files();
+    {
+        fastxlsx::detail::PackageEditor editor =
+            fastxlsx::detail::PackageEditor::open(source.path);
+        const std::array replacements {
+            worksheet_cell_replacement("B2", replacement_cell),
+        };
+
+        bool failed = false;
+        {
+            ScopedPackageEditorWorksheetPartReplacementStagedHook hook(
+                fail_package_editor_worksheet_part_replacement_after_staging);
+            try {
+                editor.replace_worksheet_cells(worksheet_part, replacements);
+            } catch (const std::exception& error) {
+                failed = true;
+                check_contains(error.what(),
+                    "injected worksheet part replacement commit failure",
+                    "deflated indexed-cell failure should preserve injected context");
+            }
+        }
+
+        check(failed,
+            "deflated indexed-cell replacement should surface staged failure");
+        check(!has_note_containing(editor.edit_plan().notes(),
+                  {"indexed decompressed-source-entry direct-range"}),
+            "deflated indexed-cell failure should not publish fast-path state");
+        check_no_new_package_editor_temp_files(temp_files_before,
+            "deflated indexed-cell staged failure should clean extracted source temp files");
+
+        editor.replace_worksheet_cells(worksheet_part, replacements);
+        check(has_note_containing(editor.edit_plan().notes(),
+                  {"indexed decompressed-source-entry direct-range",
+                      "matched 1 replacement targets"}),
+            "deflated indexed-cell retry should publish bounded fast-path state");
+        const fastxlsx::detail::PackageEditorOutputPlan retry_plan =
+            editor.planned_output();
+        const auto* worksheet_plan =
+            find_output_entry_plan(retry_plan.entries, worksheet_part.zip_path());
+        check(worksheet_plan != nullptr
+                && worksheet_plan->indexed_source_entry_direct_range,
+            "deflated indexed-cell retry should publish direct-range telemetry");
+        check(worksheet_plan->staged_replacement_file_range_chunk_count > 0,
+            "deflated indexed-cell retry should stage temporary-file ranges");
+
+        fastxlsx::detail::PackageWriterOptions save_options;
+        save_options.backend = fastxlsx::detail::PackageWriterBackend::MinizipNg;
+        save_options.compression_level = 6;
+        editor.save_as(output, save_options);
+
+        const fastxlsx::detail::PackageReader output_reader =
+            fastxlsx::detail::PackageReader::open(output);
+        const std::string output_worksheet =
+            output_reader.read_entry(worksheet_part.zip_path());
+        check_contains(output_worksheet, replacement_cell,
+            "deflated indexed-cell retry should save the replacement");
+        check_not_contains(output_worksheet, R"(<c r="B2"><v>4</v></c>)",
+            "deflated indexed-cell retry should remove the old target payload");
+    }
+
+    check_no_new_package_editor_temp_files(temp_files_before,
+        "deflated indexed-cell editor destruction should clean owned temp files");
+}
+#endif
+
 void test_package_editor_replaces_worksheet_by_name_from_chunk_source()
 {
     const SourcePackage source =
@@ -1434,6 +1521,9 @@ int main(int argc, char* argv[])
             test_package_editor_sheet_data_commit_failure_preserves_state_and_retries();
             test_package_editor_cell_transform_commit_failure_cleans_temp_and_retries();
             test_package_editor_indexed_cell_commit_failure_preserves_telemetry_and_retries();
+#ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
+            test_package_editor_deflated_indexed_cell_commit_failure_cleans_temp_and_retries();
+#endif
             test_package_editor_replaces_worksheet_by_name_from_chunk_source();
         }
     } catch (const std::exception& error) {

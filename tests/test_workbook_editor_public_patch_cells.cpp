@@ -454,7 +454,7 @@ void test_replace_cells_keeps_transformer_for_worksheet_relationships()
 }
 
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
-void test_replace_cells_on_compressed_source_preserves_correctness_without_direct_range()
+void test_replace_cells_on_compressed_source_uses_bounded_direct_range_staging()
 {
     const std::filesystem::path source =
         write_patch_cells_default_backend_source(
@@ -464,21 +464,33 @@ void test_replace_cells_on_compressed_source_preserves_correctness_without_direc
 
     fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
     editor.replace_cells("Data", {
-        {{1, 1}, fastxlsx::CellValue::text("compressed fallback patch")},
+        {{1, 1}, fastxlsx::CellValue::text("compressed direct-range patch")},
         {{3, 3}, fastxlsx::CellValue::formula("A1+B1")},
     });
 
     const fastxlsx::detail::PackageEditorOutputPlan output_plan =
         fastxlsx::detail::WorkbookEditorPackagePlanAccessor::planned_output(editor);
-    check(!has_note_containing(output_plan.notes, {"indexed source-entry direct-range"}),
-        "compressed-source replace_cells should not claim direct-range fast-path telemetry");
+    check(has_note_containing(output_plan.notes,
+              {"indexed decompressed-source-entry direct-range", "matched 2 replacement targets"}),
+        "compressed-source replace_cells should expose decompressed direct-range telemetry");
+    check(has_note_containing(output_plan.notes,
+              {"inflates the compressed worksheet once", "memory remains bounded"}),
+        "compressed-source replace_cells should document its bounded staging strategy");
     const auto* data_sheet_plan =
         find_output_entry_plan(output_plan, "xl/worksheets/sheet1.xml");
     check(data_sheet_plan != nullptr,
         "compressed-source replace_cells output plan should include the edited worksheet");
     if (data_sheet_plan != nullptr) {
-        check(!data_sheet_plan->indexed_source_entry_direct_range,
-            "compressed-source replace_cells should leave structured direct-range telemetry off");
+        check(data_sheet_plan->indexed_source_entry_direct_range,
+            "compressed-source replace_cells should publish direct-range telemetry");
+        check(data_sheet_plan->staged_replacement_file_range_chunk_count > 0,
+            "compressed-source replace_cells should preserve untouched XML as temporary-file ranges");
+        check(data_sheet_plan->staged_replacement_memory_chunk_count > 0,
+            "compressed-source replace_cells should stage replacement payloads in bounded memory chunks");
+        check(data_sheet_plan->indexed_source_entry_scanned_source_cell_count == 9,
+            "compressed-source replace_cells should report its scanned source cells");
+        check(data_sheet_plan->indexed_source_entry_matched_replacement_count == 2,
+            "compressed-source replace_cells should report every matched target");
     }
 
     editor.save_as(output);
@@ -487,7 +499,7 @@ void test_replace_cells_on_compressed_source_preserves_correctness_without_direc
     const auto output_entries = fastxlsx::test::read_zip_entries(output);
     const std::string& data_sheet = output_entries.at("xl/worksheets/sheet1.xml");
     check_contains(data_sheet,
-        "<c r=\"A1\" t=\"inlineStr\"><is><t>compressed fallback patch</t></is></c>",
+        "<c r=\"A1\" t=\"inlineStr\"><is><t>compressed direct-range patch</t></is></c>",
         "compressed-source replace_cells should still patch text cells correctly");
     check_contains(data_sheet, "<c r=\"C3\"><f>A1+B1</f></c>",
         "compressed-source replace_cells should still patch formula cells correctly");
@@ -1044,7 +1056,7 @@ int main()
         test_replace_cells_insert_policy_uses_direct_range_when_all_targets_exist();
         test_replace_cells_keeps_transformer_for_worksheet_relationships();
 #ifdef FASTXLSX_TEST_HAS_MINIZIP_NG
-        test_replace_cells_on_compressed_source_preserves_correctness_without_direct_range();
+        test_replace_cells_on_compressed_source_uses_bounded_direct_range_staging();
 #endif
         test_replace_cells_rejects_missing_target_without_public_state_pollution();
         test_replace_cells_rejects_unknown_missing_cell_policy_without_public_state_pollution();

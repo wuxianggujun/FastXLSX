@@ -542,7 +542,9 @@ private:
         std::vector<PackageEntryChunk> source_chunks,
         const WorksheetCellReplacementPlan& replacement_plan,
         const ReferencePolicy& policy,
-        std::string input_label);
+        std::string input_label,
+        std::optional<std::filesystem::path> owned_temporary_file = std::nullopt,
+        std::uint64_t source_preparation_ms = 0);
     void replace_worksheet_part_from_chunk_source_with_commit_notes(
         PartName worksheet_part,
         const WorksheetInputChunkCallback& read_next_chunk,

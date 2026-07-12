@@ -28,6 +28,7 @@ namespace fastxlsx::detail {
 namespace {
 
 constexpr std::size_t io_buffer_size = 1024 * 1024;
+constexpr std::uint64_t max_forward_gap_discard_bytes = 64 * 1024;
 constexpr std::uint64_t zip32_max_u16 = std::numeric_limits<std::uint16_t>::max();
 constexpr std::uint64_t zip32_max_u32 = std::numeric_limits<std::uint32_t>::max();
 
@@ -209,23 +210,6 @@ bool file_chunk_has_read_limit(const PackageEntryChunk& chunk)
     return chunk.has_file_range || chunk.has_expected_size;
 }
 
-void seek_file_chunk_start(std::ifstream& stream, const PackageEntryChunk& chunk)
-{
-    if (!chunk.has_file_range) {
-        return;
-    }
-    if (chunk.file_offset
-        > static_cast<std::uint64_t>(std::numeric_limits<std::streamoff>::max())) {
-        throw FastXlsxError(chunk_file_failure_message(
-            "file-backed ZIP entry chunk range offset is too large", chunk));
-    }
-    stream.seekg(static_cast<std::streamoff>(chunk.file_offset), std::ios::beg);
-    if (!stream) {
-        throw FastXlsxError(chunk_file_failure_message(
-            "failed to seek file-backed ZIP entry chunk range", chunk));
-    }
-}
-
 std::string zip_entry_chunk_context(
     std::string_view entry_name, const PackageEntryChunk& chunk, std::size_t chunk_index)
 {
@@ -389,6 +373,101 @@ struct MinizipWriterDeleter {
     }
 };
 
+class MinizipFileChunkReadCache {
+public:
+    std::ifstream& open_for_payload(
+        const PackageEntryChunk& chunk, std::vector<char>& scratch_buffer)
+    {
+        ensure_current_file(chunk);
+        const std::uint64_t offset = chunk.has_file_range ? chunk.file_offset : 0;
+        if (offset > static_cast<std::uint64_t>(
+                std::numeric_limits<std::streamoff>::max())) {
+            throw FastXlsxError(chunk_file_failure_message(
+                "file-backed ZIP entry chunk range offset is too large", chunk));
+        }
+
+        stream_.clear();
+        if (current_stream_position_valid_) {
+            if (offset == current_stream_offset_) {
+                return stream_;
+            }
+            if (offset > current_stream_offset_
+                && offset - current_stream_offset_ <= max_forward_gap_discard_bytes) {
+                discard_forward(
+                    chunk, offset - current_stream_offset_, scratch_buffer);
+                return stream_;
+            }
+        }
+
+        stream_.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+        if (!stream_) {
+            throw FastXlsxError(chunk_file_failure_message(
+                "failed to seek file-backed ZIP entry chunk range", chunk));
+        }
+        current_stream_offset_ = offset;
+        current_stream_position_valid_ = true;
+        return stream_;
+    }
+
+    void note_payload_bytes_read(std::uint64_t size) noexcept
+    {
+        if (current_stream_position_valid_) {
+            current_stream_offset_ += size;
+        }
+    }
+
+private:
+    void discard_forward(const PackageEntryChunk& chunk,
+        std::uint64_t size, std::vector<char>& scratch_buffer)
+    {
+        std::uint64_t discarded = 0;
+        while (discarded < size) {
+            const std::size_t requested = static_cast<std::size_t>(
+                std::min<std::uint64_t>(size - discarded,
+                    static_cast<std::uint64_t>(scratch_buffer.size())));
+            stream_.read(scratch_buffer.data(), static_cast<std::streamsize>(requested));
+            const std::streamsize read_size = stream_.gcount();
+            if (stream_.bad()) {
+                throw FastXlsxError(chunk_file_failure_message(
+                    "failed to read skipped file-backed ZIP entry chunk bytes", chunk));
+            }
+            if (read_size <= 0) {
+                throw FastXlsxError(expected_actual_size_message(
+                    "file-backed ZIP entry chunk changed before requested range",
+                    size, discarded));
+            }
+            const auto read_bytes = static_cast<std::uint64_t>(read_size);
+            discarded += read_bytes;
+            current_stream_offset_ += read_bytes;
+        }
+    }
+
+    void ensure_current_file(const PackageEntryChunk& chunk)
+    {
+        if (has_current_path_ && current_path_ == chunk.path && stream_.is_open()) {
+            return;
+        }
+
+        stream_.close();
+        stream_.clear();
+        current_path_ = chunk.path;
+        has_current_path_ = true;
+        stream_.open(chunk.path, std::ios::binary);
+        if (!stream_) {
+            throw FastXlsxError(chunk_file_failure_message(
+                "failed to open file-backed ZIP entry chunk", chunk));
+        }
+        current_stream_offset_ = 0;
+        current_stream_position_valid_ = true;
+    }
+
+    bool has_current_path_ = false;
+    std::filesystem::path current_path_;
+    std::uint64_t current_stream_offset_ = 0;
+    bool current_stream_position_valid_ = false;
+    std::ifstream stream_;
+};
+
 void write_minizip_memory_chunk(void* writer, std::string_view data)
 {
     std::size_t offset = 0;
@@ -405,15 +484,10 @@ void write_minizip_memory_chunk(void* writer, std::string_view data)
     }
 }
 
-void write_minizip_file_chunk(void* writer, const PackageEntryChunk& chunk,
-    std::vector<char>& buffer)
+void write_minizip_file_chunk(void* writer, MinizipFileChunkReadCache& file_cache,
+    const PackageEntryChunk& chunk, std::vector<char>& buffer)
 {
-    std::ifstream stream(chunk.path, std::ios::binary);
-    if (!stream) {
-        throw FastXlsxError(chunk_file_failure_message(
-            "failed to open file-backed ZIP entry chunk", chunk));
-    }
-    seek_file_chunk_start(stream, chunk);
+    std::ifstream& stream = file_cache.open_for_payload(chunk, buffer);
 
     Crc32Accumulator chunk_crc;
     std::uint64_t written_size = 0;
@@ -462,6 +536,7 @@ void write_minizip_file_chunk(void* writer, const PackageEntryChunk& chunk,
         chunk_crc.update(std::string_view(buffer.data(), static_cast<std::size_t>(read_size)));
         written_size += static_cast<std::uint64_t>(read_size);
     }
+    file_cache.note_payload_bytes_read(written_size);
     require_expected_chunk_size(chunk, written_size);
     require_expected_chunk_crc32(chunk, chunk_crc.value());
 }
@@ -474,6 +549,7 @@ void write_minizip_entry_chunks(void* writer, const PackageEntry& entry)
     }
 
     std::vector<char> file_buffer(io_buffer_size);
+    MinizipFileChunkReadCache file_cache;
     for (std::size_t chunk_index = 0; chunk_index < entry.chunks.size(); ++chunk_index) {
         const PackageEntryChunk& chunk = entry.chunks[chunk_index];
         try {
@@ -482,7 +558,7 @@ void write_minizip_entry_chunks(void* writer, const PackageEntry& entry)
                 write_minizip_memory_chunk(writer, chunk.data);
                 break;
             case PackageEntryChunk::Kind::File:
-                write_minizip_file_chunk(writer, chunk, file_buffer);
+                write_minizip_file_chunk(writer, file_cache, chunk, file_buffer);
                 break;
             default:
                 throw FastXlsxError("unsupported ZIP entry chunk kind");

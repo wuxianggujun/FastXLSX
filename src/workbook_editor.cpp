@@ -721,6 +721,25 @@ void WorkbookEditor::request_full_calculation()
     }
 }
 
+void WorkbookEditor::set_document_properties(DocumentProperties properties)
+{
+    if (impl_ == nullptr) {
+        throw FastXlsxError("WorkbookEditor is not open");
+    }
+
+    try {
+        impl_->editor.set_document_properties(properties);
+        ++impl_->pending_public_edit_count;
+        impl_->clear_last_edit_error();
+    } catch (const FastXlsxError& error) {
+        FastXlsxError public_error(
+            std::string("WorkbookEditor::set_document_properties() failed: ")
+            + error.what());
+        impl_->record_last_edit_error(public_error);
+        throw public_error;
+    }
+}
+
 void WorkbookEditor::save_as(const std::filesystem::path& path)
 {
     if (impl_ == nullptr) {

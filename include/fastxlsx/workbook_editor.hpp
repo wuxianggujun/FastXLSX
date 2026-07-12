@@ -3002,6 +3002,31 @@ public:
     /// guards.
     void request_full_calculation();
 
+    /// Replaces the saved workbook's core and extended document properties.
+    ///
+    /// API mode: Patch / existing-workbook metadata rewrite. The value is copied
+    /// synchronously into editor-owned staged state. `save_as()` writes
+    /// `docProps/core.xml` and `docProps/app.xml`, adding their package-level
+    /// relationships and content-type overrides when they are absent. Existing
+    /// custom document properties and unknown package entries are preserved.
+    /// Repeated calls use last-write-wins staging; each successful call increments
+    /// pending_change_count() and the unsaved watermark.
+    ///
+    /// This is a bounded small-XML rewrite. It does not read document properties
+    /// back into an object model, create or edit custom properties, preserve
+    /// unsupported child elements inside replaced core/app parts, or provide an
+    /// atomic in-place save. A failed call keeps the prior Patch plan,
+    /// pending/unsaved counts, and output semantics unchanged, records
+    /// last_edit_error(), and leaves the editor usable for retry. A failed
+    /// save_as() retains the successfully staged properties and save watermark.
+    ///
+    /// @param properties New core/app document-property values. The argument is
+    /// not retained after the call returns.
+    /// @throws FastXlsxError if the editor is not open, required package metadata
+    /// is malformed or conflicts with the expected docProps relationships, or
+    /// bounded metadata staging fails.
+    void set_document_properties(DocumentProperties properties);
+
     /// Writes the edited workbook to a new package path.
     ///
     /// This never edits the source package in place. It rejects an output path

@@ -36,7 +36,8 @@ int g_failures = 0;
 
 bool is_workbook_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "public";
+    return shard == "all" || shard == "public-lifecycle-metadata"
+        || shard == "public-reacquire-retry";
 }
 
 std::string_view workbook_editor_shard_from_args(int argc, char* argv[])
@@ -8062,7 +8063,7 @@ int main(int argc, char* argv[])
         std::printf("fastxlsx.workbook_editor shard: %.*s\n",
             static_cast<int>(shard.size()), shard.data());
 
-        if (should_run_workbook_editor_shard(shard, "public")) {
+        if (should_run_workbook_editor_shard(shard, "public-lifecycle-metadata")) {
             test_public_worksheet_editor_handles_invalidate_after_owner_move();
             test_public_worksheet_editor_invalidated_handle_failures_preserve_owner_diagnostics();
             test_public_worksheet_editor_handles_invalidate_after_move_assignment();
@@ -8093,6 +8094,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_rejects_catalog_edits_after_clean_materialization();
             test_public_request_full_calculation_preserves_materialized_catalog_guards();
             test_public_renamed_full_calculation_preserves_materialized_catalog_guards();
+        }
+        if (should_run_workbook_editor_shard(shard, "public-reacquire-retry")) {
             test_public_worksheet_editor_reacquire_reuses_dirty_session();
             test_public_worksheet_editor_reacquire_after_save_reuses_session();
             test_public_worksheet_editor_post_save_reacquire_preserves_clean_diagnostics();

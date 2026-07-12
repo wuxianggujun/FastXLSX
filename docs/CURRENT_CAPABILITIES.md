@@ -21,7 +21,7 @@
 ### Patch：已有 workbook
 
 - `WorkbookEditor::open()` / `save_as()`。
-- 支持 sheet catalog 查询、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request 和已有 PNG/JPEG media bytes replacement。
+- 支持 sheet catalog 查询、`replace_sheet_data()`、targeted cell patch、窄 sheet rename、formula audit/recalculation request、core/app document properties rewrite 和已有 PNG/JPEG media bytes replacement。
 - 未修改和未知 package part 默认 copy-original；修改 part 才 rewrite/remove。
 - `save_as()` 不覆盖 source，也不承诺 atomic in-place save。
 - `has_pending_changes()` 表示 retained staged state；成功保存后仍可为 true。
@@ -29,6 +29,7 @@
 - Dirty In-memory session 在 package write 前 stage 到 Patch plan，但只在输出成功后提交 handoff 并清除 dirty；写出失败保留 session diagnostics/counts，retry 会用当前值覆盖失败尝试留下的 stale internal projection。
 - `request_full_calculation()` 对 workbook XML、calcChain、relationships、content types、manifest 和 edit plan 使用事务式 staging；提交前失败保留调用前计划与输出语义，后续可安全重试。
 - `rename_sheet()` 在发布前完成 PackageEditor state、public catalog、pending payload、materialized formula rewrite 和 targeted-cell diagnostics 的 staging；提交前失败不泄漏部分 rename，保留既有 patch 并可安全重试。
+- `set_document_properties()` 事务式重写 `docProps/core.xml`、`docProps/app.xml` 及缺失的 root relationships/content types；重复调用 last-write-wins，失败保留既有 Patch plan、pending/unsaved 水位与 retry 能力。Custom properties 和未知 entries 保留，但不提供 custom-properties 对象模型。
 
 ### In-memory：小型 worksheet
 
@@ -72,7 +73,7 @@
 - `EditPlan`、dependency analysis、relationship graph、part index。
 - worksheet transformer/event reader、`CellStore`、materialized session registry。
 - package-entry chunk/file-backed helpers 和测试 hook。
-- Internal `PackageEditor::set_document_properties()` 支持 core/app docProps 与相关 content types/root relationships 的窄事务式 rewrite；它不是 `WorkbookEditor` public API。
+- Internal `PackageEditor::set_document_properties()` 是 public `WorkbookEditor::set_document_properties()` 使用的 core/app docProps 事务式 staging foundation；internal plan、part name 和 relationship mutation 仍不公开。
 - Internal `PackageEditor::remove_part()` 对 edit plan、part/entry replacements、omitted entries、content types 和 manifest 使用事务式 staging；默认只审计并保留 inbound relationships，不是 public 对象删除 API 或自动 orphan cleanup。
 - Internal materialized `PackageEditor::replace_part()` 对 small XML replacement、part restore、content types、owned relationships audit、omitted entries 和 manifest 使用事务式 staging；它不是 public arbitrary-part mutation API，也不接受 worksheet 或 stream-rewrite payload。
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 对 stream-rewrite chunks、part restore、edit plan、part/entry replacements、omitted entries 和 manifest 使用事务式 staging；它是 package writer 的 internal handoff，不是 public arbitrary-part streaming API。

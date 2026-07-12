@@ -992,7 +992,12 @@ function(add_fastxlsx_workbook_editor_shard shard target timeout_seconds)
 endfunction()
 
 add_fastxlsx_workbook_editor_shard(core fastxlsx_workbook_editor_core_shard_tests 60)
-add_fastxlsx_workbook_editor_shard(public fastxlsx_workbook_editor_public_shard_tests 60)
+add_fastxlsx_workbook_editor_shard(
+    public-lifecycle-metadata fastxlsx_workbook_editor_public_shard_tests 60
+)
+add_fastxlsx_workbook_editor_shard(
+    public-reacquire-retry fastxlsx_workbook_editor_public_shard_tests 60
+)
 add_fastxlsx_workbook_editor_shard(
     public-retry fastxlsx_workbook_editor_public_retry_tests 60
 )
@@ -1009,7 +1014,10 @@ add_fastxlsx_workbook_editor_shard(
     fastxlsx_workbook_editor_public_retry_projection_tests 60
 )
 add_fastxlsx_workbook_editor_shard(
-    public-guards fastxlsx_workbook_editor_public_guards_tests 60
+    public-guards-core fastxlsx_workbook_editor_public_guards_tests 60
+)
+add_fastxlsx_workbook_editor_shard(
+    public-guards-retry fastxlsx_workbook_editor_public_guards_tests 60
 )
 add_fastxlsx_workbook_editor_shard(
     public-edge fastxlsx_workbook_editor_public_edge_shard_tests 60
@@ -1110,6 +1118,7 @@ add_fastxlsx_workbook_editor_source_success_test(
 add_fastxlsx_workbook_editor_standalone_test(source_failures test_workbook_editor_source_failures.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(materialized_sessions test_workbook_editor_materialized_sessions.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_patch_cells test_workbook_editor_public_patch_cells.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_document_properties test_workbook_editor_public_document_properties.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_snapshot test_workbook_editor_public_snapshot.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_edits test_workbook_editor_public_state_edits.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_formula_audits test_workbook_editor_public_state_formula_audits.cpp 60)
@@ -1143,6 +1152,7 @@ add_fastxlsx_workbook_editor_standalone_test(public_structural_formulas test_wor
 add_dependencies(
     fastxlsx_workbook_editor_tests
     fastxlsx_workbook_editor_public_patch_cells_tests
+    fastxlsx_workbook_editor_public_document_properties_tests
     fastxlsx_workbook_editor_public_snapshot_tests
     fastxlsx_workbook_editor_public_state_edits_tests
     fastxlsx_workbook_editor_public_state_formula_audits_tests

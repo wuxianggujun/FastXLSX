@@ -16,7 +16,7 @@
 
 | 对象族 | 当前证据 | 允许表述 | 禁止表述 |
 | --- | --- | --- | --- |
-| Core/app/custom docProps | copy/rewrite 与 package side effect 测试 | internal PackageEditor 支持窄 rewrite；`WorkbookEditor` 未公开 setter | public existing-workbook 属性编辑或完整自定义属性对象模型 |
+| Core/app/custom docProps | public Patch rewrite、copy preservation、missing-part side effect、failure/retry 测试 | `WorkbookEditor::set_document_properties()` 窄重写 core/app；custom properties 保留 | custom-properties 对象模型或任意 docProps child 无损编辑 |
 | sharedStrings/styles | source preservation、索引读取和窄 cell/style 行为 | 保留未修改 part；支持已实现窄路径 | 完整索引迁移或格式修复 |
 | Formulas/defined names/calc metadata | 文本、审计、窄重写、full calculation 请求 | 公式文本与引用策略 | 公式求值、cached values、完整 calcChain rebuild |
 | Tables | linked part preservation 与 Streaming 新建窄切片 | existing table parts 默认保留 | existing table semantic editing |

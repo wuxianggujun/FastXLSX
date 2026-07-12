@@ -4,14 +4,15 @@
 
 namespace fastxlsx {
 
-/// Small document-property metadata for new workbook output.
+/// Small core/app document-property metadata for workbook output.
 ///
-/// API mode: small workbook metadata shared by the in-memory Workbook path and
-/// the Streaming WorkbookWriter path. Values are copied into workbook state and
+/// API modes: small new-workbook metadata, Streaming metadata, and Patch
+/// existing-workbook metadata. Values are copied into the owning API's state and
 /// serialized only into `docProps/core.xml` and `docProps/app.xml` during
-/// save()/close(). This does not create custom document properties, does not
-/// edit existing XLSX files, and does not affect worksheet row/cell streaming
-/// behavior.
+/// save()/close()/save_as(). WorkbookEditor replaces those two bounded metadata
+/// parts and maintains their package relationships/content types. This value does
+/// not create or edit custom document properties and does not affect worksheet
+/// row/cell streaming or In-memory cell behavior.
 struct DocumentProperties {
     /// Core property creator. Written as `dc:creator`.
     std::string creator = "FastXLSX";

@@ -73,6 +73,10 @@ int main()
 int main()
 {
     auto editor = fastxlsx::WorkbookEditor::open("template.xlsx");
+    fastxlsx::DocumentProperties properties;
+    properties.last_modified_by = "Report Service";
+    properties.title = "Updated report";
+    editor.set_document_properties(properties);
     auto sheet = editor.worksheet("Data");
     sheet.set_cell("A1", fastxlsx::CellValue::text("updated"));
     editor.save_as("output.xlsx");
@@ -115,6 +119,7 @@ auto sheet = editor.worksheet("Data", options);
 - `PackageReader`、`PackageEditor`、`EditPlan`、`DependencyAnalyzer`、`RelationshipGraph` 是 internal。
 - 公式支持文本、审计、窄重写和请求重算；不求值、不生成 cached value、不完整重建 `calcChain.xml`。
 - `replace_image()` 只替换已有 PNG/JPEG media bytes；不编辑 drawing/anchor/relationship。
+- `set_document_properties()` 只重写 core/app docProps；不创建或编辑 custom properties。
 - Preservation 证据不等于 tables、charts、comments、VBA、pivot 或 custom XML 的语义编辑。
 - In-memory 是 small-file 稀疏编辑，不是 large-file low-memory random editing。
 

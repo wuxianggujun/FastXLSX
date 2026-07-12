@@ -4,6 +4,7 @@
 
 ### Added
 
+- 新增 `WorkbookEditor::set_document_properties()`，为 existing workbook 提供事务式 core/app docProps rewrite、缺失 relationship/content-type 补齐、last-write-wins 与失败 retry，并保留 custom/unknown package entries。
 - 新增 `WorksheetMaterializationError`、`WorksheetMaterializationDiagnostic` 和稳定 loss category，使 strict In-memory rejection 可按 worksheet/cell/sharedStrings context 审计，同时保持 `FastXlsxError` catch compatibility。
 - 新增 `WorkbookEditor::has_unsaved_changes()` / `unsaved_change_count()` 保存水位，保留 `has_pending_changes()` 的 staged-state 兼容语义。
 - 新增 Basic CMake install/export package、`FastXLSX::fastxlsx` consumer target 和 `find_package()` smoke。
@@ -19,7 +20,7 @@
 - `WorkbookEditor::save_as()` 的 dirty In-memory handoff 改为 stage → package write → state commit；写出失败不再提前清除 session dirty diagnostics，并可用最新值安全重试。
 - `PackageEditor::request_full_calculation()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再泄漏部分 calcChain/content-type/relationship mutation，并支持保留既有计划后重试。
 - `WorkbookEditor::rename_sheet()` 与 internal PackageEditor sheet catalog rename 改为跨 package/public state 的事务式 staging；提交前失败不再泄漏部分 catalog、formula session 或 pending diagnostics mutation，并支持保留既有 patch 后重试。
-- Internal `PackageEditor::set_document_properties()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；同时纠正文档中将该 internal helper 误写为 `WorkbookEditor` public 能力的表述。
+- Internal `PackageEditor::set_document_properties()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging，并作为 public `WorkbookEditor::set_document_properties()` 的 package mutation foundation；internal plan 与 package 类型仍不公开。
 - Internal `PackageEditor::remove_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再发布部分 removal 状态，既有 replacement 可保存并可安全重试。
 - Internal materialized `PackageEditor::replace_part()` 改为跨 edit plan、part/entry replacements、omitted entries、content types 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 replacement，后续 retry 可恢复 source part。
 - Internal non-worksheet `PackageEditor::replace_part_chunks()` 改为跨 edit plan、part/entry replacements、omitted entries 和 manifest 的事务式 staging；提交前失败不再取消既有 removal 或发布部分 chunk replacement，后续 retry 可恢复 source part。
@@ -33,6 +34,7 @@
 - 将 `public-state-edits` 的 17 个 clear/erase 与 memory-budget 回归迁入独立 60 秒目标，并将 reacquire helper 通用化为 public-state test support；删除 legacy shard 调度入口，专用 120 秒 shard 从 3 个降为 2 个。
 - 将 `public-state-formula-audits` 的 52 个 renamed/full-calculation、saved-reacquire 与 shift-after-rename 回归迁入独立 60 秒目标，并提取 formula-audits test-only support；删除 legacy shard 调度入口，专用 120 秒 shard 从 2 个降为 1 个。
 - 将最后的 `public-state-shifts` 57 个结构编辑与 formula-reference 回归按 insertion、formula audit、deletion 职责拆为三个独立 60 秒目标，删除 shard 参数解析、旧聚合 target 与 `/bigobj /Od` 特例；public-state 专用 120 秒 legacy shard 清零。
+- 将超出普通 60 秒门禁的 `public` 与 `public-guards` umbrella CTest 入口按 lifecycle/metadata、reacquire/retry、core guards 和 two-handle retry 拆为四个调度 shard；测试实现与断言不变，未放宽 timeout。
 
 ### Documentation
 

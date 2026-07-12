@@ -36,7 +36,8 @@ int g_failures = 0;
 
 bool is_workbook_editor_shard(std::string_view shard)
 {
-    return shard == "all" || shard == "public-guards";
+    return shard == "all" || shard == "public-guards-core"
+        || shard == "public-guards-retry";
 }
 
 std::string_view workbook_editor_shard_from_args(int argc, char* argv[])
@@ -5793,7 +5794,7 @@ int main(int argc, char* argv[])
         std::printf("fastxlsx.workbook_editor shard: %.*s\n",
             static_cast<int>(shard.size()), shard.data());
 
-        if (should_run_workbook_editor_shard(shard, "public-guards")) {
+        if (should_run_workbook_editor_shard(shard, "public-guards-core")) {
             test_public_worksheet_editor_blocks_same_sheet_patch_operations();
             test_public_worksheet_editor_readonly_session_blocks_same_sheet_patch_operations();
             test_public_worksheet_editor_saved_clean_session_blocks_same_sheet_patch_operations();
@@ -5813,6 +5814,8 @@ int main(int argc, char* argv[])
             test_public_worksheet_editor_clean_same_sheet_failure_then_noop_clear_clears_diagnostic();
             test_public_worksheet_editor_noop_erase_recovery_preserves_same_sheet_patch_guard();
             test_public_worksheet_editor_noop_clear_recovery_preserves_same_sheet_patch_guard();
+        }
+        if (should_run_workbook_editor_shard(shard, "public-guards-retry")) {
             test_public_worksheet_editor_recovery_with_two_clean_handles_preserves_other_guard();
             test_public_worksheet_editor_two_clean_noop_clear_preserves_other_guard();
             test_public_worksheet_editor_recovery_with_two_clean_handles_allows_scoped_other_mutation();

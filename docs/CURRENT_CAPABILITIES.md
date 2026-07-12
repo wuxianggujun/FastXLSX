@@ -90,7 +90,8 @@
 - 扩展 existing-workbook object semantics 前，必须逐对象定义 preserve/audit/fail/edit 和 relationship/content-type side effects。
 - 大 worksheet 低内存 rewrite 是独立路径，不通过扩大 `WorksheetEditor` 实现。
 - `planned-xml` 中的 zlib-ng、Expat、pugixml 当前未被实现链接；manifest presence 不等于当前能力。
-- tracked benchmark evidence 机制已建立；当前有 2 个 production Streaming bundle，其中重复策略矩阵覆盖 7 个 1,000,000-cell 场景、每场景 1 次 warm-up + 3 次 measured run。它支持 manifest 限定的同机 inline/shared 比较，但仍不足以形成跨机器、跨数据规模或泛化 release 性能结论；Patch 尚无同等级 tracked 性能证据。
+- tracked benchmark evidence 机制已建立；当前有 2 个 production Streaming bundle 与 1 个 production Patch bundle。Streaming 重复策略矩阵覆盖 7 个 1,000,000-cell 场景；Patch 矩阵覆盖同机 1,000,000 numeric cells source 上的 no-op copy、core/app metadata rewrite 和 1,000-cell targeted replace/upsert；每场景均为 1 次 warm-up + 3 次 measured run。它们只支持 manifest 限定的单机同数据集结论，不形成跨机器、跨数据规模或泛化 release 性能承诺。
+- Patch tracked matrix 的 total median 为 no-op 1530 ms、document-properties 1138 ms、targeted replace 5325 ms、targeted upsert 5402 ms；process peak working set median 为 6.41406–7.99609 MB。Targeted 两场景仍重写约 34.9 MB logical worksheet/workbook XML；这是当前 workload 的瓶颈证据，不是大文件任意随机编辑承诺。
 
 ## Explicit Non-goals
 

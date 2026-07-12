@@ -36,7 +36,7 @@ py -3 tools/run_benchmark_matrix.py --self-test
 py -3 tools/run_patch_benchmark_matrix.py --self-test
 ```
 
-重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 2 个 production Streaming bundle：首个支持精确单机单次 claim，策略矩阵支持 manifest 限定的同机 workload 比较；二者都不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
+重复矩阵默认每个 case 使用 1 次 warm-up 和 3 次 measured run，报告 min/median/max 并保留全部 raw result；`--verify-openpyxl` 只验证 median 代表 workbook，Office 仍是独立步骤。当前 validator 应通过 2 个 production Streaming bundle 和 1 个 production Patch bundle；它们都只能支持 manifest 限定的单机 workload 结论，不能泛化到其他机器或数据规模。`office_open="not_run"` 不得写成 Office 已验证。
 
 Patch 矩阵使用 `run_patch_benchmark_matrix.py` 在独立准备进程生成一次 source fixture，warm-up/measured 进程通过 `--reuse-source` 只测 open → mutation → save，避免 source `WorkbookWriter` 污染 editor process peak working set。`--source-compression-level` 与 `--output-compression-level` 分开记录。Copied/rewritten bytes 来自 ZIP central-directory 的 logical `file_size` / compressed `compress_size`；copy-original entry 必须保持 source/output CRC 与 logical size 一致，copied source/output compressed bytes 分列，不能误写成 raw compressed-byte copy。
 

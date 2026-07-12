@@ -1,0 +1,1400 @@
+{
+    "patch_benchmark_matrix_schema_version":  "2",
+    "git_revision":  "8b275b76424584672a40c045bf30e42c7228de5b",
+    "source_report_sha256":  "27a066b1fd735c02de4d4519a21ed92ba923a337e369603f7fa89fd289ed56b4",
+    "rows":  100000,
+    "cols":  10,
+    "source_cells":  1000000,
+    "source_compression_level":  6,
+    "output_compression_level":  6,
+    "source_bytes":  3129601,
+    "source_archive":  {
+                           "entry_count":  7,
+                           "compression_method_counts":  {
+                                                             "deflate":  7
+                                                         },
+                           "worksheet_compression_method":  "deflate",
+                           "worksheet_uncompressed_bytes":  34866991,
+                           "worksheet_compressed_bytes":  3127413
+                       },
+    "source_fixture_protocol":  "Generated once in a separate preparation process; every warm-up and measured process reused the same source package.",
+    "warmup_runs_per_case":  1,
+    "measured_runs_per_case":  3,
+    "representative_result_policy":  "measured run nearest total_editor_ms median; earliest run breaks ties",
+    "byte_accounting":  "ZIP central-directory logical file_size and compressed compress_size; copied entries report source and output compressed bytes separately and additionally require equal source/output CRC and logical file_size",
+    "cases":  [
+                  {
+                      "name":  "noop-copy",
+                      "scenario":  "noop-copy",
+                      "requested_edits":  0,
+                      "warmup_runs":  1,
+                      "measured_runs":  3,
+                      "representative_run":  1,
+                      "statistics":  {
+                                         "total_editor_ms":  {
+                                                                 "min":  1491,
+                                                                 "median":  1530,
+                                                                 "max":  1760
+                                                             },
+                                         "open_ms":  {
+                                                         "min":  6,
+                                                         "median":  7,
+                                                         "max":  8
+                                                     },
+                                         "mutation_ms":  {
+                                                             "min":  0,
+                                                             "median":  0,
+                                                             "max":  0
+                                                         },
+                                         "save_ms":  {
+                                                         "min":  1485,
+                                                         "median":  1523,
+                                                         "max":  1752
+                                                     },
+                                         "peak_memory_mb":  {
+                                                                "min":  6.41016,
+                                                                "median":  6.41406,
+                                                                "max":  6.43359
+                                                            },
+                                         "output_bytes":  {
+                                                              "min":  3129601,
+                                                              "median":  3129601,
+                                                              "max":  3129601
+                                                          },
+                                         "copied_uncompressed_bytes":  {
+                                                                           "min":  34869861,
+                                                                           "median":  34869861,
+                                                                           "max":  34869861
+                                                                       },
+                                         "copied_source_compressed_bytes":  {
+                                                                                "min":  3128791,
+                                                                                "median":  3128791,
+                                                                                "max":  3128791
+                                                                            },
+                                         "copied_output_compressed_bytes":  {
+                                                                                "min":  3128791,
+                                                                                "median":  3128791,
+                                                                                "max":  3128791
+                                                                            },
+                                         "rewritten_uncompressed_bytes":  {
+                                                                              "min":  0,
+                                                                              "median":  0,
+                                                                              "max":  0
+                                                                          },
+                                         "rewritten_compressed_bytes":  {
+                                                                            "min":  0,
+                                                                            "median":  0,
+                                                                            "max":  0
+                                                                        }
+                                     },
+                      "result":  {
+                                     "workbook_editor_benchmark_schema_version":  "4",
+                                     "scenario":  "noop-copy",
+                                     "rows":  100000,
+                                     "cols":  10,
+                                     "source_cells":  1000000,
+                                     "requested_edits":  0,
+                                     "touched_coordinates":  0,
+                                     "inserted_coordinates":  0,
+                                     "source_write_ms":  0,
+                                     "open_ms":  7,
+                                     "materialize_ms":  0,
+                                     "mutation_ms":  0,
+                                     "save_ms":  1523,
+                                     "total_editor_ms":  1530,
+                                     "total_ms":  1533,
+                                     "materialized_worksheet":  false,
+                                     "materialized_cells_before":  0,
+                                     "materialized_cells_after":  0,
+                                     "estimated_memory_before_bytes":  0,
+                                     "estimated_memory_after_bytes":  0,
+                                     "peak_memory_mb":  6.41016,
+                                     "source_bytes":  3129601,
+                                     "output_bytes":  3129601,
+                                     "source_fixture_mode":  "reused-existing-source",
+                                     "source_compression_level":  6,
+                                     "output_compression_level":  6,
+                                     "output_plan_entry_count":  7,
+                                     "copied_entry_count":  7,
+                                     "rewritten_entry_count":  0,
+                                     "omitted_entry_count":  0,
+                                     "copied_entry_names":  [
+                                                                "[Content_Types].xml",
+                                                                "_rels/.rels",
+                                                                "docProps/app.xml",
+                                                                "docProps/core.xml",
+                                                                "xl/_rels/workbook.xml.rels",
+                                                                "xl/workbook.xml",
+                                                                "xl/worksheets/sheet1.xml"
+                                                            ],
+                                     "rewritten_entry_names":  [
+
+                                                               ],
+                                     "omitted_entry_names":  [
+
+                                                             ],
+                                     "editor_mode":  "existing-workbook-patch-copy-original",
+                                     "office_open":  "not_run"
+                                 },
+                      "byte_accounting":  {
+                                              "copied_uncompressed_bytes":  34869861,
+                                              "copied_source_compressed_bytes":  3128791,
+                                              "copied_output_compressed_bytes":  3128791,
+                                              "rewritten_uncompressed_bytes":  0,
+                                              "rewritten_compressed_bytes":  0
+                                          },
+                      "output_archive":  {
+                                             "entry_count":  7,
+                                             "compression_method_counts":  {
+                                                                               "deflate":  7
+                                                                           },
+                                             "worksheet_compression_method":  "deflate",
+                                             "worksheet_uncompressed_bytes":  34866991,
+                                             "worksheet_compressed_bytes":  3127413
+                                         },
+                      "openpyxl":  {
+                                       "status":  "opened",
+                                       "openpyxl_version":  "3.1.2",
+                                       "sheet_count":  1,
+                                       "sheet1_max_row":  100000,
+                                       "sheet1_max_column":  10,
+                                       "sheet1_first_cell":  1001,
+                                       "sheet1_source_tail_cell":  100000010,
+                                       "document_title":  null
+                                   },
+                      "runs":  [
+                                   {
+                                       "name":  "noop-copy-run-01",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "noop-copy",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  0,
+                                                      "touched_coordinates":  0,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  7,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  0,
+                                                      "save_ms":  1523,
+                                                      "total_editor_ms":  1530,
+                                                      "total_ms":  1533,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  6.41016,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129601,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  7,
+                                                      "rewritten_entry_count":  0,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels",
+                                                                                 "xl/workbook.xml",
+                                                                                 "xl/worksheets/sheet1.xml"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-copy-original",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  34869861,
+                                                               "copied_source_compressed_bytes":  3128791,
+                                                               "copied_output_compressed_bytes":  3128791,
+                                                               "rewritten_uncompressed_bytes":  0,
+                                                               "rewritten_compressed_bytes":  0
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34866991,
+                                                              "worksheet_compressed_bytes":  3127413
+                                                          }
+                                   },
+                                   {
+                                       "name":  "noop-copy-run-02",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "noop-copy",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  0,
+                                                      "touched_coordinates":  0,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  6,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  0,
+                                                      "save_ms":  1485,
+                                                      "total_editor_ms":  1491,
+                                                      "total_ms":  1497,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  6.41406,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129601,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  7,
+                                                      "rewritten_entry_count":  0,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels",
+                                                                                 "xl/workbook.xml",
+                                                                                 "xl/worksheets/sheet1.xml"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-copy-original",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  34869861,
+                                                               "copied_source_compressed_bytes":  3128791,
+                                                               "copied_output_compressed_bytes":  3128791,
+                                                               "rewritten_uncompressed_bytes":  0,
+                                                               "rewritten_compressed_bytes":  0
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34866991,
+                                                              "worksheet_compressed_bytes":  3127413
+                                                          }
+                                   },
+                                   {
+                                       "name":  "noop-copy-run-03",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "noop-copy",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  0,
+                                                      "touched_coordinates":  0,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  8,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  0,
+                                                      "save_ms":  1752,
+                                                      "total_editor_ms":  1760,
+                                                      "total_ms":  1763,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  6.43359,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129601,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  7,
+                                                      "rewritten_entry_count":  0,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels",
+                                                                                 "xl/workbook.xml",
+                                                                                 "xl/worksheets/sheet1.xml"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-copy-original",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  34869861,
+                                                               "copied_source_compressed_bytes":  3128791,
+                                                               "copied_output_compressed_bytes":  3128791,
+                                                               "rewritten_uncompressed_bytes":  0,
+                                                               "rewritten_compressed_bytes":  0
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34866991,
+                                                              "worksheet_compressed_bytes":  3127413
+                                                          }
+                                   }
+                               ]
+                  },
+                  {
+                      "name":  "document-properties",
+                      "scenario":  "document-properties",
+                      "requested_edits":  1,
+                      "warmup_runs":  1,
+                      "measured_runs":  3,
+                      "representative_run":  1,
+                      "statistics":  {
+                                         "total_editor_ms":  {
+                                                                 "min":  1102,
+                                                                 "median":  1138,
+                                                                 "max":  1304
+                                                             },
+                                         "open_ms":  {
+                                                         "min":  6,
+                                                         "median":  6,
+                                                         "max":  7
+                                                     },
+                                         "mutation_ms":  {
+                                                             "min":  0,
+                                                             "median":  0,
+                                                             "max":  0
+                                                         },
+                                         "save_ms":  {
+                                                         "min":  1096,
+                                                         "median":  1131,
+                                                         "max":  1298
+                                                     },
+                                         "peak_memory_mb":  {
+                                                                "min":  6.43359,
+                                                                "median":  6.4375,
+                                                                "max":  6.44922
+                                                            },
+                                         "output_bytes":  {
+                                                              "min":  3129654,
+                                                              "median":  3129654,
+                                                              "max":  3129654
+                                                          },
+                                         "copied_uncompressed_bytes":  {
+                                                                           "min":  34868949,
+                                                                           "median":  34868949,
+                                                                           "max":  34868949
+                                                                       },
+                                         "copied_source_compressed_bytes":  {
+                                                                                "min":  3128295,
+                                                                                "median":  3128295,
+                                                                                "max":  3128295
+                                                                            },
+                                         "copied_output_compressed_bytes":  {
+                                                                                "min":  3128295,
+                                                                                "median":  3128295,
+                                                                                "max":  3128295
+                                                                            },
+                                         "rewritten_uncompressed_bytes":  {
+                                                                              "min":  1039,
+                                                                              "median":  1039,
+                                                                              "max":  1039
+                                                                          },
+                                         "rewritten_compressed_bytes":  {
+                                                                            "min":  549,
+                                                                            "median":  549,
+                                                                            "max":  549
+                                                                        }
+                                     },
+                      "result":  {
+                                     "workbook_editor_benchmark_schema_version":  "4",
+                                     "scenario":  "document-properties",
+                                     "rows":  100000,
+                                     "cols":  10,
+                                     "source_cells":  1000000,
+                                     "requested_edits":  1,
+                                     "touched_coordinates":  0,
+                                     "inserted_coordinates":  0,
+                                     "source_write_ms":  0,
+                                     "open_ms":  7,
+                                     "materialize_ms":  0,
+                                     "mutation_ms":  0,
+                                     "save_ms":  1131,
+                                     "total_editor_ms":  1138,
+                                     "total_ms":  1141,
+                                     "materialized_worksheet":  false,
+                                     "materialized_cells_before":  0,
+                                     "materialized_cells_after":  0,
+                                     "estimated_memory_before_bytes":  0,
+                                     "estimated_memory_after_bytes":  0,
+                                     "peak_memory_mb":  6.4375,
+                                     "source_bytes":  3129601,
+                                     "output_bytes":  3129654,
+                                     "source_fixture_mode":  "reused-existing-source",
+                                     "source_compression_level":  6,
+                                     "output_compression_level":  6,
+                                     "output_plan_entry_count":  7,
+                                     "copied_entry_count":  5,
+                                     "rewritten_entry_count":  2,
+                                     "omitted_entry_count":  0,
+                                     "copied_entry_names":  [
+                                                                "[Content_Types].xml",
+                                                                "_rels/.rels",
+                                                                "xl/_rels/workbook.xml.rels",
+                                                                "xl/workbook.xml",
+                                                                "xl/worksheets/sheet1.xml"
+                                                            ],
+                                     "rewritten_entry_names":  [
+                                                                   "docProps/app.xml",
+                                                                   "docProps/core.xml"
+                                                               ],
+                                     "omitted_entry_names":  [
+
+                                                             ],
+                                     "editor_mode":  "existing-workbook-patch-document-properties",
+                                     "office_open":  "not_run"
+                                 },
+                      "byte_accounting":  {
+                                              "copied_uncompressed_bytes":  34868949,
+                                              "copied_source_compressed_bytes":  3128295,
+                                              "copied_output_compressed_bytes":  3128295,
+                                              "rewritten_uncompressed_bytes":  1039,
+                                              "rewritten_compressed_bytes":  549
+                                          },
+                      "output_archive":  {
+                                             "entry_count":  7,
+                                             "compression_method_counts":  {
+                                                                               "deflate":  7
+                                                                           },
+                                             "worksheet_compression_method":  "deflate",
+                                             "worksheet_uncompressed_bytes":  34866991,
+                                             "worksheet_compressed_bytes":  3127413
+                                         },
+                      "openpyxl":  {
+                                       "status":  "opened",
+                                       "openpyxl_version":  "3.1.2",
+                                       "sheet_count":  1,
+                                       "sheet1_max_row":  100000,
+                                       "sheet1_max_column":  10,
+                                       "sheet1_first_cell":  1001,
+                                       "sheet1_source_tail_cell":  100000010,
+                                       "document_title":  "FastXLSX Patch Benchmark"
+                                   },
+                      "runs":  [
+                                   {
+                                       "name":  "document-properties-run-01",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "document-properties",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1,
+                                                      "touched_coordinates":  0,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  7,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  0,
+                                                      "save_ms":  1131,
+                                                      "total_editor_ms":  1138,
+                                                      "total_ms":  1141,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  6.4375,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129654,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "xl/_rels/workbook.xml.rels",
+                                                                                 "xl/workbook.xml",
+                                                                                 "xl/worksheets/sheet1.xml"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "docProps/app.xml",
+                                                                                    "docProps/core.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-document-properties",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  34868949,
+                                                               "copied_source_compressed_bytes":  3128295,
+                                                               "copied_output_compressed_bytes":  3128295,
+                                                               "rewritten_uncompressed_bytes":  1039,
+                                                               "rewritten_compressed_bytes":  549
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34866991,
+                                                              "worksheet_compressed_bytes":  3127413
+                                                          }
+                                   },
+                                   {
+                                       "name":  "document-properties-run-02",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "document-properties",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1,
+                                                      "touched_coordinates":  0,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  6,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  0,
+                                                      "save_ms":  1096,
+                                                      "total_editor_ms":  1102,
+                                                      "total_ms":  1107,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  6.43359,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129654,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "xl/_rels/workbook.xml.rels",
+                                                                                 "xl/workbook.xml",
+                                                                                 "xl/worksheets/sheet1.xml"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "docProps/app.xml",
+                                                                                    "docProps/core.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-document-properties",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  34868949,
+                                                               "copied_source_compressed_bytes":  3128295,
+                                                               "copied_output_compressed_bytes":  3128295,
+                                                               "rewritten_uncompressed_bytes":  1039,
+                                                               "rewritten_compressed_bytes":  549
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34866991,
+                                                              "worksheet_compressed_bytes":  3127413
+                                                          }
+                                   },
+                                   {
+                                       "name":  "document-properties-run-03",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "document-properties",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1,
+                                                      "touched_coordinates":  0,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  6,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  0,
+                                                      "save_ms":  1298,
+                                                      "total_editor_ms":  1304,
+                                                      "total_ms":  1306,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  6.44922,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129654,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "xl/_rels/workbook.xml.rels",
+                                                                                 "xl/workbook.xml",
+                                                                                 "xl/worksheets/sheet1.xml"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "docProps/app.xml",
+                                                                                    "docProps/core.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-document-properties",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  34868949,
+                                                               "copied_source_compressed_bytes":  3128295,
+                                                               "copied_output_compressed_bytes":  3128295,
+                                                               "rewritten_uncompressed_bytes":  1039,
+                                                               "rewritten_compressed_bytes":  549
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34866991,
+                                                              "worksheet_compressed_bytes":  3127413
+                                                          }
+                                   }
+                               ]
+                  },
+                  {
+                      "name":  "patch-replace",
+                      "scenario":  "patch-replace",
+                      "requested_edits":  1000,
+                      "warmup_runs":  1,
+                      "measured_runs":  3,
+                      "representative_run":  2,
+                      "statistics":  {
+                                         "total_editor_ms":  {
+                                                                 "min":  4189,
+                                                                 "median":  5325,
+                                                                 "max":  6851
+                                                             },
+                                         "open_ms":  {
+                                                         "min":  8,
+                                                         "median":  9,
+                                                         "max":  13
+                                                     },
+                                         "mutation_ms":  {
+                                                             "min":  2954,
+                                                             "median":  4027,
+                                                             "max":  4828
+                                                         },
+                                         "save_ms":  {
+                                                         "min":  1222,
+                                                         "median":  1289,
+                                                         "max":  2015
+                                                     },
+                                         "peak_memory_mb":  {
+                                                                "min":  7.96094,
+                                                                "median":  7.96484,
+                                                                "max":  8
+                                                            },
+                                         "output_bytes":  {
+                                                              "min":  3129571,
+                                                              "median":  3129571,
+                                                              "max":  3129571
+                                                          },
+                                         "copied_uncompressed_bytes":  {
+                                                                           "min":  2589,
+                                                                           "median":  2589,
+                                                                           "max":  2589
+                                                                       },
+                                         "copied_source_compressed_bytes":  {
+                                                                                "min":  1192,
+                                                                                "median":  1192,
+                                                                                "max":  1192
+                                                                            },
+                                         "copied_output_compressed_bytes":  {
+                                                                                "min":  1192,
+                                                                                "median":  1192,
+                                                                                "max":  1192
+                                                                            },
+                                         "rewritten_uncompressed_bytes":  {
+                                                                              "min":  34871392,
+                                                                              "median":  34871392,
+                                                                              "max":  34871392
+                                                                          },
+                                         "rewritten_compressed_bytes":  {
+                                                                            "min":  3127569,
+                                                                            "median":  3127569,
+                                                                            "max":  3127569
+                                                                        }
+                                     },
+                      "result":  {
+                                     "workbook_editor_benchmark_schema_version":  "4",
+                                     "scenario":  "patch-replace",
+                                     "rows":  100000,
+                                     "cols":  10,
+                                     "source_cells":  1000000,
+                                     "requested_edits":  1000,
+                                     "touched_coordinates":  1000,
+                                     "inserted_coordinates":  0,
+                                     "source_write_ms":  0,
+                                     "open_ms":  9,
+                                     "materialize_ms":  0,
+                                     "mutation_ms":  4027,
+                                     "save_ms":  1289,
+                                     "total_editor_ms":  5325,
+                                     "total_ms":  5329,
+                                     "materialized_worksheet":  false,
+                                     "materialized_cells_before":  0,
+                                     "materialized_cells_after":  0,
+                                     "estimated_memory_before_bytes":  0,
+                                     "estimated_memory_after_bytes":  0,
+                                     "peak_memory_mb":  7.96484,
+                                     "source_bytes":  3129601,
+                                     "output_bytes":  3129571,
+                                     "source_fixture_mode":  "reused-existing-source",
+                                     "source_compression_level":  6,
+                                     "output_compression_level":  6,
+                                     "output_plan_entry_count":  7,
+                                     "copied_entry_count":  5,
+                                     "rewritten_entry_count":  2,
+                                     "omitted_entry_count":  0,
+                                     "copied_entry_names":  [
+                                                                "[Content_Types].xml",
+                                                                "_rels/.rels",
+                                                                "docProps/app.xml",
+                                                                "docProps/core.xml",
+                                                                "xl/_rels/workbook.xml.rels"
+                                                            ],
+                                     "rewritten_entry_names":  [
+                                                                   "xl/workbook.xml",
+                                                                   "xl/worksheets/sheet1.xml"
+                                                               ],
+                                     "omitted_entry_names":  [
+
+                                                             ],
+                                     "editor_mode":  "existing-workbook-patch-targeted-cell-replace",
+                                     "office_open":  "not_run"
+                                 },
+                      "byte_accounting":  {
+                                              "copied_uncompressed_bytes":  2589,
+                                              "copied_source_compressed_bytes":  1192,
+                                              "copied_output_compressed_bytes":  1192,
+                                              "rewritten_uncompressed_bytes":  34871392,
+                                              "rewritten_compressed_bytes":  3127569
+                                          },
+                      "output_archive":  {
+                                             "entry_count":  7,
+                                             "compression_method_counts":  {
+                                                                               "deflate":  7
+                                                                           },
+                                             "worksheet_compression_method":  "deflate",
+                                             "worksheet_uncompressed_bytes":  34871067,
+                                             "worksheet_compressed_bytes":  3127353
+                                         },
+                      "openpyxl":  {
+                                       "status":  "opened",
+                                       "openpyxl_version":  "3.1.2",
+                                       "sheet_count":  1,
+                                       "sheet1_max_row":  100000,
+                                       "sheet1_max_column":  10,
+                                       "sheet1_first_cell":  900000000.0,
+                                       "sheet1_source_tail_cell":  100000010,
+                                       "document_title":  null
+                                   },
+                      "runs":  [
+                                   {
+                                       "name":  "patch-replace-run-01",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "patch-replace",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1000,
+                                                      "touched_coordinates":  1000,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  8,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  4828,
+                                                      "save_ms":  2015,
+                                                      "total_editor_ms":  6851,
+                                                      "total_ms":  6857,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  7.96094,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129571,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "xl/workbook.xml",
+                                                                                    "xl/worksheets/sheet1.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-targeted-cell-replace",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  2589,
+                                                               "copied_source_compressed_bytes":  1192,
+                                                               "copied_output_compressed_bytes":  1192,
+                                                               "rewritten_uncompressed_bytes":  34871392,
+                                                               "rewritten_compressed_bytes":  3127569
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34871067,
+                                                              "worksheet_compressed_bytes":  3127353
+                                                          }
+                                   },
+                                   {
+                                       "name":  "patch-replace-run-02",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "patch-replace",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1000,
+                                                      "touched_coordinates":  1000,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  9,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  4027,
+                                                      "save_ms":  1289,
+                                                      "total_editor_ms":  5325,
+                                                      "total_ms":  5329,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  7.96484,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129571,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "xl/workbook.xml",
+                                                                                    "xl/worksheets/sheet1.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-targeted-cell-replace",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  2589,
+                                                               "copied_source_compressed_bytes":  1192,
+                                                               "copied_output_compressed_bytes":  1192,
+                                                               "rewritten_uncompressed_bytes":  34871392,
+                                                               "rewritten_compressed_bytes":  3127569
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34871067,
+                                                              "worksheet_compressed_bytes":  3127353
+                                                          }
+                                   },
+                                   {
+                                       "name":  "patch-replace-run-03",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "patch-replace",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1000,
+                                                      "touched_coordinates":  1000,
+                                                      "inserted_coordinates":  0,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  13,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  2954,
+                                                      "save_ms":  1222,
+                                                      "total_editor_ms":  4189,
+                                                      "total_ms":  4193,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  8,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3129571,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "xl/workbook.xml",
+                                                                                    "xl/worksheets/sheet1.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-targeted-cell-replace",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  2589,
+                                                               "copied_source_compressed_bytes":  1192,
+                                                               "copied_output_compressed_bytes":  1192,
+                                                               "rewritten_uncompressed_bytes":  34871392,
+                                                               "rewritten_compressed_bytes":  3127569
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34871067,
+                                                              "worksheet_compressed_bytes":  3127353
+                                                          }
+                                   }
+                               ]
+                  },
+                  {
+                      "name":  "patch-upsert",
+                      "scenario":  "patch-upsert",
+                      "requested_edits":  1000,
+                      "warmup_runs":  1,
+                      "measured_runs":  3,
+                      "representative_run":  1,
+                      "statistics":  {
+                                         "total_editor_ms":  {
+                                                                 "min":  4798,
+                                                                 "median":  5402,
+                                                                 "max":  5873
+                                                             },
+                                         "open_ms":  {
+                                                         "min":  6,
+                                                         "median":  7,
+                                                         "max":  7
+                                                     },
+                                         "mutation_ms":  {
+                                                             "min":  3571,
+                                                             "median":  3637,
+                                                             "max":  4633
+                                                         },
+                                         "save_ms":  {
+                                                         "min":  1154,
+                                                         "median":  1233,
+                                                         "max":  1825
+                                                     },
+                                         "peak_memory_mb":  {
+                                                                "min":  7.98828,
+                                                                "median":  7.99609,
+                                                                "max":  8.01953
+                                                            },
+                                         "output_bytes":  {
+                                                              "min":  3133360,
+                                                              "median":  3133360,
+                                                              "max":  3133360
+                                                          },
+                                         "copied_uncompressed_bytes":  {
+                                                                           "min":  2589,
+                                                                           "median":  2589,
+                                                                           "max":  2589
+                                                                       },
+                                         "copied_source_compressed_bytes":  {
+                                                                                "min":  1192,
+                                                                                "median":  1192,
+                                                                                "max":  1192
+                                                                            },
+                                         "copied_output_compressed_bytes":  {
+                                                                                "min":  1192,
+                                                                                "median":  1192,
+                                                                                "max":  1192
+                                                                            },
+                                         "rewritten_uncompressed_bytes":  {
+                                                                              "min":  34897902,
+                                                                              "median":  34897902,
+                                                                              "max":  34897902
+                                                                          },
+                                         "rewritten_compressed_bytes":  {
+                                                                            "min":  3131358,
+                                                                            "median":  3131358,
+                                                                            "max":  3131358
+                                                                        }
+                                     },
+                      "result":  {
+                                     "workbook_editor_benchmark_schema_version":  "4",
+                                     "scenario":  "patch-upsert",
+                                     "rows":  100000,
+                                     "cols":  10,
+                                     "source_cells":  1000000,
+                                     "requested_edits":  1000,
+                                     "touched_coordinates":  1000,
+                                     "inserted_coordinates":  500,
+                                     "source_write_ms":  0,
+                                     "open_ms":  6,
+                                     "materialize_ms":  0,
+                                     "mutation_ms":  3571,
+                                     "save_ms":  1825,
+                                     "total_editor_ms":  5402,
+                                     "total_ms":  5406,
+                                     "materialized_worksheet":  false,
+                                     "materialized_cells_before":  0,
+                                     "materialized_cells_after":  0,
+                                     "estimated_memory_before_bytes":  0,
+                                     "estimated_memory_after_bytes":  0,
+                                     "peak_memory_mb":  8.01953,
+                                     "source_bytes":  3129601,
+                                     "output_bytes":  3133360,
+                                     "source_fixture_mode":  "reused-existing-source",
+                                     "source_compression_level":  6,
+                                     "output_compression_level":  6,
+                                     "output_plan_entry_count":  7,
+                                     "copied_entry_count":  5,
+                                     "rewritten_entry_count":  2,
+                                     "omitted_entry_count":  0,
+                                     "copied_entry_names":  [
+                                                                "[Content_Types].xml",
+                                                                "_rels/.rels",
+                                                                "docProps/app.xml",
+                                                                "docProps/core.xml",
+                                                                "xl/_rels/workbook.xml.rels"
+                                                            ],
+                                     "rewritten_entry_names":  [
+                                                                   "xl/workbook.xml",
+                                                                   "xl/worksheets/sheet1.xml"
+                                                               ],
+                                     "omitted_entry_names":  [
+
+                                                             ],
+                                     "editor_mode":  "existing-workbook-patch-targeted-cell-upsert",
+                                     "office_open":  "not_run"
+                                 },
+                      "byte_accounting":  {
+                                              "copied_uncompressed_bytes":  2589,
+                                              "copied_source_compressed_bytes":  1192,
+                                              "copied_output_compressed_bytes":  1192,
+                                              "rewritten_uncompressed_bytes":  34897902,
+                                              "rewritten_compressed_bytes":  3131358
+                                          },
+                      "output_archive":  {
+                                             "entry_count":  7,
+                                             "compression_method_counts":  {
+                                                                               "deflate":  7
+                                                                           },
+                                             "worksheet_compression_method":  "deflate",
+                                             "worksheet_uncompressed_bytes":  34897577,
+                                             "worksheet_compressed_bytes":  3131142
+                                         },
+                      "openpyxl":  {
+                                       "status":  "opened",
+                                       "openpyxl_version":  "3.1.2",
+                                       "sheet_count":  1,
+                                       "sheet1_max_row":  100500,
+                                       "sheet1_max_column":  10,
+                                       "sheet1_first_cell":  900000000.0,
+                                       "sheet1_source_tail_cell":  100000010,
+                                       "document_title":  null
+                                   },
+                      "runs":  [
+                                   {
+                                       "name":  "patch-upsert-run-01",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "patch-upsert",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1000,
+                                                      "touched_coordinates":  1000,
+                                                      "inserted_coordinates":  500,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  6,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  3571,
+                                                      "save_ms":  1825,
+                                                      "total_editor_ms":  5402,
+                                                      "total_ms":  5406,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  8.01953,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3133360,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "xl/workbook.xml",
+                                                                                    "xl/worksheets/sheet1.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-targeted-cell-upsert",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  2589,
+                                                               "copied_source_compressed_bytes":  1192,
+                                                               "copied_output_compressed_bytes":  1192,
+                                                               "rewritten_uncompressed_bytes":  34897902,
+                                                               "rewritten_compressed_bytes":  3131358
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34897577,
+                                                              "worksheet_compressed_bytes":  3131142
+                                                          }
+                                   },
+                                   {
+                                       "name":  "patch-upsert-run-02",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "patch-upsert",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1000,
+                                                      "touched_coordinates":  1000,
+                                                      "inserted_coordinates":  500,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  7,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  3637,
+                                                      "save_ms":  1154,
+                                                      "total_editor_ms":  4798,
+                                                      "total_ms":  4802,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  7.98828,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3133360,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "xl/workbook.xml",
+                                                                                    "xl/worksheets/sheet1.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-targeted-cell-upsert",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  2589,
+                                                               "copied_source_compressed_bytes":  1192,
+                                                               "copied_output_compressed_bytes":  1192,
+                                                               "rewritten_uncompressed_bytes":  34897902,
+                                                               "rewritten_compressed_bytes":  3131358
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34897577,
+                                                              "worksheet_compressed_bytes":  3131142
+                                                          }
+                                   },
+                                   {
+                                       "name":  "patch-upsert-run-03",
+                                       "result":  {
+                                                      "workbook_editor_benchmark_schema_version":  "4",
+                                                      "scenario":  "patch-upsert",
+                                                      "rows":  100000,
+                                                      "cols":  10,
+                                                      "source_cells":  1000000,
+                                                      "requested_edits":  1000,
+                                                      "touched_coordinates":  1000,
+                                                      "inserted_coordinates":  500,
+                                                      "source_write_ms":  0,
+                                                      "open_ms":  7,
+                                                      "materialize_ms":  0,
+                                                      "mutation_ms":  4633,
+                                                      "save_ms":  1233,
+                                                      "total_editor_ms":  5873,
+                                                      "total_ms":  5877,
+                                                      "materialized_worksheet":  false,
+                                                      "materialized_cells_before":  0,
+                                                      "materialized_cells_after":  0,
+                                                      "estimated_memory_before_bytes":  0,
+                                                      "estimated_memory_after_bytes":  0,
+                                                      "peak_memory_mb":  7.99609,
+                                                      "source_bytes":  3129601,
+                                                      "output_bytes":  3133360,
+                                                      "source_fixture_mode":  "reused-existing-source",
+                                                      "source_compression_level":  6,
+                                                      "output_compression_level":  6,
+                                                      "output_plan_entry_count":  7,
+                                                      "copied_entry_count":  5,
+                                                      "rewritten_entry_count":  2,
+                                                      "omitted_entry_count":  0,
+                                                      "copied_entry_names":  [
+                                                                                 "[Content_Types].xml",
+                                                                                 "_rels/.rels",
+                                                                                 "docProps/app.xml",
+                                                                                 "docProps/core.xml",
+                                                                                 "xl/_rels/workbook.xml.rels"
+                                                                             ],
+                                                      "rewritten_entry_names":  [
+                                                                                    "xl/workbook.xml",
+                                                                                    "xl/worksheets/sheet1.xml"
+                                                                                ],
+                                                      "omitted_entry_names":  [
+
+                                                                              ],
+                                                      "editor_mode":  "existing-workbook-patch-targeted-cell-upsert",
+                                                      "office_open":  "not_run"
+                                                  },
+                                       "byte_accounting":  {
+                                                               "copied_uncompressed_bytes":  2589,
+                                                               "copied_source_compressed_bytes":  1192,
+                                                               "copied_output_compressed_bytes":  1192,
+                                                               "rewritten_uncompressed_bytes":  34897902,
+                                                               "rewritten_compressed_bytes":  3131358
+                                                           },
+                                       "output_archive":  {
+                                                              "entry_count":  7,
+                                                              "compression_method_counts":  {
+                                                                                                "deflate":  7
+                                                                                            },
+                                                              "worksheet_compression_method":  "deflate",
+                                                              "worksheet_uncompressed_bytes":  34897577,
+                                                              "worksheet_compressed_bytes":  3131142
+                                                          }
+                                   }
+                               ]
+                  }
+              ],
+    "comparison_scope":  "Manual opt-in public WorkbookEditor Patch matrix. Source generation is a separate process; every warm-up/measured run reuses the same source so benchmark process PeakWorkingSet excludes WorkbookWriter fixture construction. openpyxl validates only representative outputs after benchmark timing; Office remains not_run."
+}

@@ -1,0 +1,60 @@
+{
+  "evidence_schema_version": "1",
+  "evidence_id": "2026-07-12-windows-msvc-patch-matrix",
+  "created_utc": "2026-07-12T14:27:13Z",
+  "git_revision": "8b275b76424584672a40c045bf30e42c7228de5b",
+  "benchmark_kind": "workbook-editor",
+  "environment": {
+    "os": "Microsoft Windows 11 专业版 10.0.26200 build 26200",
+    "compiler": "MSVC 19.50.35728.0",
+    "cmake_preset": "windows-nmake-release-benchmark",
+    "cpu": "11th Gen Intel(R) Core(TM) i5-11320H @ 3.20GHz",
+    "memory_bytes": 16952647680
+  },
+  "artifacts": [
+    {
+      "path": "matrix-report.json",
+      "sha256": "bff60379a1f34e803a1022fb2c43761687f2afb9cf4274233471b8a9f9aab5fc",
+      "role": "matrix-report"
+    },
+    {
+      "path": "run-context.json",
+      "sha256": "f075715b370fdf8477c201b26fcc6c1179e5fa7a2339dfaca772fa46a69392e9",
+      "role": "summary"
+    }
+  ],
+  "claims": [
+    {
+      "statement": "仅在本 manifest 环境、1,000,000 个 numeric cells、production minizip-ng DEFLATE level 6 与 run-context 协议下，no-op copy、document-properties、1,000-cell targeted replace 和 1,000-cell targeted upsert 各执行 1 次 warm-up 与 3 次 measured run，并记录 open/mutation/save/total、process peak working set、output size 与 copied/rewritten byte accounting 的 min/median/max；不得泛化到其他机器、数据规模或 workload。",
+      "artifact_paths": [
+        "matrix-report.json",
+        "run-context.json"
+      ]
+    },
+    {
+      "statement": "No-op public Patch copy 的 total_editor_ms median 为 1530 ms、process peak working set median 为 6.41406 MB、output 为 3129601 bytes；34869861 logical copied bytes 的 source/output compressed totals 均为 3128791 bytes，CRC 与 logical size 相等，但这不证明或声称 raw compressed-byte passthrough。",
+      "artifact_paths": [
+        "matrix-report.json"
+      ]
+    },
+    {
+      "statement": "Core/app document-properties Patch 的 total_editor_ms median 为 1138 ms、process peak working set median 为 6.4375 MB；重写 1039 logical / 549 compressed bytes，并保留 34868949 logical copied bytes。",
+      "artifact_paths": [
+        "matrix-report.json"
+      ]
+    },
+    {
+      "statement": "1,000-cell targeted replace/upsert 的 total_editor_ms median 分别为 5325/5402 ms、process peak working set median 为 7.96484/7.99609 MB；两者均重写约 34.9 MB logical worksheet/workbook XML，mutation median 为 4027/3637 ms，表明当前 targeted transformer 与整 worksheet rewrite 仍是后续优化对象。",
+      "artifact_paths": [
+        "matrix-report.json"
+      ]
+    },
+    {
+      "statement": "四个代表 workbook 均由 openpyxl 3.1.2 打开并验证 sheet 维度、首尾单元格及 document title 或 upsert row count；Microsoft Office 未运行，所有 benchmark office_open 字段保持 not_run。",
+      "artifact_paths": [
+        "matrix-report.json",
+        "run-context.json"
+      ]
+    }
+  ]
+}

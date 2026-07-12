@@ -27,7 +27,7 @@ Release note 或性能文档只能引用 `benchmarks/evidence/<bundle>/manifest.
 py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 ```
 
-重复矩阵使用 `tools/run_benchmark_matrix.py`。默认每个 case 先 warm-up 1 次，再保留 3 次 measured schema-v4 JSON；矩阵报告使用 `elapsed_ms` median 对应的真实 run 作为兼容 consumer 的代表结果，并同时保留每次 raw result 与 min/median/max。Openpyxl 验证在 benchmark 进程计时结束后执行，不得混入 `elapsed_ms`。
+Streaming 重复矩阵使用 `tools/run_benchmark_matrix.py`，Patch 重复矩阵使用 `tools/run_patch_benchmark_matrix.py`。默认每个 case 先 warm-up 1 次，再保留 3 次 measured JSON；矩阵报告使用 total elapsed median 对应的真实 run 作为代表结果，并同时保留每次 raw result 与 min/median/max。Openpyxl 验证在 benchmark 进程计时结束后执行，不得混入 benchmark timing。
 
 当前没有 bundle 时，不得从本地 build 目录或 Markdown 摘抄形成 release claim。
 
@@ -35,7 +35,8 @@ py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 
 - [`2026-07-12-windows-msvc-streaming-mixed-inline`](../benchmarks/evidence/2026-07-12-windows-msvc-streaming-mixed-inline/manifest.json)：production Streaming、1,000,000 cells、20% mixed repeated strings、inline strings、minizip-ng DEFLATE level 6；仅允许引用 manifest 中的单机单次观测和 ZIP/XML/openpyxl 验证，Office 为 `not_run`。
 - [`2026-07-12-windows-msvc-streaming-strategy-matrix`](../benchmarks/evidence/2026-07-12-windows-msvc-streaming-strategy-matrix/manifest.json)：同一 Windows/MSVC production 环境下的 7-case Streaming 策略矩阵；每个 case 为 1 次 warm-up + 3 次 measured run，保留 min/median/max、全部 measured 指标和代表 workbook 的 openpyxl 验证，Office 为 `not_run`。
-- 两个 bundle 都不是跨机器、跨数据规模或泛化“高性能/低内存”证据；第二个 bundle 只支持 manifest 中记录的同机同数据集策略比较。
+- [`2026-07-12-windows-msvc-patch-matrix`](../benchmarks/evidence/2026-07-12-windows-msvc-patch-matrix/manifest.json)：同机 production `WorkbookEditor` Patch 矩阵；1,000,000 numeric cells、source/output DEFLATE level 6，覆盖 no-op、core/app metadata 与 1,000-cell targeted replace/upsert，分列 copied logical、copied source/output compressed 与 rewritten bytes，代表 workbook 通过 openpyxl，Office 为 `not_run`。
+- 三个 bundle 都不是跨机器、跨数据规模或泛化“高性能/低内存”证据；两个矩阵只支持各自 manifest 中记录的同机同数据集结论。
 
 ## Streaming 字符串策略
 
@@ -47,7 +48,8 @@ py -3 tools/validate_benchmark_evidence.py --root benchmarks/evidence
 ## 当前结论与缺口
 
 - 在上述单机、1,000,000-cell、DEFLATE level 6 范围内，Streaming 创建路径已具备稳定的 file-backed worksheet footprint；除 unique sharedStrings 外，各 case 的 process peak working set median 约为 6 MB。
-- Patch 的 copy-original / part-level rewrite 是性能设计，不是性能结果。下一份 evidence 应覆盖 no-op copy、targeted cell patch、small metadata rewrite 和 large worksheet replacement，并记录 source/output size、rewritten bytes、elapsed 与 process peak working set。
+- 在 Patch bundle 的同机 1,000,000 numeric cells、DEFLATE level 6 范围内，no-op/document-properties 的 total median 为 1530/1138 ms，peak working set median 为 6.41406/6.4375 MB；1,000-cell targeted replace/upsert 为 5325/5402 ms 与 7.96484/7.99609 MB。
+- No-op 的 34,869,861 logical copied bytes 在 source/output 中均压缩为 3,128,791 bytes，但当前只验证 CRC/logical size，不声称 raw compressed-byte passthrough。Targeted replace/upsert 各重写约 34.9 MB logical XML，mutation median 为 4027/3637 ms；下一步先 profile raw-copy backend 可行性与 transformer 热点，再决定实现。
 - Large-file low-memory random editing 不是当前目标；后续 large worksheet 能力应采用 source-order file-backed/chunked transformation，并单独建立正确性和内存证据。
 
 ## 禁止措辞

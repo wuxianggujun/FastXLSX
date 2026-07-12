@@ -133,7 +133,8 @@ auto sheet = editor.worksheet("Data", options);
 
 - **创建**：production Streaming 已使用 file-backed worksheet body、chunked package entry 和 minizip-ng DEFLATE。当前 tracked Windows/MSVC 重复矩阵中，每个场景写入 1,000,000 cells，numeric 与重复/混合字符串场景的 median 为 1.488–2.562 秒；该范围只适用于证据中的机器、数据集和 level 6 compression，不是跨机器承诺。
 - **字符串选型**：同一矩阵的 20% 高重复 mixed workload 中，`SharedString` median 为 1.488 秒，`InlineString` 为 2.385 秒；但 1,000,000 个字符串全部唯一时，`SharedString` 的 process peak working set median 为 122.195 MB，而 `InlineString` 为 6.02344 MB，并且前者更慢、更大。因此默认保持 `InlineString`。
-- **已有文件编辑**：Patch 按 part-level rewrite 工作，未修改 part 默认 copy-original；public save 可显式选择 stored 或 production DEFLATE。Copy-original 当前保证 logical payload/CRC 保留，但输出 writer 仍会重新封装并可能重新压缩 entry；当前尚无与 Streaming 矩阵同等级的 tracked Patch 吞吐证据。
+- **已有文件编辑**：Patch 按 part-level rewrite 工作，未修改 part 默认 copy-original；public save 可显式选择 stored 或 production DEFLATE。当前 tracked Windows/MSVC、1,000,000 numeric cells、level 6 矩阵中，no-op copy 与 core/app metadata rewrite 的 total median 为 1.530/1.138 秒、process peak working set median 为 6.41406/6.4375 MB；1,000-cell targeted replace/upsert 为 5.325/5.402 秒、约 8 MB。该结果只适用于证据中的机器与 workload。
+- **Patch 缺口**：Copy-original 当前保证 logical payload/CRC 保留，但 output writer 仍会重新封装并可能重新压缩 entry；targeted cell patch 也会变换并重写完整 worksheet part。Tracked 数据把 raw compressed-entry passthrough 和 transformer 热点列为下一步优化对象，不证明任意 XLSX 的高性能随机编辑。
 - **随机编辑/处理**：`WorksheetEditor` 有意限定为 small-file sparse editing。大型 worksheet 的低内存顺序变换需要独立 file-backed/chunked rewrite API，不能通过放宽 In-memory guardrail 冒充高性能。
 
 精确环境、三次 measured run、min/median/max 和验证结果见 [性能目标与证据](docs/PERFORMANCE_TARGETS.md)。

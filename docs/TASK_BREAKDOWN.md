@@ -40,8 +40,8 @@
 ## C6 Performance / Release Evidence
 
 - Streaming 重复策略矩阵已形成同机比较基线；继续补不同数据规模/机器证据前，不把 1,000,000-cell Windows/MSVC 结果泛化。
-- 完成 production Patch evidence：no-op copy、targeted cell patch、small metadata rewrite，并区分 copied logical bytes、source/output compressed bytes、rewritten bytes 与 source/output package size；不得把 logical copy-original 写成 raw compressed-byte passthrough。
-- 基于 Patch evidence 评估 raw compressed-entry passthrough 与 targeted transformer 热点；先记录可复现瓶颈，再决定是否引入 ZIP raw-copy backend 或 worksheet index/cache。
+- 基于已跟踪 Patch evidence 评估 raw compressed-entry passthrough 与 targeted transformer 热点；先用 profiler 区分 inflate/deflate、XML scan/index 与 replacement assembly，再决定是否引入 ZIP raw-copy backend 或 worksheet index/cache。
+- 若实现 raw-copy 或 transformer 优化，必须复跑相同矩阵并验证 CRC/logical preservation、unknown parts、输出压缩方法、openpyxl 与失败 retry；不以单次局部计时替代 bundle。
 - 新 bundle 继续提交 machine-readable artifacts、environment、hash、验证状态和 claim-to-artifact 映射；Office 未运行必须保持 `not_run`。
 - 性能结论必须满足 `PERFORMANCE_TARGETS.md`。
 

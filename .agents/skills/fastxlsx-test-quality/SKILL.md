@@ -13,6 +13,6 @@ description: "添加或排查 FastXLSX CTest、OpenXML、profile 和 benchmark e
 - Streaming row order、无 DOM/dense matrix。
 - No-images disabled-feature runtime smoke。
 
-普通 CTest timeout 为 60 秒；legacy public-state 剩余 6 个 shard 在拆分超大 translation unit 期间使用专用 120 秒上限，已拆出的 standalone tests 与其他测试不得借此放宽。
+普通 CTest timeout 为 60 秒；legacy public-state 剩余 5 个 shard 在拆分超大 translation unit 期间使用专用 120 秒上限，已拆出的 standalone tests 与其他测试不得借此放宽。
 
 Benchmark 不进默认 CTest。Release 只引用 `benchmarks/evidence/` 中通过 `validate_benchmark_evidence.py` 的 bundle；0 bundle 是合法“无证据”状态。

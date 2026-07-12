@@ -97,6 +97,20 @@ void check_not_contains(
     check(haystack.find(needle) == std::string::npos, message);
 }
 
+void check_cell_range_equals(
+    const std::optional<fastxlsx::CellRange>& range,
+    std::uint32_t first_row,
+    std::uint32_t first_column,
+    std::uint32_t last_row,
+    std::uint32_t last_column,
+    std::string_view message)
+{
+    check(range.has_value() && range->first_row == first_row &&
+            range->first_column == first_column && range->last_row == last_row &&
+            range->last_column == last_column,
+        message);
+}
+
 bool threw_fastxlsx_error(const std::function<void()>& action)
 {
     try {
@@ -184,7 +198,11 @@ bool workbook_editor_edit_summaries_equal(
 }
 
 struct WorkbookEditorPublicSaveStateSnapshot {
+    bool has_pending_changes{};
     std::size_t pending_change_count{};
+    std::vector<std::string> pending_materialized_worksheet_names;
+    std::size_t pending_materialized_cell_count{};
+    std::size_t estimated_pending_materialized_memory_usage{};
     std::size_t pending_replacement_cell_count{};
     std::size_t estimated_pending_replacement_memory_usage{};
     std::vector<std::string> pending_replacement_worksheet_names;
@@ -192,13 +210,18 @@ struct WorkbookEditorPublicSaveStateSnapshot {
     std::vector<std::string> pending_targeted_cell_replacement_worksheet_names;
     std::size_t estimated_pending_targeted_cell_replacement_xml_bytes{};
     std::optional<std::string> last_edit_error;
+    std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> pending_worksheet_edits;
 };
 
 WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot(
     const fastxlsx::WorkbookEditor& editor)
 {
     return {
+        editor.has_pending_changes(),
         editor.pending_change_count(),
+        editor.pending_materialized_worksheet_names(),
+        editor.pending_materialized_cell_count(),
+        editor.estimated_pending_materialized_memory_usage(),
         editor.pending_replacement_cell_count(),
         editor.estimated_pending_replacement_memory_usage(),
         editor.pending_replacement_worksheet_names(),
@@ -206,6 +229,7 @@ WorkbookEditorPublicSaveStateSnapshot workbook_editor_public_save_state_snapshot
         editor.pending_targeted_cell_replacement_worksheet_names(),
         editor.estimated_pending_targeted_cell_replacement_xml_bytes(),
         editor.last_edit_error(),
+        editor.pending_worksheet_edits(),
     };
 }
 
@@ -214,8 +238,19 @@ void check_workbook_editor_public_save_state_preserved(
     const WorkbookEditorPublicSaveStateSnapshot& before,
     std::string_view scenario)
 {
+    check(editor.has_pending_changes() == before.has_pending_changes,
+        std::string(scenario) + " should preserve pending-change state");
     check(editor.pending_change_count() == before.pending_change_count,
         std::string(scenario) + " should preserve public pending change count");
+    check(editor.pending_materialized_worksheet_names()
+            == before.pending_materialized_worksheet_names,
+        std::string(scenario) + " should preserve pending materialized worksheet names");
+    check(editor.pending_materialized_cell_count()
+            == before.pending_materialized_cell_count,
+        std::string(scenario) + " should preserve pending materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage()
+            == before.estimated_pending_materialized_memory_usage,
+        std::string(scenario) + " should preserve materialized memory estimate");
     check(editor.pending_replacement_cell_count()
             == before.pending_replacement_cell_count,
         std::string(scenario) + " should preserve pending replacement cell count");
@@ -236,6 +271,9 @@ void check_workbook_editor_public_save_state_preserved(
         std::string(scenario) + " should preserve targeted cell XML byte estimate");
     check(editor.last_edit_error() == before.last_edit_error,
         std::string(scenario) + " should not replace or clear last_edit_error");
+    check(workbook_editor_edit_summaries_equal(
+            editor.pending_worksheet_edits(), before.pending_worksheet_edits),
+        std::string(scenario) + " should preserve pending worksheet edit summaries");
 }
 
 void check_workbook_editor_public_no_pending_state(
@@ -1920,6 +1958,51 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
     writer.close();
 
     return path;
+}
+
+void check_reopened_clean_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view sheet_name,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet(sheet_name);
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened output should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
+        prefix + " reopened output should not expose dirty diagnostics");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " reopened output should not expose dirty worksheet names");
+
+    inspect(reopened_sheet);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened readback should keep public state clean");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
+        prefix + " reopened readback should keep dirty diagnostics empty");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " reopened readback should keep dirty worksheet names empty");
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened readback should keep last_edit_error empty");
 }
 
 std::filesystem::path write_two_sheet_source_with_shift_formula(std::string_view name)
@@ -7262,11 +7345,3080 @@ void test_internal_materialized_session_missing_source_load_preserves_editor_sta
         "clean no-op save_as after missing-source materialized load recovery should not mutate the source package");
 }
 
+
+void test_public_worksheet_editor_has_pending_changes_tracks_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-dirty-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-dirty-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-dirty-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-dirty-second-noop.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    check(!sheet.has_pending_changes(),
+        "freshly materialized public WorksheetEditor should start clean");
+    check(!editor.has_pending_changes(),
+        "clean materialized WorksheetEditor should not make save_as pending");
+
+    (void)sheet.try_cell(1, 1);
+    (void)sheet.get_cell(1, 1);
+    (void)sheet.cell_count();
+    (void)sheet.estimated_memory_usage();
+    (void)sheet.used_range();
+    (void)sheet.sparse_cells();
+    (void)sheet.sparse_cells(fastxlsx::CellRange {1, 1, 2, 2});
+    (void)sheet.row_cells(1);
+    (void)sheet.column_cells(1);
+    check(!sheet.has_pending_changes(),
+        "read-only WorksheetEditor APIs should not dirty the materialized session");
+    check(!editor.last_edit_error().has_value(),
+        "read-only WorksheetEditor APIs should not update last_edit_error");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-reference"));
+    }), "invalid A1 mutation should fail before dirtying the worksheet");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "failed WorksheetEditor mutation should set last_edit_error");
+
+    check(!sheet.has_pending_changes(),
+        "failed WorksheetEditor mutation should preserve clean dirty state");
+    (void)sheet.has_pending_changes();
+    (void)sheet.try_cell(1, 1);
+    (void)sheet.get_cell(1, 1);
+    (void)sheet.cell_count();
+    (void)sheet.estimated_memory_usage();
+    (void)sheet.used_range();
+    (void)sheet.sparse_cells();
+    (void)sheet.sparse_cells(fastxlsx::CellRange {1, 1, 1, 2});
+    (void)sheet.row_cells(1);
+    (void)sheet.column_cells(1);
+    check(editor.last_edit_error() == prior_error,
+        "WorksheetEditor dirty/read inspection should not update last_edit_error");
+
+    sheet.erase_cell(5, 5);
+    check(!sheet.has_pending_changes(),
+        "erasing a missing sparse record should keep a clean worksheet clean");
+    check(!editor.has_pending_changes(),
+        "missing-cell erase should not make the WorkbookEditor save_as pending");
+    check(!editor.last_edit_error().has_value(),
+        "successful missing-cell erase should clear prior mutation diagnostics");
+
+    sheet.erase_cell(2, 1);
+    check(sheet.has_pending_changes(),
+        "erasing an existing sparse record should dirty the worksheet session");
+    check(editor.has_pending_changes(),
+        "dirty WorksheetEditor should make WorkbookEditor save_as pending");
+    check(editor.pending_change_count() == 0,
+        "dirty WorksheetEditor should not count as a queued Patch handoff before flush");
+    (void)sheet.used_range();
+    (void)sheet.sparse_cells();
+    (void)sheet.row_cells(1);
+    (void)sheet.column_cells(1);
+    check(sheet.has_pending_changes(),
+        "dirty WorksheetEditor snapshot reads should preserve dirty state");
+    check(editor.has_pending_changes(),
+        "dirty WorksheetEditor snapshot reads should keep save_as pending");
+    check(editor.pending_change_count() == 0,
+        "dirty WorksheetEditor snapshot reads should not queue a materialized handoff");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "save_as path preflight failure should run before dirty-session flush");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state failed save_as should leave the source package unchanged");
+    check(sheet.has_pending_changes(),
+        "save_as path preflight failure should preserve dirty WorksheetEditor state");
+    check(editor.pending_change_count() == 0,
+        "save_as path preflight failure should not queue a materialized handoff");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "successful save_as should clear the flushed WorksheetEditor dirty state");
+    check(editor.pending_change_count() == 1,
+        "successful save_as should count one materialized Patch handoff");
+
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state first save_as should leave the source package unchanged");
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    const std::string first_xml = first_entries.at("xl/worksheets/sheet1.xml");
+    check_not_contains(first_xml, "placeholder-a2",
+        "flushed dirty WorksheetEditor state should persist erased source cells");
+    check_reopened_clean_sheet_output(first_output, "Data", "dirty state first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "dirty state first save reopened output should keep remaining sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "dirty state first save reopened output should expose shrunk bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "dirty state first save reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "dirty state first save reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "dirty state first save reopened output should keep erased A2 absent");
+        });
+
+    sheet.set_cell(3, 3, fastxlsx::CellValue::text("dirty-again"));
+    check(sheet.has_pending_changes(),
+        "WorksheetEditor should become dirty again after a post-save mutation");
+    editor.save_as(second_output);
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state second save_as should leave the source package unchanged");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "dirty-again",
+        "post-save dirty WorksheetEditor mutation should persist on a later save_as");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "dirty state second no-op save should keep the materialized handle clean");
+    check(editor.pending_change_count() == 2,
+        "dirty state second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "dirty state second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "dirty state second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "dirty state second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "dirty state second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "dirty state second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "dirty state second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "dirty state second no-op save should leave the second output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty state second no-op save should leave the source package unchanged");
+
+    check_reopened_clean_sheet_output(second_output, "Data", "dirty state second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "dirty state second save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "dirty state second save reopened output should include later C3 edit");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                "dirty state second save reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "dirty state second save reopened output should keep source-backed B1");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "dirty state second save reopened output should keep erased A2 absent");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "dirty-again",
+                "dirty state second save reopened output should read later C3 edit");
+        });
+}
+
+void test_public_worksheet_editor_handle_remains_valid_after_save_as()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-handle-save-source.xlsx");
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-first.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-second.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-handle-save-second-noop.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+    sheet.set_cell(1, 1, fastxlsx::CellValue::text("same-handle-first-save"));
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "failed save_as path guard should not invalidate a borrowed WorksheetEditor handle");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle failed save_as should leave the source package unchanged");
+    check(sheet.has_pending_changes(),
+        "failed save_as should keep the same WorksheetEditor handle dirty and valid");
+    check(editor.pending_change_count() == 0,
+        "failed save_as should not flush the dirty materialized session");
+
+    editor.save_as(first_output);
+    check(!sheet.has_pending_changes(),
+        "successful save_as should keep the same WorksheetEditor handle valid and clean");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle first save_as should leave the source package unchanged");
+    const fastxlsx::CellValue saved_value = sheet.get_cell(1, 1);
+    check(saved_value.kind() == fastxlsx::CellValueKind::Text &&
+            saved_value.text_value() == "same-handle-first-save",
+        "same WorksheetEditor handle should still read materialized cells after save_as");
+    const auto check_same_handle_saved_snapshots =
+        [&](std::string_view scenario, std::string_view expected_b1_text,
+            bool expect_b1_text) {
+            const std::string prefix(scenario);
+            check(!sheet.has_pending_changes(),
+                prefix + " should keep the same saved handle clean");
+            check_cell_range_equals(sheet.used_range(), 1, 1, 2, 2,
+                prefix + " should expose saved sparse bounds");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> cells = sheet.sparse_cells();
+            check(cells.size() == 3 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "same-handle-first-save" &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 2 &&
+                    cells[2].reference.row == 2 &&
+                    cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2",
+                prefix + " sparse_cells should expose the saved materialized state");
+
+            const std::vector<fastxlsx::WorksheetCellSnapshot> row_one = sheet.row_cells(1);
+            check(row_one.size() == 2 &&
+                    row_one[0].reference.row == 1 &&
+                    row_one[0].reference.column == 1 &&
+                    row_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    row_one[0].value.text_value() == "same-handle-first-save" &&
+                    row_one[1].reference.row == 1 &&
+                    row_one[1].reference.column == 2,
+                prefix + " row_cells should expose the saved first row");
+            const std::vector<fastxlsx::WorksheetCellSnapshot> column_one =
+                sheet.column_cells(1);
+            check(column_one.size() == 2 &&
+                    column_one[0].reference.row == 1 &&
+                    column_one[0].reference.column == 1 &&
+                    column_one[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[0].value.text_value() == "same-handle-first-save" &&
+                    column_one[1].reference.row == 2 &&
+                    column_one[1].reference.column == 1 &&
+                    column_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                    column_one[1].value.text_value() == "placeholder-a2",
+                prefix + " column_cells should expose saved A-column cells");
+
+            const std::optional<fastxlsx::CellValue> b1 = sheet.try_cell("B1");
+            check(b1.has_value(), prefix + " try_cell should expose saved B1");
+            if (expect_b1_text) {
+                check(cells.size() == 3 &&
+                        cells[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        cells[1].value.text_value() == expected_b1_text &&
+                        row_one.size() == 2 &&
+                        row_one[1].value.kind() == fastxlsx::CellValueKind::Text &&
+                        row_one[1].value.text_value() == expected_b1_text &&
+                        b1.has_value() &&
+                        b1->kind() == fastxlsx::CellValueKind::Text &&
+                        b1->text_value() == expected_b1_text,
+                    prefix + " should expose saved text B1 through all snapshots");
+            } else {
+                check(cells.size() == 3 &&
+                        cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        cells[1].value.number_value() == 1.0 &&
+                        row_one.size() == 2 &&
+                        row_one[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                        row_one[1].value.number_value() == 1.0 &&
+                        b1.has_value() &&
+                        b1->kind() == fastxlsx::CellValueKind::Number &&
+                        b1->number_value() == 1.0,
+                    prefix + " should expose saved numeric B1 through all snapshots");
+            }
+            check(!sheet.has_pending_changes(),
+                prefix + " snapshot reads should not dirty the saved handle");
+            check(!editor.last_edit_error().has_value(),
+                prefix + " snapshot reads should keep diagnostics clear");
+            check(editor.pending_materialized_worksheet_names().empty() &&
+                    editor.pending_materialized_cell_count() == 0 &&
+                    editor.estimated_pending_materialized_memory_usage() == 0,
+                prefix + " snapshot reads should keep materialized diagnostics empty");
+        };
+    check_same_handle_saved_snapshots("same-handle first saved handle", "", false);
+
+    sheet.set_cell(1, 2, fastxlsx::CellValue::text("same-handle-second-save"));
+    check(sheet.has_pending_changes(),
+        "same WorksheetEditor handle should be reusable for post-save edits");
+    editor.save_as(second_output);
+    check(editor.pending_change_count() == 2,
+        "second save_as should record a second materialized Patch handoff");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle second save_as should leave the source package unchanged");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "same-handle-first-save",
+        "first output should contain the first same-handle materialized edit");
+    check_not_contains(first_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
+        "later same-handle edits should not mutate an earlier output artifact");
+    check_reopened_clean_sheet_output(first_output, "Data", "same-handle first save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "same-handle first save reopened output should keep source sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "same-handle first save reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "same-handle-first-save",
+                "same-handle first save reopened output should read first saved edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "same-handle first save reopened output should not contain later B1 edit");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "same-handle first save reopened output should keep source-backed A2");
+        });
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-first-save",
+        "second output should retain prior materialized sparse state");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "same-handle-second-save",
+        "second output should contain the post-save same-handle edit");
+    check_same_handle_saved_snapshots(
+        "same-handle second saved handle", "same-handle-second-save", true);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "same-handle second no-op save should keep the handle clean");
+    check(editor.pending_change_count() == 2,
+        "same-handle second no-op save should not add another materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "same-handle second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "same-handle second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "same-handle second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "same-handle second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "same-handle second no-op save");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "same-handle second no-op output should match the second output");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "same-handle second no-op save should leave the second output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "same-handle second no-op save should leave the source package unchanged");
+    check_same_handle_saved_snapshots(
+        "same-handle second no-op saved handle", "same-handle-second-save", true);
+
+    check_reopened_clean_sheet_output(second_output, "Data", "same-handle second save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "same-handle second save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "same-handle second save reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "same-handle-first-save",
+                "same-handle second save reopened output should retain first edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "same-handle-second-save",
+                "same-handle second save reopened output should read later B1 edit");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "same-handle second save reopened output should keep source-backed A2");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Data", "same-handle second no-op save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "same-handle second no-op save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "same-handle second no-op save reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "same-handle-first-save",
+                "same-handle second no-op save reopened output should retain first edit");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "same-handle-second-save",
+                "same-handle second no-op save reopened output should read later B1 edit");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "same-handle second no-op save reopened output should keep source-backed A2");
+        });
+}
+
+void test_public_workbook_editor_pending_materialized_names_track_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-names-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "fresh WorkbookEditor should expose no pending materialized worksheet names");
+
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "clean materialized sessions should not appear in pending materialized names");
+
+    check(threw_fastxlsx_error([&] {
+        data.set_cell("a1", fastxlsx::CellValue::text("invalid-reference"));
+    }), "failed WorksheetEditor mutation should throw before pending materialized diagnostics");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(prior_error.has_value(),
+        "failed WorksheetEditor mutation should set last_edit_error before diagnostics");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "failed WorksheetEditor mutation should not add a dirty materialized name");
+    check(editor.last_edit_error() == prior_error,
+        "pending materialized name inspection should not update last_edit_error");
+
+    data.set_cell(1, 1, fastxlsx::CellValue::text("dirty-data"));
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "one dirty materialized session should report its planned sheet name");
+    }
+    check(editor.pending_change_count() == 0,
+        "dirty materialized names should not count as Patch handoffs before save_as");
+
+    untouched.set_cell(1, 2, fastxlsx::CellValue::text("dirty-untouched"));
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2,
+            "two dirty materialized sessions should both be reported");
+        if (names.size() == 2) {
+            check(names[0] == "Data",
+                "dirty materialized names should follow planned catalog order");
+            check(names[1] == "Untouched",
+                "dirty materialized names should include the second planned sheet");
+        }
+    }
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "save_as path preflight failure should not flush dirty materialized sessions");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names failed save_as should leave the source package unchanged");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "failed save_as should preserve dirty materialized names");
+    }
+
+    editor.save_as(output);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "successful save_as should clear dirty materialized names");
+    check(editor.pending_change_count() == 2,
+        "successful save_as should count both materialized Patch handoffs");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names save_as should leave the source package unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "dirty-data",
+        "first dirty materialized worksheet should persist through save_as");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "dirty-untouched",
+        "second dirty materialized worksheet should persist through save_as");
+
+    const auto inspect_materialized_names_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "pending materialized names Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "pending materialized names Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "dirty-data",
+                "pending materialized names Data reopened output should read dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "pending materialized names Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "pending materialized names Data reopened output should keep source-backed A2");
+        };
+    const auto inspect_materialized_names_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "pending materialized names Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "pending materialized names Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "pending materialized names Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "dirty-untouched",
+                "pending materialized names Untouched reopened output should read dirty B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "pending materialized names Data",
+        inspect_materialized_names_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "pending materialized names Untouched",
+        inspect_materialized_names_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "pending materialized names no-op save should keep source handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending materialized names no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending materialized names no-op save should keep dirty cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending materialized names no-op save should keep dirty memory aggregate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "pending materialized names no-op save should keep dirty summaries empty");
+    check(editor.pending_change_count() == 2,
+        "pending materialized names no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "pending materialized names no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "pending materialized names no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "pending materialized names no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "pending materialized names no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data", "pending materialized names no-op Data",
+        inspect_materialized_names_data);
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "pending materialized names no-op Untouched",
+        inspect_materialized_names_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "pending materialized names second no-op save should keep source handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending materialized names second no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending materialized names second no-op save should keep dirty cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending materialized names second no-op save should keep dirty memory aggregate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "pending materialized names second no-op save should keep dirty summaries empty");
+    check(editor.pending_change_count() == 2,
+        "pending materialized names second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "pending materialized names second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "pending materialized names second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "pending materialized names second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "pending materialized names second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "pending materialized names second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized names second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "pending materialized names second no-op Data",
+        inspect_materialized_names_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "pending materialized names second no-op Untouched",
+        inspect_materialized_names_untouched);
+}
+
+void test_public_workbook_editor_pending_materialized_names_move_with_owner()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-names-move-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-names-move-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-move-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-move-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-names-move-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
+    source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-dirty-data"));
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "moved-from editor should expose no pending materialized names");
+    {
+        const std::vector<std::string> names = moved.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "move construction should preserve dirty materialized names");
+    }
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_sheet = target.worksheet("Untouched");
+    target_sheet.set_cell(1, 1, fastxlsx::CellValue::text("discarded-target-dirty"));
+    {
+        const std::vector<std::string> names = target.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Untouched",
+            "target should start with its own dirty materialized name");
+    }
+
+    target = std::move(moved);
+    check(moved.pending_materialized_worksheet_names().empty(),
+        "move-assigned-from editor should expose no pending materialized names");
+    {
+        const std::vector<std::string> names = target.pending_materialized_worksheet_names();
+        check(names.size() == 1 && names[0] == "Data",
+            "move assignment should replace target dirty materialized names");
+    }
+
+    target.save_as(output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "save_as after move assignment should clear assigned dirty materialized names");
+    check(target.pending_change_count() == 1,
+        "save_as after move assignment should count the assigned materialized handoff");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "move-assigned materialized save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "move-assigned materialized save_as should leave the discarded target source package unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-dirty-data",
+        "move-assigned editor should save assigned dirty materialized payload");
+    check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-target-dirty",
+        "move assignment should not leak discarded target dirty materialized payload");
+
+    const auto inspect_materialized_names_move_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "materialized names move Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "materialized names move Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "moved-dirty-data",
+                "materialized names move Data reopened output should read moved dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "materialized names move Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "materialized names move Data reopened output should keep source-backed A2");
+        };
+    const auto inspect_materialized_names_move_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "materialized names move Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "materialized names move Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "materialized names move Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "materialized names move Untouched reopened output should keep source-backed B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized names move Data",
+        inspect_materialized_names_move_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "materialized names move Untouched",
+        inspect_materialized_names_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(noop_output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "move-assigned materialized no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "move-assigned materialized no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "move-assigned materialized no-op save should keep dirty memory aggregate empty");
+    check(target.pending_worksheet_edits().empty(),
+        "move-assigned materialized no-op save should keep dirty summaries empty");
+    check(target.pending_change_count() == 1,
+        "move-assigned materialized no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "move-assigned materialized no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_noop,
+        "move-assigned materialized no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_noop,
+        "move-assigned materialized no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "move-assigned materialized no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "move-assigned materialized no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "move-assigned materialized no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data", "materialized names move no-op Data",
+        inspect_materialized_names_move_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "materialized names move no-op Untouched",
+        inspect_materialized_names_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(second_noop_output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "move-assigned materialized second no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "move-assigned materialized second no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "move-assigned materialized second no-op save should keep dirty memory aggregate empty");
+    check(target.pending_worksheet_edits().empty(),
+        "move-assigned materialized second no-op save should keep dirty summaries empty");
+    check(target.pending_change_count() == 1,
+        "move-assigned materialized second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "move-assigned materialized second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_second_noop,
+        "move-assigned materialized second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_second_noop,
+        "move-assigned materialized second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "move-assigned materialized second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "move-assigned materialized second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "move-assigned materialized second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "move-assigned materialized second no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "materialized names move second no-op Data",
+        inspect_materialized_names_move_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "materialized names move second no-op Untouched",
+        inspect_materialized_names_move_untouched);
+}
+
+void test_public_workbook_editor_pending_materialized_aggregate_diagnostics()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+    check(editor.pending_materialized_cell_count() == 0,
+        "clean materialized sessions should not contribute to pending materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "clean materialized sessions should not contribute to pending materialized memory");
+
+    check(threw_fastxlsx_error([&] {
+        data.set_cell("a1", fastxlsx::CellValue::text("invalid-reference"));
+    }), "failed mutation should throw before materialized aggregate diagnostics change");
+    const std::optional<std::string> prior_error = editor.last_edit_error();
+    check(editor.pending_materialized_cell_count() == 0,
+        "failed mutation should not add pending materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "failed mutation should not add pending materialized memory");
+    check(editor.last_edit_error() == prior_error,
+        "materialized aggregate diagnostics should not update last_edit_error");
+
+    const std::size_t data_clean_memory = data.estimated_memory_usage();
+    data.set_cell(1, 1, fastxlsx::CellValue::text("aggregate-dirty-data"));
+    data.set_cell(3, 3, fastxlsx::CellValue::blank());
+    check(data.cell_count() == 4,
+        "dirty data worksheet should include source cells plus explicit blank record");
+    check(editor.pending_materialized_cell_count() == data.cell_count(),
+        "one dirty materialized session should contribute its sparse cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == data.estimated_memory_usage(),
+        "one dirty materialized session should contribute its memory estimate");
+    check(editor.estimated_pending_materialized_memory_usage() >= data_clean_memory,
+        "dirty materialized memory estimate should stay non-zero after mutation");
+    check(editor.pending_change_count() == 0,
+        "materialized aggregate diagnostics should not increment Patch handoff count");
+
+    untouched.set_cell(1, 2, fastxlsx::CellValue::text("aggregate-dirty-untouched"));
+    const std::size_t expected_dirty_cells = data.cell_count() + untouched.cell_count();
+    const std::size_t expected_dirty_memory =
+        data.estimated_memory_usage() + untouched.estimated_memory_usage();
+    check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+        "two dirty materialized sessions should aggregate sparse cell counts");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_dirty_memory,
+        "two dirty materialized sessions should aggregate memory estimates");
+
+    const std::filesystem::path replacement_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-replacement-source.xlsx");
+    fastxlsx::WorkbookEditor replacement_editor =
+        fastxlsx::WorkbookEditor::open(replacement_source);
+    replacement_editor.replace_sheet_data("Data", {{fastxlsx::CellValue::text("ignored")}});
+    check(replacement_editor.pending_replacement_cell_count() == 1,
+        "replacement-only editor should expose queued replacement diagnostics");
+    check(replacement_editor.estimated_pending_replacement_memory_usage() > 0,
+        "replacement-only editor should expose queued replacement memory diagnostics");
+    check(replacement_editor.pending_materialized_cell_count() == 0,
+        "queued replacement diagnostics should not contribute materialized cells");
+    check(replacement_editor.estimated_pending_materialized_memory_usage() == 0,
+        "queued replacement diagnostics should not contribute materialized memory");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "failed save_as should preserve dirty materialized aggregate diagnostics");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate failed save_as should leave the source package unchanged");
+    check(editor.pending_materialized_cell_count() == expected_dirty_cells,
+        "failed save_as should preserve materialized cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_dirty_memory,
+        "failed save_as should preserve materialized memory aggregate");
+
+    editor.save_as(output);
+    check(editor.pending_materialized_cell_count() == 0,
+        "successful save_as should clear dirty materialized cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "successful save_as should clear dirty materialized memory aggregate");
+    check(editor.pending_replacement_cell_count() == 0,
+        "materialized auto-flush should not be reported as whole-sheetData replacements");
+    check(editor.pending_change_count() == 2,
+        "successful save_as should count both materialized Patch handoffs");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate save_as should leave the source package unchanged");
+
+    const auto inspect_materialized_aggregate_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "pending materialized aggregate Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "pending materialized aggregate Data reopened output should expose blank bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "aggregate-dirty-data",
+                "pending materialized aggregate Data reopened output should read dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "pending materialized aggregate Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "pending materialized aggregate Data reopened output should keep source-backed A2");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Blank,
+                "pending materialized aggregate Data reopened output should read explicit C3 blank");
+        };
+    const auto inspect_materialized_aggregate_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "pending materialized aggregate Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "pending materialized aggregate Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "pending materialized aggregate Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "aggregate-dirty-untouched",
+                "pending materialized aggregate Untouched reopened output should read dirty B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "pending materialized aggregate Data",
+        inspect_materialized_aggregate_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "pending materialized aggregate Untouched",
+        inspect_materialized_aggregate_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "pending materialized aggregate no-op save should keep source handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending materialized aggregate no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending materialized aggregate no-op save should keep dirty cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending materialized aggregate no-op save should keep dirty memory aggregate empty");
+    check(editor.pending_replacement_cell_count() == 0,
+        "pending materialized aggregate no-op save should keep replacement cells empty");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        "pending materialized aggregate no-op save should keep replacement memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "pending materialized aggregate no-op save should keep dirty summaries empty");
+    check(editor.pending_change_count() == 2,
+        "pending materialized aggregate no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "pending materialized aggregate no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "pending materialized aggregate no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "pending materialized aggregate no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "pending materialized aggregate no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "pending materialized aggregate no-op Data",
+        inspect_materialized_aggregate_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "pending materialized aggregate no-op Untouched",
+        inspect_materialized_aggregate_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "pending materialized aggregate second no-op save should keep source handles clean");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending materialized aggregate second no-op save should keep dirty names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending materialized aggregate second no-op save should keep dirty cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending materialized aggregate second no-op save should keep dirty memory aggregate empty");
+    check(editor.pending_replacement_cell_count() == 0,
+        "pending materialized aggregate second no-op save should keep replacement cells empty");
+    check(editor.estimated_pending_replacement_memory_usage() == 0,
+        "pending materialized aggregate second no-op save should keep replacement memory empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "pending materialized aggregate second no-op save should keep dirty summaries empty");
+    check(editor.pending_change_count() == 2,
+        "pending materialized aggregate second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "pending materialized aggregate second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "pending materialized aggregate second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "pending materialized aggregate second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "pending materialized aggregate second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "pending materialized aggregate second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending materialized aggregate second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "pending materialized aggregate second no-op Data",
+        inspect_materialized_aggregate_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "pending materialized aggregate second no-op Untouched",
+        inspect_materialized_aggregate_untouched);
+}
+
+void test_public_workbook_editor_multi_sheet_materialized_noop_save_stability()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-multi-noop-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-noop-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-noop-output-copy.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-noop-output-second-copy.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell("A1", fastxlsx::CellValue::text("multi-noop-data"));
+    untouched.set_cell("B1", fastxlsx::CellValue::text("multi-noop-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet materialized no-op setup should dirty both handles");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet materialized no-op setup should expose both dirty names");
+    }
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet materialized save should clean both original handles");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "multi-sheet materialized save should clear dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "multi-sheet materialized save should clear dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized save should clear dirty memory aggregate");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized save should record both materialized handoffs");
+    check(editor.pending_worksheet_edits().empty(),
+        "multi-sheet materialized save should leave no dirty summaries");
+
+    fastxlsx::WorksheetEditor data_reacquired = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched_reacquired = editor.worksheet("Untouched");
+    check(!data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized clean reacquire should keep both handles clean");
+    const fastxlsx::CellValue reacquired_data_a1 = data_reacquired.get_cell("A1");
+    check(reacquired_data_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_data_a1.text_value() == "multi-noop-data",
+        "multi-sheet materialized reacquire should read saved Data!A1");
+    const fastxlsx::CellValue reacquired_untouched_b1 =
+        untouched_reacquired.get_cell("B1");
+    check(reacquired_untouched_b1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_untouched_b1.text_value() == "multi-noop-untouched",
+        "multi-sheet materialized reacquire should read saved Untouched!B1");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "multi-sheet materialized save should leave the source package unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "multi-noop-data",
+        "multi-sheet materialized output should contain saved Data edit");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "multi-noop-untouched",
+        "multi-sheet materialized output should contain saved Untouched edit");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized no-op save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "multi-sheet materialized no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "multi-sheet materialized no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "multi-sheet materialized no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "multi-sheet materialized no-op save should leave the source package unchanged");
+
+    const auto inspect_materialized_multi_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet materialized Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "multi-sheet materialized Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "multi-noop-data",
+                "multi-sheet materialized Data reopened output should read saved A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "multi-sheet materialized Data reopened output should keep source B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "multi-sheet materialized Data reopened output should keep source A2");
+        };
+    const auto inspect_materialized_multi_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "multi-sheet materialized Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "multi-sheet materialized Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "multi-sheet materialized Untouched reopened output should keep source A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "multi-noop-untouched",
+                "multi-sheet materialized Untouched reopened output should read saved B1");
+        };
+
+    check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet materialized Data",
+        inspect_materialized_multi_data);
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "multi-sheet materialized Untouched",
+        inspect_materialized_multi_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized second no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized second no-op save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "multi-sheet materialized second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "multi-sheet materialized second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "multi-sheet materialized second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "multi-sheet materialized second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "multi-sheet materialized second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "multi-sheet materialized second no-op Data",
+        inspect_materialized_multi_data);
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Untouched",
+        "multi-sheet materialized second no-op Untouched",
+        inspect_materialized_multi_untouched);
+}
+
+void test_public_workbook_editor_multi_sheet_materialized_failed_save_retry()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-multi-retry-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-noop-second-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell("A1", fastxlsx::CellValue::text("multi-retry-data"));
+    untouched.set_cell("B1", fastxlsx::CellValue::text("multi-retry-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet materialized retry setup should dirty both handles");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet materialized retry setup should expose both dirty names");
+    }
+    const std::size_t dirty_cells = data.cell_count() + untouched.cell_count();
+    const std::size_t dirty_memory =
+        data.estimated_memory_usage() + untouched.estimated_memory_usage();
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet materialized retry setup should aggregate dirty cells");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "multi-sheet materialized retry setup should aggregate dirty memory");
+    check(editor.pending_change_count() == 0,
+        "multi-sheet materialized retry setup should not count Patch handoffs before save");
+
+    const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "multi-sheet materialized retry should reject saving over the source workbook");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet materialized rejected save should keep both handles dirty");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet materialized rejected save should preserve dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet materialized rejected save should preserve dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "multi-sheet materialized rejected save should preserve dirty memory aggregate");
+    check(editor.pending_change_count() == 0,
+        "multi-sheet materialized rejected save should not record Patch handoffs");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized rejected save should leave source bytes unchanged");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet materialized retry save should clean both original handles");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "multi-sheet materialized retry save should clear dirty worksheet names");
+    check(editor.pending_materialized_cell_count() == 0,
+        "multi-sheet materialized retry save should clear dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized retry save should clear dirty memory aggregate");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized retry save should record both materialized handoffs");
+    check(editor.has_pending_changes(),
+        "multi-sheet materialized retry save should retain staged Patch handoffs");
+    check(editor.pending_worksheet_edits().empty(),
+        "multi-sheet materialized retry save should leave no dirty summaries");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized retry save should clear failed-save diagnostic");
+
+    fastxlsx::WorksheetEditor data_reacquired = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched_reacquired = editor.worksheet("Untouched");
+    check(!data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized retry reacquire should keep both handles clean");
+    const fastxlsx::CellValue reacquired_data_a1 = data_reacquired.get_cell("A1");
+    check(reacquired_data_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_data_a1.text_value() == "multi-retry-data",
+        "multi-sheet materialized retry reacquire should read saved Data!A1");
+    const fastxlsx::CellValue reacquired_untouched_b1 =
+        untouched_reacquired.get_cell("B1");
+    check(reacquired_untouched_b1.kind() == fastxlsx::CellValueKind::Text &&
+            reacquired_untouched_b1.text_value() == "multi-retry-untouched",
+        "multi-sheet materialized retry reacquire should read saved Untouched!B1");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized retry save should leave the source package unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "multi-retry-data",
+        "multi-sheet materialized retry output should contain saved Data edit");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "multi-retry-untouched",
+        "multi-sheet materialized retry output should contain saved Untouched edit");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized retry no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized retry no-op save should not add another handoff");
+    check(editor.has_pending_changes(),
+        "multi-sheet materialized retry no-op save should retain staged Patch handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized retry no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized retry no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized retry no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "multi-sheet materialized retry no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "multi-sheet materialized retry no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "multi-sheet materialized retry no-op output should match the safe retry output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized retry no-op save should leave the source package unchanged");
+
+    const auto inspect_materialized_retry_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet materialized retry Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "multi-sheet materialized retry Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "multi-retry-data",
+                "multi-sheet materialized retry Data reopened output should read saved A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "multi-sheet materialized retry Data reopened output should keep source B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "multi-sheet materialized retry Data reopened output should keep source A2");
+        };
+    const auto inspect_materialized_retry_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "multi-sheet materialized retry Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "multi-sheet materialized retry Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "multi-sheet materialized retry Untouched reopened output should keep source A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "multi-retry-untouched",
+                "multi-sheet materialized retry Untouched reopened output should read saved B1");
+        };
+
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "multi-sheet materialized retry Data",
+        inspect_materialized_retry_data);
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "multi-sheet materialized retry Untouched",
+        inspect_materialized_retry_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes() &&
+            !data_reacquired.has_pending_changes() &&
+            !untouched_reacquired.has_pending_changes(),
+        "multi-sheet materialized retry second no-op save should keep all handles clean");
+    check(editor.pending_change_count() == 2,
+        "multi-sheet materialized retry second no-op save should not add another handoff");
+    check(editor.has_pending_changes(),
+        "multi-sheet materialized retry second no-op save should retain staged Patch handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet materialized retry second no-op save should keep dirty diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor,
+        "multi-sheet materialized retry second no-op save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "multi-sheet materialized retry second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "multi-sheet materialized retry second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "multi-sheet materialized retry second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "multi-sheet materialized retry second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "multi-sheet materialized retry second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet materialized retry second no-op save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "multi-sheet materialized retry second no-op Data",
+        inspect_materialized_retry_data);
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Untouched",
+        "multi-sheet materialized retry second no-op Untouched",
+        inspect_materialized_retry_untouched);
+}
+
+void test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-source.xlsx");
+    const std::filesystem::path path_equivalent_source =
+        source.parent_path() / "." / source.filename();
+    const std::filesystem::path retry_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-noop-second-output.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-third-output.xlsx");
+    const std::filesystem::path third_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-multi-retry-reopen-third-noop-output.xlsx");
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell("A1", fastxlsx::CellValue::text("multi-retry-reopen-data"));
+    untouched.set_cell("B1", fastxlsx::CellValue::text("multi-retry-reopen-untouched"));
+    const std::size_t dirty_cells = data.cell_count() + untouched.cell_count();
+    const std::size_t dirty_memory_usage =
+        data.estimated_memory_usage() + untouched.estimated_memory_usage();
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen setup should expose both dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet retry reopen setup should expose dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "multi-sheet retry reopen setup should expose dirty memory aggregate");
+    const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "multi-sheet retry reopen should reject saving over the source workbook");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet retry reopen rejected save should keep both handles dirty");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen rejected save should preserve dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet retry reopen rejected save should preserve dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "multi-sheet retry reopen rejected save should preserve dirty memory aggregate");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen rejected save should leave source bytes unchanged");
+    check(threw_fastxlsx_error([&] { editor.save_as(path_equivalent_source); }),
+        "multi-sheet retry reopen should reject path-equivalent source overwrite");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "multi-sheet retry reopen path-equivalent rejected save should keep both handles dirty");
+    {
+        const std::vector<std::string> names = editor.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen path-equivalent rejected save should preserve dirty names");
+    }
+    check(editor.pending_materialized_cell_count() == dirty_cells,
+        "multi-sheet retry reopen path-equivalent rejected save should preserve dirty cell aggregate");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "multi-sheet retry reopen path-equivalent rejected save should preserve dirty memory aggregate");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen path-equivalent rejected save should leave source bytes unchanged");
+
+    editor.save_as(retry_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "multi-sheet retry reopen safe save should clean first editor handles");
+    check(editor.has_pending_changes(),
+        "multi-sheet retry reopen safe save should retain first-stage staged handoffs");
+    const auto retry_entries = fastxlsx::test::read_zip_entries(retry_output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen safe save should leave the source package unchanged");
+    check_contains(retry_entries.at("xl/worksheets/sheet1.xml"), "multi-retry-reopen-data",
+        "multi-sheet retry reopen output should contain first-stage Data edit");
+    check_contains(retry_entries.at("xl/worksheets/sheet2.xml"), "multi-retry-reopen-untouched",
+        "multi-sheet retry reopen output should contain first-stage Untouched edit");
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(retry_output);
+    fastxlsx::WorksheetEditor reopened_data = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor reopened_untouched = reopened.worksheet("Untouched");
+    check(!reopened.has_pending_changes() &&
+            !reopened_data.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes(),
+        "multi-sheet retry reopen fresh editor should start clean");
+    check(reopened.pending_change_count() == 0,
+        "multi-sheet retry reopen fresh editor should expose zero pending changes");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen fresh editor should expose clean materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen fresh editor should expose no edit summaries");
+    const fastxlsx::CellValue reopened_data_a1 = reopened_data.get_cell("A1");
+    check(reopened_data_a1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_data_a1.text_value() == "multi-retry-reopen-data",
+        "multi-sheet retry reopen fresh editor should read first-stage Data!A1");
+    const fastxlsx::CellValue reopened_untouched_b1 = reopened_untouched.get_cell("B1");
+    check(reopened_untouched_b1.kind() == fastxlsx::CellValueKind::Text &&
+            reopened_untouched_b1.text_value() == "multi-retry-reopen-untouched",
+        "multi-sheet retry reopen fresh editor should read first-stage Untouched!B1");
+
+    reopened_data.set_cell("C3", fastxlsx::CellValue::text("multi-retry-reopen-second-data"));
+    reopened_untouched.set_cell("C1", fastxlsx::CellValue::formula("Data!B1+1"));
+    check(reopened_data.has_pending_changes() && reopened_untouched.has_pending_changes(),
+        "multi-sheet retry reopen second-stage edits should dirty both handles");
+    {
+        const std::vector<std::string> names = reopened.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen second-stage edits should expose both dirty names");
+    }
+    check(reopened.pending_materialized_cell_count() ==
+            reopened_data.cell_count() + reopened_untouched.cell_count(),
+        "multi-sheet retry reopen second-stage edits should aggregate dirty cells");
+    const std::size_t second_stage_dirty_memory =
+        reopened_data.estimated_memory_usage() + reopened_untouched.estimated_memory_usage();
+    check(reopened.estimated_pending_materialized_memory_usage() ==
+            second_stage_dirty_memory,
+        "multi-sheet retry reopen second-stage edits should aggregate dirty memory");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "multi-sheet retry reopen second-stage edits should expose two dirty summaries");
+        if (summaries.size() == 2) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "Data" &&
+                    summaries[0].materialized_dirty,
+                "multi-sheet retry reopen second-stage Data summary should be dirty");
+            check(!summaries[0].sheet_data_replaced &&
+                    !summaries[0].targeted_cells_replaced &&
+                    summaries[0].materialized_cell_count == reopened_data.cell_count() &&
+                    summaries[0].estimated_materialized_memory_usage ==
+                        reopened_data.estimated_memory_usage(),
+                "multi-sheet retry reopen second-stage Data summary should match materialized state");
+            check(summaries[1].source_name == "Untouched" &&
+                    summaries[1].planned_name == "Untouched" &&
+                    summaries[1].materialized_dirty,
+                "multi-sheet retry reopen second-stage Untouched summary should be dirty");
+            check(!summaries[1].sheet_data_replaced &&
+                    !summaries[1].targeted_cells_replaced &&
+                    summaries[1].materialized_cell_count == reopened_untouched.cell_count() &&
+                    summaries[1].estimated_materialized_memory_usage ==
+                        reopened_untouched.estimated_memory_usage(),
+                "multi-sheet retry reopen second-stage Untouched summary should match materialized state");
+        }
+    }
+    check(reopened.pending_change_count() == 0,
+        "multi-sheet retry reopen second-stage edits should not add handoffs before save");
+
+    reopened.save_as(second_output);
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen second-stage save should clear materialized diagnostics");
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen second-stage save should record both handoffs");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen second-stage save should retain staged Patch handoffs");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen second-stage save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen second-stage save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen second-stage save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
+        "multi-sheet retry reopen second-stage save should leave retry output unchanged");
+
+    fastxlsx::WorksheetEditor second_data_reacquired = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor second_untouched_reacquired = reopened.worksheet("Untouched");
+    check(!second_data_reacquired.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen second-stage save should reacquire clean handles");
+    const fastxlsx::CellValue second_data_c3 = second_data_reacquired.get_cell("C3");
+    check(second_data_c3.kind() == fastxlsx::CellValueKind::Text &&
+            second_data_c3.text_value() == "multi-retry-reopen-second-data",
+        "multi-sheet retry reopen second-stage reacquire should read Data!C3");
+    const fastxlsx::CellValue second_untouched_c1 =
+        second_untouched_reacquired.get_cell("C1");
+    check(second_untouched_c1.kind() == fastxlsx::CellValueKind::Formula &&
+            second_untouched_c1.text_value() == "Data!B1+1",
+        "multi-sheet retry reopen second-stage reacquire should read Untouched!C1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"),
+        "multi-retry-reopen-second-data",
+        "multi-sheet retry reopen second output should contain second-stage Data edit");
+    check_contains(second_entries.at("xl/worksheets/sheet2.xml"), "Data!B1+1",
+        "multi-sheet retry reopen second output should contain second-stage formula");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(noop_output);
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen no-op save should retain staged Patch handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen no-op save should keep materialized diagnostics empty");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen no-op save should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "multi-sheet retry reopen no-op save should not queue replacement diagnostics");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "multi-sheet retry reopen no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "multi-sheet retry reopen no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "multi-sheet retry reopen no-op output should match second-stage output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen no-op save should leave the source package unchanged");
+
+    const auto inspect_multi_retry_reopen_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "multi-sheet retry reopen Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "multi-sheet retry reopen Data output should expose second-stage bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "multi-retry-reopen-data",
+                "multi-sheet retry reopen Data output should read first-stage A1");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "multi-retry-reopen-second-data",
+                "multi-sheet retry reopen Data output should read second-stage C3");
+        };
+    const auto inspect_multi_retry_reopen_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet retry reopen Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                "multi-sheet retry reopen Untouched output should expose formula bounds");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b1.text_value() == "multi-retry-reopen-untouched",
+                "multi-sheet retry reopen Untouched output should read first-stage B1");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "Data!B1+1",
+                "multi-sheet retry reopen Untouched output should read second-stage C1 formula");
+        };
+
+    fastxlsx::WorksheetEditor noop_data_reacquired = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor noop_untouched_reacquired = reopened.worksheet("Untouched");
+    check(!noop_data_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen no-op save should reacquire clean handles");
+
+    check_reopened_clean_sheet_output(noop_output, "Data", "multi-sheet retry reopen Data",
+        inspect_multi_retry_reopen_data);
+    check_reopened_clean_sheet_output(
+        noop_output, "Untouched", "multi-sheet retry reopen Untouched",
+        inspect_multi_retry_reopen_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(second_noop_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !noop_data_reacquired.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen second no-op save should keep handles clean");
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen second no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen second no-op save should retain staged Patch handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen second no-op save should keep materialized diagnostics empty");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen second no-op save should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "multi-sheet retry reopen second no-op save should not queue replacement diagnostics");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen second no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_second_noop,
+        "multi-sheet retry reopen second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_second_noop,
+        "multi-sheet retry reopen second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "multi-sheet retry reopen second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
+        "multi-sheet retry reopen second no-op save should leave retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "multi-sheet retry reopen second no-op save should leave second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "multi-sheet retry reopen second no-op save should leave first no-op output unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "multi-sheet retry reopen second no-op Data",
+        inspect_multi_retry_reopen_data);
+    check_reopened_clean_sheet_output(
+        second_noop_output, "Untouched",
+        "multi-sheet retry reopen second no-op Untouched",
+        inspect_multi_retry_reopen_untouched);
+
+    noop_data_reacquired.set_cell("D3", fastxlsx::CellValue::formula("B1+7"));
+    noop_untouched_reacquired.set_cell(
+        "D1", fastxlsx::CellValue::text("multi-retry-reopen-third-untouched"));
+    check(reopened_data.has_pending_changes() &&
+            second_data_reacquired.has_pending_changes() &&
+            noop_data_reacquired.has_pending_changes() &&
+            reopened_untouched.has_pending_changes() &&
+            second_untouched_reacquired.has_pending_changes() &&
+            noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen post-noop edit should dirty all shared handles");
+    check(noop_data_reacquired.cell_count() == 5,
+        "multi-sheet retry reopen post-noop Data edit should add one sparse cell");
+    check(noop_untouched_reacquired.cell_count() == 4,
+        "multi-sheet retry reopen post-noop Untouched edit should add one sparse cell");
+    check_cell_range_equals(noop_data_reacquired.used_range(), 1, 1, 3, 4,
+        "multi-sheet retry reopen post-noop Data edit should expand bounds to D3");
+    check_cell_range_equals(noop_untouched_reacquired.used_range(), 1, 1, 1, 4,
+        "multi-sheet retry reopen post-noop Untouched edit should expand bounds to D1");
+    {
+        const std::vector<std::string> names = reopened.pending_materialized_worksheet_names();
+        check(names.size() == 2 && names[0] == "Data" && names[1] == "Untouched",
+            "multi-sheet retry reopen post-noop edit should expose both dirty names");
+    }
+    check(reopened.pending_materialized_cell_count() ==
+            noop_data_reacquired.cell_count() + noop_untouched_reacquired.cell_count(),
+        "multi-sheet retry reopen post-noop edit should aggregate dirty cell count");
+    const std::size_t post_noop_data_memory_usage =
+        noop_data_reacquired.estimated_memory_usage();
+    const std::size_t post_noop_untouched_memory_usage =
+        noop_untouched_reacquired.estimated_memory_usage();
+    const std::size_t post_noop_dirty_memory_usage =
+        post_noop_data_memory_usage + post_noop_untouched_memory_usage;
+    check(reopened.estimated_pending_materialized_memory_usage() ==
+            post_noop_dirty_memory_usage,
+        "multi-sheet retry reopen post-noop edit should aggregate dirty memory usage");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "multi-sheet retry reopen post-noop edit should expose two dirty summaries");
+        if (summaries.size() == 2) {
+            check(summaries[0].source_name == "Data" &&
+                    summaries[0].planned_name == "Data" &&
+                    summaries[0].materialized_dirty,
+                "multi-sheet retry reopen post-noop Data summary should be dirty");
+            check(!summaries[0].sheet_data_replaced &&
+                    !summaries[0].targeted_cells_replaced &&
+                    summaries[0].materialized_cell_count ==
+                        noop_data_reacquired.cell_count() &&
+                    summaries[0].estimated_materialized_memory_usage ==
+                        post_noop_data_memory_usage,
+                "multi-sheet retry reopen post-noop Data summary should match materialized state");
+            check(summaries[1].source_name == "Untouched" &&
+                    summaries[1].planned_name == "Untouched" &&
+                    summaries[1].materialized_dirty,
+                "multi-sheet retry reopen post-noop Untouched summary should be dirty");
+            check(!summaries[1].sheet_data_replaced &&
+                    !summaries[1].targeted_cells_replaced &&
+                    summaries[1].materialized_cell_count ==
+                        noop_untouched_reacquired.cell_count() &&
+                    summaries[1].estimated_materialized_memory_usage ==
+                        post_noop_untouched_memory_usage,
+                "multi-sheet retry reopen post-noop Untouched summary should match materialized state");
+        }
+    }
+    check(reopened.pending_change_count() == 2,
+        "multi-sheet retry reopen post-noop edit should not add handoffs before save");
+
+    reopened.save_as(third_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !noop_data_reacquired.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen third save should clean all shared handles");
+    check(reopened.pending_change_count() == 4,
+        "multi-sheet retry reopen third save should record later handoffs");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen third save should retain staged Patch handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen third save should clear materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "multi-sheet retry reopen third save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen third save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen third save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(retry_output) == retry_entries,
+        "multi-sheet retry reopen third save should leave retry output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "multi-sheet retry reopen third save should leave second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == second_entries,
+        "multi-sheet retry reopen third save should leave prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == noop_entries,
+        "multi-sheet retry reopen third save should leave second no-op output unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "multi-sheet retry reopen prior no-op Data after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "multi-sheet retry reopen prior no-op Data after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "multi-sheet retry reopen prior no-op Data after third save should keep second-stage bounds");
+            check(reopened_sheet.get_cell("C3").text_value() == "multi-retry-reopen-second-data",
+                "multi-sheet retry reopen prior no-op Data after third save should keep second-stage C3");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "multi-sheet retry reopen prior no-op Untouched after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "multi-sheet retry reopen prior no-op Untouched after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 3,
+                "multi-sheet retry reopen prior no-op Untouched after third save should keep formula bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "Data!B1+1",
+                "multi-sheet retry reopen prior no-op Untouched after third save should keep C1 formula");
+        });
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "multi-sheet retry reopen second no-op Data after third save",
+        inspect_multi_retry_reopen_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "multi-sheet retry reopen second no-op Untouched after third save",
+        inspect_multi_retry_reopen_untouched);
+
+    fastxlsx::WorksheetEditor third_data_reacquired = reopened.worksheet("Data");
+    fastxlsx::WorksheetEditor third_untouched_reacquired = reopened.worksheet("Untouched");
+    check(!third_data_reacquired.has_pending_changes() &&
+            !third_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen third-save reacquire should be clean");
+    const fastxlsx::CellValue third_data_d3 = third_data_reacquired.get_cell("D3");
+    check(third_data_d3.kind() == fastxlsx::CellValueKind::Formula &&
+            third_data_d3.text_value() == "B1+7",
+        "multi-sheet retry reopen third-save reacquire should read Data!D3");
+    const fastxlsx::CellValue third_untouched_d1 =
+        third_untouched_reacquired.get_cell("D1");
+    check(third_untouched_d1.kind() == fastxlsx::CellValueKind::Text &&
+            third_untouched_d1.text_value() == "multi-retry-reopen-third-untouched",
+        "multi-sheet retry reopen third-save reacquire should read Untouched!D1");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "B1+7",
+        "multi-sheet retry reopen third output should contain post-noop Data formula");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"),
+        "multi-retry-reopen-second-data",
+        "multi-sheet retry reopen third output should preserve second-stage Data text");
+    check_contains(third_entries.at("xl/worksheets/sheet2.xml"),
+        "multi-retry-reopen-third-untouched",
+        "multi-sheet retry reopen third output should contain post-noop Untouched text");
+    check_contains(third_entries.at("xl/worksheets/sheet2.xml"), "Data!B1+1",
+        "multi-sheet retry reopen third output should preserve second-stage Untouched formula");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_third_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_third_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(third_noop_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !noop_data_reacquired.has_pending_changes() &&
+            !third_data_reacquired.has_pending_changes() &&
+            !reopened_untouched.has_pending_changes() &&
+            !second_untouched_reacquired.has_pending_changes() &&
+            !noop_untouched_reacquired.has_pending_changes() &&
+            !third_untouched_reacquired.has_pending_changes(),
+        "multi-sheet retry reopen third no-op save should keep handles clean");
+    check(reopened.pending_change_count() == 4,
+        "multi-sheet retry reopen third no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "multi-sheet retry reopen third no-op save should retain staged Patch handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "multi-sheet retry reopen third no-op save should keep diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "multi-sheet retry reopen third no-op save should not queue replacement diagnostics");
+    check(!reopened.last_edit_error().has_value(),
+        "multi-sheet retry reopen third no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_third_noop,
+        "multi-sheet retry reopen third no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_third_noop,
+        "multi-sheet retry reopen third no-op save");
+    check(fastxlsx::test::read_zip_entries(third_noop_output) == third_entries,
+        "multi-sheet retry reopen third no-op output should match third output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "multi-sheet retry reopen third no-op save should leave the source package unchanged");
+
+    check_reopened_clean_sheet_output(third_noop_output, "Data",
+        "multi-sheet retry reopen third no-op Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "multi-sheet retry reopen third no-op Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "multi-sheet retry reopen third no-op Data output should expose final bounds");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "multi-retry-reopen-second-data",
+                "multi-sheet retry reopen third no-op Data output should preserve C3");
+            const fastxlsx::CellValue reopened_d3 = reopened_sheet.get_cell("D3");
+            check(reopened_d3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_d3.text_value() == "B1+7",
+                "multi-sheet retry reopen third no-op Data output should read D3");
+        });
+    check_reopened_clean_sheet_output(third_noop_output, "Untouched",
+        "multi-sheet retry reopen third no-op Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "multi-sheet retry reopen third no-op Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 4,
+                "multi-sheet retry reopen third no-op Untouched output should expose final bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "Data!B1+1",
+                "multi-sheet retry reopen third no-op Untouched output should preserve C1");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d1.text_value() == "multi-retry-reopen-third-untouched",
+                "multi-sheet retry reopen third no-op Untouched output should read D1");
+        });
+}
+
+void test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-single-reopen-source.xlsx");
+    const std::filesystem::path path_equivalent_source =
+        source.parent_path() / "." / source.filename();
+    const std::filesystem::path first_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-first-output.xlsx");
+    const std::filesystem::path second_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-second-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-noop-output.xlsx");
+    const std::filesystem::path third_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-third-output.xlsx");
+    const std::filesystem::path third_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-single-reopen-third-noop-output.xlsx");
+
+    const auto source_entries_before = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    data.set_cell("A1", fastxlsx::CellValue::text("single-reopen-first"));
+    data.append_row({
+        fastxlsx::CellValue::text("single-reopen-row"),
+        fastxlsx::CellValue::number(4.0),
+        fastxlsx::CellValue::formula("B3*2"),
+    });
+    check(data.has_pending_changes(),
+        "single-sheet reopen first-stage edits should dirty the Data handle");
+    check(data.cell_count() == 6,
+        "single-sheet reopen first-stage edits should expose appended sparse cells");
+    check_cell_range_equals(data.used_range(), 1, 1, 3, 3,
+        "single-sheet reopen first-stage edits should expand Data bounds");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "single-sheet reopen first-stage edits should expose Data as dirty");
+    check(editor.pending_materialized_cell_count() == data.cell_count(),
+        "single-sheet reopen first-stage edits should expose dirty cell count");
+    const std::size_t dirty_memory_usage = data.estimated_memory_usage();
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "single-sheet reopen first-stage edits should expose dirty memory usage");
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "single-sheet reopen first-stage should reject saving over the source workbook");
+    check(data.has_pending_changes(),
+        "single-sheet reopen exact rejected save should keep the Data handle dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == data.cell_count() &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "single-sheet reopen exact rejected save should preserve dirty diagnostics");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen exact rejected save should leave source bytes unchanged");
+    check(threw_fastxlsx_error([&] { editor.save_as(path_equivalent_source); }),
+        "single-sheet reopen first-stage should reject path-equivalent source overwrite");
+    check(data.has_pending_changes(),
+        "single-sheet reopen path-equivalent rejected save should keep the Data handle dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"} &&
+            editor.pending_materialized_cell_count() == data.cell_count() &&
+            editor.estimated_pending_materialized_memory_usage() == dirty_memory_usage,
+        "single-sheet reopen path-equivalent rejected save should preserve dirty diagnostics");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen path-equivalent rejected save should leave source bytes unchanged");
+
+    editor.save_as(first_output);
+    check(!data.has_pending_changes(),
+        "single-sheet reopen first-stage save should clean the Data handle");
+    check(editor.pending_change_count() == 1,
+        "single-sheet reopen first-stage save should record one materialized handoff");
+    check(editor.has_pending_changes(),
+        "single-sheet reopen first-stage save should retain the staged handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen first-stage save should clear dirty materialized diagnostics");
+    check(editor.pending_worksheet_edits().empty(),
+        "single-sheet reopen first-stage save should leave no dirty summaries");
+    check(!editor.last_edit_error().has_value(),
+        "single-sheet reopen first-stage save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen first-stage save should leave source bytes unchanged");
+
+    const auto first_entries = fastxlsx::test::read_zip_entries(first_output);
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "single-reopen-first",
+        "single-sheet reopen first output should contain first-stage A1 text");
+    check_contains(first_entries.at("xl/worksheets/sheet1.xml"), "B3*2",
+        "single-sheet reopen first output should contain appended formula text");
+    check_contains(first_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "single-sheet reopen first output should preserve Untouched");
+
+    check_reopened_clean_sheet_output(first_output, "Data",
+        "single-sheet reopen first output",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 6,
+                "single-sheet reopen first output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "single-sheet reopen first output should keep expanded bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "single-reopen-first",
+                "single-sheet reopen first output should read first-stage A1");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "B3*2",
+                "single-sheet reopen first output should read appended formula");
+        });
+
+    fastxlsx::WorkbookEditor reopened = fastxlsx::WorkbookEditor::open(first_output);
+    fastxlsx::WorksheetEditor reopened_data = reopened.worksheet("Data");
+    check(!reopened.has_pending_changes() && !reopened_data.has_pending_changes(),
+        "single-sheet reopen fresh editor should start clean");
+    check(reopened.pending_change_count() == 0,
+        "single-sheet reopen fresh editor should expose zero pending changes");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen fresh editor should expose clean materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen fresh editor should expose no edit summaries");
+    const fastxlsx::CellValue first_stage_c3 = reopened_data.get_cell("C3");
+    check(first_stage_c3.kind() == fastxlsx::CellValueKind::Formula &&
+            first_stage_c3.text_value() == "B3*2",
+        "single-sheet reopen fresh editor should read first-stage appended formula");
+
+    reopened_data.set_cell("B1", fastxlsx::CellValue::number(10.0));
+    reopened_data.set_cell("C1", fastxlsx::CellValue::formula("B1+5"));
+    reopened_data.set_cell("D1", fastxlsx::CellValue::text("single-reopen-second"));
+    check(reopened_data.has_pending_changes(),
+        "single-sheet reopen second-stage edits should dirty the reopened handle");
+    check(reopened_data.cell_count() == 8,
+        "single-sheet reopen second-stage edits should expose added sparse cells");
+    check_cell_range_equals(reopened_data.used_range(), 1, 1, 3, 4,
+        "single-sheet reopen second-stage edits should expand bounds to D1");
+    check(reopened.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "single-sheet reopen second-stage edits should expose Data as dirty");
+    check(reopened.pending_materialized_cell_count() == reopened_data.cell_count(),
+        "single-sheet reopen second-stage edits should expose dirty cell count");
+    const std::size_t second_stage_dirty_memory = reopened_data.estimated_memory_usage();
+    check(reopened.estimated_pending_materialized_memory_usage() == second_stage_dirty_memory,
+        "single-sheet reopen second-stage edits should expose dirty memory usage");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "single-sheet reopen second-stage edits should expose one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "Data" &&
+                    summary.materialized_dirty,
+                "single-sheet reopen second-stage summary should be dirty Data");
+            check(!summary.sheet_data_replaced &&
+                    !summary.targeted_cells_replaced &&
+                    summary.materialized_cell_count == reopened_data.cell_count() &&
+                    summary.estimated_materialized_memory_usage == second_stage_dirty_memory,
+                "single-sheet reopen second-stage summary should match materialized state");
+        }
+    }
+    check(reopened.pending_change_count() == 0,
+        "single-sheet reopen second-stage edits should not add a handoff before save");
+
+    reopened.save_as(second_output);
+    check(!reopened_data.has_pending_changes(),
+        "single-sheet reopen second-stage save should clean the reopened handle");
+    check(reopened.pending_change_count() == 1,
+        "single-sheet reopen second-stage save should record one handoff");
+    check(reopened.has_pending_changes(),
+        "single-sheet reopen second-stage save should retain the staged handoff");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen second-stage save should clear dirty materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen second-stage save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "single-sheet reopen second-stage save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen second-stage save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(first_output) == first_entries,
+        "single-sheet reopen second-stage save should leave first output unchanged");
+
+    fastxlsx::WorksheetEditor second_data_reacquired = reopened.worksheet("Data");
+    check(!second_data_reacquired.has_pending_changes(),
+        "single-sheet reopen second-stage reacquire should be clean");
+    const fastxlsx::CellValue second_b1 = second_data_reacquired.get_cell("B1");
+    check(second_b1.kind() == fastxlsx::CellValueKind::Number &&
+            second_b1.number_value() == 10.0,
+        "single-sheet reopen second-stage reacquire should read saved B1");
+    const fastxlsx::CellValue second_c1 = second_data_reacquired.get_cell("C1");
+    check(second_c1.kind() == fastxlsx::CellValueKind::Formula &&
+            second_c1.text_value() == "B1+5",
+        "single-sheet reopen second-stage reacquire should read saved C1 formula");
+    const fastxlsx::CellValue second_d1 = second_data_reacquired.get_cell("D1");
+    check(second_d1.kind() == fastxlsx::CellValueKind::Text &&
+            second_d1.text_value() == "single-reopen-second",
+        "single-sheet reopen second-stage reacquire should read saved D1");
+
+    const auto second_entries = fastxlsx::test::read_zip_entries(second_output);
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "single-reopen-second",
+        "single-sheet reopen second output should contain second-stage D1 text");
+    check_contains(second_entries.at("xl/worksheets/sheet1.xml"), "B1+5",
+        "single-sheet reopen second output should contain second-stage formula");
+    check_contains(second_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "single-sheet reopen second output should preserve Untouched");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(noop_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes(),
+        "single-sheet reopen no-op save should keep Data handles clean");
+    check(reopened.pending_change_count() == 1,
+        "single-sheet reopen no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "single-sheet reopen no-op save should retain the staged handoff");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen no-op save should keep materialized diagnostics empty");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen no-op save should keep dirty summaries empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "single-sheet reopen no-op save should not queue replacement diagnostics");
+    check(!reopened.last_edit_error().has_value(),
+        "single-sheet reopen no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_noop,
+        "single-sheet reopen no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_noop,
+        "single-sheet reopen no-op save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == second_entries,
+        "single-sheet reopen no-op output should match second-stage output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen no-op save should leave the source package unchanged");
+
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "single-sheet reopen no-op Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "single-sheet reopen no-op Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "single-sheet reopen no-op Data output should expose final bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "single-reopen-first",
+                "single-sheet reopen no-op Data output should read first-stage A1");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "B1+5",
+                "single-sheet reopen no-op Data output should read second-stage C1");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d1.text_value() == "single-reopen-second",
+                "single-sheet reopen no-op Data output should read second-stage D1");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "B3*2",
+                "single-sheet reopen no-op Data output should preserve appended formula");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "single-sheet reopen no-op Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "single-sheet reopen no-op Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "single-sheet reopen no-op Untouched output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "single-sheet reopen no-op Untouched output should preserve A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "single-sheet reopen no-op Untouched output should preserve B1");
+        });
+
+    fastxlsx::WorksheetEditor after_noop_data = reopened.worksheet("Data");
+    check(!after_noop_data.has_pending_changes(),
+        "single-sheet reopen post-noop reacquire should stay clean");
+    after_noop_data.set_cell("E1", fastxlsx::CellValue::text("single-reopen-third"));
+    check(reopened_data.has_pending_changes() &&
+            second_data_reacquired.has_pending_changes() &&
+            after_noop_data.has_pending_changes(),
+        "single-sheet reopen post-noop edit should dirty all shared Data handles");
+    check(after_noop_data.cell_count() == 9,
+        "single-sheet reopen post-noop edit should add one sparse cell");
+    check_cell_range_equals(after_noop_data.used_range(), 1, 1, 3, 5,
+        "single-sheet reopen post-noop edit should expand bounds to E1");
+    check(reopened.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "single-sheet reopen post-noop edit should expose Data as dirty");
+    check(reopened.pending_materialized_cell_count() == after_noop_data.cell_count(),
+        "single-sheet reopen post-noop edit should expose dirty cell count");
+    const std::size_t post_noop_dirty_memory_usage =
+        after_noop_data.estimated_memory_usage();
+    check(reopened.estimated_pending_materialized_memory_usage() ==
+            post_noop_dirty_memory_usage,
+        "single-sheet reopen post-noop edit should expose dirty memory usage");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            reopened.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "single-sheet reopen post-noop edit should expose one dirty summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data" &&
+                    summary.planned_name == "Data" &&
+                    summary.materialized_dirty,
+                "single-sheet reopen post-noop summary should be dirty Data");
+            check(!summary.sheet_data_replaced &&
+                    !summary.targeted_cells_replaced &&
+                    summary.materialized_cell_count == after_noop_data.cell_count() &&
+                    summary.estimated_materialized_memory_usage ==
+                        post_noop_dirty_memory_usage,
+                "single-sheet reopen post-noop summary should match materialized state");
+        }
+    }
+    check(reopened.pending_change_count() == 1,
+        "single-sheet reopen post-noop edit should not add a handoff before save");
+
+    reopened.save_as(third_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !after_noop_data.has_pending_changes(),
+        "single-sheet reopen third save should clean all Data handles");
+    check(reopened.pending_change_count() == 2,
+        "single-sheet reopen third save should record the later handoff");
+    check(reopened.has_pending_changes(),
+        "single-sheet reopen third save should retain staged handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen third save should clear dirty materialized diagnostics");
+    check(reopened.pending_worksheet_edits().empty(),
+        "single-sheet reopen third save should leave no dirty summaries");
+    check(!reopened.last_edit_error().has_value(),
+        "single-sheet reopen third save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen third save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(second_output) == second_entries,
+        "single-sheet reopen third save should leave second output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "single-sheet reopen third save should leave prior no-op output unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "single-sheet reopen prior no-op Data after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 8,
+                "single-sheet reopen prior no-op Data after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                "single-sheet reopen prior no-op Data after third save should keep second-stage bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "B1+5",
+                "single-sheet reopen prior no-op Data after third save should keep C1 formula");
+            check(reopened_sheet.get_cell("D1").text_value() == "single-reopen-second",
+                "single-sheet reopen prior no-op Data after third save should keep D1");
+        });
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "single-sheet reopen prior no-op Untouched after third save",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "single-sheet reopen prior no-op Untouched after third save should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "single-sheet reopen prior no-op Untouched after third save should keep source bounds");
+            check(reopened_sheet.get_cell("A1").text_value() == "keep-me" &&
+                    reopened_sheet.get_cell("B1").number_value() == 99.0,
+                "single-sheet reopen prior no-op Untouched after third save should keep source cells");
+        });
+
+    fastxlsx::WorksheetEditor third_data_reacquired = reopened.worksheet("Data");
+    check(!third_data_reacquired.has_pending_changes(),
+        "single-sheet reopen third-save reacquire should be clean");
+    const fastxlsx::CellValue third_e1 = third_data_reacquired.get_cell("E1");
+    check(third_e1.kind() == fastxlsx::CellValueKind::Text &&
+            third_e1.text_value() == "single-reopen-third",
+        "single-sheet reopen third-save reacquire should read saved E1");
+
+    const auto third_entries = fastxlsx::test::read_zip_entries(third_output);
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "single-reopen-third",
+        "single-sheet reopen third output should contain post-noop E1 text");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "B1+5",
+        "single-sheet reopen third output should preserve second-stage formula");
+    check_contains(third_entries.at("xl/worksheets/sheet1.xml"), "B3*2",
+        "single-sheet reopen third output should preserve appended formula");
+    check_contains(third_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "single-sheet reopen third output should preserve Untouched");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_third_noop =
+        workbook_editor_public_catalog_snapshot(reopened);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_third_noop =
+        workbook_editor_public_save_state_snapshot(reopened);
+
+    reopened.save_as(third_noop_output);
+    check(!reopened_data.has_pending_changes() &&
+            !second_data_reacquired.has_pending_changes() &&
+            !after_noop_data.has_pending_changes() &&
+            !third_data_reacquired.has_pending_changes(),
+        "single-sheet reopen third no-op save should keep Data handles clean");
+    check(reopened.pending_change_count() == 2,
+        "single-sheet reopen third no-op save should not add another handoff");
+    check(reopened.has_pending_changes(),
+        "single-sheet reopen third no-op save should retain staged handoffs");
+    check(reopened.pending_materialized_worksheet_names().empty() &&
+            reopened.pending_materialized_cell_count() == 0 &&
+            reopened.estimated_pending_materialized_memory_usage() == 0,
+        "single-sheet reopen third no-op save should keep diagnostics empty");
+    check_workbook_editor_no_replacement_diagnostics(
+        reopened,
+        "single-sheet reopen third no-op save should not queue replacement diagnostics");
+    check(!reopened.last_edit_error().has_value(),
+        "single-sheet reopen third no-op save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        reopened, save_state_before_third_noop,
+        "single-sheet reopen third no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        reopened, catalog_before_third_noop,
+        "single-sheet reopen third no-op save");
+    check(fastxlsx::test::read_zip_entries(third_noop_output) == third_entries,
+        "single-sheet reopen third no-op output should match third output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries_before,
+        "single-sheet reopen third no-op save should leave the source package unchanged");
+
+    check_reopened_clean_sheet_output(third_noop_output, "Data",
+        "single-sheet reopen third no-op Data",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 9,
+                "single-sheet reopen third no-op Data output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 5,
+                "single-sheet reopen third no-op Data output should expose final bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c1.text_value() == "B1+5",
+                "single-sheet reopen third no-op Data output should preserve C1");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Formula &&
+                    reopened_c3.text_value() == "B3*2",
+                "single-sheet reopen third no-op Data output should preserve C3");
+            const fastxlsx::CellValue reopened_e1 = reopened_sheet.get_cell("E1");
+            check(reopened_e1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e1.text_value() == "single-reopen-third",
+                "single-sheet reopen third no-op Data output should read E1");
+        });
+    check_reopened_clean_sheet_output(third_noop_output, "Untouched",
+        "single-sheet reopen third no-op Untouched",
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "single-sheet reopen third no-op Untouched output should keep sparse count");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "single-sheet reopen third no-op Untouched output should preserve A1");
+        });
+}
+
+void test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-move-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-aggregate-move-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-move-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-move-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-aggregate-move-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
+    source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-aggregate-dirty"));
+    const std::size_t moved_cells = editor.pending_materialized_cell_count();
+    const std::size_t moved_memory = editor.estimated_pending_materialized_memory_usage();
+    check(moved_cells == source_sheet.cell_count() && moved_memory > 0,
+        "source editor should expose aggregate diagnostics before move");
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(editor.pending_materialized_cell_count() == 0,
+        "moved-from editor should expose zero pending materialized cells");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "moved-from editor should expose zero pending materialized memory");
+    check(moved.pending_materialized_cell_count() == moved_cells,
+        "move construction should preserve materialized cell aggregate");
+    check(moved.estimated_pending_materialized_memory_usage() == moved_memory,
+        "move construction should preserve materialized memory aggregate");
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_sheet = target.worksheet("Untouched");
+    target_sheet.set_cell(1, 1, fastxlsx::CellValue::text("discarded-aggregate-dirty"));
+    check(target.pending_materialized_cell_count() == target_sheet.cell_count(),
+        "target should start with its own materialized aggregate");
+
+    target = std::move(moved);
+    check(moved.pending_materialized_cell_count() == 0,
+        "move-assigned-from editor should expose zero pending materialized cells");
+    check(moved.estimated_pending_materialized_memory_usage() == 0,
+        "move-assigned-from editor should expose zero pending materialized memory");
+    check(target.pending_materialized_cell_count() == moved_cells,
+        "move assignment should replace target materialized cell aggregate");
+    check(target.estimated_pending_materialized_memory_usage() == moved_memory,
+        "move assignment should replace target materialized memory aggregate");
+
+    target.save_as(output);
+    check(target.pending_materialized_cell_count() == 0,
+        "save_as after aggregate move assignment should clear dirty materialized cell count");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "save_as after aggregate move assignment should clear dirty materialized memory");
+    check(target.pending_change_count() == 1,
+        "save_as after aggregate move assignment should count the assigned materialized handoff");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "aggregate move-assigned save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "aggregate move-assigned save_as should leave the discarded target source package unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-aggregate-dirty",
+        "aggregate move-assigned editor should save assigned dirty materialized payload");
+    check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"),
+        "discarded-aggregate-dirty",
+        "aggregate move assignment should not leak discarded target dirty materialized payload");
+
+    const auto inspect_materialized_aggregate_move_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "materialized aggregate move Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "materialized aggregate move Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "moved-aggregate-dirty",
+                "materialized aggregate move Data reopened output should read moved dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "materialized aggregate move Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "materialized aggregate move Data reopened output should keep source-backed A2");
+        };
+    const auto inspect_materialized_aggregate_move_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "materialized aggregate move Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "materialized aggregate move Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "materialized aggregate move Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "materialized aggregate move Untouched reopened output should keep source-backed B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized aggregate move Data",
+        inspect_materialized_aggregate_move_data);
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "materialized aggregate move Untouched",
+        inspect_materialized_aggregate_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(noop_output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "aggregate move-assigned no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "aggregate move-assigned no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "aggregate move-assigned no-op save should keep dirty memory aggregate empty");
+    check(target.pending_worksheet_edits().empty(),
+        "aggregate move-assigned no-op save should keep dirty summaries empty");
+    check(target.pending_change_count() == 1,
+        "aggregate move-assigned no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "aggregate move-assigned no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_noop,
+        "aggregate move-assigned no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_noop,
+        "aggregate move-assigned no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "aggregate move-assigned no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "aggregate move-assigned no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "aggregate move-assigned no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "materialized aggregate move no-op Data",
+        inspect_materialized_aggregate_move_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "materialized aggregate move no-op Untouched",
+        inspect_materialized_aggregate_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(second_noop_output);
+    check(target.pending_materialized_worksheet_names().empty(),
+        "aggregate move-assigned second no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "aggregate move-assigned second no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "aggregate move-assigned second no-op save should keep dirty memory aggregate empty");
+    check(target.pending_worksheet_edits().empty(),
+        "aggregate move-assigned second no-op save should keep dirty summaries empty");
+    check(target.pending_change_count() == 1,
+        "aggregate move-assigned second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "aggregate move-assigned second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_second_noop,
+        "aggregate move-assigned second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_second_noop,
+        "aggregate move-assigned second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "aggregate move-assigned second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "aggregate move-assigned second no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "aggregate move-assigned second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "aggregate move-assigned second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "aggregate move-assigned second no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "materialized aggregate move second no-op Data",
+        inspect_materialized_aggregate_move_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "materialized aggregate move second no-op Untouched",
+        inspect_materialized_aggregate_move_untouched);
+}
+
+void test_public_workbook_editor_pending_summaries_include_materialized_dirty_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    check(editor.pending_worksheet_edits().empty(),
+        "clean materialized session should not create pending worksheet summaries");
+
+    const std::optional<std::string> no_error_before_dirty = editor.last_edit_error();
+    data.set_cell(1, 1, fastxlsx::CellValue::text("summary-dirty-data"));
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "one dirty materialized session should create one worksheet summary");
+        if (summaries.size() == 1) {
+            const auto& summary = summaries[0];
+            check(summary.source_name == "Data",
+                "materialized summary should report the source sheet name");
+            check(summary.planned_name == "Data",
+                "materialized summary should report the current planned sheet name");
+            check(!summary.renamed,
+                "materialized-only summary should not be marked as renamed");
+            check(!summary.sheet_data_replaced,
+                "materialized-only summary should not report sheetData replacement");
+            check(summary.materialized_dirty,
+                "materialized-only summary should report dirty materialized state");
+            check(summary.replacement_cell_count == 0,
+                "materialized-only summary should report zero replacement cells");
+            check(summary.estimated_replacement_memory_usage == 0,
+                "materialized-only summary should report zero replacement memory");
+            check(summary.materialized_cell_count == 3,
+                "materialized summary should report active sparse materialized cells");
+            check(summary.estimated_materialized_memory_usage > 0,
+                "materialized summary should report materialized memory estimate");
+        }
+    }
+    check(editor.pending_change_count() == 0,
+        "dirty materialized summaries should not increment pending_change_count before save");
+    check(editor.last_edit_error() == no_error_before_dirty,
+        "pending materialized summary inspection should not update last_edit_error");
+
+    editor.replace_sheet_data("Untouched", {{fastxlsx::CellValue::text("replacement")}});
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "dirty materialized and cross-sheet replacement summaries should coexist");
+        if (summaries.size() == 2) {
+            check(summaries[0].source_name == "Data" && summaries[0].materialized_dirty,
+                "dirty materialized summary should stay in source order");
+            check(!summaries[0].sheet_data_replaced,
+                "dirty materialized summary should not be marked as replacement");
+            check(summaries[1].source_name == "Untouched" &&
+                    summaries[1].sheet_data_replaced,
+                "cross-sheet replacement summary should follow in source order");
+            check(!summaries[1].materialized_dirty,
+                "replacement-only summary should not be marked materialized dirty");
+            check(summaries[1].materialized_cell_count == 0,
+                "replacement-only summary should report zero materialized cell count");
+            check(summaries[1].estimated_materialized_memory_usage == 0,
+                "replacement-only summary should report zero materialized memory");
+        }
+    }
+
+    check(threw_fastxlsx_error([&] { editor.save_as(source); }),
+        "failed save_as should preserve dirty materialized summaries");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary failed save_as should leave the source package unchanged");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 2,
+            "failed save_as should preserve materialized and replacement summary count");
+        if (summaries.size() == 2) {
+            check(summaries[0].materialized_dirty,
+                "failed save_as should preserve materialized dirty flag");
+            check(summaries[1].sheet_data_replaced,
+                "failed save_as should preserve replacement summary flag");
+        }
+    }
+
+    editor.save_as(output);
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary save_as should leave the source package unchanged");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            editor.pending_worksheet_edits();
+        check(summaries.size() == 1,
+            "successful save_as should remove dirty materialized summary after auto-flush");
+        if (summaries.size() == 1) {
+            check(summaries[0].source_name == "Untouched",
+                "remaining summary should be the queued cross-sheet replacement");
+            check(summaries[0].sheet_data_replaced,
+                "remaining summary should preserve replacement flag");
+            check(!summaries[0].materialized_dirty,
+                "successful save_as should clear materialized dirty flag from summaries");
+        }
+    }
+
+    const auto inspect_pending_summary_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "pending summary Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "pending summary Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "summary-dirty-data",
+                "pending summary Data reopened output should read materialized A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "pending summary Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "pending summary Data reopened output should keep source-backed A2");
+        };
+    const auto inspect_pending_summary_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 1,
+                "pending summary Untouched reopened output should keep replacement sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 1,
+                "pending summary Untouched reopened output should expose replacement bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "replacement",
+                "pending summary Untouched reopened output should read replacement A1");
+            check(!reopened_sheet.try_cell("B1").has_value(),
+                "pending summary Untouched reopened output should drop source-backed B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "pending summary Data",
+        inspect_pending_summary_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "pending summary Untouched replacement",
+        inspect_pending_summary_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_noop =
+        editor.pending_worksheet_edits();
+
+    editor.save_as(noop_output);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending summary noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending summary noop save should keep dirty materialized cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending summary noop save should keep dirty materialized memory empty");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_noop),
+        "pending summary noop save should preserve retained replacement summary");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "pending summary retained replacement noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "pending summary retained replacement noop save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "pending summary noop output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary noop save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data", "pending summary noop Data",
+        inspect_pending_summary_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "pending summary noop Untouched replacement",
+        inspect_pending_summary_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries_before_second_noop =
+        editor.pending_worksheet_edits();
+
+    editor.save_as(second_noop_output);
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "pending summary second noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "pending summary second noop save should keep dirty materialized cell aggregate empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "pending summary second noop save should keep dirty materialized memory empty");
+    check(workbook_editor_edit_summaries_equal(
+              editor.pending_worksheet_edits(), summaries_before_second_noop),
+        "pending summary second noop save should preserve retained replacement summary");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "pending summary retained replacement second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "pending summary retained replacement second noop save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "pending summary second noop output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "pending summary second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "pending summary second noop save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "pending summary second noop save should leave the source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "pending summary second noop Data",
+        inspect_pending_summary_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "pending summary second noop Untouched replacement",
+        inspect_pending_summary_untouched);
+}
+
+void test_public_workbook_editor_pending_materialized_summaries_move_with_owner()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-source.xlsx");
+    const std::filesystem::path target_source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-materialized-summary-move-target.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-move-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-move-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-materialized-summary-move-second-noop-output.xlsx");
+
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto target_source_entries = fastxlsx::test::read_zip_entries(target_source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor source_sheet = editor.worksheet("Data");
+    source_sheet.set_cell(1, 1, fastxlsx::CellValue::text("moved-summary-dirty"));
+    const std::size_t moved_summary_memory = source_sheet.estimated_memory_usage();
+
+    fastxlsx::WorkbookEditor moved = std::move(editor);
+    check(editor.pending_worksheet_edits().empty(),
+        "moved-from editor should expose no pending materialized summaries");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            moved.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].planned_name == "Data",
+            "move construction should preserve materialized dirty summary");
+        if (summaries.size() == 1) {
+            check(summaries[0].materialized_dirty,
+                "move construction should preserve materialized dirty flag");
+            check(summaries[0].materialized_cell_count == 3,
+                "move construction should preserve materialized cell count");
+            check(summaries[0].estimated_materialized_memory_usage == moved_summary_memory,
+                "move construction should preserve materialized memory estimate");
+        }
+    }
+
+    fastxlsx::WorkbookEditor target = fastxlsx::WorkbookEditor::open(target_source);
+    fastxlsx::WorksheetEditor target_sheet = target.worksheet("Untouched");
+    target_sheet.set_cell(1, 1, fastxlsx::CellValue::text("discarded-summary-dirty"));
+
+    target = std::move(moved);
+    check(moved.pending_worksheet_edits().empty(),
+        "move-assigned-from editor should expose no pending materialized summaries");
+    {
+        const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+            target.pending_worksheet_edits();
+        check(summaries.size() == 1 && summaries[0].planned_name == "Data",
+            "move assignment should replace target materialized summaries");
+        if (summaries.size() == 1) {
+            check(summaries[0].materialized_dirty,
+                "move assignment should preserve assigned materialized dirty flag");
+            check(summaries[0].materialized_cell_count == 3,
+                "move assignment should discard old target materialized summary");
+            check(summaries[0].estimated_materialized_memory_usage == moved_summary_memory,
+                "move assignment should preserve assigned materialized memory estimate");
+        }
+    }
+
+    target.save_as(output);
+    check(target.pending_worksheet_edits().empty(),
+        "save_as after summary move assignment should clear assigned materialized summary");
+    check(target.pending_change_count() == 1,
+        "save_as after summary move assignment should count the materialized Patch handoff");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "summary move-assigned save_as should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "summary move-assigned save_as should leave the discarded target source package unchanged");
+    check_contains(output_entries.at("xl/worksheets/sheet1.xml"), "moved-summary-dirty",
+        "summary move-assigned editor should save assigned dirty materialized payload");
+    check_not_contains(output_entries.at("xl/worksheets/sheet2.xml"), "discarded-summary-dirty",
+        "summary move assignment should not leak discarded target dirty materialized payload");
+
+    const auto inspect_materialized_summary_move_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "materialized summary move Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                "materialized summary move Data reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "moved-summary-dirty",
+                "materialized summary move Data reopened output should read moved dirty A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                "materialized summary move Data reopened output should keep source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                "materialized summary move Data reopened output should keep source-backed A2");
+        };
+    const auto inspect_materialized_summary_move_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "materialized summary move Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "materialized summary move Untouched reopened output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "materialized summary move Untouched reopened output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "materialized summary move Untouched reopened output should keep source-backed B1");
+        };
+
+    check_reopened_clean_sheet_output(output, "Data", "materialized summary move Data",
+        inspect_materialized_summary_move_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "materialized summary move Untouched",
+        inspect_materialized_summary_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(noop_output);
+    check(target.pending_worksheet_edits().empty(),
+        "summary move-assigned no-op save should keep dirty summaries empty");
+    check(target.pending_materialized_worksheet_names().empty(),
+        "summary move-assigned no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "summary move-assigned no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "summary move-assigned no-op save should keep dirty memory aggregate empty");
+    check(target.pending_change_count() == 1,
+        "summary move-assigned no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "summary move-assigned no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_noop,
+        "summary move-assigned no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_noop,
+        "summary move-assigned no-op save");
+
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "summary move-assigned no-op output should match first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "summary move-assigned no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "summary move-assigned no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(noop_output, "Data",
+        "materialized summary move no-op Data",
+        inspect_materialized_summary_move_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "materialized summary move no-op Untouched",
+        inspect_materialized_summary_move_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(target);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(target);
+
+    target.save_as(second_noop_output);
+    check(target.pending_worksheet_edits().empty(),
+        "summary move-assigned second no-op save should keep dirty summaries empty");
+    check(target.pending_materialized_worksheet_names().empty(),
+        "summary move-assigned second no-op save should keep dirty names empty");
+    check(target.pending_materialized_cell_count() == 0,
+        "summary move-assigned second no-op save should keep dirty cell aggregate empty");
+    check(target.estimated_pending_materialized_memory_usage() == 0,
+        "summary move-assigned second no-op save should keep dirty memory aggregate empty");
+    check(target.pending_change_count() == 1,
+        "summary move-assigned second no-op save should not add another handoff");
+    check_workbook_editor_no_replacement_diagnostics(
+        target, "summary move-assigned second no-op save");
+    check_workbook_editor_public_save_state_preserved(
+        target, save_state_before_second_noop,
+        "summary move-assigned second no-op save");
+    check_workbook_editor_public_catalog_preserved(
+        target, catalog_before_second_noop,
+        "summary move-assigned second no-op save");
+
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "summary move-assigned second no-op output should match first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "summary move-assigned second no-op save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "summary move-assigned second no-op save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "summary move-assigned second no-op save should leave the source package unchanged");
+    check(fastxlsx::test::read_zip_entries(target_source) == target_source_entries,
+        "summary move-assigned second no-op save should leave the discarded target source package unchanged");
+    check_reopened_clean_sheet_output(second_noop_output, "Data",
+        "materialized summary move second no-op Data",
+        inspect_materialized_summary_move_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "materialized summary move second no-op Untouched",
+        inspect_materialized_summary_move_untouched);
+}
 } // namespace
 
 int main()
 {
     try {
+        test_public_worksheet_editor_has_pending_changes_tracks_dirty_state();
+        test_public_worksheet_editor_handle_remains_valid_after_save_as();
+        test_public_workbook_editor_pending_materialized_names_track_dirty_state();
+        test_public_workbook_editor_pending_materialized_names_move_with_owner();
+        test_public_workbook_editor_pending_materialized_aggregate_diagnostics();
+        test_public_workbook_editor_multi_sheet_materialized_noop_save_stability();
+        test_public_workbook_editor_multi_sheet_materialized_failed_save_retry();
+        test_public_workbook_editor_multi_sheet_materialized_retry_reopen_modify_noop_save();
+        test_public_workbook_editor_single_sheet_materialized_reopen_modify_noop_save();
+        test_public_workbook_editor_pending_materialized_aggregate_moves_with_owner();
+        test_public_workbook_editor_pending_summaries_include_materialized_dirty_state();
+        test_public_workbook_editor_pending_materialized_summaries_move_with_owner();
         test_public_worksheet_editor_zero_count_shifts_clear_diagnostics_preserve_state();
         test_public_worksheet_editor_clean_disjoint_shifts_clear_diagnostics_preserve_state();
         test_public_worksheet_editor_clean_boundary_shifts_clear_diagnostics_preserve_state();

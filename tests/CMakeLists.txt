@@ -1022,11 +1022,6 @@ add_fastxlsx_workbook_editor_shard(
 )
 set(FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT 120)
 add_fastxlsx_workbook_editor_shard(
-    public-state
-    fastxlsx_workbook_editor_public_state_tests
-    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
-)
-add_fastxlsx_workbook_editor_shard(
     public-state-edits
     fastxlsx_workbook_editor_public_state_tests
     ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}

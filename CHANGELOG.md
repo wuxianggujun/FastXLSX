@@ -31,6 +31,7 @@
 - 将 `public-state-reacquire-guards` 的 13 个测试迁入 materialized-session 与 coordinate-guards 独立目标，删除重复的 legacy shard 调度入口；专用 120 秒 shard 从 5 个降为 4 个，迁入目标继续使用普通 60 秒上限。
 - 将 `public-state-reacquire` 的 32 个测试按 renamed、saved 与 retry/failure 责任拆为三个独立 60 秒目标，共享 test-only support helper；删除 legacy shard 调度入口，专用 120 秒 shard 从 4 个降为 3 个。
 - 将 `public-state-edits` 的 17 个 clear/erase 与 memory-budget 回归迁入独立 60 秒目标，并将 reacquire helper 通用化为 public-state test support；删除 legacy shard 调度入口，专用 120 秒 shard 从 3 个降为 2 个。
+- 将 `public-state-formula-audits` 的 52 个 renamed/full-calculation、saved-reacquire 与 shift-after-rename 回归迁入独立 60 秒目标，并提取 formula-audits test-only support；删除 legacy shard 调度入口，专用 120 秒 shard 从 2 个降为 1 个。
 
 ### Documentation
 

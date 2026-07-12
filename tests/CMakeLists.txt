@@ -1027,11 +1027,6 @@ add_fastxlsx_workbook_editor_shard(
     ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-formula-audits
-    fastxlsx_workbook_editor_public_state_tests
-    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
-)
-add_fastxlsx_workbook_editor_shard(
     public-guards fastxlsx_workbook_editor_public_guards_tests 60
 )
 add_fastxlsx_workbook_editor_shard(
@@ -1135,6 +1130,7 @@ add_fastxlsx_workbook_editor_standalone_test(materialized_sessions test_workbook
 add_fastxlsx_workbook_editor_standalone_test(public_patch_cells test_workbook_editor_public_patch_cells.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_snapshot test_workbook_editor_public_snapshot.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_edits test_workbook_editor_public_state_edits.cpp 60)
+add_fastxlsx_workbook_editor_standalone_test(public_state_formula_audits test_workbook_editor_public_state_formula_audits.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_reacquire_renamed test_workbook_editor_public_state_reacquire_renamed.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_reacquire_saved test_workbook_editor_public_state_reacquire_saved.cpp 60)
 add_fastxlsx_workbook_editor_standalone_test(public_state_reacquire_retry test_workbook_editor_public_state_reacquire_retry.cpp 60)
@@ -1164,6 +1160,7 @@ add_dependencies(
     fastxlsx_workbook_editor_public_patch_cells_tests
     fastxlsx_workbook_editor_public_snapshot_tests
     fastxlsx_workbook_editor_public_state_edits_tests
+    fastxlsx_workbook_editor_public_state_formula_audits_tests
     fastxlsx_workbook_editor_public_state_reacquire_renamed_tests
     fastxlsx_workbook_editor_public_state_reacquire_saved_tests
     fastxlsx_workbook_editor_public_state_reacquire_retry_tests

@@ -10402,6 +10402,3733 @@ void test_public_workbook_editor_pending_materialized_summaries_move_with_owner(
         "materialized summary move second no-op Untouched",
         inspect_materialized_summary_move_untouched);
 }
+void check_public_state_single_named_dirty_materialized_summary(
+    const fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditor& sheet,
+    std::string_view worksheet_name,
+    std::size_t expected_pending_change_count,
+    std::string_view scenario,
+    const std::optional<std::string>& expected_last_edit_error = std::nullopt)
+{
+    const std::string prefix = std::string(scenario);
+    const std::string expected_name = std::string(worksheet_name);
+    const std::size_t expected_cell_count = sheet.cell_count();
+    const std::size_t expected_memory_usage = sheet.estimated_memory_usage();
+
+    check(editor.has_pending_changes(),
+        prefix + " should expose pending public state");
+    check(editor.pending_change_count() == expected_pending_change_count,
+        prefix + " should not count dirty materialized sessions as staged handoffs");
+    check(editor.last_edit_error() == expected_last_edit_error,
+        prefix + " should expose the expected last_edit_error state");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, prefix + " should not expose replacement diagnostics");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{expected_name},
+        prefix + " should expose the expected dirty materialized worksheet");
+    check(editor.pending_materialized_cell_count() == expected_cell_count,
+        prefix + " should expose the dirty materialized cell count");
+    check(editor.estimated_pending_materialized_memory_usage() == expected_memory_usage,
+        prefix + " should expose the dirty materialized memory estimate");
+
+    const std::vector<fastxlsx::WorkbookEditorWorksheetEditSummary> summaries =
+        editor.pending_worksheet_edits();
+    check(summaries.size() == 1,
+        prefix + " should expose one dirty materialized summary");
+    if (summaries.size() == 1) {
+        const auto& summary = summaries[0];
+        check(summary.source_name == expected_name &&
+                summary.planned_name == expected_name &&
+                !summary.renamed,
+            prefix + " summary should identify the worksheet without rename state");
+        check(!summary.sheet_data_replaced &&
+                !summary.targeted_cells_replaced &&
+                summary.replacement_cell_count == 0 &&
+                summary.estimated_replacement_memory_usage == 0,
+            prefix + " summary should not expose replacement state");
+        check(summary.materialized_dirty &&
+                summary.materialized_cell_count == expected_cell_count &&
+                summary.estimated_materialized_memory_usage == expected_memory_usage,
+            prefix + " summary should match the dirty materialized state");
+    }
+}
+
+void check_public_state_single_data_dirty_materialized_summary(
+    const fastxlsx::WorkbookEditor& editor,
+    const fastxlsx::WorksheetEditor& sheet,
+    std::size_t expected_pending_change_count,
+    std::string_view scenario,
+    const std::optional<std::string>& expected_last_edit_error = std::nullopt)
+{
+    check_public_state_single_named_dirty_materialized_summary(
+        editor, sheet, "Data", expected_pending_change_count, scenario,
+        expected_last_edit_error);
+}
+
+void check_reopened_shift_output(
+    const std::filesystem::path& output,
+    std::string_view scenario,
+    const std::function<void(fastxlsx::WorksheetEditor&)>& inspect)
+{
+    fastxlsx::WorkbookEditor reopened_editor = fastxlsx::WorkbookEditor::open(output);
+    fastxlsx::WorksheetEditor reopened_sheet = reopened_editor.worksheet("Data");
+    const std::string prefix(scenario);
+
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened output should not expose stale diagnostics");
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened output should materialize as clean public state");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
+        prefix + " reopened output should not expose dirty diagnostics");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " reopened output should not expose dirty worksheet names");
+
+    inspect(reopened_sheet);
+
+    check(!reopened_editor.has_pending_changes() &&
+            !reopened_sheet.has_pending_changes(),
+        prefix + " reopened readback should keep public state clean");
+    check(reopened_editor.pending_change_count() == 0 &&
+            reopened_editor.pending_materialized_cell_count() == 0 &&
+            reopened_editor.estimated_pending_materialized_memory_usage() == 0 &&
+            reopened_editor.pending_replacement_cell_count() == 0 &&
+            reopened_editor.estimated_pending_replacement_memory_usage() == 0 &&
+            reopened_editor.pending_worksheet_edits().empty(),
+        prefix + " reopened readback should keep dirty diagnostics empty");
+    check(reopened_editor.pending_materialized_worksheet_names().empty() &&
+            reopened_editor.pending_replacement_worksheet_names().empty(),
+        prefix + " reopened readback should keep dirty worksheet names empty");
+    check(!reopened_editor.last_edit_error().has_value(),
+        prefix + " reopened readback should keep last_edit_error empty");
+}
+
+void check_reopened_untouched_keep_me_output(
+    const std::filesystem::path& output,
+    std::string_view scenario)
+{
+    check_reopened_clean_sheet_output(
+        output,
+        "Untouched",
+        scenario,
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "reopened Untouched output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 1, 2,
+                "reopened Untouched output should keep source bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "reopened Untouched output should keep source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "reopened Untouched output should keep source-backed B1");
+        });
+}
+
+void test_public_worksheet_editor_shift_preserves_other_dirty_handle_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-noop-second-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell(4, 2, fastxlsx::CellValue::text("data-dirty-tail"));
+    untouched.set_cell(3, 1, fastxlsx::CellValue::text("untouched-dirty-tail"));
+    const std::size_t data_dirty_count = data.cell_count();
+    const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
+    check(data_dirty_count == 4 && untouched_dirty_count == 3,
+        "cross-handle shift should start with two dirty sparse sessions");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle shift should dirty both borrowed handles before the shift");
+
+    const std::vector<std::string> dirty_names_before_shift =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_before_shift.size() == 2 &&
+            dirty_names_before_shift[0] == "Data" &&
+            dirty_names_before_shift[1] == "Untouched",
+        "cross-handle shift should report both dirty materialized sheets in catalog order");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle shift should aggregate both dirty sparse sessions before the shift");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle shift should aggregate both dirty sparse memory estimates before the shift");
+
+    data.insert_rows(2, 1);
+    const std::size_t data_shifted_memory = data.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle insert_rows should keep diagnostics clear");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle insert_rows should keep both dirty handles tracked");
+    check(data.cell_count() == data_dirty_count &&
+            untouched.cell_count() == untouched_dirty_count,
+        "cross-handle insert_rows should keep each dirty sparse count stable");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle insert_rows should keep aggregate dirty sparse count stable");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_shifted_memory + untouched_dirty_memory,
+        "cross-handle insert_rows should keep aggregate dirty memory stable");
+    const std::vector<std::string> dirty_names_after_shift =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_shift.size() == 2 &&
+            dirty_names_after_shift[0] == "Data" &&
+            dirty_names_after_shift[1] == "Untouched",
+        "cross-handle insert_rows should preserve dirty materialized sheet ordering");
+
+    check(data.get_cell("A3").text_value() == "placeholder-a2",
+        "cross-handle insert_rows should move Data source-backed rows");
+    check(data.get_cell("B5").text_value() == "data-dirty-tail",
+        "cross-handle insert_rows should move Data dirty rows");
+    check(!data.try_cell("A2").has_value() && !data.try_cell("B4").has_value(),
+        "cross-handle insert_rows should remove Data old shifted coordinates");
+    check(untouched.get_cell("A1").text_value() == "keep-me",
+        "cross-handle insert_rows should leave Untouched source text in place");
+    const fastxlsx::CellValue untouched_number = untouched.get_cell("B1");
+    check(untouched_number.kind() == fastxlsx::CellValueKind::Number &&
+            untouched_number.number_value() == 99.0,
+        "cross-handle insert_rows should leave Untouched source number in place");
+    check(untouched.get_cell("A3").text_value() == "untouched-dirty-tail",
+        "cross-handle insert_rows should leave other dirty handle coordinates in place");
+    check(!untouched.try_cell("A2").has_value(),
+        "cross-handle insert_rows should not synthesize rows on the other handle");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle shift save_as should clean both materialized handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "cross-handle shift save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle shift save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift save_as should leave the source package unchanged");
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, R"(<dimension ref="A1:B5"/>)",
+        "cross-handle shift save_as should project Data shifted bounds");
+    check_contains(data_xml, R"(<c r="A3")",
+        "cross-handle shift save_as should write shifted Data source row");
+    check_contains(data_xml, R"(<c r="B5")",
+        "cross-handle shift save_as should write shifted Data dirty row");
+    check_not_contains(data_xml, R"(r="A2")",
+        "cross-handle shift save_as should omit Data old source coordinate");
+    check_not_contains(data_xml, R"(r="B4")",
+        "cross-handle shift save_as should omit Data old dirty coordinate");
+    check_contains(untouched_xml, R"(<dimension ref="A1:B3"/>)",
+        "cross-handle shift save_as should preserve Untouched dirty bounds");
+    check_contains(untouched_xml, "keep-me",
+        "cross-handle shift save_as should preserve Untouched source text");
+    check_contains(untouched_xml, R"(<c r="B1"><v>99</v></c>)",
+        "cross-handle shift save_as should preserve Untouched source number");
+    check_contains(untouched_xml, R"(<c r="A3")",
+        "cross-handle shift save_as should preserve Untouched dirty coordinate");
+    check_not_contains(untouched_xml, R"(r="A2")",
+        "cross-handle shift save_as should not shift or synthesize Untouched rows");
+
+    const auto inspect_reopened_cross_handle_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle shift Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 2,
+                "cross-handle shift Data reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "cross-handle shift Data reopened output should read shifted source row");
+            const fastxlsx::CellValue reopened_b5 = reopened_sheet.get_cell("B5");
+            check(reopened_b5.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b5.text_value() == "data-dirty-tail",
+                "cross-handle shift Data reopened output should read shifted dirty row");
+            check(!reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value(),
+                "cross-handle shift Data reopened output should keep old coordinates absent");
+        };
+
+    const auto inspect_reopened_cross_handle_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle shift Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "cross-handle shift Untouched reopened output should keep dirty bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle shift Untouched reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle shift Untouched reopened output should keep source number");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "untouched-dirty-tail",
+                "cross-handle shift Untouched reopened output should keep dirty coordinate");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "cross-handle shift Untouched reopened output should not synthesize shifted rows");
+        };
+
+    check_reopened_shift_output(output, "cross-handle shift Data",
+        inspect_reopened_cross_handle_data);
+    check_reopened_clean_sheet_output(output, "Untouched", "cross-handle shift Untouched",
+        inspect_reopened_cross_handle_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle shift noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle shift noop save should keep both flushed handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "cross-handle shift noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "cross-handle shift noop save should keep aggregate dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle shift noop save should keep dirty memory estimate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "cross-handle shift noop save should keep materialized summaries empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "cross-handle shift noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "cross-handle shift noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "cross-handle shift noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift noop save should leave the source package unchanged");
+    check_reopened_shift_output(noop_output, "cross-handle shift Data noop save",
+        inspect_reopened_cross_handle_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "cross-handle shift Untouched noop save",
+        inspect_reopened_cross_handle_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle shift second noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle shift second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle shift second noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle shift second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle shift second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "cross-handle shift second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "cross-handle shift second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "cross-handle shift second noop output should match the first no-op output");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle shift second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle shift second noop save should leave the first no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift second noop save should leave the source package unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle shift Data second noop save",
+        inspect_reopened_cross_handle_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle shift Untouched second noop save",
+        inspect_reopened_cross_handle_untouched);
+
+    data.set_cell("C5", fastxlsx::CellValue::text("post-noop-cross-handle-data"));
+    untouched.set_cell("C3", fastxlsx::CellValue::text("post-noop-cross-handle-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle shift post-noop edits should dirty both saved handles");
+    check(data.cell_count() == 5 && untouched.cell_count() == 4,
+        "cross-handle shift post-noop edits should add one sparse cell per handle");
+    check_cell_range_equals(data.used_range(), 1, 1, 5, 3,
+        "cross-handle shift post-noop Data edit should expand bounds to C5");
+    check_cell_range_equals(untouched.used_range(), 1, 1, 3, 3,
+        "cross-handle shift post-noop Untouched edit should expand bounds to C3");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 2 &&
+            post_noop_dirty_names[0] == "Data" &&
+            post_noop_dirty_names[1] == "Untouched",
+        "cross-handle shift post-noop edits should expose both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() == 9,
+        "cross-handle shift post-noop edits should aggregate both dirty sparse counts");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data.estimated_memory_usage() + untouched.estimated_memory_usage(),
+        "cross-handle shift post-noop edits should aggregate both dirty memory estimates");
+    check(editor.pending_change_count() == 2,
+        "cross-handle shift post-noop edits should retain prior flushed handoffs before save");
+    check(data.get_cell("B5").text_value() == "data-dirty-tail" &&
+            untouched.get_cell("A3").text_value() == "untouched-dirty-tail",
+        "cross-handle shift post-noop edits should preserve existing shifted dirty cells");
+
+    editor.save_as(post_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle shift post-noop save should clean both materialized handles");
+    check(editor.pending_change_count() == 4,
+        "cross-handle shift post-noop save should record two additional handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle shift post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle shift post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle shift post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle shift post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle shift post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "cross-handle shift post-noop save should leave the repeat no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift post-noop save should leave the source package unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    const std::string post_noop_untouched_xml = post_noop_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(post_noop_data_xml, R"(<c r="C5")",
+        "cross-handle shift post-noop save should write the Data post-noop cell");
+    check_contains(post_noop_untouched_xml, R"(<c r="C3")",
+        "cross-handle shift post-noop save should write the Untouched post-noop cell");
+    const auto inspect_reopened_cross_handle_post_noop_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "cross-handle shift Data post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 5, 3,
+                "cross-handle shift Data post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "placeholder-a2",
+                "cross-handle shift Data post-noop save reopened output should keep shifted source row");
+            const fastxlsx::CellValue reopened_b5 = reopened_sheet.get_cell("B5");
+            check(reopened_b5.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b5.text_value() == "data-dirty-tail",
+                "cross-handle shift Data post-noop save reopened output should keep shifted dirty row");
+            const fastxlsx::CellValue reopened_c5 = reopened_sheet.get_cell("C5");
+            check(reopened_c5.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c5.text_value() == "post-noop-cross-handle-data",
+                "cross-handle shift Data post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value(),
+                "cross-handle shift Data post-noop save reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output, "cross-handle shift Data post-noop save",
+        inspect_reopened_cross_handle_post_noop_data);
+    const auto inspect_reopened_cross_handle_post_noop_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle shift Untouched post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "cross-handle shift Untouched post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle shift Untouched post-noop save reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle shift Untouched post-noop save reopened output should keep source number");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "untouched-dirty-tail",
+                "cross-handle shift Untouched post-noop save reopened output should keep prior dirty cell");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "post-noop-cross-handle-untouched",
+                "cross-handle shift Untouched post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "cross-handle shift Untouched post-noop save reopened output should not synthesize shifted rows");
+        };
+    check_reopened_clean_sheet_output(post_noop_output, "Untouched",
+        "cross-handle shift Untouched post-noop save",
+        inspect_reopened_cross_handle_post_noop_untouched);
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle shift Data second noop output after post-noop save",
+        inspect_reopened_cross_handle_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle shift Untouched second noop output after post-noop save",
+        inspect_reopened_cross_handle_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(post_noop_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle shift post-noop noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 4,
+        "cross-handle shift post-noop noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle shift post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle shift post-noop noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle shift post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "cross-handle shift post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "cross-handle shift post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "cross-handle shift post-noop noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "cross-handle shift post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle shift post-noop noop save should leave the source package unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "cross-handle shift Data post-noop noop save",
+        inspect_reopened_cross_handle_post_noop_data);
+    check_reopened_clean_sheet_output(post_noop_noop_output, "Untouched",
+        "cross-handle shift Untouched post-noop noop save",
+        inspect_reopened_cross_handle_post_noop_untouched);
+}
+
+void test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-noop-output.xlsx");
+    const std::filesystem::path second_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-noop-second-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output = artifact(
+        "fastxlsx-workbook-editor-public-worksheet-column-shift-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell(2, 4, fastxlsx::CellValue::text("data-dirty-column-tail"));
+    untouched.set_cell(2, 3, fastxlsx::CellValue::text("untouched-dirty-column-tail"));
+    const std::size_t data_dirty_count = data.cell_count();
+    const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
+    check(data_dirty_count == 4 && untouched_dirty_count == 3,
+        "cross-handle column shift should start with two dirty sparse sessions");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle column shift should dirty both borrowed handles before the shift");
+
+    const std::vector<std::string> dirty_names_before_shift =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_before_shift.size() == 2 &&
+            dirty_names_before_shift[0] == "Data" &&
+            dirty_names_before_shift[1] == "Untouched",
+        "cross-handle column shift should report both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle column shift should aggregate both dirty sparse sessions before the shift");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle column shift should aggregate both dirty sparse memory estimates before the shift");
+
+    data.insert_columns(2, 1);
+    const std::size_t data_shifted_memory = data.estimated_memory_usage();
+
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle insert_columns should keep diagnostics clear");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle insert_columns should keep both dirty handles tracked");
+    check(data.cell_count() == data_dirty_count &&
+            untouched.cell_count() == untouched_dirty_count,
+        "cross-handle insert_columns should keep each dirty sparse count stable");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle insert_columns should keep aggregate dirty sparse count stable");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_shifted_memory + untouched_dirty_memory,
+        "cross-handle insert_columns should keep aggregate dirty memory stable");
+    const std::vector<std::string> dirty_names_after_shift =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_shift.size() == 2 &&
+            dirty_names_after_shift[0] == "Data" &&
+            dirty_names_after_shift[1] == "Untouched",
+        "cross-handle insert_columns should preserve dirty materialized sheet ordering");
+
+    const fastxlsx::CellValue shifted_number = data.get_cell("C1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "cross-handle insert_columns should move Data source-backed columns");
+    check(data.get_cell("E2").text_value() == "data-dirty-column-tail",
+        "cross-handle insert_columns should move Data dirty columns");
+    check(!data.try_cell("B1").has_value() && !data.try_cell("D2").has_value(),
+        "cross-handle insert_columns should remove Data old shifted coordinates");
+    check(untouched.get_cell("A1").text_value() == "keep-me",
+        "cross-handle insert_columns should leave Untouched source text in place");
+    const fastxlsx::CellValue untouched_number = untouched.get_cell("B1");
+    check(untouched_number.kind() == fastxlsx::CellValueKind::Number &&
+            untouched_number.number_value() == 99.0,
+        "cross-handle insert_columns should leave Untouched source number in place");
+    check(untouched.get_cell("C2").text_value() == "untouched-dirty-column-tail",
+        "cross-handle insert_columns should leave other dirty handle coordinates in place");
+    check(!untouched.try_cell("D2").has_value(),
+        "cross-handle insert_columns should not shift the other handle");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift save_as should clean both materialized handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "cross-handle column shift save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle column shift save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift save_as should leave the source package unchanged");
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, R"(<dimension ref="A1:E2"/>)",
+        "cross-handle column shift save_as should project Data shifted bounds");
+    check_contains(data_xml, R"(<c r="C1"><v>1</v></c>)",
+        "cross-handle column shift save_as should write shifted Data source number");
+    check_contains(data_xml, R"(<c r="E2")",
+        "cross-handle column shift save_as should write shifted Data dirty column");
+    check_not_contains(data_xml, R"(r="B1")",
+        "cross-handle column shift save_as should omit Data old source coordinate");
+    check_not_contains(data_xml, R"(r="D2")",
+        "cross-handle column shift save_as should omit Data old dirty coordinate");
+    check_contains(untouched_xml, R"(<dimension ref="A1:C2"/>)",
+        "cross-handle column shift save_as should preserve Untouched dirty bounds");
+    check_contains(untouched_xml, "keep-me",
+        "cross-handle column shift save_as should preserve Untouched source text");
+    check_contains(untouched_xml, R"(<c r="B1"><v>99</v></c>)",
+        "cross-handle column shift save_as should preserve Untouched source number");
+    check_contains(untouched_xml, R"(<c r="C2")",
+        "cross-handle column shift save_as should preserve Untouched dirty coordinate");
+    check_not_contains(untouched_xml, R"(r="D2")",
+        "cross-handle column shift save_as should not shift Untouched dirty columns");
+
+    const auto inspect_reopened_cross_handle_column_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle column shift Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+                "cross-handle column shift Data reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "cross-handle column shift Data reopened output should read shifted source column");
+            const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+            check(reopened_e2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e2.text_value() == "data-dirty-column-tail",
+                "cross-handle column shift Data reopened output should read shifted dirty column");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle column shift Data reopened output should keep old coordinates absent");
+        };
+
+    const auto inspect_reopened_cross_handle_column_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle column shift Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "cross-handle column shift Untouched reopened output should keep dirty bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle column shift Untouched reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle column shift Untouched reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-column-tail",
+                "cross-handle column shift Untouched reopened output should keep dirty coordinate");
+            check(!reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle column shift Untouched reopened output should not shift columns");
+        };
+
+    check_reopened_shift_output(output, "cross-handle column shift Data",
+        inspect_reopened_cross_handle_column_data);
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "cross-handle column shift Untouched",
+        inspect_reopened_cross_handle_column_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle column shift noop save should keep both flushed handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "cross-handle column shift noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "cross-handle column shift noop save should keep aggregate dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle column shift noop save should keep dirty memory estimate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "cross-handle column shift noop save should keep materialized summaries empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "cross-handle column shift noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "cross-handle column shift noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "cross-handle column shift noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift noop save should leave the source package unchanged");
+    check_reopened_shift_output(noop_output, "cross-handle column shift Data noop save",
+        inspect_reopened_cross_handle_column_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "cross-handle column shift Untouched noop save",
+        inspect_reopened_cross_handle_column_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift second noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle column shift second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle column shift second noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle column shift second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle column shift second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "cross-handle column shift second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "cross-handle column shift second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "cross-handle column shift second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle column shift second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle column shift second noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift second noop save should leave the source package unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle column shift Data second noop save",
+        inspect_reopened_cross_handle_column_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle column shift Untouched second noop save",
+        inspect_reopened_cross_handle_column_untouched);
+
+    data.set_cell("F2", fastxlsx::CellValue::text("post-noop-cross-handle-column-data"));
+    untouched.set_cell("D2", fastxlsx::CellValue::text("post-noop-cross-handle-column-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle column shift post-noop edits should dirty both saved handles");
+    check(data.cell_count() == 5 && untouched.cell_count() == 4,
+        "cross-handle column shift post-noop edits should add one sparse cell per handle");
+    check_cell_range_equals(data.used_range(), 1, 1, 2, 6,
+        "cross-handle column shift post-noop Data edit should expand bounds to F2");
+    check_cell_range_equals(untouched.used_range(), 1, 1, 2, 4,
+        "cross-handle column shift post-noop Untouched edit should expand bounds to D2");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 2 &&
+            post_noop_dirty_names[0] == "Data" &&
+            post_noop_dirty_names[1] == "Untouched",
+        "cross-handle column shift post-noop edits should expose both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() == 9,
+        "cross-handle column shift post-noop edits should aggregate both dirty sparse counts");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data.estimated_memory_usage() + untouched.estimated_memory_usage(),
+        "cross-handle column shift post-noop edits should aggregate both dirty memory estimates");
+    check(editor.pending_change_count() == 2,
+        "cross-handle column shift post-noop edits should retain prior flushed handoffs before save");
+    check(data.get_cell("E2").text_value() == "data-dirty-column-tail" &&
+            untouched.get_cell("C2").text_value() == "untouched-dirty-column-tail",
+        "cross-handle column shift post-noop edits should preserve existing dirty cells");
+
+    editor.save_as(post_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift post-noop save should clean both materialized handles");
+    check(editor.pending_change_count() == 4,
+        "cross-handle column shift post-noop save should record two additional handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle column shift post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle column shift post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle column shift post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle column shift post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle column shift post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "cross-handle column shift post-noop save should leave the repeat no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift post-noop save should leave the source package unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    const std::string post_noop_untouched_xml = post_noop_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(post_noop_data_xml, R"(<c r="F2")",
+        "cross-handle column shift post-noop save should write the Data post-noop cell");
+    check_contains(post_noop_untouched_xml, R"(<c r="D2")",
+        "cross-handle column shift post-noop save should write the Untouched post-noop cell");
+    const auto inspect_reopened_cross_handle_column_post_noop_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 5,
+                "cross-handle column shift Data post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 6,
+                "cross-handle column shift Data post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_c1 = reopened_sheet.get_cell("C1");
+            check(reopened_c1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_c1.number_value() == 1.0,
+                "cross-handle column shift Data post-noop save reopened output should keep shifted source column");
+            const fastxlsx::CellValue reopened_e2 = reopened_sheet.get_cell("E2");
+            check(reopened_e2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_e2.text_value() == "data-dirty-column-tail",
+                "cross-handle column shift Data post-noop save reopened output should keep shifted dirty column");
+            const fastxlsx::CellValue reopened_f2 = reopened_sheet.get_cell("F2");
+            check(reopened_f2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_f2.text_value() == "post-noop-cross-handle-column-data",
+                "cross-handle column shift Data post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle column shift Data post-noop save reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output, "cross-handle column shift Data post-noop save",
+        inspect_reopened_cross_handle_column_post_noop_data);
+    const auto inspect_reopened_cross_handle_column_post_noop_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle column shift Untouched post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "cross-handle column shift Untouched post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle column shift Untouched post-noop save reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle column shift Untouched post-noop save reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-column-tail",
+                "cross-handle column shift Untouched post-noop save reopened output should keep prior dirty cell");
+            const fastxlsx::CellValue reopened_d2 = reopened_sheet.get_cell("D2");
+            check(reopened_d2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d2.text_value() == "post-noop-cross-handle-column-untouched",
+                "cross-handle column shift Untouched post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("E2").has_value(),
+                "cross-handle column shift Untouched post-noop save reopened output should not shift columns");
+        };
+    check_reopened_clean_sheet_output(post_noop_output, "Untouched",
+        "cross-handle column shift Untouched post-noop save",
+        inspect_reopened_cross_handle_column_post_noop_untouched);
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle column shift Data second noop output after post-noop save",
+        inspect_reopened_cross_handle_column_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle column shift Untouched second noop output after post-noop save",
+        inspect_reopened_cross_handle_column_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(post_noop_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle column shift post-noop noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 4,
+        "cross-handle column shift post-noop noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle column shift post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle column shift post-noop noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle column shift post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "cross-handle column shift post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "cross-handle column shift post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "cross-handle column shift post-noop noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "cross-handle column shift post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle column shift post-noop noop save should leave the source package unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "cross-handle column shift Data post-noop noop save",
+        inspect_reopened_cross_handle_column_post_noop_data);
+    check_reopened_clean_sheet_output(post_noop_noop_output, "Untouched",
+        "cross-handle column shift Untouched post-noop noop save",
+        inspect_reopened_cross_handle_column_post_noop_untouched);
+}
+
+void test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-noop-second-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-row-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell(4, 2, fastxlsx::CellValue::text("data-dirty-delete-row-tail"));
+    untouched.set_cell(3, 1, fastxlsx::CellValue::text("untouched-dirty-delete-row-tail"));
+    const std::size_t data_dirty_count = data.cell_count();
+    const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
+    check(data_dirty_count == 4 && untouched_dirty_count == 3,
+        "cross-handle delete_rows should start with two dirty sparse sessions");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle delete_rows should aggregate both dirty sessions before deletion");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle delete_rows should aggregate both dirty memory estimates before deletion");
+
+    data.delete_rows(1, 1);
+
+    const std::size_t data_after_delete_count = data.cell_count();
+    const std::size_t data_after_delete_memory = data.estimated_memory_usage();
+    check(data_after_delete_count == 2,
+        "cross-handle delete_rows should remove Data records from deleted rows");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle delete_rows should keep both dirty handles tracked");
+    check(untouched.cell_count() == untouched_dirty_count,
+        "cross-handle delete_rows should keep the other dirty sparse count stable");
+    check(editor.pending_materialized_cell_count() ==
+            data_after_delete_count + untouched_dirty_count,
+        "cross-handle delete_rows should update aggregate count for the shifted sheet only");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_after_delete_memory + untouched_dirty_memory,
+        "cross-handle delete_rows should update aggregate memory for the shifted sheet only");
+    const std::vector<std::string> dirty_names_after_delete =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_delete.size() == 2 &&
+            dirty_names_after_delete[0] == "Data" &&
+            dirty_names_after_delete[1] == "Untouched",
+        "cross-handle delete_rows should keep both dirty sheets in catalog order");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_rows should keep diagnostics clear");
+
+    check(data.get_cell("A1").text_value() == "placeholder-a2",
+        "cross-handle delete_rows should shift later Data source-backed rows upward");
+    check(data.get_cell("B3").text_value() == "data-dirty-delete-row-tail",
+        "cross-handle delete_rows should shift later Data dirty rows upward");
+    check(!data.try_cell("B1").has_value() && !data.try_cell("A2").has_value() &&
+            !data.try_cell("B4").has_value(),
+        "cross-handle delete_rows should remove deleted and old shifted Data coordinates");
+    check(untouched.get_cell("A1").text_value() == "keep-me",
+        "cross-handle delete_rows should leave Untouched source text in place");
+    const fastxlsx::CellValue untouched_number = untouched.get_cell("B1");
+    check(untouched_number.kind() == fastxlsx::CellValueKind::Number &&
+            untouched_number.number_value() == 99.0,
+        "cross-handle delete_rows should leave Untouched source number in place");
+    check(untouched.get_cell("A3").text_value() == "untouched-dirty-delete-row-tail",
+        "cross-handle delete_rows should leave other dirty row coordinates in place");
+    check(!untouched.try_cell("A2").has_value(),
+        "cross-handle delete_rows should not shift the other handle");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_rows save_as should clean both materialized handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "cross-handle delete_rows save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_rows save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows save_as should leave the source package unchanged");
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, R"(<dimension ref="A1:B3"/>)",
+        "cross-handle delete_rows save_as should project Data shifted bounds");
+    check_contains(data_xml, "placeholder-a2",
+        "cross-handle delete_rows save_as should write shifted Data source row");
+    check_contains(data_xml, R"(<c r="B3")",
+        "cross-handle delete_rows save_as should write shifted Data dirty row");
+    check_not_contains(data_xml, "placeholder-a1",
+        "cross-handle delete_rows save_as should omit deleted Data source text");
+    check_not_contains(data_xml, R"(r="B1")",
+        "cross-handle delete_rows save_as should omit deleted Data source number");
+    check_not_contains(data_xml, R"(r="B4")",
+        "cross-handle delete_rows save_as should omit old Data dirty coordinate");
+    check_contains(untouched_xml, R"(<dimension ref="A1:B3"/>)",
+        "cross-handle delete_rows save_as should preserve Untouched dirty bounds");
+    check_contains(untouched_xml, "keep-me",
+        "cross-handle delete_rows save_as should preserve Untouched source text");
+    check_contains(untouched_xml, R"(<c r="B1"><v>99</v></c>)",
+        "cross-handle delete_rows save_as should preserve Untouched source number");
+    check_contains(untouched_xml, R"(<c r="A3")",
+        "cross-handle delete_rows save_as should preserve Untouched dirty coordinate");
+    check_not_contains(untouched_xml, R"(r="A2")",
+        "cross-handle delete_rows save_as should not shift Untouched dirty rows");
+
+    const auto inspect_reopened_cross_handle_delete_rows_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "cross-handle delete_rows Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "cross-handle delete_rows Data reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a2",
+                "cross-handle delete_rows Data reopened output should read shifted source row");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b3.text_value() == "data-dirty-delete-row-tail",
+                "cross-handle delete_rows Data reopened output should read shifted dirty row");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value(),
+                "cross-handle delete_rows Data reopened output should keep old coordinates absent");
+        };
+
+    const auto inspect_reopened_cross_handle_delete_rows_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle delete_rows Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 2,
+                "cross-handle delete_rows Untouched reopened output should keep dirty bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle delete_rows Untouched reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle delete_rows Untouched reopened output should keep source number");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "untouched-dirty-delete-row-tail",
+                "cross-handle delete_rows Untouched reopened output should keep dirty coordinate");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "cross-handle delete_rows Untouched reopened output should not shift rows");
+        };
+
+    check_reopened_shift_output(output, "cross-handle delete_rows Data",
+        inspect_reopened_cross_handle_delete_rows_data);
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "cross-handle delete_rows Untouched",
+        inspect_reopened_cross_handle_delete_rows_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_rows noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_rows noop save should keep both flushed handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "cross-handle delete_rows noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "cross-handle delete_rows noop save should keep aggregate dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_rows noop save should keep dirty memory estimate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_rows noop save should keep materialized summaries empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "cross-handle delete_rows noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "cross-handle delete_rows noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "cross-handle delete_rows noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows noop save should leave the source package unchanged");
+    check_reopened_shift_output(noop_output, "cross-handle delete_rows Data noop save",
+        inspect_reopened_cross_handle_delete_rows_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "cross-handle delete_rows Untouched noop save",
+        inspect_reopened_cross_handle_delete_rows_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_rows second noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_rows second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_rows second noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_rows second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_rows second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "cross-handle delete_rows second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "cross-handle delete_rows second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "cross-handle delete_rows second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle delete_rows second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle delete_rows second noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows second noop save should leave the source package unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_rows Data second noop save",
+        inspect_reopened_cross_handle_delete_rows_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_rows Untouched second noop save",
+        inspect_reopened_cross_handle_delete_rows_untouched);
+
+    data.set_cell("C3", fastxlsx::CellValue::text("post-noop-cross-handle-delete-row-data"));
+    untouched.set_cell("C3", fastxlsx::CellValue::text("post-noop-cross-handle-delete-row-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle delete_rows post-noop edits should dirty both saved handles");
+    check(data.cell_count() == 3 && untouched.cell_count() == 4,
+        "cross-handle delete_rows post-noop edits should add one sparse cell per handle");
+    check_cell_range_equals(data.used_range(), 1, 1, 3, 3,
+        "cross-handle delete_rows post-noop Data edit should expand bounds to C3");
+    check_cell_range_equals(untouched.used_range(), 1, 1, 3, 3,
+        "cross-handle delete_rows post-noop Untouched edit should expand bounds to C3");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 2 &&
+            post_noop_dirty_names[0] == "Data" &&
+            post_noop_dirty_names[1] == "Untouched",
+        "cross-handle delete_rows post-noop edits should expose both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() == 7,
+        "cross-handle delete_rows post-noop edits should aggregate both dirty sparse counts");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data.estimated_memory_usage() + untouched.estimated_memory_usage(),
+        "cross-handle delete_rows post-noop edits should aggregate both dirty memory estimates");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_rows post-noop edits should retain prior flushed handoffs before save");
+    check(data.get_cell("B3").text_value() == "data-dirty-delete-row-tail" &&
+            untouched.get_cell("A3").text_value() == "untouched-dirty-delete-row-tail",
+        "cross-handle delete_rows post-noop edits should preserve existing dirty cells");
+
+    editor.save_as(post_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_rows post-noop save should clean both materialized handles");
+    check(editor.pending_change_count() == 4,
+        "cross-handle delete_rows post-noop save should record two additional handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_rows post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_rows post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_rows post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle delete_rows post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle delete_rows post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "cross-handle delete_rows post-noop save should leave the repeat no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows post-noop save should leave the source package unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    const std::string post_noop_untouched_xml = post_noop_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(post_noop_data_xml, R"(<c r="C3")",
+        "cross-handle delete_rows post-noop save should write the Data post-noop cell");
+    check_contains(post_noop_untouched_xml, R"(<c r="C3")",
+        "cross-handle delete_rows post-noop save should write the Untouched post-noop cell");
+    const auto inspect_reopened_cross_handle_delete_rows_post_noop_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle delete_rows Data post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "cross-handle delete_rows Data post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a2",
+                "cross-handle delete_rows Data post-noop save reopened output should keep shifted source row");
+            const fastxlsx::CellValue reopened_b3 = reopened_sheet.get_cell("B3");
+            check(reopened_b3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_b3.text_value() == "data-dirty-delete-row-tail",
+                "cross-handle delete_rows Data post-noop save reopened output should keep shifted dirty row");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "post-noop-cross-handle-delete-row-data",
+                "cross-handle delete_rows Data post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("B4").has_value(),
+                "cross-handle delete_rows Data post-noop save reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output, "cross-handle delete_rows Data post-noop save",
+        inspect_reopened_cross_handle_delete_rows_post_noop_data);
+    const auto inspect_reopened_cross_handle_delete_rows_post_noop_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle delete_rows Untouched post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                "cross-handle delete_rows Untouched post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle delete_rows Untouched post-noop save reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle delete_rows Untouched post-noop save reopened output should keep source number");
+            const fastxlsx::CellValue reopened_a3 = reopened_sheet.get_cell("A3");
+            check(reopened_a3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a3.text_value() == "untouched-dirty-delete-row-tail",
+                "cross-handle delete_rows Untouched post-noop save reopened output should keep prior dirty cell");
+            const fastxlsx::CellValue reopened_c3 = reopened_sheet.get_cell("C3");
+            check(reopened_c3.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c3.text_value() == "post-noop-cross-handle-delete-row-untouched",
+                "cross-handle delete_rows Untouched post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("A2").has_value(),
+                "cross-handle delete_rows Untouched post-noop save reopened output should not shift rows");
+        };
+    check_reopened_clean_sheet_output(post_noop_output, "Untouched",
+        "cross-handle delete_rows Untouched post-noop save",
+        inspect_reopened_cross_handle_delete_rows_post_noop_untouched);
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_rows Data second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_rows_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_rows Untouched second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_rows_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(post_noop_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_rows post-noop noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 4,
+        "cross-handle delete_rows post-noop noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_rows post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_rows post-noop noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_rows post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "cross-handle delete_rows post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "cross-handle delete_rows post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "cross-handle delete_rows post-noop noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "cross-handle delete_rows post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_rows post-noop noop save should leave the source package unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "cross-handle delete_rows Data post-noop noop save",
+        inspect_reopened_cross_handle_delete_rows_post_noop_data);
+    check_reopened_clean_sheet_output(post_noop_noop_output, "Untouched",
+        "cross-handle delete_rows Untouched post-noop noop save",
+        inspect_reopened_cross_handle_delete_rows_post_noop_untouched);
+}
+
+void test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_state()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-noop-output.xlsx");
+    const std::filesystem::path second_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-noop-second-output.xlsx");
+    const std::filesystem::path post_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-post-noop-output.xlsx");
+    const std::filesystem::path post_noop_noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-delete-column-cross-handle-post-noop-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor data = editor.worksheet("Data");
+    fastxlsx::WorksheetEditor untouched = editor.worksheet("Untouched");
+
+    data.set_cell(2, 4, fastxlsx::CellValue::text("data-dirty-delete-column-tail"));
+    untouched.set_cell(2, 3, fastxlsx::CellValue::text("untouched-dirty-delete-column-tail"));
+    const std::size_t data_dirty_count = data.cell_count();
+    const std::size_t untouched_dirty_count = untouched.cell_count();
+    const std::size_t data_dirty_memory = data.estimated_memory_usage();
+    const std::size_t untouched_dirty_memory = untouched.estimated_memory_usage();
+    check(data_dirty_count == 4 && untouched_dirty_count == 3,
+        "cross-handle delete_columns should start with two dirty sparse sessions");
+    check(editor.pending_materialized_cell_count() ==
+            data_dirty_count + untouched_dirty_count,
+        "cross-handle delete_columns should aggregate both dirty sessions before deletion");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_dirty_memory + untouched_dirty_memory,
+        "cross-handle delete_columns should aggregate both dirty memory estimates before deletion");
+
+    data.delete_columns(1, 1);
+
+    const std::size_t data_after_delete_count = data.cell_count();
+    const std::size_t data_after_delete_memory = data.estimated_memory_usage();
+    check(data_after_delete_count == 2,
+        "cross-handle delete_columns should remove Data records from deleted columns");
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle delete_columns should keep both dirty handles tracked");
+    check(untouched.cell_count() == untouched_dirty_count,
+        "cross-handle delete_columns should keep the other dirty sparse count stable");
+    check(editor.pending_materialized_cell_count() ==
+            data_after_delete_count + untouched_dirty_count,
+        "cross-handle delete_columns should update aggregate count for the shifted sheet only");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data_after_delete_memory + untouched_dirty_memory,
+        "cross-handle delete_columns should update aggregate memory for the shifted sheet only");
+    const std::vector<std::string> dirty_names_after_delete =
+        editor.pending_materialized_worksheet_names();
+    check(dirty_names_after_delete.size() == 2 &&
+            dirty_names_after_delete[0] == "Data" &&
+            dirty_names_after_delete[1] == "Untouched",
+        "cross-handle delete_columns should keep both dirty sheets in catalog order");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_columns should keep diagnostics clear");
+
+    const fastxlsx::CellValue shifted_number = data.get_cell("A1");
+    check(shifted_number.kind() == fastxlsx::CellValueKind::Number &&
+            shifted_number.number_value() == 1.0,
+        "cross-handle delete_columns should shift later Data source-backed columns left");
+    check(data.get_cell("C2").text_value() == "data-dirty-delete-column-tail",
+        "cross-handle delete_columns should shift later Data dirty columns left");
+    check(!data.try_cell("B1").has_value() && !data.try_cell("A2").has_value() &&
+            !data.try_cell("D2").has_value(),
+        "cross-handle delete_columns should remove deleted and old shifted Data coordinates");
+    check(untouched.get_cell("A1").text_value() == "keep-me",
+        "cross-handle delete_columns should leave Untouched source text in place");
+    const fastxlsx::CellValue untouched_number = untouched.get_cell("B1");
+    check(untouched_number.kind() == fastxlsx::CellValueKind::Number &&
+            untouched_number.number_value() == 99.0,
+        "cross-handle delete_columns should leave Untouched source number in place");
+    check(untouched.get_cell("C2").text_value() == "untouched-dirty-delete-column-tail",
+        "cross-handle delete_columns should leave other dirty column coordinates in place");
+    check(!untouched.try_cell("D2").has_value(),
+        "cross-handle delete_columns should not shift the other handle");
+
+    editor.save_as(output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns save_as should clean both materialized handles");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0,
+        "cross-handle delete_columns save_as should clear dirty materialized diagnostics");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_columns save_as should clear dirty materialized memory");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns save_as should leave the source package unchanged");
+    const std::string data_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    const std::string untouched_xml = output_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(data_xml, R"(<dimension ref="A1:C2"/>)",
+        "cross-handle delete_columns save_as should project Data shifted bounds");
+    check_contains(data_xml, R"(<c r="A1"><v>1</v></c>)",
+        "cross-handle delete_columns save_as should write shifted Data source number");
+    check_contains(data_xml, R"(<c r="C2")",
+        "cross-handle delete_columns save_as should write shifted Data dirty column");
+    check_not_contains(data_xml, "placeholder-a1",
+        "cross-handle delete_columns save_as should omit deleted Data row-one text");
+    check_not_contains(data_xml, "placeholder-a2",
+        "cross-handle delete_columns save_as should omit deleted Data row-two text");
+    check_not_contains(data_xml, R"(r="D2")",
+        "cross-handle delete_columns save_as should omit old Data dirty coordinate");
+    check_contains(untouched_xml, R"(<dimension ref="A1:C2"/>)",
+        "cross-handle delete_columns save_as should preserve Untouched dirty bounds");
+    check_contains(untouched_xml, "keep-me",
+        "cross-handle delete_columns save_as should preserve Untouched source text");
+    check_contains(untouched_xml, R"(<c r="B1"><v>99</v></c>)",
+        "cross-handle delete_columns save_as should preserve Untouched source number");
+    check_contains(untouched_xml, R"(<c r="C2")",
+        "cross-handle delete_columns save_as should preserve Untouched dirty coordinate");
+    check_not_contains(untouched_xml, R"(r="D2")",
+        "cross-handle delete_columns save_as should not shift Untouched dirty columns");
+
+    const auto inspect_reopened_cross_handle_delete_columns_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 2,
+                "cross-handle delete_columns Data reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "cross-handle delete_columns Data reopened output should expose shifted bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "cross-handle delete_columns Data reopened output should read shifted source column");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "data-dirty-delete-column-tail",
+                "cross-handle delete_columns Data reopened output should read shifted dirty column");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle delete_columns Data reopened output should keep old coordinates absent");
+        };
+
+    const auto inspect_reopened_cross_handle_delete_columns_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle delete_columns Untouched reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                "cross-handle delete_columns Untouched reopened output should keep dirty bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle delete_columns Untouched reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle delete_columns Untouched reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-delete-column-tail",
+                "cross-handle delete_columns Untouched reopened output should keep dirty coordinate");
+            check(!reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle delete_columns Untouched reopened output should not shift columns");
+        };
+
+    check_reopened_shift_output(output, "cross-handle delete_columns Data",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(output, "Untouched",
+        "cross-handle delete_columns Untouched",
+        inspect_reopened_cross_handle_delete_columns_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_columns noop save should keep both flushed handoffs");
+    check(editor.pending_materialized_worksheet_names().empty(),
+        "cross-handle delete_columns noop save should keep dirty materialized names empty");
+    check(editor.pending_materialized_cell_count() == 0,
+        "cross-handle delete_columns noop save should keep aggregate dirty cell count empty");
+    check(editor.estimated_pending_materialized_memory_usage() == 0,
+        "cross-handle delete_columns noop save should keep dirty memory estimate empty");
+    check(editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_columns noop save should keep materialized summaries empty");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "cross-handle delete_columns noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "cross-handle delete_columns noop save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "cross-handle delete_columns noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns noop save should leave the source package unchanged");
+    check_reopened_shift_output(noop_output, "cross-handle delete_columns Data noop save",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(noop_output, "Untouched",
+        "cross-handle delete_columns Untouched noop save",
+        inspect_reopened_cross_handle_delete_columns_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(second_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns second noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_columns second noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_columns second noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_columns second noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_columns second noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_second_noop,
+        "cross-handle delete_columns second noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_second_noop,
+        "cross-handle delete_columns second noop save");
+    const auto second_noop_entries =
+        fastxlsx::test::read_zip_entries(second_noop_output);
+    check(second_noop_entries == noop_entries,
+        "cross-handle delete_columns second noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle delete_columns second noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle delete_columns second noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns second noop save should leave the source package unchanged");
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_columns Data second noop save",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_columns Untouched second noop save",
+        inspect_reopened_cross_handle_delete_columns_untouched);
+
+    data.set_cell("D1", fastxlsx::CellValue::text("post-noop-cross-handle-delete-column-data"));
+    untouched.set_cell("D1", fastxlsx::CellValue::text("post-noop-cross-handle-delete-column-untouched"));
+    check(data.has_pending_changes() && untouched.has_pending_changes(),
+        "cross-handle delete_columns post-noop edits should dirty both saved handles");
+    check(data.cell_count() == 3 && untouched.cell_count() == 4,
+        "cross-handle delete_columns post-noop edits should add one sparse cell per handle");
+    check_cell_range_equals(data.used_range(), 1, 1, 2, 4,
+        "cross-handle delete_columns post-noop Data edit should expand bounds to D1");
+    check_cell_range_equals(untouched.used_range(), 1, 1, 2, 4,
+        "cross-handle delete_columns post-noop Untouched edit should expand bounds to D1");
+    const std::vector<std::string> post_noop_dirty_names =
+        editor.pending_materialized_worksheet_names();
+    check(post_noop_dirty_names.size() == 2 &&
+            post_noop_dirty_names[0] == "Data" &&
+            post_noop_dirty_names[1] == "Untouched",
+        "cross-handle delete_columns post-noop edits should expose both dirty sheets in catalog order");
+    check(editor.pending_materialized_cell_count() == 7,
+        "cross-handle delete_columns post-noop edits should aggregate both dirty sparse counts");
+    check(editor.estimated_pending_materialized_memory_usage() ==
+            data.estimated_memory_usage() + untouched.estimated_memory_usage(),
+        "cross-handle delete_columns post-noop edits should aggregate both dirty memory estimates");
+    check(editor.pending_change_count() == 2,
+        "cross-handle delete_columns post-noop edits should retain prior flushed handoffs before save");
+    check(data.get_cell("C2").text_value() == "data-dirty-delete-column-tail" &&
+            untouched.get_cell("C2").text_value() == "untouched-dirty-delete-column-tail",
+        "cross-handle delete_columns post-noop edits should preserve existing dirty cells");
+
+    editor.save_as(post_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns post-noop save should clean both materialized handles");
+    check(editor.pending_change_count() == 4,
+        "cross-handle delete_columns post-noop save should record two additional handoffs");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_columns post-noop save should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_columns post-noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_columns post-noop save should keep diagnostics clear");
+    check(fastxlsx::test::read_zip_entries(output) == output_entries,
+        "cross-handle delete_columns post-noop save should leave the first output unchanged");
+    check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+        "cross-handle delete_columns post-noop save should leave the prior no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+        "cross-handle delete_columns post-noop save should leave the repeat no-op output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns post-noop save should leave the source package unchanged");
+
+    const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+    const std::string post_noop_data_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+    const std::string post_noop_untouched_xml = post_noop_entries.at("xl/worksheets/sheet2.xml");
+    check_contains(post_noop_data_xml, R"(<c r="D1")",
+        "cross-handle delete_columns post-noop save should write the Data post-noop cell");
+    check_contains(post_noop_untouched_xml, R"(<c r="D1")",
+        "cross-handle delete_columns post-noop save should write the Untouched post-noop cell");
+    const auto inspect_reopened_cross_handle_delete_columns_post_noop_data =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                "cross-handle delete_columns Data post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "cross-handle delete_columns Data post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_a1.number_value() == 1.0,
+                "cross-handle delete_columns Data post-noop save reopened output should keep shifted source column");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "data-dirty-delete-column-tail",
+                "cross-handle delete_columns Data post-noop save reopened output should keep shifted dirty column");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d1.text_value() == "post-noop-cross-handle-delete-column-data",
+                "cross-handle delete_columns Data post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("B1").has_value() &&
+                    !reopened_sheet.try_cell("A2").has_value() &&
+                    !reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle delete_columns Data post-noop save reopened output should keep old coordinates absent");
+        };
+    check_reopened_shift_output(post_noop_output, "cross-handle delete_columns Data post-noop save",
+        inspect_reopened_cross_handle_delete_columns_post_noop_data);
+    const auto inspect_reopened_cross_handle_delete_columns_post_noop_untouched =
+        [](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 4,
+                "cross-handle delete_columns Untouched post-noop save reopened output should keep sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                "cross-handle delete_columns Untouched post-noop save reopened output should expose post-noop bounds");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "keep-me",
+                "cross-handle delete_columns Untouched post-noop save reopened output should keep source text");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 99.0,
+                "cross-handle delete_columns Untouched post-noop save reopened output should keep source number");
+            const fastxlsx::CellValue reopened_c2 = reopened_sheet.get_cell("C2");
+            check(reopened_c2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_c2.text_value() == "untouched-dirty-delete-column-tail",
+                "cross-handle delete_columns Untouched post-noop save reopened output should keep prior dirty cell");
+            const fastxlsx::CellValue reopened_d1 = reopened_sheet.get_cell("D1");
+            check(reopened_d1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_d1.text_value() == "post-noop-cross-handle-delete-column-untouched",
+                "cross-handle delete_columns Untouched post-noop save reopened output should keep post-noop edit");
+            check(!reopened_sheet.try_cell("D2").has_value(),
+                "cross-handle delete_columns Untouched post-noop save reopened output should not shift columns");
+        };
+    check_reopened_clean_sheet_output(post_noop_output, "Untouched",
+        "cross-handle delete_columns Untouched post-noop save",
+        inspect_reopened_cross_handle_delete_columns_post_noop_untouched);
+    check_reopened_shift_output(second_noop_output,
+        "cross-handle delete_columns Data second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_columns_data);
+    check_reopened_clean_sheet_output(second_noop_output, "Untouched",
+        "cross-handle delete_columns Untouched second noop output after post-noop save",
+        inspect_reopened_cross_handle_delete_columns_untouched);
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+
+    editor.save_as(post_noop_noop_output);
+    check(!data.has_pending_changes() && !untouched.has_pending_changes(),
+        "cross-handle delete_columns post-noop noop save should keep both materialized handles clean");
+    check(editor.pending_change_count() == 4,
+        "cross-handle delete_columns post-noop noop save should not add another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "cross-handle delete_columns post-noop noop save should keep dirty diagnostics clear");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "cross-handle delete_columns post-noop noop save should not queue replacement diagnostics");
+    check(!editor.last_edit_error().has_value(),
+        "cross-handle delete_columns post-noop noop save should keep diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_post_noop_noop,
+        "cross-handle delete_columns post-noop noop save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_post_noop_noop,
+        "cross-handle delete_columns post-noop noop save");
+    const auto post_noop_noop_entries =
+        fastxlsx::test::read_zip_entries(post_noop_noop_output);
+    check(post_noop_noop_entries == post_noop_entries,
+        "cross-handle delete_columns post-noop noop save should keep output entries stable");
+    check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+        "cross-handle delete_columns post-noop noop save should leave prior post-noop output unchanged");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "cross-handle delete_columns post-noop noop save should leave the source package unchanged");
+    check_reopened_shift_output(post_noop_noop_output,
+        "cross-handle delete_columns Data post-noop noop save",
+        inspect_reopened_cross_handle_delete_columns_post_noop_data);
+    check_reopened_clean_sheet_output(post_noop_noop_output, "Untouched",
+        "cross-handle delete_columns Untouched post-noop noop save",
+        inspect_reopened_cross_handle_delete_columns_post_noop_untouched);
+}
+
+void test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes()
+{
+    const std::filesystem::path source =
+        write_two_sheet_source("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-source.xlsx");
+    const std::string formula =
+        R"(SUM(A1,$B$2,A1:B2,Sheet1!C3,'Other Sheet'!D:D,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(E5),A1foo,_A1,A1_,R1C1))";
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+    const auto check_source_package_unchanged =
+        [&source, &source_entries](const char* message) {
+            check(fastxlsx::test::read_zip_entries(source) == source_entries, message);
+        };
+    const auto check_insert_row_rich_formula_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 4 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a1" &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 2 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0 &&
+                    cells[2].reference.row == 3 &&
+                    cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2" &&
+                    cells[3].reference.row == 3 &&
+                    cells[3].reference.column == 3 &&
+                    cells[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[3].value.text_value() == expected,
+                message);
+        };
+    const auto check_insert_row_rich_formula_post_noop_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 5 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a1" &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 2 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0 &&
+                    cells[2].reference.row == 3 &&
+                    cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2" &&
+                    cells[3].reference.row == 3 &&
+                    cells[3].reference.column == 3 &&
+                    cells[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[3].value.text_value() == expected &&
+                    cells[4].reference.row == 3 &&
+                    cells[4].reference.column == 4 &&
+                    cells[4].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[4].value.text_value() == "C3+A3",
+                message);
+        };
+    const auto check_insert_column_rich_formula_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 4 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a1" &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 4 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0 &&
+                    cells[2].reference.row == 2 &&
+                    cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2" &&
+                    cells[3].reference.row == 2 &&
+                    cells[3].reference.column == 5 &&
+                    cells[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[3].value.text_value() == expected,
+                message);
+        };
+    const auto check_insert_column_rich_formula_post_noop_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 5 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a1" &&
+                    cells[1].reference.row == 1 &&
+                    cells[1].reference.column == 4 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[1].value.number_value() == 1.0 &&
+                    cells[2].reference.row == 2 &&
+                    cells[2].reference.column == 1 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[2].value.text_value() == "placeholder-a2" &&
+                    cells[3].reference.row == 2 &&
+                    cells[3].reference.column == 5 &&
+                    cells[3].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[3].value.text_value() == expected &&
+                    cells[4].reference.row == 2 &&
+                    cells[4].reference.column == 6 &&
+                    cells[4].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[4].value.text_value() == "E2+D1",
+                message);
+        };
+    const auto check_delete_row_rich_formula_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 2 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a2" &&
+                    cells[1].reference.row == 3 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == expected,
+                message);
+        };
+    const auto check_delete_row_rich_formula_post_noop_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 3 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                    cells[0].value.text_value() == "placeholder-a2" &&
+                    cells[1].reference.row == 3 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == expected &&
+                    cells[2].reference.row == 3 &&
+                    cells[2].reference.column == 4 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[2].value.text_value() == "C3+A1",
+                message);
+        };
+    const auto check_delete_column_rich_formula_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 2 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[0].value.number_value() == 1.0 &&
+                    cells[1].reference.row == 2 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == expected,
+                message);
+        };
+    const auto check_delete_column_rich_formula_post_noop_sparse_cells =
+        [](const std::vector<fastxlsx::WorksheetCellSnapshot>& cells,
+            const std::string& expected, const char* message) {
+            check(cells.size() == 3 &&
+                    cells[0].reference.row == 1 &&
+                    cells[0].reference.column == 1 &&
+                    cells[0].value.kind() == fastxlsx::CellValueKind::Number &&
+                    cells[0].value.number_value() == 1.0 &&
+                    cells[1].reference.row == 2 &&
+                    cells[1].reference.column == 3 &&
+                    cells[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[1].value.text_value() == expected &&
+                    cells[2].reference.row == 2 &&
+                    cells[2].reference.column == 4 &&
+                    cells[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                    cells[2].value.text_value() == "C2+A1",
+                message);
+        };
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-noop-second-output.xlsx");
+        const std::filesystem::path post_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-post-noop-output.xlsx");
+        const std::filesystem::path post_noop_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-row-post-noop-noop-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
+        sheet.insert_rows(2, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "insert_rows rich formula pre-save shift");
+
+        const std::string expected =
+            R"(SUM(A1,$B$3,A1:B3,Sheet1!C4,'Other Sheet'!D:D,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(E6),A1foo,_A1,A1_,R1C1))";
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "insert_rows rich formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "insert_rows rich formula should report shifted dirty memory before save");
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == expected,
+            "insert_rows should translate supported moved formula reference shapes");
+        check(!sheet.try_cell("C2").has_value(),
+            "insert_rows rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("A3") && sheet.contains_cell("C3") &&
+                !sheet.contains_cell("C2"),
+            "insert_rows rich formula contains_cell should expose shifted source/formula cells");
+        check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
+            "insert_rows rich formula sparse_cells should expose row-major shifted cells before save");
+        check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells("A1:C3"), expected,
+            "insert_rows rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 5> insert_row_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {3, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+        };
+        check_insert_row_rich_formula_sparse_cells(sheet.sparse_cells(insert_row_requested_cells), expected,
+            "insert_rows rich formula requested sparse_cells should skip the old formula coordinate");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_row_three =
+            sheet.row_cells(3);
+        check(live_insert_row_three.size() == 2 &&
+                live_insert_row_three[0].reference.row == 3 &&
+                live_insert_row_three[0].reference.column == 1 &&
+                live_insert_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                live_insert_row_three[0].value.text_value() == "placeholder-a2" &&
+                live_insert_row_three[1].reference.row == 3 &&
+                live_insert_row_three[1].reference.column == 3 &&
+                live_insert_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_row_three[1].value.text_value() == expected,
+            "insert_rows rich formula live row_cells should expose shifted row order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_formula_column =
+            sheet.column_cells(3);
+        check(live_insert_formula_column.size() == 1 &&
+                live_insert_formula_column[0].reference.row == 3 &&
+                live_insert_formula_column[0].reference.column == 3 &&
+                live_insert_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_formula_column[0].value.text_value() == expected,
+            "insert_rows rich formula live column_cells should expose shifted formula");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "insert_rows rich formula save_as should leave the source package unchanged");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string expected_cell_xml = "<c r=\"C3\"><f>" + expected + "</f></c>";
+        check_contains(worksheet_xml, expected_cell_xml,
+            "insert_rows save_as should persist translated rich formula references");
+        check_not_contains(worksheet_xml, R"(r="C2")",
+            "insert_rows rich formula save_as should not keep the old coordinate");
+        const auto inspect_reopened_row_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "insert_rows rich formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                    "insert_rows rich formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == expected,
+                    "insert_rows rich formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_a3 =
+                    reopened_sheet.try_cell("A3");
+                check(reopened_a3.has_value() &&
+                        reopened_a3->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3->text_value() == "placeholder-a2",
+                    "insert_rows rich formula reopened output should read shifted source rows");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_rows rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A3") && reopened_sheet.contains_cell("C3") &&
+                        !reopened_sheet.contains_cell("C2"),
+                    "insert_rows rich formula reopened contains_cell should expose shifted source/formula cells");
+                check_insert_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "insert_rows rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_insert_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C3"), expected,
+                    "insert_rows rich formula reopened range sparse_cells should expose shifted cells");
+                check_insert_row_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_row_requested_cells), expected,
+                    "insert_rows rich formula reopened requested sparse_cells should skip the old coordinate");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+                    reopened_sheet.row_cells(3);
+                check(reopened_row_three.size() == 2 &&
+                        reopened_row_three[0].reference.row == 3 &&
+                        reopened_row_three[0].reference.column == 1 &&
+                        reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_three[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_three[1].reference.row == 3 &&
+                        reopened_row_three[1].reference.column == 3 &&
+                        reopened_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[1].value.text_value() == expected,
+                    "insert_rows rich formula reopened row_cells should expose shifted row order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_formula_column =
+                    reopened_sheet.column_cells(3);
+                check(reopened_formula_column.size() == 1 &&
+                        reopened_formula_column[0].reference.row == 3 &&
+                        reopened_formula_column[0].reference.column == 3 &&
+                        reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_formula_column[0].value.text_value() == expected,
+                    "insert_rows rich formula reopened column_cells should expose shifted formula");
+            };
+        check_reopened_shift_output(output, "insert_rows rich formula",
+            inspect_reopened_row_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_rows rich formula noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "insert_rows rich formula noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "insert_rows rich formula noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "insert_rows rich formula noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "insert_rows rich formula noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "insert_rows rich formula noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "insert_rows rich formula noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "insert_rows rich formula noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "insert_rows rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "insert_rows rich formula noop save should leave the source package unchanged");
+        check_reopened_shift_output(noop_output, "insert_rows rich formula noop save",
+            inspect_reopened_row_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_rows rich formula second noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "insert_rows rich formula second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_rows rich formula second noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "insert_rows rich formula second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_rows rich formula second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "insert_rows rich formula second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "insert_rows rich formula second noop save");
+        const auto second_noop_entries =
+            fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "insert_rows rich formula second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "insert_rows rich formula second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "insert_rows rich formula second noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "insert_rows rich formula second noop save should leave the source package unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "insert_rows rich formula second noop save",
+            inspect_reopened_row_formula);
+
+        sheet.set_cell("D3", fastxlsx::CellValue::formula("C3+A3"));
+        check(sheet.has_pending_changes(),
+            "insert_rows rich formula post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 5,
+            "insert_rows rich formula post-noop edit should add one sparse formula cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 3, 4,
+            "insert_rows rich formula post-noop edit should expand bounds to D3");
+        const fastxlsx::CellValue retained_formula = sheet.get_cell("C3");
+        check(retained_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                retained_formula.text_value() == expected,
+            "insert_rows rich formula post-noop edit should preserve translated formula");
+        const fastxlsx::CellValue post_noop_formula = sheet.get_cell("D3");
+        check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula.text_value() == "C3+A3",
+            "insert_rows rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("A3") && sheet.contains_cell("C3") &&
+                sheet.contains_cell("D3") && !sheet.contains_cell("C2"),
+            "insert_rows rich formula post-noop contains_cell should expose both formulas");
+        check_insert_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
+            "insert_rows rich formula post-noop sparse_cells should expose both formulas before save");
+        check_insert_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"), expected,
+            "insert_rows rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 6> insert_row_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {3, 1},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {3, 4},
+        };
+        check_insert_row_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(insert_row_post_noop_requested_cells), expected,
+            "insert_rows rich formula post-noop requested sparse_cells should skip the old coordinate");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_post_noop_row_three =
+            sheet.row_cells(3);
+        check(live_insert_post_noop_row_three.size() == 3 &&
+                live_insert_post_noop_row_three[0].reference.row == 3 &&
+                live_insert_post_noop_row_three[0].reference.column == 1 &&
+                live_insert_post_noop_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                live_insert_post_noop_row_three[0].value.text_value() == "placeholder-a2" &&
+                live_insert_post_noop_row_three[1].reference.row == 3 &&
+                live_insert_post_noop_row_three[1].reference.column == 3 &&
+                live_insert_post_noop_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_post_noop_row_three[1].value.text_value() == expected &&
+                live_insert_post_noop_row_three[2].reference.row == 3 &&
+                live_insert_post_noop_row_three[2].reference.column == 4 &&
+                live_insert_post_noop_row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_post_noop_row_three[2].value.text_value() == "C3+A3",
+            "insert_rows rich formula post-noop live row_cells should expose formula order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_post_noop_column =
+            sheet.column_cells(4);
+        check(live_insert_post_noop_column.size() == 1 &&
+                live_insert_post_noop_column[0].reference.row == 3 &&
+                live_insert_post_noop_column[0].reference.column == 4 &&
+                live_insert_post_noop_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_post_noop_column[0].value.text_value() == "C3+A3",
+            "insert_rows rich formula post-noop live column_cells should expose new formula");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "insert_rows rich formula post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_rows rich formula post-noop save should clean the materialized handle");
+        check(editor.pending_change_count() == 2,
+            "insert_rows rich formula post-noop save should record the second handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_rows rich formula post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "insert_rows rich formula post-noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_rows rich formula post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "insert_rows rich formula post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "insert_rows rich formula post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "insert_rows rich formula post-noop save should leave the repeat no-op output unchanged");
+        check_source_package_unchanged(
+            "insert_rows rich formula post-noop save should leave the source package unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, expected_cell_xml,
+            "insert_rows rich formula post-noop save should keep the translated formula XML");
+        check_contains(post_noop_xml, R"(<c r="D3"><f>C3+A3</f></c>)",
+            "insert_rows rich formula post-noop save should write the post-noop formula");
+        const auto inspect_reopened_row_post_noop_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 5,
+                    "insert_rows rich formula post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                    "insert_rows rich formula post-noop save reopened output should expose post-noop bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == expected,
+                    "insert_rows rich formula post-noop save reopened output should keep translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_d3 =
+                    reopened_sheet.try_cell("D3");
+                check(reopened_d3.has_value() &&
+                        reopened_d3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_d3->text_value() == "C3+A3",
+                    "insert_rows rich formula post-noop save reopened output should keep post-noop formula");
+                const std::optional<fastxlsx::CellValue> reopened_a3 =
+                    reopened_sheet.try_cell("A3");
+                check(reopened_a3.has_value() &&
+                        reopened_a3->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a3->text_value() == "placeholder-a2",
+                    "insert_rows rich formula post-noop save reopened output should keep shifted source rows");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_rows rich formula post-noop save reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A3") && reopened_sheet.contains_cell("C3") &&
+                        reopened_sheet.contains_cell("D3") && !reopened_sheet.contains_cell("C2"),
+                    "insert_rows rich formula post-noop reopened contains_cell should expose both formulas");
+                check_insert_row_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "insert_rows rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_insert_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:D3"), expected,
+                    "insert_rows rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_insert_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_row_post_noop_requested_cells), expected,
+                    "insert_rows rich formula post-noop reopened requested sparse_cells should skip the old coordinate");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+                    reopened_sheet.row_cells(3);
+                check(reopened_row_three.size() == 3 &&
+                        reopened_row_three[0].reference.row == 3 &&
+                        reopened_row_three[0].reference.column == 1 &&
+                        reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_three[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_three[1].reference.row == 3 &&
+                        reopened_row_three[1].reference.column == 3 &&
+                        reopened_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[1].value.text_value() == expected &&
+                        reopened_row_three[2].reference.row == 3 &&
+                        reopened_row_three[2].reference.column == 4 &&
+                        reopened_row_three[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[2].value.text_value() == "C3+A3",
+                    "insert_rows rich formula post-noop reopened row_cells should expose formula order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_post_noop_column =
+                    reopened_sheet.column_cells(4);
+                check(reopened_post_noop_column.size() == 1 &&
+                        reopened_post_noop_column[0].reference.row == 3 &&
+                        reopened_post_noop_column[0].reference.column == 4 &&
+                        reopened_post_noop_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_post_noop_column[0].value.text_value() == "C3+A3",
+                    "insert_rows rich formula post-noop reopened column_cells should expose new formula");
+            };
+        check_reopened_shift_output(post_noop_output, "insert_rows rich formula post-noop save",
+            inspect_reopened_row_post_noop_formula);
+        check_reopened_shift_output(second_noop_output,
+            "insert_rows rich formula second noop output after post-noop save",
+            inspect_reopened_row_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(post_noop_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_rows rich formula post-noop noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 2,
+            "insert_rows rich formula post-noop noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_rows rich formula post-noop noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "insert_rows rich formula post-noop noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_rows rich formula post-noop noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_post_noop_noop,
+            "insert_rows rich formula post-noop noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_post_noop_noop,
+            "insert_rows rich formula post-noop noop save");
+        const auto post_noop_noop_entries =
+            fastxlsx::test::read_zip_entries(post_noop_noop_output);
+        check(post_noop_noop_entries == post_noop_entries,
+            "insert_rows rich formula post-noop noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "insert_rows rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "insert_rows rich formula post-noop noop save should leave the source package unchanged");
+        check_reopened_shift_output(post_noop_noop_output,
+            "insert_rows rich formula post-noop noop save",
+            inspect_reopened_row_post_noop_formula);
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-output.xlsx");
+        const std::filesystem::path noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-noop-second-output.xlsx");
+        const std::filesystem::path post_noop_output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-post-noop-output.xlsx");
+        const std::filesystem::path post_noop_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-column-post-noop-noop-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(2, 3, fastxlsx::CellValue::formula(formula));
+        sheet.insert_columns(2, 2);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "insert_columns rich formula pre-save shift");
+
+        const std::string expected =
+            R"(SUM(A1,$D$2,A1:D2,Sheet1!E3,'Other Sheet'!F:F,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(G5),A1foo,_A1,A1_,R1C1))";
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "insert_columns rich formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "insert_columns rich formula should report shifted dirty memory before save");
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("E2");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == expected,
+            "insert_columns should translate supported moved formula reference shapes");
+        check(!sheet.try_cell("C2").has_value(),
+            "insert_columns rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("D1") && sheet.contains_cell("E2") &&
+                !sheet.contains_cell("C2"),
+            "insert_columns rich formula contains_cell should expose shifted source/formula cells");
+        check_insert_column_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
+            "insert_columns rich formula sparse_cells should expose row-major shifted cells before save");
+        check_insert_column_rich_formula_sparse_cells(sheet.sparse_cells("A1:E2"), expected,
+            "insert_columns rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 5> insert_column_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 4},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {2, 5},
+        };
+        check_insert_column_rich_formula_sparse_cells(
+            sheet.sparse_cells(insert_column_requested_cells), expected,
+            "insert_columns rich formula requested sparse_cells should skip the old formula coordinate");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_column_row_two =
+            sheet.row_cells(2);
+        check(live_insert_column_row_two.size() == 2 &&
+                live_insert_column_row_two[0].reference.row == 2 &&
+                live_insert_column_row_two[0].reference.column == 1 &&
+                live_insert_column_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                live_insert_column_row_two[0].value.text_value() == "placeholder-a2" &&
+                live_insert_column_row_two[1].reference.row == 2 &&
+                live_insert_column_row_two[1].reference.column == 5 &&
+                live_insert_column_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_column_row_two[1].value.text_value() == expected,
+            "insert_columns rich formula live row_cells should expose shifted row order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_column_formula_column =
+            sheet.column_cells(5);
+        check(live_insert_column_formula_column.size() == 1 &&
+                live_insert_column_formula_column[0].reference.row == 2 &&
+                live_insert_column_formula_column[0].reference.column == 5 &&
+                live_insert_column_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_column_formula_column[0].value.text_value() == expected,
+            "insert_columns rich formula live column_cells should expose shifted formula");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "insert_columns rich formula save_as should leave the source package unchanged");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string expected_cell_xml = "<c r=\"E2\"><f>" + expected + "</f></c>";
+        check_contains(worksheet_xml, expected_cell_xml,
+            "insert_columns save_as should persist translated rich formula references");
+        check_not_contains(worksheet_xml, R"(r="C2")",
+            "insert_columns rich formula save_as should not keep the old coordinate");
+        const auto inspect_reopened_column_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 4,
+                    "insert_columns rich formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 5,
+                    "insert_columns rich formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_e2 =
+                    reopened_sheet.try_cell("E2");
+                check(reopened_e2.has_value() &&
+                        reopened_e2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_e2->text_value() == expected,
+                    "insert_columns rich formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_d1 =
+                    reopened_sheet.try_cell("D1");
+                check(reopened_d1.has_value() &&
+                        reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_d1->number_value() == 1.0,
+                    "insert_columns rich formula reopened output should read shifted source columns");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_columns rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("D1") && reopened_sheet.contains_cell("E2") &&
+                        !reopened_sheet.contains_cell("C2"),
+                    "insert_columns rich formula reopened contains_cell should expose shifted source/formula cells");
+                check_insert_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "insert_columns rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_insert_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:E2"), expected,
+                    "insert_columns rich formula reopened range sparse_cells should expose shifted cells");
+                check_insert_column_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_column_requested_cells), expected,
+                    "insert_columns rich formula reopened requested sparse_cells should skip the old coordinate");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                    reopened_sheet.row_cells(2);
+                check(reopened_row_two.size() == 2 &&
+                        reopened_row_two[0].reference.row == 2 &&
+                        reopened_row_two[0].reference.column == 1 &&
+                        reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_two[1].reference.row == 2 &&
+                        reopened_row_two[1].reference.column == 5 &&
+                        reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[1].value.text_value() == expected,
+                    "insert_columns rich formula reopened row_cells should expose shifted row order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_formula_column =
+                    reopened_sheet.column_cells(5);
+                check(reopened_formula_column.size() == 1 &&
+                        reopened_formula_column[0].reference.row == 2 &&
+                        reopened_formula_column[0].reference.column == 5 &&
+                        reopened_formula_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_formula_column[0].value.text_value() == expected,
+                    "insert_columns rich formula reopened column_cells should expose shifted formula");
+            };
+        check_reopened_shift_output(output, "insert_columns rich formula",
+            inspect_reopened_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_columns rich formula noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "insert_columns rich formula noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "insert_columns rich formula noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "insert_columns rich formula noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "insert_columns rich formula noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "insert_columns rich formula noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "insert_columns rich formula noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "insert_columns rich formula noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "insert_columns rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "insert_columns rich formula noop save should leave the source package unchanged");
+        check_reopened_shift_output(noop_output, "insert_columns rich formula noop save",
+            inspect_reopened_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_columns rich formula second noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "insert_columns rich formula second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_columns rich formula second noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "insert_columns rich formula second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_columns rich formula second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "insert_columns rich formula second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "insert_columns rich formula second noop save");
+        const auto second_noop_entries =
+            fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "insert_columns rich formula second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "insert_columns rich formula second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "insert_columns rich formula second noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "insert_columns rich formula second noop save should leave the source package unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "insert_columns rich formula second noop save",
+            inspect_reopened_column_formula);
+
+        sheet.set_cell("F2", fastxlsx::CellValue::formula("E2+D1"));
+        check(sheet.has_pending_changes(),
+            "insert_columns rich formula post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 5,
+            "insert_columns rich formula post-noop edit should add one sparse formula cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 2, 6,
+            "insert_columns rich formula post-noop edit should expand bounds to F2");
+        const fastxlsx::CellValue retained_formula = sheet.get_cell("E2");
+        check(retained_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                retained_formula.text_value() == expected,
+            "insert_columns rich formula post-noop edit should preserve translated formula");
+        const fastxlsx::CellValue post_noop_formula = sheet.get_cell("F2");
+        check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula.text_value() == "E2+D1",
+            "insert_columns rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("D1") && sheet.contains_cell("E2") &&
+                sheet.contains_cell("F2") && !sheet.contains_cell("C2"),
+            "insert_columns rich formula post-noop contains_cell should expose both formulas");
+        check_insert_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
+            "insert_columns rich formula post-noop sparse_cells should expose both formulas before save");
+        check_insert_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:F2"), expected,
+            "insert_columns rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 6> insert_column_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 4},
+            fastxlsx::WorksheetCellReference {2, 1},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {2, 5},
+            fastxlsx::WorksheetCellReference {2, 6},
+        };
+        check_insert_column_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(insert_column_post_noop_requested_cells), expected,
+            "insert_columns rich formula post-noop requested sparse_cells should skip the old coordinate");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_column_post_noop_row_two =
+            sheet.row_cells(2);
+        check(live_insert_column_post_noop_row_two.size() == 3 &&
+                live_insert_column_post_noop_row_two[0].reference.row == 2 &&
+                live_insert_column_post_noop_row_two[0].reference.column == 1 &&
+                live_insert_column_post_noop_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                live_insert_column_post_noop_row_two[0].value.text_value() == "placeholder-a2" &&
+                live_insert_column_post_noop_row_two[1].reference.row == 2 &&
+                live_insert_column_post_noop_row_two[1].reference.column == 5 &&
+                live_insert_column_post_noop_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_column_post_noop_row_two[1].value.text_value() == expected &&
+                live_insert_column_post_noop_row_two[2].reference.row == 2 &&
+                live_insert_column_post_noop_row_two[2].reference.column == 6 &&
+                live_insert_column_post_noop_row_two[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_column_post_noop_row_two[2].value.text_value() == "E2+D1",
+            "insert_columns rich formula post-noop live row_cells should expose formula order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_insert_column_post_noop_column =
+            sheet.column_cells(6);
+        check(live_insert_column_post_noop_column.size() == 1 &&
+                live_insert_column_post_noop_column[0].reference.row == 2 &&
+                live_insert_column_post_noop_column[0].reference.column == 6 &&
+                live_insert_column_post_noop_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_insert_column_post_noop_column[0].value.text_value() == "E2+D1",
+            "insert_columns rich formula post-noop live column_cells should expose new formula");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "insert_columns rich formula post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_columns rich formula post-noop save should clean the materialized handle");
+        check(editor.pending_change_count() == 2,
+            "insert_columns rich formula post-noop save should record the second handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_columns rich formula post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "insert_columns rich formula post-noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_columns rich formula post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "insert_columns rich formula post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "insert_columns rich formula post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "insert_columns rich formula post-noop save should leave the repeat no-op output unchanged");
+        check_source_package_unchanged(
+            "insert_columns rich formula post-noop save should leave the source package unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, expected_cell_xml,
+            "insert_columns rich formula post-noop save should keep the translated formula XML");
+        check_contains(post_noop_xml, R"(<c r="F2"><f>E2+D1</f></c>)",
+            "insert_columns rich formula post-noop save should write the post-noop formula");
+        const auto inspect_reopened_column_post_noop_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 5,
+                    "insert_columns rich formula post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 6,
+                    "insert_columns rich formula post-noop save reopened output should expose post-noop bounds");
+                const std::optional<fastxlsx::CellValue> reopened_e2 =
+                    reopened_sheet.try_cell("E2");
+                check(reopened_e2.has_value() &&
+                        reopened_e2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_e2->text_value() == expected,
+                    "insert_columns rich formula post-noop save reopened output should keep translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_f2 =
+                    reopened_sheet.try_cell("F2");
+                check(reopened_f2.has_value() &&
+                        reopened_f2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_f2->text_value() == "E2+D1",
+                    "insert_columns rich formula post-noop save reopened output should keep post-noop formula");
+                const std::optional<fastxlsx::CellValue> reopened_d1 =
+                    reopened_sheet.try_cell("D1");
+                check(reopened_d1.has_value() &&
+                        reopened_d1->kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_d1->number_value() == 1.0,
+                    "insert_columns rich formula post-noop save reopened output should keep shifted source columns");
+                check(!reopened_sheet.try_cell("C2").has_value(),
+                    "insert_columns rich formula post-noop save reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("D1") && reopened_sheet.contains_cell("E2") &&
+                        reopened_sheet.contains_cell("F2") && !reopened_sheet.contains_cell("C2"),
+                    "insert_columns rich formula post-noop reopened contains_cell should expose both formulas");
+                check_insert_column_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "insert_columns rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_insert_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:F2"), expected,
+                    "insert_columns rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_insert_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(insert_column_post_noop_requested_cells), expected,
+                    "insert_columns rich formula post-noop reopened requested sparse_cells should skip the old coordinate");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                    reopened_sheet.row_cells(2);
+                check(reopened_row_two.size() == 3 &&
+                        reopened_row_two[0].reference.row == 2 &&
+                        reopened_row_two[0].reference.column == 1 &&
+                        reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_row_two[0].value.text_value() == "placeholder-a2" &&
+                        reopened_row_two[1].reference.row == 2 &&
+                        reopened_row_two[1].reference.column == 5 &&
+                        reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[1].value.text_value() == expected &&
+                        reopened_row_two[2].reference.row == 2 &&
+                        reopened_row_two[2].reference.column == 6 &&
+                        reopened_row_two[2].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[2].value.text_value() == "E2+D1",
+                    "insert_columns rich formula post-noop reopened row_cells should expose formula order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_post_noop_column =
+                    reopened_sheet.column_cells(6);
+                check(reopened_post_noop_column.size() == 1 &&
+                        reopened_post_noop_column[0].reference.row == 2 &&
+                        reopened_post_noop_column[0].reference.column == 6 &&
+                        reopened_post_noop_column[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_post_noop_column[0].value.text_value() == "E2+D1",
+                    "insert_columns rich formula post-noop reopened column_cells should expose new formula");
+            };
+        check_reopened_shift_output(post_noop_output, "insert_columns rich formula post-noop save",
+            inspect_reopened_column_post_noop_formula);
+        check_reopened_shift_output(second_noop_output,
+            "insert_columns rich formula second noop output after post-noop save",
+            inspect_reopened_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(post_noop_noop_output);
+        check(!sheet.has_pending_changes(),
+            "insert_columns rich formula post-noop noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 2,
+            "insert_columns rich formula post-noop noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "insert_columns rich formula post-noop noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "insert_columns rich formula post-noop noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "insert_columns rich formula post-noop noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_post_noop_noop,
+            "insert_columns rich formula post-noop noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_post_noop_noop,
+            "insert_columns rich formula post-noop noop save");
+        const auto post_noop_noop_entries =
+            fastxlsx::test::read_zip_entries(post_noop_noop_output);
+        check(post_noop_noop_entries == post_noop_entries,
+            "insert_columns rich formula post-noop noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "insert_columns rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "insert_columns rich formula post-noop noop save should leave the source package unchanged");
+        check_reopened_shift_output(post_noop_noop_output,
+            "insert_columns rich formula post-noop noop save",
+            inspect_reopened_column_post_noop_formula);
+    }
+
+    {
+        const std::filesystem::path output =
+            artifact("fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-noop-second-output.xlsx");
+        const std::filesystem::path post_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-post-noop-output.xlsx");
+        const std::filesystem::path post_noop_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-row-post-noop-noop-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(4, 3, fastxlsx::CellValue::formula(formula));
+        sheet.delete_rows(1, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "delete_rows rich formula pre-save shift");
+
+        const std::string expected =
+            R"(SUM(#REF!,$B$1,#REF!:B1,Sheet1!C2,'Other Sheet'!D:D,[Book.xlsx]Sheet1!#REF!,"A1",Table1[A1],LOG10(E4),A1foo,_A1,A1_,R1C1))";
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "delete_rows rich formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "delete_rows rich formula should report shifted dirty memory before save");
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("C3");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == expected,
+            "delete_rows should translate supported moved formula reference shapes");
+        check(!sheet.try_cell("C4").has_value(),
+            "delete_rows rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
+                !sheet.contains_cell("B1") && !sheet.contains_cell("C4"),
+            "delete_rows rich formula contains_cell should expose shifted source/formula cells");
+        check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
+            "delete_rows rich formula sparse_cells should expose row-major shifted cells before save");
+        check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells("A1:C3"), expected,
+            "delete_rows rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 4> delete_row_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {4, 3},
+            fastxlsx::WorksheetCellReference {3, 3},
+        };
+        check_delete_row_rich_formula_sparse_cells(sheet.sparse_cells(delete_row_requested_cells), expected,
+            "delete_rows rich formula requested sparse_cells should skip deleted and old coordinates");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_row_three =
+            sheet.row_cells(3);
+        check(live_delete_row_three.size() == 1 &&
+                live_delete_row_three[0].reference.row == 3 &&
+                live_delete_row_three[0].reference.column == 3 &&
+                live_delete_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_row_three[0].value.text_value() == expected,
+            "delete_rows rich formula live row_cells should expose translated formula order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_column_three =
+            sheet.column_cells(3);
+        check(live_delete_column_three.size() == 1 &&
+                live_delete_column_three[0].reference.row == 3 &&
+                live_delete_column_three[0].reference.column == 3 &&
+                live_delete_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_column_three[0].value.text_value() == expected,
+            "delete_rows rich formula live column_cells should expose translated formula");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "delete_rows rich formula save_as should leave the source package unchanged");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string expected_cell_xml = "<c r=\"C3\"><f>" + expected + "</f></c>";
+        check_contains(worksheet_xml, expected_cell_xml,
+            "delete_rows save_as should persist translated rich formula references");
+        check_not_contains(worksheet_xml, R"(r="C4")",
+            "delete_rows rich formula save_as should not keep the old coordinate");
+        const auto inspect_reopened_delete_row_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "delete_rows rich formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+                    "delete_rows rich formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == expected,
+                    "delete_rows rich formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_a1 =
+                    reopened_sheet.try_cell("A1");
+                check(reopened_a1.has_value() &&
+                        reopened_a1->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1->text_value() == "placeholder-a2",
+                    "delete_rows rich formula reopened output should read shifted source rows");
+                check(!reopened_sheet.try_cell("C4").has_value(),
+                    "delete_rows rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
+                        !reopened_sheet.contains_cell("B1") && !reopened_sheet.contains_cell("C4"),
+                    "delete_rows rich formula reopened contains_cell should expose shifted source/formula cells");
+                check_delete_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "delete_rows rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_delete_row_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C3"), expected,
+                    "delete_rows rich formula reopened range sparse_cells should expose shifted cells");
+                check_delete_row_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_row_requested_cells), expected,
+                    "delete_rows rich formula reopened requested sparse_cells should skip deleted and old coordinates");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+                    reopened_sheet.row_cells(3);
+                check(reopened_row_three.size() == 1 &&
+                        reopened_row_three[0].reference.row == 3 &&
+                        reopened_row_three[0].reference.column == 3 &&
+                        reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[0].value.text_value() == expected,
+                    "delete_rows rich formula reopened row_cells should expose translated formula order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+                    reopened_sheet.column_cells(3);
+                check(reopened_column_three.size() == 1 &&
+                        reopened_column_three[0].reference.row == 3 &&
+                        reopened_column_three[0].reference.column == 3 &&
+                        reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_column_three[0].value.text_value() == expected,
+                    "delete_rows rich formula reopened column_cells should expose translated formula");
+            };
+        check_reopened_shift_output(output, "delete_rows rich formula",
+            inspect_reopened_delete_row_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_rows rich formula noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "delete_rows rich formula noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "delete_rows rich formula noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "delete_rows rich formula noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "delete_rows rich formula noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "delete_rows rich formula noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "delete_rows rich formula noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "delete_rows rich formula noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "delete_rows rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "delete_rows rich formula noop save should leave the source package unchanged");
+        check_reopened_shift_output(noop_output, "delete_rows rich formula noop save",
+            inspect_reopened_delete_row_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_rows rich formula second noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "delete_rows rich formula second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_rows rich formula second noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "delete_rows rich formula second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_rows rich formula second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "delete_rows rich formula second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "delete_rows rich formula second noop save");
+        const auto second_noop_entries =
+            fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "delete_rows rich formula second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete_rows rich formula second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete_rows rich formula second noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_rows rich formula second noop save should leave the source package unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "delete_rows rich formula second noop save",
+            inspect_reopened_delete_row_formula);
+
+        sheet.set_cell("D3", fastxlsx::CellValue::formula("C3+A1"));
+        check(sheet.has_pending_changes(),
+            "delete_rows rich formula post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 3,
+            "delete_rows rich formula post-noop edit should add one sparse formula cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 3, 4,
+            "delete_rows rich formula post-noop edit should expand bounds to D3");
+        const fastxlsx::CellValue retained_formula = sheet.get_cell("C3");
+        check(retained_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                retained_formula.text_value() == expected,
+            "delete_rows rich formula post-noop edit should preserve translated formula");
+        const fastxlsx::CellValue post_noop_formula = sheet.get_cell("D3");
+        check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula.text_value() == "C3+A1",
+            "delete_rows rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C3") &&
+                sheet.contains_cell("D3") && !sheet.contains_cell("B1") &&
+                !sheet.contains_cell("C4"),
+            "delete_rows rich formula post-noop contains_cell should expose both formulas");
+        check_delete_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
+            "delete_rows rich formula post-noop sparse_cells should expose both formulas before save");
+        check_delete_row_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D3"), expected,
+            "delete_rows rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 5> delete_row_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {1, 2},
+            fastxlsx::WorksheetCellReference {4, 3},
+            fastxlsx::WorksheetCellReference {3, 3},
+            fastxlsx::WorksheetCellReference {3, 4},
+        };
+        check_delete_row_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(delete_row_post_noop_requested_cells), expected,
+            "delete_rows rich formula post-noop requested sparse_cells should skip deleted and old coordinates");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_post_noop_row_three =
+            sheet.row_cells(3);
+        check(live_delete_post_noop_row_three.size() == 2 &&
+                live_delete_post_noop_row_three[0].reference.row == 3 &&
+                live_delete_post_noop_row_three[0].reference.column == 3 &&
+                live_delete_post_noop_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_post_noop_row_three[0].value.text_value() == expected &&
+                live_delete_post_noop_row_three[1].reference.row == 3 &&
+                live_delete_post_noop_row_three[1].reference.column == 4 &&
+                live_delete_post_noop_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_post_noop_row_three[1].value.text_value() == "C3+A1",
+            "delete_rows rich formula post-noop live row_cells should expose both formulas in order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_post_noop_column_four =
+            sheet.column_cells(4);
+        check(live_delete_post_noop_column_four.size() == 1 &&
+                live_delete_post_noop_column_four[0].reference.row == 3 &&
+                live_delete_post_noop_column_four[0].reference.column == 4 &&
+                live_delete_post_noop_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_post_noop_column_four[0].value.text_value() == "C3+A1",
+            "delete_rows rich formula post-noop live column_cells should expose the later formula");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "delete_rows rich formula post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_rows rich formula post-noop save should clean the materialized handle");
+        check(editor.pending_change_count() == 2,
+            "delete_rows rich formula post-noop save should record the second handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_rows rich formula post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "delete_rows rich formula post-noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_rows rich formula post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete_rows rich formula post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete_rows rich formula post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "delete_rows rich formula post-noop save should leave the repeat no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_rows rich formula post-noop save should leave the source package unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, expected_cell_xml,
+            "delete_rows rich formula post-noop save should keep the translated formula XML");
+        check_contains(post_noop_xml, R"(<c r="D3"><f>C3+A1</f></c>)",
+            "delete_rows rich formula post-noop save should write the post-noop formula");
+        const auto inspect_reopened_delete_row_post_noop_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "delete_rows rich formula post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 4,
+                    "delete_rows rich formula post-noop save reopened output should expose post-noop bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c3 =
+                    reopened_sheet.try_cell("C3");
+                check(reopened_c3.has_value() &&
+                        reopened_c3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c3->text_value() == expected,
+                    "delete_rows rich formula post-noop save reopened output should keep translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_d3 =
+                    reopened_sheet.try_cell("D3");
+                check(reopened_d3.has_value() &&
+                        reopened_d3->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_d3->text_value() == "C3+A1",
+                    "delete_rows rich formula post-noop save reopened output should keep post-noop formula");
+                const std::optional<fastxlsx::CellValue> reopened_a1 =
+                    reopened_sheet.try_cell("A1");
+                check(reopened_a1.has_value() &&
+                        reopened_a1->kind() == fastxlsx::CellValueKind::Text &&
+                        reopened_a1->text_value() == "placeholder-a2",
+                    "delete_rows rich formula post-noop save reopened output should keep shifted source rows");
+                check(!reopened_sheet.try_cell("C4").has_value(),
+                    "delete_rows rich formula post-noop save reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C3") &&
+                        reopened_sheet.contains_cell("D3") && !reopened_sheet.contains_cell("B1") &&
+                        !reopened_sheet.contains_cell("C4"),
+                    "delete_rows rich formula post-noop reopened contains_cell should expose both formulas");
+                check_delete_row_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "delete_rows rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_delete_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:D3"), expected,
+                    "delete_rows rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_delete_row_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_row_post_noop_requested_cells), expected,
+                    "delete_rows rich formula post-noop reopened requested sparse_cells should skip deleted and old coordinates");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+                    reopened_sheet.row_cells(3);
+                check(reopened_row_three.size() == 2 &&
+                        reopened_row_three[0].reference.row == 3 &&
+                        reopened_row_three[0].reference.column == 3 &&
+                        reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[0].value.text_value() == expected &&
+                        reopened_row_three[1].reference.row == 3 &&
+                        reopened_row_three[1].reference.column == 4 &&
+                        reopened_row_three[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_three[1].value.text_value() == "C3+A1",
+                    "delete_rows rich formula post-noop reopened row_cells should expose both formulas in order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+                    reopened_sheet.column_cells(4);
+                check(reopened_column_four.size() == 1 &&
+                        reopened_column_four[0].reference.row == 3 &&
+                        reopened_column_four[0].reference.column == 4 &&
+                        reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_column_four[0].value.text_value() == "C3+A1",
+                    "delete_rows rich formula post-noop reopened column_cells should expose the later formula");
+            };
+        check_reopened_shift_output(post_noop_output, "delete_rows rich formula post-noop save",
+            inspect_reopened_delete_row_post_noop_formula);
+        check_reopened_shift_output(second_noop_output,
+            "delete_rows rich formula second noop output after post-noop save",
+            inspect_reopened_delete_row_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(post_noop_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_rows rich formula post-noop noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 2,
+            "delete_rows rich formula post-noop noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_rows rich formula post-noop noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "delete_rows rich formula post-noop noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_rows rich formula post-noop noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_post_noop_noop,
+            "delete_rows rich formula post-noop noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_post_noop_noop,
+            "delete_rows rich formula post-noop noop save");
+        const auto post_noop_noop_entries =
+            fastxlsx::test::read_zip_entries(post_noop_noop_output);
+        check(post_noop_noop_entries == post_noop_entries,
+            "delete_rows rich formula post-noop noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "delete_rows rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "delete_rows rich formula post-noop noop save should leave the source package unchanged");
+        check_reopened_shift_output(post_noop_noop_output,
+            "delete_rows rich formula post-noop noop save",
+            inspect_reopened_delete_row_post_noop_formula);
+    }
+
+    {
+        const std::filesystem::path output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-output.xlsx");
+        const std::filesystem::path noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-noop-output.xlsx");
+        const std::filesystem::path second_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-noop-second-output.xlsx");
+        const std::filesystem::path post_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-post-noop-output.xlsx");
+        const std::filesystem::path post_noop_noop_output = artifact(
+            "fastxlsx-workbook-editor-public-worksheet-shift-formula-shapes-delete-column-post-noop-noop-output.xlsx");
+        fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+        fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+        sheet.set_cell(2, 4, fastxlsx::CellValue::formula(formula));
+        sheet.delete_columns(1, 1);
+        const std::size_t shifted_memory = sheet.estimated_memory_usage();
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 0, "delete_columns rich formula pre-save shift");
+
+        const std::string expected =
+            R"(SUM(#REF!,$A$2,#REF!:A2,Sheet1!B3,'Other Sheet'!C:C,[Book.xlsx]Sheet1!1:1,"A1",Table1[A1],LOG10(D5),A1foo,_A1,A1_,R1C1))";
+        check(editor.pending_materialized_cell_count() == sheet.cell_count(),
+            "delete_columns rich formula should report shifted sparse count before save");
+        check(editor.estimated_pending_materialized_memory_usage() == shifted_memory,
+            "delete_columns rich formula should report shifted dirty memory before save");
+        const fastxlsx::CellValue shifted_formula = sheet.get_cell("C2");
+        check(shifted_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                shifted_formula.text_value() == expected,
+            "delete_columns should translate supported moved formula reference shapes");
+        check(!sheet.try_cell("D2").has_value(),
+            "delete_columns rich formula translation should remove the old coordinate");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C2") &&
+                !sheet.contains_cell("B2") && !sheet.contains_cell("D2"),
+            "delete_columns rich formula contains_cell should expose shifted source/formula cells");
+        check_delete_column_rich_formula_sparse_cells(sheet.sparse_cells(), expected,
+            "delete_columns rich formula sparse_cells should expose row-major shifted cells before save");
+        check_delete_column_rich_formula_sparse_cells(sheet.sparse_cells("A1:C2"), expected,
+            "delete_columns rich formula range sparse_cells should expose shifted cells before save");
+        const std::array<fastxlsx::WorksheetCellReference, 4> delete_column_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::WorksheetCellReference {2, 4},
+            fastxlsx::WorksheetCellReference {2, 3},
+        };
+        check_delete_column_rich_formula_sparse_cells(
+            sheet.sparse_cells(delete_column_requested_cells), expected,
+            "delete_columns rich formula requested sparse_cells should skip deleted and old coordinates");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_column_row_two =
+            sheet.row_cells(2);
+        check(live_delete_column_row_two.size() == 1 &&
+                live_delete_column_row_two[0].reference.row == 2 &&
+                live_delete_column_row_two[0].reference.column == 3 &&
+                live_delete_column_row_two[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_column_row_two[0].value.text_value() == expected,
+            "delete_columns rich formula live row_cells should expose translated formula order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_formula_column_three =
+            sheet.column_cells(3);
+        check(live_delete_formula_column_three.size() == 1 &&
+                live_delete_formula_column_three[0].reference.row == 2 &&
+                live_delete_formula_column_three[0].reference.column == 3 &&
+                live_delete_formula_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_formula_column_three[0].value.text_value() == expected,
+            "delete_columns rich formula live column_cells should expose translated formula");
+
+        editor.save_as(output);
+        const auto output_entries = fastxlsx::test::read_zip_entries(output);
+        check_source_package_unchanged(
+            "delete_columns rich formula save_as should leave the source package unchanged");
+        const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+        const std::string expected_cell_xml = "<c r=\"C2\"><f>" + expected + "</f></c>";
+        check_contains(worksheet_xml, expected_cell_xml,
+            "delete_columns save_as should persist translated rich formula references");
+        check_not_contains(worksheet_xml, R"(r="D2")",
+            "delete_columns rich formula save_as should not keep the old coordinate");
+        const auto inspect_reopened_delete_column_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 2,
+                    "delete_columns rich formula reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 3,
+                    "delete_columns rich formula reopened output should expose shifted bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c2 =
+                    reopened_sheet.try_cell("C2");
+                check(reopened_c2.has_value() &&
+                        reopened_c2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c2->text_value() == expected,
+                    "delete_columns rich formula reopened output should read translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_a1 =
+                    reopened_sheet.try_cell("A1");
+                check(reopened_a1.has_value() &&
+                        reopened_a1->kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_a1->number_value() == 1.0,
+                    "delete_columns rich formula reopened output should read shifted source columns");
+                check(!reopened_sheet.try_cell("D2").has_value(),
+                    "delete_columns rich formula reopened output should keep old coordinate absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C2") &&
+                        !reopened_sheet.contains_cell("B2") && !reopened_sheet.contains_cell("D2"),
+                    "delete_columns rich formula reopened contains_cell should expose shifted source/formula cells");
+                check_delete_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "delete_columns rich formula reopened sparse_cells should expose row-major shifted cells");
+                check_delete_column_rich_formula_sparse_cells(reopened_sheet.sparse_cells("A1:C2"), expected,
+                    "delete_columns rich formula reopened range sparse_cells should expose shifted cells");
+                check_delete_column_rich_formula_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_column_requested_cells), expected,
+                    "delete_columns rich formula reopened requested sparse_cells should skip deleted and old coordinates");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                    reopened_sheet.row_cells(2);
+                check(reopened_row_two.size() == 1 &&
+                        reopened_row_two[0].reference.row == 2 &&
+                        reopened_row_two[0].reference.column == 3 &&
+                        reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[0].value.text_value() == expected,
+                    "delete_columns rich formula reopened row_cells should expose translated formula order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+                    reopened_sheet.column_cells(3);
+                check(reopened_column_three.size() == 1 &&
+                        reopened_column_three[0].reference.row == 2 &&
+                        reopened_column_three[0].reference.column == 3 &&
+                        reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_column_three[0].value.text_value() == expected,
+                    "delete_columns rich formula reopened column_cells should expose translated formula");
+            };
+        check_reopened_shift_output(output, "delete_columns rich formula",
+            inspect_reopened_delete_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_columns rich formula noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "delete_columns rich formula noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty(),
+            "delete_columns rich formula noop save should keep dirty materialized names empty");
+        check(editor.pending_materialized_cell_count() == 0,
+            "delete_columns rich formula noop save should keep aggregate dirty cell count empty");
+        check(editor.estimated_pending_materialized_memory_usage() == 0,
+            "delete_columns rich formula noop save should keep dirty memory estimate empty");
+        check(editor.pending_worksheet_edits().empty(),
+            "delete_columns rich formula noop save should keep materialized summaries empty");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_noop,
+            "delete_columns rich formula noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_noop,
+            "delete_columns rich formula noop save");
+        const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+        check(noop_entries == output_entries,
+            "delete_columns rich formula noop save should keep output entries stable");
+        check_source_package_unchanged(
+            "delete_columns rich formula noop save should leave the source package unchanged");
+        check_reopened_shift_output(noop_output, "delete_columns rich formula noop save",
+            inspect_reopened_delete_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_second_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_second_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(second_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_columns rich formula second noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 1,
+            "delete_columns rich formula second noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_columns rich formula second noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "delete_columns rich formula second noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_columns rich formula second noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_second_noop,
+            "delete_columns rich formula second noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_second_noop,
+            "delete_columns rich formula second noop save");
+        const auto second_noop_entries =
+            fastxlsx::test::read_zip_entries(second_noop_output);
+        check(second_noop_entries == noop_entries,
+            "delete_columns rich formula second noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete_columns rich formula second noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete_columns rich formula second noop save should leave the prior no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_columns rich formula second noop save should leave the source package unchanged");
+        check_reopened_shift_output(second_noop_output,
+            "delete_columns rich formula second noop save",
+            inspect_reopened_delete_column_formula);
+
+        sheet.set_cell("D2", fastxlsx::CellValue::formula("C2+A1"));
+        check(sheet.has_pending_changes(),
+            "delete_columns rich formula post-noop edit should dirty the saved session");
+        check(sheet.cell_count() == 3,
+            "delete_columns rich formula post-noop edit should add one sparse formula cell");
+        check_cell_range_equals(sheet.used_range(), 1, 1, 2, 4,
+            "delete_columns rich formula post-noop edit should expand bounds to D2");
+        const fastxlsx::CellValue retained_formula = sheet.get_cell("C2");
+        check(retained_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                retained_formula.text_value() == expected,
+            "delete_columns rich formula post-noop edit should preserve translated formula");
+        const fastxlsx::CellValue post_noop_formula = sheet.get_cell("D2");
+        check(post_noop_formula.kind() == fastxlsx::CellValueKind::Formula &&
+                post_noop_formula.text_value() == "C2+A1",
+            "delete_columns rich formula post-noop edit should expose the new formula before save");
+        check(sheet.contains_cell("A1") && sheet.contains_cell("C2") &&
+                sheet.contains_cell("D2") && !sheet.contains_cell("B2"),
+            "delete_columns rich formula post-noop contains_cell should expose both formulas");
+        check_delete_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells(), expected,
+            "delete_columns rich formula post-noop sparse_cells should expose both formulas before save");
+        check_delete_column_rich_formula_post_noop_sparse_cells(sheet.sparse_cells("A1:D2"), expected,
+            "delete_columns rich formula post-noop range sparse_cells should expose both formulas before save");
+        const std::array<fastxlsx::WorksheetCellReference, 4> delete_column_post_noop_requested_cells {
+            fastxlsx::WorksheetCellReference {1, 1},
+            fastxlsx::WorksheetCellReference {2, 2},
+            fastxlsx::WorksheetCellReference {2, 3},
+            fastxlsx::WorksheetCellReference {2, 4},
+        };
+        check_delete_column_rich_formula_post_noop_sparse_cells(
+            sheet.sparse_cells(delete_column_post_noop_requested_cells), expected,
+            "delete_columns rich formula post-noop requested sparse_cells should skip deleted coordinates");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_column_post_noop_row_two =
+            sheet.row_cells(2);
+        check(live_delete_column_post_noop_row_two.size() == 2 &&
+                live_delete_column_post_noop_row_two[0].reference.row == 2 &&
+                live_delete_column_post_noop_row_two[0].reference.column == 3 &&
+                live_delete_column_post_noop_row_two[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_column_post_noop_row_two[0].value.text_value() == expected &&
+                live_delete_column_post_noop_row_two[1].reference.row == 2 &&
+                live_delete_column_post_noop_row_two[1].reference.column == 4 &&
+                live_delete_column_post_noop_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_column_post_noop_row_two[1].value.text_value() == "C2+A1",
+            "delete_columns rich formula post-noop live row_cells should expose both formulas in order");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> live_delete_column_post_noop_column_four =
+            sheet.column_cells(4);
+        check(live_delete_column_post_noop_column_four.size() == 1 &&
+                live_delete_column_post_noop_column_four[0].reference.row == 2 &&
+                live_delete_column_post_noop_column_four[0].reference.column == 4 &&
+                live_delete_column_post_noop_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                live_delete_column_post_noop_column_four[0].value.text_value() == "C2+A1",
+            "delete_columns rich formula post-noop live column_cells should expose the later formula");
+        check_public_state_single_data_dirty_materialized_summary(
+            editor, sheet, 1, "delete_columns rich formula post-noop edit");
+
+        editor.save_as(post_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_columns rich formula post-noop save should clean the materialized handle");
+        check(editor.pending_change_count() == 2,
+            "delete_columns rich formula post-noop save should record the second handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_columns rich formula post-noop save should clear dirty materialized diagnostics");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "delete_columns rich formula post-noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_columns rich formula post-noop save should keep diagnostics clear");
+        check(fastxlsx::test::read_zip_entries(output) == output_entries,
+            "delete_columns rich formula post-noop save should leave the first output unchanged");
+        check(fastxlsx::test::read_zip_entries(noop_output) == noop_entries,
+            "delete_columns rich formula post-noop save should leave the prior no-op output unchanged");
+        check(fastxlsx::test::read_zip_entries(second_noop_output) == second_noop_entries,
+            "delete_columns rich formula post-noop save should leave the repeat no-op output unchanged");
+        check_source_package_unchanged(
+            "delete_columns rich formula post-noop save should leave the source package unchanged");
+
+        const auto post_noop_entries = fastxlsx::test::read_zip_entries(post_noop_output);
+        const std::string post_noop_xml = post_noop_entries.at("xl/worksheets/sheet1.xml");
+        check_contains(post_noop_xml, expected_cell_xml,
+            "delete_columns rich formula post-noop save should keep the translated formula XML");
+        check_contains(post_noop_xml, R"(<c r="D2"><f>C2+A1</f></c>)",
+            "delete_columns rich formula post-noop save should write the post-noop formula");
+        const auto inspect_reopened_delete_column_post_noop_formula =
+            [&](fastxlsx::WorksheetEditor& reopened_sheet) {
+                check(reopened_sheet.cell_count() == 3,
+                    "delete_columns rich formula post-noop save reopened output should keep sparse count");
+                check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 4,
+                    "delete_columns rich formula post-noop save reopened output should expose post-noop bounds");
+                const std::optional<fastxlsx::CellValue> reopened_c2 =
+                    reopened_sheet.try_cell("C2");
+                check(reopened_c2.has_value() &&
+                        reopened_c2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_c2->text_value() == expected,
+                    "delete_columns rich formula post-noop save reopened output should keep translated formula");
+                const std::optional<fastxlsx::CellValue> reopened_d2 =
+                    reopened_sheet.try_cell("D2");
+                check(reopened_d2.has_value() &&
+                        reopened_d2->kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_d2->text_value() == "C2+A1",
+                    "delete_columns rich formula post-noop save reopened output should keep post-noop formula");
+                const std::optional<fastxlsx::CellValue> reopened_a1 =
+                    reopened_sheet.try_cell("A1");
+                check(reopened_a1.has_value() &&
+                        reopened_a1->kind() == fastxlsx::CellValueKind::Number &&
+                        reopened_a1->number_value() == 1.0,
+                    "delete_columns rich formula post-noop save reopened output should keep shifted source columns");
+                check(!reopened_sheet.try_cell("B2").has_value(),
+                    "delete_columns rich formula post-noop save reopened output should keep empty intermediate column absent");
+                check(reopened_sheet.contains_cell("A1") && reopened_sheet.contains_cell("C2") &&
+                        reopened_sheet.contains_cell("D2") && !reopened_sheet.contains_cell("B2"),
+                    "delete_columns rich formula post-noop reopened contains_cell should expose both formulas");
+                check_delete_column_rich_formula_post_noop_sparse_cells(reopened_sheet.sparse_cells(), expected,
+                    "delete_columns rich formula post-noop reopened sparse_cells should expose both formulas");
+                check_delete_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells("A1:D2"), expected,
+                    "delete_columns rich formula post-noop reopened range sparse_cells should expose both formulas");
+                check_delete_column_rich_formula_post_noop_sparse_cells(
+                    reopened_sheet.sparse_cells(delete_column_post_noop_requested_cells), expected,
+                    "delete_columns rich formula post-noop reopened requested sparse_cells should skip deleted coordinates");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_two =
+                    reopened_sheet.row_cells(2);
+                check(reopened_row_two.size() == 2 &&
+                        reopened_row_two[0].reference.row == 2 &&
+                        reopened_row_two[0].reference.column == 3 &&
+                        reopened_row_two[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[0].value.text_value() == expected &&
+                        reopened_row_two[1].reference.row == 2 &&
+                        reopened_row_two[1].reference.column == 4 &&
+                        reopened_row_two[1].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_row_two[1].value.text_value() == "C2+A1",
+                    "delete_columns rich formula post-noop reopened row_cells should expose both formulas in order");
+                const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_four =
+                    reopened_sheet.column_cells(4);
+                check(reopened_column_four.size() == 1 &&
+                        reopened_column_four[0].reference.row == 2 &&
+                        reopened_column_four[0].reference.column == 4 &&
+                        reopened_column_four[0].value.kind() == fastxlsx::CellValueKind::Formula &&
+                        reopened_column_four[0].value.text_value() == "C2+A1",
+                    "delete_columns rich formula post-noop reopened column_cells should expose the later formula");
+            };
+        check_reopened_shift_output(post_noop_output, "delete_columns rich formula post-noop save",
+            inspect_reopened_delete_column_post_noop_formula);
+        check_reopened_shift_output(second_noop_output,
+            "delete_columns rich formula second noop output after post-noop save",
+            inspect_reopened_delete_column_formula);
+
+        const WorkbookEditorPublicCatalogSnapshot catalog_before_post_noop_noop =
+            workbook_editor_public_catalog_snapshot(editor);
+        const WorkbookEditorPublicSaveStateSnapshot save_state_before_post_noop_noop =
+            workbook_editor_public_save_state_snapshot(editor);
+
+        editor.save_as(post_noop_noop_output);
+        check(!sheet.has_pending_changes(),
+            "delete_columns rich formula post-noop noop save should keep materialized handle clean");
+        check(editor.pending_change_count() == 2,
+            "delete_columns rich formula post-noop noop save should not add another handoff");
+        check(editor.pending_materialized_worksheet_names().empty() &&
+                editor.pending_materialized_cell_count() == 0 &&
+                editor.estimated_pending_materialized_memory_usage() == 0 &&
+                editor.pending_worksheet_edits().empty(),
+            "delete_columns rich formula post-noop noop save should keep dirty diagnostics clear");
+        check_workbook_editor_no_replacement_diagnostics(
+            editor, "delete_columns rich formula post-noop noop save should not queue replacement diagnostics");
+        check(!editor.last_edit_error().has_value(),
+            "delete_columns rich formula post-noop noop save should keep diagnostics clear");
+        check_workbook_editor_public_save_state_preserved(
+            editor, save_state_before_post_noop_noop,
+            "delete_columns rich formula post-noop noop save");
+        check_workbook_editor_public_catalog_preserved(
+            editor, catalog_before_post_noop_noop,
+            "delete_columns rich formula post-noop noop save");
+        const auto post_noop_noop_entries =
+            fastxlsx::test::read_zip_entries(post_noop_noop_output);
+        check(post_noop_noop_entries == post_noop_entries,
+            "delete_columns rich formula post-noop noop save should keep output entries stable");
+        check(fastxlsx::test::read_zip_entries(post_noop_output) == post_noop_entries,
+            "delete_columns rich formula post-noop noop save should leave prior post-noop output unchanged");
+        check_source_package_unchanged(
+            "delete_columns rich formula post-noop noop save should leave the source package unchanged");
+        check_reopened_shift_output(post_noop_noop_output,
+            "delete_columns rich formula post-noop noop save",
+            inspect_reopened_delete_column_post_noop_formula);
+    }
+}
+
+void test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session()
+{
+    const std::filesystem::path source = write_two_sheet_source(
+        "fastxlsx-workbook-editor-public-worksheet-shift-dirty-noops-source.xlsx");
+    const std::filesystem::path output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-dirty-noops-output.xlsx");
+    const std::filesystem::path noop_output =
+        artifact("fastxlsx-workbook-editor-public-worksheet-shift-dirty-noops-noop-output.xlsx");
+    const auto source_entries = fastxlsx::test::read_zip_entries(source);
+
+    fastxlsx::WorkbookEditor editor = fastxlsx::WorkbookEditor::open(source);
+    fastxlsx::WorksheetEditor sheet = editor.worksheet("Data");
+
+    sheet.set_cell("C3", fastxlsx::CellValue::text("dirty-shift-noop-tail"));
+    const std::size_t dirty_count = sheet.cell_count();
+    const std::size_t dirty_memory = sheet.estimated_memory_usage();
+    check(dirty_count == 4,
+        "dirty shift no-op setup should add one represented sparse cell");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty shift no-op setup should mark the materialized session dirty");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty shift no-op setup should report Data as dirty");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty shift no-op setup should report the dirty sparse count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty shift no-op setup should report the dirty sparse memory");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a1", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "dirty shift no-op setup should seed diagnostics before zero-count no-ops");
+    check(editor.last_edit_error().has_value(),
+        "dirty shift no-op setup should expose the seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_zero_count_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    sheet.insert_rows(2, 0);
+    sheet.delete_rows(2, 0);
+    sheet.insert_columns(2, 0);
+    sheet.delete_columns(2, 0);
+    check(!editor.last_edit_error().has_value(),
+        "dirty zero-count row/column shift no-ops should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty zero-count row/column shift no-ops should preserve dirty state");
+    check(sheet.cell_count() == dirty_count,
+        "dirty zero-count row/column shift no-ops should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "dirty zero-count row/column shift no-ops should preserve memory estimate");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty zero-count row/column shift no-ops should preserve dirty sheet names");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty zero-count row/column shift no-ops should preserve aggregate dirty count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty zero-count row/column shift no-ops should preserve aggregate dirty memory");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+        "dirty zero-count row/column shift no-ops should preserve source and dirty cells");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_zero_count_noops,
+        "dirty zero-count row/column shift no-ops");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a2", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "dirty shift no-op setup should seed diagnostics before nonzero no-ops");
+    check(editor.last_edit_error().has_value(),
+        "dirty shift no-op setup should expose the second seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_nonzero_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    sheet.insert_rows(10, 1);
+    sheet.delete_rows(10, 1);
+    sheet.insert_columns(10, 1);
+    sheet.delete_columns(10, 1);
+    check(!editor.last_edit_error().has_value(),
+        "dirty nonzero row/column shift no-ops should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty nonzero row/column shift no-ops should preserve dirty state");
+    check(sheet.cell_count() == dirty_count,
+        "dirty nonzero row/column shift no-ops should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "dirty nonzero row/column shift no-ops should preserve memory estimate");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty nonzero row/column shift no-ops should preserve dirty sheet names");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty nonzero row/column shift no-ops should preserve aggregate dirty count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty nonzero row/column shift no-ops should preserve aggregate dirty memory");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+        "dirty nonzero row/column shift no-ops should preserve source and dirty cells");
+    check(!sheet.try_cell("D3").has_value() && !sheet.try_cell("C4").has_value(),
+        "dirty nonzero row/column shift no-ops should not synthesize shifted cells");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_nonzero_noops,
+        "dirty nonzero row/column shift no-ops");
+
+    check(threw_fastxlsx_error([&] {
+        sheet.set_cell("a3", fastxlsx::CellValue::text("invalid-lowercase"));
+    }), "dirty shift no-op setup should seed diagnostics before max-boundary no-ops");
+    check(editor.last_edit_error().has_value(),
+        "dirty shift no-op setup should expose the max-boundary seeded diagnostic");
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_max_boundary_noops =
+        workbook_editor_public_catalog_snapshot(editor);
+
+    sheet.insert_rows(1048576, 1);
+    sheet.insert_columns(16384, 1);
+    sheet.delete_rows(1048576, 1);
+    sheet.delete_columns(16384, 1);
+    check(!editor.last_edit_error().has_value(),
+        "dirty max-boundary row/column shift no-ops should clear prior diagnostics");
+    check(sheet.has_pending_changes() && editor.has_pending_changes(),
+        "dirty max-boundary row/column shift no-ops should preserve dirty state");
+    check(sheet.cell_count() == dirty_count,
+        "dirty max-boundary row/column shift no-ops should preserve sparse count");
+    check(sheet.estimated_memory_usage() == dirty_memory,
+        "dirty max-boundary row/column shift no-ops should preserve memory estimate");
+    check(editor.pending_materialized_worksheet_names() == std::vector<std::string>{"Data"},
+        "dirty max-boundary row/column shift no-ops should preserve dirty sheet names");
+    check(editor.pending_materialized_cell_count() == dirty_count,
+        "dirty max-boundary row/column shift no-ops should preserve aggregate dirty count");
+    check(editor.estimated_pending_materialized_memory_usage() == dirty_memory,
+        "dirty max-boundary row/column shift no-ops should preserve aggregate dirty memory");
+    check(sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+            sheet.get_cell("B1").number_value() == 1.0 &&
+            sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+            sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+        "dirty max-boundary row/column shift no-ops should preserve source and dirty cells");
+    check(!sheet.try_cell("A1048576").has_value() &&
+            !sheet.try_cell("XFD1").has_value(),
+        "dirty max-boundary row/column shift no-ops should not synthesize edge cells");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> dirty_noop_row_three =
+        sheet.row_cells(3);
+    check(dirty_noop_row_three.size() == 1 &&
+            dirty_noop_row_three[0].reference.row == 3 &&
+            dirty_noop_row_three[0].reference.column == 3 &&
+            dirty_noop_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            dirty_noop_row_three[0].value.text_value() == "dirty-shift-noop-tail",
+        "dirty row_cells after shift no-ops should expose only the unshifted dirty cell");
+    const std::vector<fastxlsx::WorksheetCellSnapshot> dirty_noop_column_three =
+        sheet.column_cells(3);
+    check(dirty_noop_column_three.size() == 1 &&
+            dirty_noop_column_three[0].reference.row == 3 &&
+            dirty_noop_column_three[0].reference.column == 3 &&
+            dirty_noop_column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+            dirty_noop_column_three[0].value.text_value() == "dirty-shift-noop-tail",
+        "dirty column_cells after shift no-ops should expose only the unshifted dirty cell");
+    check(sheet.row_cells(4).empty() && sheet.column_cells(4).empty(),
+        "dirty row/column snapshot reads after shift no-ops should not synthesize shifted coordinates");
+    check_workbook_editor_public_catalog_preserved(
+        editor,
+        catalog_before_max_boundary_noops,
+        "dirty max-boundary row/column shift no-ops");
+
+    check_public_state_single_data_dirty_materialized_summary(
+        editor, sheet, 0, "dirty row/column shift no-ops pre-save summary");
+
+    editor.save_as(output);
+    check(!sheet.has_pending_changes(),
+        "dirty row/column shift no-op save_as should clean the materialized session");
+    check(editor.pending_change_count() == 1,
+        "dirty row/column shift no-op save_as should record one materialized handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "dirty row/column shift no-op save_as should clear dirty materialized diagnostics");
+    check_workbook_editor_no_replacement_diagnostics(
+        editor, "dirty row/column shift no-op save_as");
+    check(!editor.last_edit_error().has_value(),
+        "dirty row/column shift no-op save_as should keep diagnostics clear");
+
+    const auto output_entries = fastxlsx::test::read_zip_entries(output);
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty row/column shift no-op save_as should leave the source package unchanged");
+    const std::string worksheet_xml = output_entries.at("xl/worksheets/sheet1.xml");
+    check_contains(worksheet_xml, R"(<dimension ref="A1:C3"/>)",
+        "dirty row/column shift no-op save_as should project unshifted dirty bounds");
+    check_contains(worksheet_xml, "placeholder-a1",
+        "dirty row/column shift no-op save_as should preserve source text");
+    check_contains(worksheet_xml, R"(<c r="B1"><v>1</v></c>)",
+        "dirty row/column shift no-op save_as should preserve source number");
+    check_contains(worksheet_xml, "placeholder-a2",
+        "dirty row/column shift no-op save_as should preserve source row two");
+    check_contains(worksheet_xml, R"(<c r="C3" t="inlineStr"><is><t>dirty-shift-noop-tail</t></is></c>)",
+        "dirty row/column shift no-op save_as should persist the dirty cell");
+    check_not_contains(worksheet_xml, R"(r="D3")",
+        "dirty row/column shift no-op save_as should not shift the dirty column");
+    check_not_contains(worksheet_xml, R"(r="C4")",
+        "dirty row/column shift no-op save_as should not shift the dirty row");
+    check_contains(output_entries.at("xl/worksheets/sheet2.xml"), "keep-me",
+        "dirty row/column shift no-op save_as should preserve untouched worksheets");
+
+    const auto inspect_dirty_noop_output = [](fastxlsx::WorksheetEditor& reopened_sheet) {
+        check(reopened_sheet.cell_count() == 4,
+            "dirty row/column shift no-op reopened output should keep sparse count");
+        check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 3, 3,
+            "dirty row/column shift no-op reopened output should expose unshifted bounds");
+        check(reopened_sheet.get_cell("A1").text_value() == "placeholder-a1" &&
+                reopened_sheet.get_cell("B1").number_value() == 1.0 &&
+                reopened_sheet.get_cell("A2").text_value() == "placeholder-a2" &&
+                reopened_sheet.get_cell("C3").text_value() == "dirty-shift-noop-tail",
+            "dirty row/column shift no-op reopened output should preserve source and dirty cells");
+        check(!reopened_sheet.try_cell("D3").has_value() &&
+                !reopened_sheet.try_cell("C4").has_value(),
+            "dirty row/column shift no-op reopened output should keep shifted coordinates absent");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_row_three =
+            reopened_sheet.row_cells(3);
+        check(reopened_row_three.size() == 1 &&
+                reopened_row_three[0].reference.row == 3 &&
+                reopened_row_three[0].reference.column == 3 &&
+                reopened_row_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                reopened_row_three[0].value.text_value() == "dirty-shift-noop-tail",
+            "dirty row/column shift no-op reopened row_cells should expose only the unshifted dirty cell");
+        const std::vector<fastxlsx::WorksheetCellSnapshot> reopened_column_three =
+            reopened_sheet.column_cells(3);
+        check(reopened_column_three.size() == 1 &&
+                reopened_column_three[0].reference.row == 3 &&
+                reopened_column_three[0].reference.column == 3 &&
+                reopened_column_three[0].value.kind() == fastxlsx::CellValueKind::Text &&
+                reopened_column_three[0].value.text_value() == "dirty-shift-noop-tail",
+            "dirty row/column shift no-op reopened column_cells should expose only the unshifted dirty cell");
+        check(reopened_sheet.row_cells(4).empty() &&
+                reopened_sheet.column_cells(4).empty(),
+            "dirty row/column shift no-op reopened snapshots should keep shifted coordinates absent");
+    };
+    check_reopened_shift_output(output, "dirty row/column shift no-op",
+        inspect_dirty_noop_output);
+    check_reopened_untouched_keep_me_output(output, "dirty row/column shift no-op");
+
+    const WorkbookEditorPublicCatalogSnapshot catalog_before_noop =
+        workbook_editor_public_catalog_snapshot(editor);
+    const WorkbookEditorPublicSaveStateSnapshot save_state_before_noop =
+        workbook_editor_public_save_state_snapshot(editor);
+    editor.save_as(noop_output);
+    check(!sheet.has_pending_changes(),
+        "dirty row/column shift no-op second save should keep the materialized session clean");
+    check(editor.pending_change_count() == 1,
+        "dirty row/column shift no-op second save should not record another handoff");
+    check(editor.pending_materialized_worksheet_names().empty() &&
+            editor.pending_materialized_cell_count() == 0 &&
+            editor.estimated_pending_materialized_memory_usage() == 0 &&
+            editor.pending_worksheet_edits().empty(),
+        "dirty row/column shift no-op second save should keep dirty diagnostics clear");
+    check_workbook_editor_public_save_state_preserved(
+        editor, save_state_before_noop,
+        "dirty row/column shift no-op second save");
+    check_workbook_editor_public_catalog_preserved(
+        editor, catalog_before_noop,
+        "dirty row/column shift no-op second save");
+    const auto noop_entries = fastxlsx::test::read_zip_entries(noop_output);
+    check(noop_entries == output_entries,
+        "dirty row/column shift no-op second output should match the first output");
+    check(fastxlsx::test::read_zip_entries(source) == source_entries,
+        "dirty row/column shift no-op second save should leave the source package unchanged");
+    check_reopened_shift_output(noop_output,
+        "dirty row/column shift no-op second save",
+        inspect_dirty_noop_output);
+}
+
 } // namespace
 
 int main()
@@ -10444,6 +14171,12 @@ int main()
         test_public_worksheet_editor_stationary_formula_delete_preserves_style_id();
         test_public_worksheet_editor_delete_rows_rewrites_stationary_formula();
         test_public_worksheet_editor_delete_columns_rewrites_stationary_formula();
+        test_public_worksheet_editor_shift_preserves_other_dirty_handle_state();
+        test_public_worksheet_editor_column_shift_preserves_other_dirty_handle_state();
+        test_public_worksheet_editor_delete_rows_preserves_other_dirty_handle_state();
+        test_public_worksheet_editor_delete_columns_preserves_other_dirty_handle_state();
+        test_public_worksheet_editor_shift_formula_translates_supported_reference_shapes();
+        test_public_worksheet_editor_row_column_shift_noops_preserve_dirty_session();
         test_internal_materialized_session_assignment_from_moved_from_source_clears_target();
         test_internal_materialized_session_blocks_whole_sheet_replacement();
         test_internal_materialized_session_blocks_materialize_after_public_replacement();

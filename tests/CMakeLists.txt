@@ -1042,11 +1042,6 @@ add_fastxlsx_workbook_editor_shard(
     ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
 )
 add_fastxlsx_workbook_editor_shard(
-    public-state-reacquire-guards
-    fastxlsx_workbook_editor_public_state_tests
-    ${FASTXLSX_WORKBOOK_EDITOR_PUBLIC_STATE_TIMEOUT}
-)
-add_fastxlsx_workbook_editor_shard(
     public-guards fastxlsx_workbook_editor_public_guards_tests 60
 )
 add_fastxlsx_workbook_editor_shard(

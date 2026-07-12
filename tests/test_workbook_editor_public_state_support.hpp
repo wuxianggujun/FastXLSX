@@ -80,6 +80,76 @@ bool threw_fastxlsx_error(const std::function<void()>& action)
     return false;
 }
 
+enum class PublicMaterializedGuardDiagnostic {
+    RenameSheet,
+    ReplaceSheetData,
+};
+
+std::string_view public_materialized_guard_fragment(
+    PublicMaterializedGuardDiagnostic diagnostic)
+{
+    switch (diagnostic) {
+    case PublicMaterializedGuardDiagnostic::RenameSheet:
+        return "cannot rename sheet after materializing planned worksheet session";
+    case PublicMaterializedGuardDiagnostic::ReplaceSheetData:
+        return "cannot replace sheet data after materializing planned worksheet session";
+    }
+
+    return {};
+}
+
+std::string_view public_materialized_guard_action_fragment(
+    PublicMaterializedGuardDiagnostic diagnostic)
+{
+    switch (diagnostic) {
+    case PublicMaterializedGuardDiagnostic::RenameSheet:
+        return "rename sheet";
+    case PublicMaterializedGuardDiagnostic::ReplaceSheetData:
+        return "replace sheet data";
+    }
+
+    return {};
+}
+
+std::optional<std::string> check_public_materialized_guard_error(
+    const fastxlsx::WorkbookEditor& editor,
+    PublicMaterializedGuardDiagnostic expected_guard,
+    std::string_view scenario,
+    std::optional<PublicMaterializedGuardDiagnostic> stale_guard = std::nullopt)
+{
+    const std::string label = std::string(scenario);
+    const std::optional<std::string> error = editor.last_edit_error();
+
+    check(error.has_value(), label + " should populate last_edit_error");
+    if (error.has_value()) {
+        check_contains(*error, public_materialized_guard_fragment(expected_guard),
+            label + " should report the materialized-session guard");
+        if (stale_guard.has_value()) {
+            check_not_contains(*error,
+                public_materialized_guard_action_fragment(*stale_guard),
+                label + " should replace the prior guard diagnostic");
+        }
+    }
+
+    return error;
+}
+
+template <typename Action>
+std::optional<std::string> check_public_same_sheet_guard_failure(
+    fastxlsx::WorkbookEditor& editor,
+    Action&& action,
+    PublicMaterializedGuardDiagnostic expected_guard,
+    std::string_view scenario,
+    std::optional<PublicMaterializedGuardDiagnostic> stale_guard = std::nullopt)
+{
+    const std::string label = std::string(scenario);
+
+    check(threw_fastxlsx_error(std::forward<Action>(action)),
+        label + " should fail");
+    return check_public_materialized_guard_error(
+        editor, expected_guard, label, stale_guard);
+}
+
 bool workbook_editor_catalog_entries_equal(
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& lhs,
     const std::vector<fastxlsx::WorkbookEditorWorksheetCatalogEntry>& rhs)
@@ -233,6 +303,18 @@ void check_workbook_editor_public_save_state_preserved(
         std::string(scenario) + " should preserve pending worksheet edit summaries");
 }
 
+void check_workbook_editor_public_no_pending_state(
+    const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
+{
+    const std::string prefix = std::string(scenario);
+
+    check(!editor.has_pending_changes(), prefix + " should keep the editor clean");
+    check(editor.pending_change_count() == 0,
+        prefix + " should keep pending edit count empty");
+    check(editor.pending_worksheet_edits().empty(),
+        prefix + " should keep pending summaries empty");
+}
+
 void check_workbook_editor_no_replacement_diagnostics(
     const fastxlsx::WorkbookEditor& editor, std::string_view scenario)
 {
@@ -274,6 +356,58 @@ std::filesystem::path write_two_sheet_source(std::string_view name)
         fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
         untouched.append_row({fastxlsx::CellView::text("keep-me"),
             fastxlsx::CellView::number(99.0)});
+    }
+    writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_large_clear_payload(std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+    const std::string large_a1 = "large-clear-a1-" + std::string(4096, 'a');
+    const std::string large_a2 = "large-clear-a2-" + std::string(4096, 'b');
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text(large_a1),
+            fastxlsx::CellView::number(1.0)});
+        data.append_row({fastxlsx::CellView::text(large_a2),
+            fastxlsx::CellView::text("clear-column-tail-b2")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me")});
+    }
+    writer.close();
+
+    return path;
+}
+
+std::filesystem::path write_two_sheet_source_with_large_clear_range_payload(
+    std::string_view name)
+{
+    const std::filesystem::path path = artifact(name);
+    const std::string large_a1 = "large-clear-range-a1-" + std::string(4096, 'a');
+    const std::string large_a2 = "large-clear-range-a2-" + std::string(4096, 'b');
+
+    fastxlsx::WorkbookWriter writer = fastxlsx::WorkbookWriter::create(path);
+    {
+        fastxlsx::WorksheetWriter data = writer.add_worksheet("Data");
+        data.append_row({fastxlsx::CellView::text(large_a1),
+            fastxlsx::CellView::number(1.0),
+            fastxlsx::CellView::text("clear-range-c1")});
+        data.append_row({fastxlsx::CellView::text(large_a2),
+            fastxlsx::CellView::text("clear-range-b2"),
+            fastxlsx::CellView::text("clear-range-c2")});
+        data.append_row({fastxlsx::CellView::text("clear-range-a3"),
+            fastxlsx::CellView::text("clear-range-b3"),
+            fastxlsx::CellView::text("clear-range-c3")});
+    }
+    {
+        fastxlsx::WorksheetWriter untouched = writer.add_worksheet("Untouched");
+        untouched.append_row({fastxlsx::CellView::text("keep-me")});
     }
     writer.close();
 
@@ -323,6 +457,32 @@ void check_reopened_clean_sheet_output(
         prefix + " reopened readback should keep dirty worksheet names empty");
     check(!reopened_editor.last_edit_error().has_value(),
         prefix + " reopened readback should keep last_edit_error empty");
+}
+
+void check_reopened_default_data_sheet_output(
+    const std::filesystem::path& output,
+    std::string_view scenario)
+{
+    const std::string prefix(scenario);
+    check_reopened_clean_sheet_output(output, "Data", scenario,
+        [prefix](fastxlsx::WorksheetEditor& reopened_sheet) {
+            check(reopened_sheet.cell_count() == 3,
+                prefix + " reopened output should keep default source sparse count");
+            check_cell_range_equals(reopened_sheet.used_range(), 1, 1, 2, 2,
+                prefix + " reopened output should keep default source used range");
+            const fastxlsx::CellValue reopened_a1 = reopened_sheet.get_cell("A1");
+            check(reopened_a1.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a1.text_value() == "placeholder-a1",
+                prefix + " reopened output should read source-backed A1");
+            const fastxlsx::CellValue reopened_b1 = reopened_sheet.get_cell("B1");
+            check(reopened_b1.kind() == fastxlsx::CellValueKind::Number &&
+                    reopened_b1.number_value() == 1.0,
+                prefix + " reopened output should read source-backed B1");
+            const fastxlsx::CellValue reopened_a2 = reopened_sheet.get_cell("A2");
+            check(reopened_a2.kind() == fastxlsx::CellValueKind::Text &&
+                    reopened_a2.text_value() == "placeholder-a2",
+                prefix + " reopened output should read source-backed A2");
+        });
 }
 
 void check_public_state_single_named_dirty_materialized_summary(

@@ -1,4 +1,4 @@
-#include "test_workbook_editor_public_state_reacquire_support.hpp"
+#include "test_workbook_editor_public_state_support.hpp"
 
 namespace {
 
